@@ -1,96 +1,96 @@
+@import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600;700&family=Crimson+Text:ital,wght@0,400;0,600;0,700;1,400&display=swap');
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
-/* Definition of the design system. All colors, gradients, fonts, etc should be defined here. 
-All colors MUST be HSL.
-*/
-
 @layer base {
   :root {
-    --background: 0 0% 100%;
-    --foreground: 222.2 84% 4.9%;
+    /* 2008 TibiaBR Nostalgic Color Palette */
+    --background: 24 30% 10%;
+    --foreground: 35 30% 90%;
 
-    --card: 0 0% 100%;
-    --card-foreground: 222.2 84% 4.9%;
+    --card: 24 25% 14%;
+    --card-foreground: 35 30% 90%;
 
-    --popover: 0 0% 100%;
-    --popover-foreground: 222.2 84% 4.9%;
+    --popover: 24 25% 12%;
+    --popover-foreground: 35 30% 90%;
 
-    --primary: 222.2 47.4% 11.2%;
-    --primary-foreground: 210 40% 98%;
+    /* Deep maroon/red - classic Tibia */
+    --primary: 0 60% 25%;
+    --primary-foreground: 35 50% 95%;
 
-    --secondary: 210 40% 96.1%;
-    --secondary-foreground: 222.2 47.4% 11.2%;
+    /* Parchment/tan */
+    --secondary: 35 40% 88%;
+    --secondary-foreground: 24 40% 15%;
 
-    --muted: 210 40% 96.1%;
-    --muted-foreground: 215.4 16.3% 46.9%;
+    /* Muted browns */
+    --muted: 24 20% 20%;
+    --muted-foreground: 35 20% 65%;
 
-    --accent: 210 40% 96.1%;
-    --accent-foreground: 222.2 47.4% 11.2%;
+    /* Gold accent */
+    --accent: 43 70% 50%;
+    --accent-foreground: 24 40% 10%;
 
-    --destructive: 0 84.2% 60.2%;
-    --destructive-foreground: 210 40% 98%;
+    --destructive: 0 70% 45%;
+    --destructive-foreground: 35 50% 95%;
 
-    --border: 214.3 31.8% 91.4%;
-    --input: 214.3 31.8% 91.4%;
-    --ring: 222.2 84% 4.9%;
+    --border: 24 30% 25%;
+    --input: 24 25% 18%;
+    --ring: 43 70% 50%;
 
-    --radius: 0.5rem;
+    --radius: 0.25rem;
 
-    --sidebar-background: 0 0% 98%;
+    /* Custom design tokens */
+    --parchment: 35 45% 92%;
+    --parchment-dark: 35 35% 85%;
+    --wood-dark: 24 40% 12%;
+    --wood-medium: 24 35% 18%;
+    --maroon: 0 55% 28%;
+    --maroon-dark: 0 60% 20%;
+    --gold: 43 70% 50%;
+    --gold-light: 43 75% 60%;
+    --text-dark: 24 40% 15%;
 
-    --sidebar-foreground: 240 5.3% 26.1%;
-
-    --sidebar-primary: 240 5.9% 10%;
-
-    --sidebar-primary-foreground: 0 0% 98%;
-
-    --sidebar-accent: 240 4.8% 95.9%;
-
-    --sidebar-accent-foreground: 240 5.9% 10%;
-
-    --sidebar-border: 220 13% 91%;
-
-    --sidebar-ring: 217.2 91.2% 59.8%;
+    /* Sidebar */
+    --sidebar-background: 24 30% 12%;
+    --sidebar-foreground: 35 30% 90%;
+    --sidebar-primary: 0 60% 25%;
+    --sidebar-primary-foreground: 35 50% 95%;
+    --sidebar-accent: 24 25% 18%;
+    --sidebar-accent-foreground: 35 30% 90%;
+    --sidebar-border: 24 30% 20%;
+    --sidebar-ring: 43 70% 50%;
   }
 
   .dark {
-    --background: 222.2 84% 4.9%;
-    --foreground: 210 40% 98%;
-
-    --card: 222.2 84% 4.9%;
-    --card-foreground: 210 40% 98%;
-
-    --popover: 222.2 84% 4.9%;
-    --popover-foreground: 210 40% 98%;
-
-    --primary: 210 40% 98%;
-    --primary-foreground: 222.2 47.4% 11.2%;
-
-    --secondary: 217.2 32.6% 17.5%;
-    --secondary-foreground: 210 40% 98%;
-
-    --muted: 217.2 32.6% 17.5%;
-    --muted-foreground: 215 20.2% 65.1%;
-
-    --accent: 217.2 32.6% 17.5%;
-    --accent-foreground: 210 40% 98%;
-
-    --destructive: 0 62.8% 30.6%;
-    --destructive-foreground: 210 40% 98%;
-
-    --border: 217.2 32.6% 17.5%;
-    --input: 217.2 32.6% 17.5%;
-    --ring: 212.7 26.8% 83.9%;
-    --sidebar-background: 240 5.9% 10%;
-    --sidebar-foreground: 240 4.8% 95.9%;
-    --sidebar-primary: 224.3 76.3% 48%;
-    --sidebar-primary-foreground: 0 0% 100%;
-    --sidebar-accent: 240 3.7% 15.9%;
-    --sidebar-accent-foreground: 240 4.8% 95.9%;
-    --sidebar-border: 240 3.7% 15.9%;
-    --sidebar-ring: 217.2 91.2% 59.8%;
+    --background: 24 30% 8%;
+    --foreground: 35 30% 90%;
+    --card: 24 25% 12%;
+    --card-foreground: 35 30% 90%;
+    --popover: 24 25% 10%;
+    --popover-foreground: 35 30% 90%;
+    --primary: 0 60% 28%;
+    --primary-foreground: 35 50% 95%;
+    --secondary: 35 35% 82%;
+    --secondary-foreground: 24 40% 15%;
+    --muted: 24 20% 18%;
+    --muted-foreground: 35 20% 60%;
+    --accent: 43 70% 55%;
+    --accent-foreground: 24 40% 10%;
+    --destructive: 0 70% 40%;
+    --destructive-foreground: 35 50% 95%;
+    --border: 24 30% 22%;
+    --input: 24 25% 15%;
+    --ring: 43 70% 55%;
+    --sidebar-background: 24 30% 10%;
+    --sidebar-foreground: 35 30% 90%;
+    --sidebar-primary: 0 60% 28%;
+    --sidebar-primary-foreground: 35 50% 95%;
+    --sidebar-accent: 24 25% 15%;
+    --sidebar-accent-foreground: 35 30% 90%;
+    --sidebar-border: 24 30% 18%;
+    --sidebar-ring: 43 70% 55%;
   }
 }
 
@@ -100,6 +100,187 @@ All colors MUST be HSL.
   }
 
   body {
-    @apply bg-background text-foreground;
+    @apply bg-background text-foreground font-body antialiased;
+    background-image: 
+      radial-gradient(ellipse at top, hsl(24 25% 15% / 0.8), transparent 50%),
+      url("data:image/svg+xml,%3Csvg viewBox='0 0 100 100' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)' opacity='0.04'/%3E%3C/svg%3E");
+  }
+
+  h1, h2, h3, h4, h5, h6 {
+    @apply font-heading font-semibold;
+  }
+}
+
+@layer components {
+  /* Parchment card style */
+  .parchment {
+    @apply relative overflow-hidden;
+    background: linear-gradient(
+      135deg,
+      hsl(var(--parchment)) 0%,
+      hsl(var(--parchment-dark)) 50%,
+      hsl(var(--parchment)) 100%
+    );
+    box-shadow: 
+      inset 0 1px 0 hsl(35 50% 95% / 0.5),
+      inset 0 -1px 0 hsl(24 30% 50% / 0.3),
+      0 4px 12px hsl(24 40% 10% / 0.4);
+  }
+
+  .parchment::before {
+    content: '';
+    @apply absolute inset-0 pointer-events-none;
+    background: url("data:image/svg+xml,%3Csvg viewBox='0 0 100 100' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)' opacity='0.08'/%3E%3C/svg%3E");
+  }
+
+  /* Wood panel style */
+  .wood-panel {
+    background: linear-gradient(
+      180deg,
+      hsl(var(--wood-medium)) 0%,
+      hsl(var(--wood-dark)) 100%
+    );
+    box-shadow: 
+      inset 0 1px 0 hsl(24 30% 25% / 0.5),
+      inset 0 -2px 0 hsl(24 40% 8% / 0.5),
+      0 2px 8px hsl(24 40% 5% / 0.5);
+  }
+
+  /* Maroon header style */
+  .maroon-header {
+    background: linear-gradient(
+      180deg,
+      hsl(var(--maroon)) 0%,
+      hsl(var(--maroon-dark)) 100%
+    );
+    box-shadow: 
+      inset 0 1px 0 hsl(0 50% 40% / 0.4),
+      inset 0 -1px 0 hsl(0 60% 15% / 0.5);
+  }
+
+  /* Gold link hover effect */
+  .gold-link {
+    @apply text-foreground transition-colors duration-200;
+  }
+
+  .gold-link:hover {
+    color: hsl(var(--gold-light));
+    text-shadow: 0 0 8px hsl(var(--gold) / 0.5);
+  }
+
+  /* Retro button with bevel effect */
+  .retro-btn {
+    background: linear-gradient(
+      180deg,
+      hsl(var(--maroon)) 0%,
+      hsl(var(--maroon-dark)) 100%
+    );
+    box-shadow: 
+      inset 0 1px 0 hsl(0 50% 45% / 0.5),
+      inset 0 -1px 0 hsl(0 60% 15% / 0.6),
+      0 2px 4px hsl(24 40% 5% / 0.4);
+    @apply px-4 py-2 text-primary-foreground font-heading text-sm border border-border/50 transition-all duration-150;
+  }
+
+  .retro-btn:hover {
+    background: linear-gradient(
+      180deg,
+      hsl(0 55% 32%) 0%,
+      hsl(var(--maroon)) 100%
+    );
+    box-shadow: 
+      inset 0 1px 0 hsl(0 50% 50% / 0.6),
+      inset 0 -1px 0 hsl(0 60% 18% / 0.6),
+      0 3px 8px hsl(24 40% 5% / 0.5);
+  }
+
+  .retro-btn:active {
+    transform: translateY(1px);
+    box-shadow: 
+      inset 0 1px 0 hsl(0 60% 15% / 0.6),
+      inset 0 -1px 0 hsl(0 50% 45% / 0.5);
+  }
+
+  /* Section divider */
+  .section-divider {
+    height: 2px;
+    background: linear-gradient(
+      90deg,
+      transparent 0%,
+      hsl(var(--gold) / 0.6) 20%,
+      hsl(var(--gold)) 50%,
+      hsl(var(--gold) / 0.6) 80%,
+      transparent 100%
+    );
+  }
+
+  /* News box */
+  .news-box {
+    @apply parchment rounded-sm overflow-hidden;
+  }
+
+  .news-box-header {
+    @apply maroon-header px-4 py-2 text-primary-foreground font-heading text-sm flex items-center justify-between;
+  }
+
+  .news-box-content {
+    @apply p-4 text-text-dark;
+  }
+
+  /* Sidebar menu */
+  .sidebar-menu-item {
+    @apply block px-3 py-2 text-sm gold-link border-b border-border/30 last:border-b-0;
+  }
+
+  .sidebar-menu-item:hover {
+    @apply bg-muted/50;
+  }
+
+  /* Category icon grid */
+  .category-grid {
+    @apply grid grid-cols-5 gap-2;
+  }
+
+  .category-item {
+    @apply flex flex-col items-center gap-1 p-2 parchment rounded-sm cursor-pointer transition-transform duration-150;
+  }
+
+  .category-item:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px hsl(24 40% 10% / 0.5);
+  }
+
+  .category-item img {
+    @apply w-8 h-8 object-contain;
+  }
+
+  .category-item span {
+    @apply text-xs text-text-dark font-medium text-center;
+  }
+}
+
+@layer utilities {
+  .text-text-dark {
+    color: hsl(var(--text-dark));
+  }
+
+  .bg-parchment {
+    background-color: hsl(var(--parchment));
+  }
+
+  .bg-wood-dark {
+    background-color: hsl(var(--wood-dark));
+  }
+
+  .bg-maroon {
+    background-color: hsl(var(--maroon));
+  }
+
+  .text-gold {
+    color: hsl(var(--gold));
+  }
+
+  .border-gold {
+    border-color: hsl(var(--gold));
   }
 }
