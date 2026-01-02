@@ -1,13 +1,81 @@
-// Update this page (the content is just a fallback if you fail to update the page)
+import MainLayout from '@/layouts/MainLayout';
+import NewsBox from '@/components/NewsBox';
+import CategoryGrid from '@/components/CategoryGrid';
+import ServerInfo from '@/components/ServerInfo';
 
 const Index = () => {
   return (
-    <div className="flex min-h-screen items-center justify-center bg-background">
-      <div className="text-center">
-        <h1 className="mb-4 text-4xl font-bold">Welcome to Your Blank App</h1>
-        <p className="text-xl text-muted-foreground">Start building your amazing project here!</p>
+    <MainLayout>
+      <div className="space-y-6">
+        {/* Welcome Section */}
+        <section className="news-box">
+          <header className="news-box-header">
+            <h2 className="font-semibold">Bem-vindo à Wiki do Tibia Relics!</h2>
+          </header>
+          <div className="news-box-content">
+            <p className="text-sm leading-relaxed mb-4">
+              Esta é a fan page não oficial do servidor <strong>Tibia Relics</strong>. 
+              Aqui você encontra informações sobre equipamentos, magias, criaturas, 
+              quests, calculadoras e muito mais para te ajudar em sua jornada!
+            </p>
+            <div className="flex flex-wrap gap-2">
+              <a 
+                href="https://tibiarelic.com" 
+                target="_blank" 
+                rel="noopener noreferrer"
+                className="retro-btn"
+              >
+                Criar Conta
+              </a>
+              <a 
+                href="https://tibiarelic.com" 
+                target="_blank" 
+                rel="noopener noreferrer"
+                className="retro-btn"
+              >
+                Download Client
+              </a>
+            </div>
+          </div>
+        </section>
+
+        {/* News Feed */}
+        <section>
+          <div className="section-divider mb-4" />
+          <h2 className="font-heading text-xl text-gold mb-4">Últimas Notícias</h2>
+          
+          <div className="space-y-4">
+            <NewsBox 
+              title="Wiki em Construção"
+              date="02/01/2024"
+              author="Admin"
+              content="<p>Estamos trabalhando para trazer todas as informações do servidor Tibia Relics para você! Em breve teremos guias completos de equipamentos, magias, quests e muito mais.</p><p class='mt-2'>Fique ligado nas atualizações!</p>"
+            />
+            
+            <NewsBox 
+              title="Tibia Relics - O Servidor"
+              date="01/01/2024"
+              author="Admin"
+              content="<p>Tibia Relics é um servidor OT que traz a nostalgia do Tibia clássico com algumas melhorias. Visite o site oficial em <a href='https://tibiarelic.com' target='_blank' class='text-maroon hover:underline'>tibiarelic.com</a> para criar sua conta e começar a jogar!</p>"
+            />
+          </div>
+        </section>
+
+        {/* Category Grid */}
+        <section>
+          <div className="section-divider mb-4" />
+          <h2 className="font-heading text-xl text-gold mb-4">Explore a Wiki</h2>
+          <CategoryGrid />
+        </section>
+
+        {/* Server Info (Mobile) */}
+        <section className="lg:hidden">
+          <div className="section-divider mb-4" />
+          <h2 className="font-heading text-xl text-gold mb-4">Informações</h2>
+          <ServerInfo />
+        </section>
       </div>
-    </div>
+    </MainLayout>
   );
 };
 
