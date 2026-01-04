@@ -14,6 +14,150 @@ export type Database = {
   }
   public: {
     Tables: {
+      creatures: {
+        Row: {
+          abilities: string | null
+          convince_mana: number | null
+          created_at: string
+          creature_type: string | null
+          experience: number | null
+          hp: number | null
+          id: string
+          image_url: string | null
+          is_boss: boolean | null
+          locations: string | null
+          loot: string | null
+          name: string
+          summon_mana: number | null
+          updated_at: string
+        }
+        Insert: {
+          abilities?: string | null
+          convince_mana?: number | null
+          created_at?: string
+          creature_type?: string | null
+          experience?: number | null
+          hp?: number | null
+          id?: string
+          image_url?: string | null
+          is_boss?: boolean | null
+          locations?: string | null
+          loot?: string | null
+          name: string
+          summon_mana?: number | null
+          updated_at?: string
+        }
+        Update: {
+          abilities?: string | null
+          convince_mana?: number | null
+          created_at?: string
+          creature_type?: string | null
+          experience?: number | null
+          hp?: number | null
+          id?: string
+          image_url?: string | null
+          is_boss?: boolean | null
+          locations?: string | null
+          loot?: string | null
+          name?: string
+          summon_mana?: number | null
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      equipment: {
+        Row: {
+          armor: number | null
+          attack: number | null
+          attributes: string | null
+          category: string
+          created_at: string
+          defense: number | null
+          id: string
+          image_url: string | null
+          is_premium: boolean | null
+          level_required: number | null
+          name: string
+          updated_at: string
+          vocations: string | null
+          weight: number | null
+        }
+        Insert: {
+          armor?: number | null
+          attack?: number | null
+          attributes?: string | null
+          category: string
+          created_at?: string
+          defense?: number | null
+          id?: string
+          image_url?: string | null
+          is_premium?: boolean | null
+          level_required?: number | null
+          name: string
+          updated_at?: string
+          vocations?: string | null
+          weight?: number | null
+        }
+        Update: {
+          armor?: number | null
+          attack?: number | null
+          attributes?: string | null
+          category?: string
+          created_at?: string
+          defense?: number | null
+          id?: string
+          image_url?: string | null
+          is_premium?: boolean | null
+          level_required?: number | null
+          name?: string
+          updated_at?: string
+          vocations?: string | null
+          weight?: number | null
+        }
+        Relationships: []
+      }
+      items: {
+        Row: {
+          attributes: string | null
+          category: string
+          charges: number | null
+          created_at: string
+          description: string | null
+          duration: string | null
+          id: string
+          image_url: string | null
+          name: string
+          updated_at: string
+          weight: number | null
+        }
+        Insert: {
+          attributes?: string | null
+          category: string
+          charges?: number | null
+          created_at?: string
+          description?: string | null
+          duration?: string | null
+          id?: string
+          image_url?: string | null
+          name: string
+          updated_at?: string
+          weight?: number | null
+        }
+        Update: {
+          attributes?: string | null
+          category?: string
+          charges?: number | null
+          created_at?: string
+          description?: string | null
+          duration?: string | null
+          id?: string
+          image_url?: string | null
+          name?: string
+          updated_at?: string
+          weight?: number | null
+        }
+        Relationships: []
+      }
       news: {
         Row: {
           author: string | null
@@ -59,6 +203,63 @@ export type Database = {
           created_at?: string | null
           email?: string | null
           id?: string
+        }
+        Relationships: []
+      }
+      spells: {
+        Row: {
+          cooldown: number | null
+          created_at: string
+          description: string | null
+          formula: string | null
+          id: string
+          image_url: string | null
+          is_premium: boolean | null
+          level_required: number | null
+          mana_cost: number | null
+          mlvl_required: number | null
+          name: string
+          price: number | null
+          spell_type: string | null
+          updated_at: string
+          vocation: string
+          words: string
+        }
+        Insert: {
+          cooldown?: number | null
+          created_at?: string
+          description?: string | null
+          formula?: string | null
+          id?: string
+          image_url?: string | null
+          is_premium?: boolean | null
+          level_required?: number | null
+          mana_cost?: number | null
+          mlvl_required?: number | null
+          name: string
+          price?: number | null
+          spell_type?: string | null
+          updated_at?: string
+          vocation: string
+          words: string
+        }
+        Update: {
+          cooldown?: number | null
+          created_at?: string
+          description?: string | null
+          formula?: string | null
+          id?: string
+          image_url?: string | null
+          is_premium?: boolean | null
+          level_required?: number | null
+          mana_cost?: number | null
+          mlvl_required?: number | null
+          name?: string
+          price?: number | null
+          spell_type?: string | null
+          updated_at?: string
+          vocation?: string
+          words?: string
         }
         Relationships: []
       }
