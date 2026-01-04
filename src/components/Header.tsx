@@ -66,6 +66,18 @@ const Header = () => {
         {mobileMenuOpen && (
           <nav className="md:hidden wood-panel rounded-sm p-4 animate-fade-in">
             <div className="flex flex-col gap-2">
+              {/* Main Navigation */}
+              <Link to="/" className="sidebar-menu-item" onClick={() => setMobileMenuOpen(false)}>Início</Link>
+              <Link to="/equipment" className="sidebar-menu-item" onClick={() => setMobileMenuOpen(false)}>Equipamentos</Link>
+              <Link to="/spells" className="sidebar-menu-item" onClick={() => setMobileMenuOpen(false)}>Magias</Link>
+              <Link to="/creatures" className="sidebar-menu-item" onClick={() => setMobileMenuOpen(false)}>Criaturas</Link>
+              <Link to="/quests" className="sidebar-menu-item" onClick={() => setMobileMenuOpen(false)}>Quests</Link>
+              <Link to="/calculators" className="sidebar-menu-item" onClick={() => setMobileMenuOpen(false)}>Calculadoras</Link>
+              <Link to="/info" className="sidebar-menu-item" onClick={() => setMobileMenuOpen(false)}>Informações</Link>
+              
+              <div className="border-t border-border/30 my-2" />
+              
+              {/* Quick Links */}
               <a 
                 href="https://tibiarelic.com" 
                 target="_blank" 
@@ -75,13 +87,13 @@ const Header = () => {
                 <Users className="w-4 h-4" />
                 Site Oficial
               </a>
-              <Link to="/banned" className="sidebar-menu-item flex items-center gap-2">
+              <Link to="/banned" className="sidebar-menu-item flex items-center gap-2" onClick={() => setMobileMenuOpen(false)}>
                 <Skull className="w-4 h-4" />
                 Banidos
               </Link>
-              <Link to="/map" className="sidebar-menu-item flex items-center gap-2">
+              <Link to="/map" className="sidebar-menu-item flex items-center gap-2" onClick={() => setMobileMenuOpen(false)}>
                 <Map className="w-4 h-4" />
-                Mapa Completo
+                Mapa
               </Link>
             </div>
           </nav>
