@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Menu, X, Users, Skull, Map } from 'lucide-react';
+import { Menu, X, Users, Skull, Map, Home, Shield, Sparkles, Bug, ScrollText, Calculator, Info } from 'lucide-react';
 import headerBg from '@/assets/header-bg.jpg';
 
 const Header = () => {
@@ -67,13 +67,34 @@ const Header = () => {
           <nav className="md:hidden wood-panel rounded-sm p-4 animate-fade-in">
             <div className="flex flex-col gap-2">
               {/* Main Navigation */}
-              <Link to="/" className="sidebar-menu-item" onClick={() => setMobileMenuOpen(false)}>Início</Link>
-              <Link to="/equipment" className="sidebar-menu-item" onClick={() => setMobileMenuOpen(false)}>Equipamentos</Link>
-              <Link to="/spells" className="sidebar-menu-item" onClick={() => setMobileMenuOpen(false)}>Magias</Link>
-              <Link to="/creatures" className="sidebar-menu-item" onClick={() => setMobileMenuOpen(false)}>Criaturas</Link>
-              <Link to="/quests" className="sidebar-menu-item" onClick={() => setMobileMenuOpen(false)}>Quests</Link>
-              <Link to="/calculators" className="sidebar-menu-item" onClick={() => setMobileMenuOpen(false)}>Calculadoras</Link>
-              <Link to="/info" className="sidebar-menu-item" onClick={() => setMobileMenuOpen(false)}>Informações</Link>
+              <Link to="/" className="sidebar-menu-item flex items-center gap-2" onClick={() => setMobileMenuOpen(false)}>
+                <Home className="w-4 h-4" />
+                Início
+              </Link>
+              <Link to="/equipment" className="sidebar-menu-item flex items-center gap-2" onClick={() => setMobileMenuOpen(false)}>
+                <Shield className="w-4 h-4" />
+                Equipamentos
+              </Link>
+              <Link to="/spells" className="sidebar-menu-item flex items-center gap-2" onClick={() => setMobileMenuOpen(false)}>
+                <Sparkles className="w-4 h-4" />
+                Magias
+              </Link>
+              <Link to="/creatures" className="sidebar-menu-item flex items-center gap-2" onClick={() => setMobileMenuOpen(false)}>
+                <Bug className="w-4 h-4" />
+                Criaturas
+              </Link>
+              <Link to="/quests" className="sidebar-menu-item flex items-center gap-2" onClick={() => setMobileMenuOpen(false)}>
+                <ScrollText className="w-4 h-4" />
+                Quests
+              </Link>
+              <Link to="/calculators" className="sidebar-menu-item flex items-center gap-2" onClick={() => setMobileMenuOpen(false)}>
+                <Calculator className="w-4 h-4" />
+                Calculadoras
+              </Link>
+              <Link to="/info" className="sidebar-menu-item flex items-center gap-2" onClick={() => setMobileMenuOpen(false)}>
+                <Info className="w-4 h-4" />
+                Informações
+              </Link>
               
               <div className="border-t border-border/30 my-2" />
               
