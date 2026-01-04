@@ -39,6 +39,53 @@ const ItemsTable = ({ items, category }: ItemsTableProps) => {
     return sortDirection === 'asc' ? comparison : -comparison;
   });
 
+  // Define colunas dinâmicas baseadas na categoria
+  const getColumns = () => {
+    const normalizedCategory = category.toLowerCase();
+    
+    switch (normalizedCategory) {
+      case 'comidas':
+        return ['img', 'nome', 'peso', 'duração'];
+      case 'mochilas':
+        return ['img', 'nome', 'peso', 'slots', 'cidade'];
+      case 'amuletos':
+        return ['img', 'nome', 'peso', 'proteção', 'cargas'];
+      case 'anéis':
+        return ['img', 'nome', 'peso', 'efeito', 'duração'];
+      case 'valiosos':
+        return ['img', 'nome', 'peso'];
+      default:
+        return ['img', 'nome', 'peso', 'descrição', 'atributos'];
+    }
+  };
+
+  const columns = getColumns();
+
+  const getCellValue = (item: Item, column: string) => {
+    switch (column) {
+      case 'nome':
+        return item.name;
+      case 'peso':
+        return item.weight || '-';
+      case 'duração':
+        return item.duration || '-';
+      case 'slots':
+        return item.slots ? `${item.slots} slots` : '-';
+      case 'cidade':
+        return item.city || '-';
+      case 'proteção':
+      case 'efeito':
+      case 'atributos':
+        return item.attributes || '-';
+      case 'cargas':
+        return item.charges !== undefined ? (item.charges === 0 ? 'Permanente' : item.charges) : '-';
+      case 'descrição':
+        return item.description || '-';
+      default:
+        return '-';
+    }
+  };
+
   return (
     <div className="space-y-4">
       <div className="relative">
@@ -55,27 +102,29 @@ const ItemsTable = ({ items, category }: ItemsTableProps) => {
         <Table>
           <TableHeader>
             <TableRow className="bg-maroon/20 hover:bg-maroon/30">
-              <TableHead className="w-[60px] text-center text-foreground font-semibold">Img</TableHead>
-              <TableHead 
-                className="cursor-pointer hover:text-gold transition-colors text-foreground font-semibold"
-                onClick={() => handleSort('name')}
-              >
-                <div className="flex items-center gap-1">
-                  Nome
-                  <ArrowUpDown className="w-3 h-3" />
-                </div>
-              </TableHead>
-              <TableHead 
-                className="cursor-pointer hover:text-gold transition-colors text-foreground font-semibold"
-                onClick={() => handleSort('weight')}
-              >
-                <div className="flex items-center gap-1">
-                  Peso
-                  <ArrowUpDown className="w-3 h-3" />
-                </div>
-              </TableHead>
-              <TableHead className="text-foreground font-semibold">Descrição</TableHead>
-              <TableHead className="text-foreground font-semibold">Atributos</TableHead>
+              {columns.map((column) => (
+                <TableHead 
+                  key={column}
+                  className={`text-foreground font-semibold ${
+                    column === 'img' ? 'w-[60px] text-center' : ''
+                  } ${
+                    (column === 'nome' || column === 'peso') 
+                      ? 'cursor-pointer hover:text-gold transition-colors' 
+                      : ''
+                  }`}
+                  onClick={() => {
+                    if (column === 'nome') handleSort('name');
+                    if (column === 'peso') handleSort('weight');
+                  }}
+                >
+                  <div className="flex items-center gap-1 capitalize">
+                    {column}
+                    {(column === 'nome' || column === 'peso') && (
+                      <ArrowUpDown className="w-3 h-3" />
+                    )}
+                  </div>
+                </TableHead>
+              ))}
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -84,18 +133,27 @@ const ItemsTable = ({ items, category }: ItemsTableProps) => {
                 key={`${item.name}-${index}`}
                 className="hover:bg-maroon/10 transition-colors"
               >
-                <TableCell className="text-center">
-                  <img 
-                    src={item.image} 
-                    alt={item.name}
-                    className="w-8 h-8 object-contain mx-auto"
-                    loading="lazy"
-                  />
-                </TableCell>
-                <TableCell className="font-medium text-gold">{item.name}</TableCell>
-                <TableCell className="text-muted-foreground">{item.weight || '-'}</TableCell>
-                <TableCell className="text-muted-foreground">{item.description || '-'}</TableCell>
-                <TableCell className="text-sm text-muted-foreground">{item.attributes || '-'}</TableCell>
+                {columns.map((column) => (
+                  <TableCell 
+                    key={column}
+                    className={`${
+                      column === 'img' ? 'text-center' : ''
+                    } ${
+                      column === 'nome' ? 'font-medium text-gold' : 'text-muted-foreground'
+                    }`}
+                  >
+                    {column === 'img' ? (
+                      <img 
+                        src={item.image} 
+                        alt={item.name}
+                        className="w-8 h-8 object-contain mx-auto"
+                        loading="lazy"
+                      />
+                    ) : (
+                      getCellValue(item, column)
+                    )}
+                  </TableCell>
+                ))}
               </TableRow>
             ))}
           </TableBody>
