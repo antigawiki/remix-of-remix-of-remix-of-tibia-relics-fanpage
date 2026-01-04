@@ -2,10 +2,10 @@ import { useParams, Link } from 'react-router-dom';
 import MainLayout from '@/layouts/MainLayout';
 import EquipmentTable from '@/components/EquipmentTable';
 import { 
-  helmets, armors, legs, boots, shields, swords, axes, clubs,
+  helmets, armors, legs, boots, shields, swords, axes, clubs, distance, ammo,
   equipmentCategories, Equipment 
 } from '@/data/equipment';
-import { Shield, Sword, HardHat, Footprints, ChevronLeft } from 'lucide-react';
+import { Shield, Sword, HardHat, Footprints, ChevronLeft, Target, Circle } from 'lucide-react';
 
 const categoryData: Record<string, Equipment[]> = {
   helmets,
@@ -16,6 +16,8 @@ const categoryData: Record<string, Equipment[]> = {
   swords,
   axes,
   clubs,
+  distance,
+  ammo,
 };
 
 const categoryIcons: Record<string, React.ReactNode> = {
@@ -27,6 +29,8 @@ const categoryIcons: Record<string, React.ReactNode> = {
   swords: <Sword className="w-6 h-6" />,
   axes: <Sword className="w-6 h-6" />,
   clubs: <Sword className="w-6 h-6" />,
+  distance: <Target className="w-6 h-6" />,
+  ammo: <Circle className="w-6 h-6" />,
 };
 
 const EquipmentPage = () => {

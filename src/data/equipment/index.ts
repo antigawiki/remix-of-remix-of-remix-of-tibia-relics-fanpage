@@ -7,6 +7,8 @@ export { shields } from './shields';
 export { swords } from './swords';
 export { axes } from './axes';
 export { clubs } from './clubs';
+export { distance } from './distance';
+export { ammo } from './ammo';
 
 export const equipmentCategories = {
   helmets: { name: 'Helmets', path: '/equipment/helmets' },
@@ -17,4 +19,6 @@ export const equipmentCategories = {
   swords: { name: 'Swords', path: '/equipment/swords' },
   axes: { name: 'Axes', path: '/equipment/axes' },
   clubs: { name: 'Clubs', path: '/equipment/clubs' },
+  distance: { name: 'Distance', path: '/equipment/distance' },
+  ammo: { name: 'Ammo', path: '/equipment/ammo' },
 } as const;
