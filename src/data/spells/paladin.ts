@@ -1,0 +1,28 @@
+import { Spell } from './sorcerer';
+
+export const paladinSpells: Spell[] = [
+  { name: "Find Person", words: 'exiva "name"', image: "https://tibiara.netlify.app/en/img/runes/find_person.gif", level: 8, mana: 20, price: "80 gp", isPremium: false, type: "Support" },
+  { name: "Light", words: "utevo lux", image: "https://tibiara.netlify.app/en/img/runes/light.gif", level: 8, mana: 20, price: "100 gp", isPremium: false, type: "Support" },
+  { name: "Magic Rope", words: "exani tera", image: "https://tibiara.netlify.app/en/img/runes/magic_rope.gif", level: 9, mana: 20, price: "200 gp", isPremium: true, type: "Support" },
+  { name: "Levitate", words: "exani hur", image: "https://tibiara.netlify.app/en/img/runes/levitate.gif", level: 12, mana: 50, price: "500 gp", isPremium: true, type: "Support" },
+  { name: "Great Light", words: "utevo gran lux", image: "https://tibiara.netlify.app/en/img/runes/great_light.gif", level: 13, mana: 60, price: "500 gp", isPremium: false, type: "Support" },
+  { name: "Haste", words: "utani hur", image: "https://tibiara.netlify.app/en/img/runes/haste.gif", level: 14, mana: 60, price: "600 gp", isPremium: true, type: "Support" },
+  { name: "Light Healing", words: "exura", image: "https://tibiara.netlify.app/en/img/runes/light_healing.gif", level: 9, mana: 20, price: "170 gp", isPremium: false, type: "Healing" },
+  { name: "Intense Healing", words: "exura gran", image: "https://tibiara.netlify.app/en/img/runes/intense_healing.gif", level: 20, mana: 70, price: "350 gp", isPremium: false, type: "Healing" },
+  { name: "Ultimate Healing", words: "exura vita", image: "https://tibiara.netlify.app/en/img/runes/ultimate_healing.gif", level: 30, mana: 160, price: "1000 gp", isPremium: false, type: "Healing" },
+  { name: "Antidote", words: "exana pox", image: "https://tibiara.netlify.app/en/img/runes/antidote.gif", level: 10, mana: 30, price: "150 gp", isPremium: false, type: "Healing" },
+  { name: "Destroy Field", words: "adito grav", image: "https://tibiara.netlify.app/en/img/runes/destroy_field.gif", level: 17, mana: 40, price: "700 gp", isPremium: false, type: "Support" },
+  { name: "Conjure Arrow", words: "exevo con", image: "https://tibiara.netlify.app/en/img/runes/conjure_arrow.gif", level: 13, mana: 50, price: "450 gp", isPremium: false, type: "Conjure" },
+  { name: "Conjure Poisoned Arrow", words: "exevo con pox", image: "https://tibiara.netlify.app/en/img/runes/conjure_poisoned_arrow.gif", level: 16, mana: 60, price: "700 gp", isPremium: false, type: "Conjure" },
+  { name: "Conjure Explosive Arrow", words: "exevo con flam", image: "https://tibiara.netlify.app/en/img/runes/conjure_explosive_arrow.gif", level: 25, mana: 100, price: "1000 gp", isPremium: false, type: "Conjure" },
+  { name: "Conjure Power Bolt", words: "exevo con vis", image: "https://tibiara.netlify.app/en/img/runes/conjure_power_bolt.gif", level: 59, mana: 150, price: "2000 gp", isPremium: true, type: "Conjure" },
+  { name: "Holy Missile", words: "exori san", image: "https://tibiara.netlify.app/en/img/runes/holy_missile.gif", level: 27, mana: 35, price: "1600 gp", isPremium: false, type: "Attack" },
+  { name: "Divine Missile", words: "exori gran san", image: "https://tibiara.netlify.app/en/img/runes/divine_missile.gif", level: 40, mana: 70, price: "2500 gp", isPremium: true, type: "Attack" },
+  { name: "Divine Caldera", words: "exevo mas san", image: "https://tibiara.netlify.app/en/img/runes/divine_caldera.gif", level: 50, mana: 160, price: "3000 gp", isPremium: true, type: "Attack" },
+  { name: "Ethereal Spear", words: "exori con", image: "https://tibiara.netlify.app/en/img/runes/ethereal_spear.gif", level: 23, mana: 25, price: "1100 gp", isPremium: true, type: "Attack" },
+  { name: "Strong Ethereal Spear", words: "exori gran con", image: "https://tibiara.netlify.app/en/img/runes/strong_ethereal_spear.gif", level: 90, mana: 55, price: "10000 gp", isPremium: true, type: "Attack" },
+  { name: "Cancel Invisibility", words: "exana vis", image: "https://tibiara.netlify.app/en/img/runes/cancel_invisibility.gif", level: 26, mana: 200, price: "1600 gp", isPremium: true, type: "Support" },
+  { name: "Swift Foot", words: "utani tempo hur", image: "https://tibiara.netlify.app/en/img/runes/swift_foot.gif", level: 55, mana: 400, price: "6000 gp", isPremium: true, type: "Support" },
+  { name: "Sharpshooter", words: "utito tempo san", image: "https://tibiara.netlify.app/en/img/runes/sharpshooter.gif", level: 60, mana: 450, price: "8000 gp", isPremium: true, type: "Support" },
+  { name: "Holy Flash", words: "utori san", image: "https://tibiara.netlify.app/en/img/runes/holy_flash.gif", level: 70, mana: 30, price: "7500 gp", isPremium: true, type: "Attack" },
+];
