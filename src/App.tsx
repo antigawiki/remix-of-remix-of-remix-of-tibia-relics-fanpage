@@ -8,6 +8,7 @@ import AdminPage from "./pages/AdminPage";
 import AuthPage from "./pages/AuthPage";
 import EquipmentPage from "./pages/EquipmentPage";
 import SpellsPage from "./pages/SpellsPage";
+import CreaturesPage from "./pages/CreaturesPage";
 import InfoPage from "./pages/InfoPage";
 import NotFound from "./pages/NotFound";
 
@@ -27,9 +28,7 @@ const App = () => (
           <Route path="/equipment/:category" element={<EquipmentPage />} />
           <Route path="/spells" element={<SpellsPage />} />
           <Route path="/spells/:vocation" element={<SpellsPage />} />
-          <Route path="/creatures" element={<EquipmentPage />} />
-          <Route path="/quests" element={<EquipmentPage />} />
-          <Route path="/calculators" element={<EquipmentPage />} />
+          <Route path="/creatures" element={<CreaturesPage />} />
           <Route path="/info" element={<InfoPage />} />
           {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
           <Route path="*" element={<NotFound />} />
