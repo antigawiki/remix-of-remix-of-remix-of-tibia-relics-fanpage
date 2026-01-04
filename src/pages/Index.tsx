@@ -1,6 +1,5 @@
 import MainLayout from '@/layouts/MainLayout';
 import NewsBox from '@/components/NewsBox';
-import CategoryGrid from '@/components/CategoryGrid';
 import ServerInfo from '@/components/ServerInfo';
 
 const Index = () => {
@@ -59,13 +58,6 @@ const Index = () => {
               content="<p>Tibia Relic é um servidor OT que traz a nostalgia do Tibia clássico com algumas melhorias. Visite o site oficial em <a href='https://tibiarelic.com' target='_blank' class='text-maroon hover:underline'>tibiarelic.com</a> para criar sua conta e começar a jogar!</p>"
             />
           </div>
-        </section>
-
-        {/* Category Grid */}
-        <section>
-          <div className="section-divider mb-4" />
-          <h2 className="font-heading text-xl text-gold mb-4">Explore a Wiki</h2>
-          <CategoryGrid />
         </section>
 
         {/* Server Info (Mobile) */}
