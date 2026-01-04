@@ -3,28 +3,28 @@ import { Equipment } from './helmets';
 export const distance: Equipment[] = [
   {
     name: "Bow",
-    image: "https://tibiara.netlify.app/en/img/distance/3350.gif",
+    image: "https://tibiara.netlify.app/en/img/distance/bow.gif",
     attack: 0,
     weight: "31.00 oz.",
     attributes: "Range: 6",
   },
   {
     name: "Crossbow",
-    image: "https://tibiara.netlify.app/en/img/distance/3349.gif",
+    image: "https://tibiara.netlify.app/en/img/distance/xbow.gif",
     attack: 0,
     weight: "40.00 oz.",
     attributes: "Range: 5",
   },
   {
     name: "Elvish Bow",
-    image: "https://tibiara.netlify.app/en/img/distance/5945.gif",
+    image: "https://tibiara.netlify.app/en/img/distance/elvish_bow.gif",
     attack: 0,
     weight: "29.00 oz.",
     attributes: "Range: 6, Hit% +5",
   },
   {
     name: "Royal Crossbow",
-    image: "https://tibiara.netlify.app/en/img/distance/8851.gif",
+    image: "https://tibiara.netlify.app/en/img/distance/royal_xbow.gif",
     attack: 0,
     weight: "120.00 oz.",
     attributes: "Range: 6, Hit% +3",
@@ -32,7 +32,7 @@ export const distance: Equipment[] = [
   },
   {
     name: "Warsinger Bow",
-    image: "https://tibiara.netlify.app/en/img/distance/8854.gif",
+    image: "https://tibiara.netlify.app/en/img/distance/warsinger.gif",
     attack: 0,
     weight: "42.00 oz.",
     attributes: "Range: 6, Hit% +4",
@@ -40,7 +40,7 @@ export const distance: Equipment[] = [
   },
   {
     name: "Elethriel's Elemental Bow",
-    image: "https://tibiara.netlify.app/en/img/distance/8858.gif",
+    image: "https://tibiara.netlify.app/en/img/distance/elethriel.gif",
     attack: 0,
     weight: "35.00 oz.",
     attributes: "Range: 6, Hit% +5",
@@ -48,7 +48,7 @@ export const distance: Equipment[] = [
   },
   {
     name: "The Devileye",
-    image: "https://tibiara.netlify.app/en/img/distance/8849.gif",
+    image: "https://tibiara.netlify.app/en/img/distance/devileye.gif",
     attack: 0,
     weight: "65.00 oz.",
     attributes: "Range: 6, Hit% +5, Distance +4",
