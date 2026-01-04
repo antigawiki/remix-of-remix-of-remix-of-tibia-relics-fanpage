@@ -19,7 +19,7 @@ const SpellsPage = () => {
           </header>
           <div className="news-box-content">
             <p className="text-sm leading-relaxed mb-4">
-              Consulte as magias disponíveis para cada vocação no Tibia Relics.
+              Consulte as magias disponíveis para cada vocação no Tibia Relic.
             </p>
 
             <div className="grid grid-cols-2 gap-4">

@@ -21,14 +21,14 @@ const initialNews: NewsItem[] = [
     title: 'Wiki em Construção',
     date: '02/01/2024',
     author: 'Admin',
-    content: '<p>Estamos trabalhando para trazer todas as informações do servidor Tibia Relics para você!</p>',
+    content: '<p>Estamos trabalhando para trazer todas as informações do servidor Tibia Relic para você!</p>',
   },
   {
     id: '2',
-    title: 'Tibia Relics - O Servidor',
+    title: 'Tibia Relic - O Servidor',
     date: '01/01/2024',
     author: 'Admin',
-    content: '<p>Tibia Relics é um servidor OT que traz a nostalgia do Tibia clássico.</p>',
+    content: '<p>Tibia Relic é um servidor OT que traz a nostalgia do Tibia clássico.</p>',
   },
 ];
 

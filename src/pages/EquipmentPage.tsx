@@ -11,7 +11,7 @@ const EquipmentPage = () => {
           </header>
           <div className="news-box-content">
             <p className="text-sm leading-relaxed">
-              Explore todos os equipamentos disponíveis no Tibia Relics. 
+              Explore todos os equipamentos disponíveis no Tibia Relic. 
               Clique em uma categoria para ver os itens disponíveis.
             </p>
           </div>
