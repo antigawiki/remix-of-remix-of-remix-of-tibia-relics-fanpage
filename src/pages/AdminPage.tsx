@@ -1,42 +1,18 @@
 import { useState } from 'react';
-import { Plus, Edit, Trash2, Save, X } from 'lucide-react';
+import { Plus, Edit, Trash2, Save, X, RefreshCw, Loader2 } from 'lucide-react';
 import MainLayout from '@/layouts/MainLayout';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { useToast } from '@/hooks/use-toast';
-
-interface NewsItem {
-  id: string;
-  title: string;
-  date: string;
-  author: string;
-  content: string;
-}
-
-// Mock data - in production this would come from a database
-const initialNews: NewsItem[] = [
-  {
-    id: '1',
-    title: 'Wiki em Construção',
-    date: '02/01/2024',
-    author: 'Admin',
-    content: '<p>Estamos trabalhando para trazer todas as informações do servidor Tibia Relic para você!</p>',
-  },
-  {
-    id: '2',
-    title: 'Tibia Relic - O Servidor',
-    date: '01/01/2024',
-    author: 'Admin',
-    content: '<p>Tibia Relic é um servidor OT que traz a nostalgia do Tibia clássico.</p>',
-  },
-];
+import { useNews, NewsItem } from '@/hooks/useNews';
 
 const AdminPage = () => {
   const { toast } = useToast();
-  const [news, setNews] = useState<NewsItem[]>(initialNews);
+  const { news, loading, error, fetchNews, addNews, updateNews, deleteNews } = useNews();
   const [editingId, setEditingId] = useState<string | null>(null);
   const [isAdding, setIsAdding] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
   const [formData, setFormData] = useState<Partial<NewsItem>>({});
 
   const handleEdit = (item: NewsItem) => {
@@ -56,7 +32,7 @@ const AdminPage = () => {
     });
   };
 
-  const handleSave = () => {
+  const handleSave = async () => {
     if (!formData.title || !formData.content) {
       toast({
         title: 'Erro',
@@ -66,34 +42,45 @@ const AdminPage = () => {
       return;
     }
 
-    if (isAdding) {
-      const newItem: NewsItem = {
-        id: Date.now().toString(),
-        title: formData.title!,
-        date: formData.date!,
-        author: formData.author!,
-        content: formData.content!,
-      };
-      setNews([newItem, ...news]);
-      toast({
-        title: 'Sucesso',
-        description: 'Notícia adicionada com sucesso!',
-      });
-    } else if (editingId) {
-      setNews(news.map(item => 
-        item.id === editingId 
-          ? { ...item, ...formData } as NewsItem 
-          : item
-      ));
-      toast({
-        title: 'Sucesso',
-        description: 'Notícia atualizada com sucesso!',
-      });
-    }
+    setIsSaving(true);
+    
+    try {
+      if (isAdding) {
+        await addNews({
+          title: formData.title!,
+          date: formData.date!,
+          author: formData.author!,
+          content: formData.content!,
+        });
+        toast({
+          title: 'Sucesso',
+          description: 'Notícia adicionada com sucesso!',
+        });
+      } else if (editingId) {
+        await updateNews(editingId, {
+          title: formData.title,
+          date: formData.date,
+          author: formData.author,
+          content: formData.content,
+        });
+        toast({
+          title: 'Sucesso',
+          description: 'Notícia atualizada com sucesso!',
+        });
+      }
 
-    setIsAdding(false);
-    setEditingId(null);
-    setFormData({});
+      setIsAdding(false);
+      setEditingId(null);
+      setFormData({});
+    } catch (err: any) {
+      toast({
+        title: 'Erro',
+        description: err.message || 'Erro ao salvar notícia.',
+        variant: 'destructive',
+      });
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   const handleCancel = () => {
@@ -102,12 +89,20 @@ const AdminPage = () => {
     setFormData({});
   };
 
-  const handleDelete = (id: string) => {
-    setNews(news.filter(item => item.id !== id));
-    toast({
-      title: 'Sucesso',
-      description: 'Notícia removida com sucesso!',
-    });
+  const handleDelete = async (id: string) => {
+    try {
+      await deleteNews(id);
+      toast({
+        title: 'Sucesso',
+        description: 'Notícia removida com sucesso!',
+      });
+    } catch (err: any) {
+      toast({
+        title: 'Erro',
+        description: err.message || 'Erro ao remover notícia.',
+        variant: 'destructive',
+      });
+    }
   };
 
   return (
@@ -117,14 +112,25 @@ const AdminPage = () => {
         <div className="news-box">
           <header className="news-box-header">
             <h1 className="font-semibold">Painel Administrativo</h1>
+            <Button 
+              onClick={fetchNews} 
+              variant="ghost" 
+              size="sm"
+              disabled={loading}
+              className="text-white hover:bg-primary/20"
+            >
+              <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+            </Button>
           </header>
           <div className="news-box-content">
             <p className="text-sm mb-4">
-              Gerencie as notícias e conteúdo da fan page. As alterações são salvas localmente.
+              Gerencie as notícias e conteúdo do Tibia Relic. As alterações são salvas no banco de dados.
             </p>
-            <p className="text-xs text-muted-foreground">
-              <strong>Nota:</strong> Para persistência permanente, conecte o Lovable Cloud para salvar no banco de dados.
-            </p>
+            {error && (
+              <p className="text-xs text-destructive bg-destructive/10 p-2 rounded">
+                <strong>Erro:</strong> {error}
+              </p>
+            )}
           </div>
         </div>
 
@@ -193,9 +199,17 @@ const AdminPage = () => {
                 />
               </div>
               <div className="flex gap-2">
-                <Button onClick={handleSave} className="retro-btn flex items-center gap-2">
-                  <Save className="w-4 h-4" />
-                  Salvar
+                <Button 
+                  onClick={handleSave} 
+                  className="retro-btn flex items-center gap-2"
+                  disabled={isSaving}
+                >
+                  {isSaving ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <Save className="w-4 h-4" />
+                  )}
+                  {isSaving ? 'Salvando...' : 'Salvar'}
                 </Button>
                 <Button onClick={handleCancel} variant="outline" className="flex items-center gap-2">
                   <X className="w-4 h-4" />
@@ -206,44 +220,67 @@ const AdminPage = () => {
           </div>
         )}
 
+        {/* Loading State */}
+        {loading && (
+          <div className="flex items-center justify-center py-8">
+            <Loader2 className="w-6 h-6 animate-spin text-gold" />
+            <span className="ml-2 text-sm text-muted-foreground">Carregando notícias...</span>
+          </div>
+        )}
+
         {/* News List */}
-        <div className="space-y-4">
-          <h2 className="font-heading text-lg text-gold">Notícias Cadastradas</h2>
-          
-          {news.map((item) => (
-            <div key={item.id} className="news-box animate-fade-in">
-              <header className="news-box-header">
-                <h3 className="font-semibold">{item.title}</h3>
-                <div className="flex items-center gap-2">
-                  <span className="text-xs opacity-80">{item.date}</span>
-                  <button
-                    onClick={() => handleEdit(item)}
-                    className="p-1 hover:bg-primary/20 rounded transition-colors"
-                    title="Editar"
-                  >
-                    <Edit className="w-4 h-4" />
-                  </button>
-                  <button
-                    onClick={() => handleDelete(item.id)}
-                    className="p-1 hover:bg-destructive/20 rounded transition-colors"
-                    title="Excluir"
-                  >
-                    <Trash2 className="w-4 h-4" />
-                  </button>
+        {!loading && (
+          <div className="space-y-4">
+            <h2 className="font-heading text-lg text-gold">
+              Notícias Cadastradas ({news.length})
+            </h2>
+            
+            {news.length === 0 && !error && (
+              <div className="news-box">
+                <div className="news-box-content text-center py-6">
+                  <p className="text-muted-foreground">Nenhuma notícia cadastrada.</p>
+                  <p className="text-xs text-muted-foreground mt-2">
+                    Clique em "Adicionar Notícia" para criar a primeira.
+                  </p>
                 </div>
-              </header>
-              <div className="news-box-content">
-                <div 
-                  className="text-sm"
-                  dangerouslySetInnerHTML={{ __html: item.content }}
-                />
-                <p className="text-xs text-muted-foreground mt-2">
-                  Por: {item.author}
-                </p>
               </div>
-            </div>
-          ))}
-        </div>
+            )}
+            
+            {news.map((item) => (
+              <div key={item.id} className="news-box animate-fade-in">
+                <header className="news-box-header">
+                  <h3 className="font-semibold">{item.title}</h3>
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs opacity-80">{item.date}</span>
+                    <button
+                      onClick={() => handleEdit(item)}
+                      className="p-1 hover:bg-primary/20 rounded transition-colors"
+                      title="Editar"
+                    >
+                      <Edit className="w-4 h-4" />
+                    </button>
+                    <button
+                      onClick={() => handleDelete(item.id)}
+                      className="p-1 hover:bg-destructive/20 rounded transition-colors"
+                      title="Excluir"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
+                </header>
+                <div className="news-box-content">
+                  <div 
+                    className="text-sm"
+                    dangerouslySetInnerHTML={{ __html: item.content }}
+                  />
+                  <p className="text-xs text-muted-foreground mt-2">
+                    Por: {item.author}
+                  </p>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
     </MainLayout>
   );
