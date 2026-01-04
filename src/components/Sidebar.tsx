@@ -1,7 +1,7 @@
 import { Link } from 'react-router-dom';
 import { 
   Shield, Sword, Wand2, Bug, Scroll, Calculator, 
-  Info, Users, Trophy, Clock 
+  Info, Users, Trophy, Clock, Package
 } from 'lucide-react';
 
 interface SidebarProps {
@@ -21,6 +21,10 @@ const Sidebar = ({ position }: SidebarProps) => {
             <Link to="/equipment" className="sidebar-menu-item flex items-center gap-2">
               <Shield className="w-4 h-4 text-gold" />
               Equipamentos
+            </Link>
+            <Link to="/items" className="sidebar-menu-item flex items-center gap-2">
+              <Package className="w-4 h-4 text-gold" />
+              Itens
             </Link>
             <Link to="/spells" className="sidebar-menu-item flex items-center gap-2">
               <Wand2 className="w-4 h-4 text-gold" />
