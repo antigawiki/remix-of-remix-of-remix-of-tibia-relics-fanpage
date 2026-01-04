@@ -41,18 +41,16 @@ const ItemsTable = ({ items, category }: ItemsTableProps) => {
 
   // Define colunas dinâmicas baseadas na categoria
   const getColumns = () => {
-    const normalizedCategory = category.toLowerCase();
-    
-    switch (normalizedCategory) {
-      case 'comidas':
+    switch (category) {
+      case 'foods':
         return ['img', 'nome', 'peso', 'duração'];
-      case 'mochilas':
+      case 'backpacks':
         return ['img', 'nome', 'peso', 'slots', 'cidade'];
-      case 'amuletos':
+      case 'amulets':
         return ['img', 'nome', 'peso', 'proteção', 'cargas'];
-      case 'anéis':
+      case 'rings':
         return ['img', 'nome', 'peso', 'efeito', 'duração'];
-      case 'valiosos':
+      case 'valuables':
         return ['img', 'nome', 'peso'];
       default:
         return ['img', 'nome', 'peso', 'descrição', 'atributos'];
@@ -94,18 +92,18 @@ const ItemsTable = ({ items, category }: ItemsTableProps) => {
           placeholder="Buscar item..."
           value={search}
           onChange={(e) => setSearch(e.target.value)}
-          className="pl-10 bg-background/50"
+          className="pl-10 bg-parchment border-border"
         />
       </div>
 
-      <div className="rounded-md border border-border/50 overflow-hidden">
+      <div className="rounded-md border border-border overflow-hidden">
         <Table>
           <TableHeader>
-            <TableRow className="bg-maroon/20 hover:bg-maroon/30">
+            <TableRow className="bg-maroon hover:bg-maroon">
               {columns.map((column) => (
                 <TableHead 
                   key={column}
-                  className={`text-foreground font-semibold ${
+                  className={`text-parchment font-semibold ${
                     column === 'img' ? 'w-[60px] text-center' : ''
                   } ${
                     (column === 'nome' || column === 'peso') 
@@ -131,7 +129,7 @@ const ItemsTable = ({ items, category }: ItemsTableProps) => {
             {sortedItems.map((item, index) => (
               <TableRow 
                 key={`${item.name}-${index}`}
-                className="hover:bg-maroon/10 transition-colors"
+                className={`${index % 2 === 0 ? 'bg-parchment' : 'bg-parchment-dark'} hover:bg-gold/20 transition-colors`}
               >
                 {columns.map((column) => (
                   <TableCell 
@@ -139,7 +137,7 @@ const ItemsTable = ({ items, category }: ItemsTableProps) => {
                     className={`${
                       column === 'img' ? 'text-center' : ''
                     } ${
-                      column === 'nome' ? 'font-medium text-gold' : 'text-muted-foreground'
+                      column === 'nome' ? 'font-medium text-maroon' : 'text-text-dark'
                     }`}
                   >
                     {column === 'img' ? (
