@@ -14,7 +14,7 @@ const Footer = () => {
           </div>
           
           <div className="text-center">
-            <p>Tibia Relics Fan Page © 2024</p>
+            <p>Tibia Relic Fan Page © 2024</p>
             <p className="text-xs mt-1">
               Tibia® é uma marca registrada da CipSoft GmbH.
             </p>

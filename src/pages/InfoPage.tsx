@@ -11,7 +11,7 @@ const InfoPage = () => {
           </header>
           <div className="news-box-content">
             <p className="text-sm leading-relaxed">
-              Todas as informações sobre rates, sistema de skull, casas e mecânicas do Tibia Relics.
+              Todas as informações sobre rates, sistema de skull, casas e mecânicas do Tibia Relic.
             </p>
           </div>
         </section>

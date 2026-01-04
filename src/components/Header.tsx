@@ -26,7 +26,7 @@ const Header = () => {
             </div>
             <div>
               <h1 className="font-heading text-2xl md:text-3xl font-bold text-gold drop-shadow-lg">
-                Tibia Relics
+                Tibia Relic
               </h1>
               <p className="text-xs text-muted-foreground">Fan Page • OT Server Wiki</p>
             </div>

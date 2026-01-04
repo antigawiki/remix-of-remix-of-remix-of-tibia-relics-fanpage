@@ -10,11 +10,11 @@ const Index = () => {
         {/* Welcome Section */}
         <section className="news-box">
           <header className="news-box-header">
-            <h2 className="font-semibold">Bem-vindo à Wiki do Tibia Relics!</h2>
+            <h2 className="font-semibold">Bem-vindo à Wiki do Tibia Relic!</h2>
           </header>
           <div className="news-box-content">
             <p className="text-sm leading-relaxed mb-4">
-              Esta é a fan page não oficial do servidor <strong>Tibia Relics</strong>. 
+              Esta é a fan page não oficial do servidor <strong>Tibia Relic</strong>.
               Aqui você encontra informações sobre equipamentos, magias, criaturas, 
               quests, calculadoras e muito mais para te ajudar em sua jornada!
             </p>
@@ -49,14 +49,14 @@ const Index = () => {
               title="Wiki em Construção"
               date="02/01/2024"
               author="Admin"
-              content="<p>Estamos trabalhando para trazer todas as informações do servidor Tibia Relics para você! Em breve teremos guias completos de equipamentos, magias, quests e muito mais.</p><p class='mt-2'>Fique ligado nas atualizações!</p>"
+              content="<p>Estamos trabalhando para trazer todas as informações do servidor Tibia Relic para você! Em breve teremos guias completos de equipamentos, magias, quests e muito mais.</p><p class='mt-2'>Fique ligado nas atualizações!</p>"
             />
             
             <NewsBox 
-              title="Tibia Relics - O Servidor"
+              title="Tibia Relic - O Servidor"
               date="01/01/2024"
               author="Admin"
-              content="<p>Tibia Relics é um servidor OT que traz a nostalgia do Tibia clássico com algumas melhorias. Visite o site oficial em <a href='https://tibiarelic.com' target='_blank' class='text-maroon hover:underline'>tibiarelic.com</a> para criar sua conta e começar a jogar!</p>"
+              content="<p>Tibia Relic é um servidor OT que traz a nostalgia do Tibia clássico com algumas melhorias. Visite o site oficial em <a href='https://tibiarelic.com' target='_blank' class='text-maroon hover:underline'>tibiarelic.com</a> para criar sua conta e começar a jogar!</p>"
             />
           </div>
         </section>
