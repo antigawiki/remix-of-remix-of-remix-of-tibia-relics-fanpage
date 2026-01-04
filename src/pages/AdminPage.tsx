@@ -1,29 +1,20 @@
-import { useState, useEffect } from 'react';
-import { useNavigate, Link } from 'react-router-dom';
-import { Plus, Edit, Trash2, Save, X, RefreshCw, Loader2, LogOut } from 'lucide-react';
+import { useState } from 'react';
+import { Link } from 'react-router-dom';
+import { Plus, Edit, Trash2, Save, X, RefreshCw, Loader2 } from 'lucide-react';
 import MainLayout from '@/layouts/MainLayout';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { useToast } from '@/hooks/use-toast';
 import { useNews, NewsItem } from '@/hooks/useNews';
-import { useAuth } from '@/hooks/useAuth';
 
 const AdminPage = () => {
-  const navigate = useNavigate();
   const { toast } = useToast();
-  const { user, loading: authLoading, isAdmin, signOut } = useAuth();
   const { news, loading, error, fetchNews, addNews, updateNews, deleteNews } = useNews();
   const [editingId, setEditingId] = useState<string | null>(null);
   const [isAdding, setIsAdding] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [formData, setFormData] = useState<Partial<NewsItem>>({});
-
-  useEffect(() => {
-    if (!authLoading && !user) {
-      navigate('/auth');
-    }
-  }, [user, authLoading, navigate]);
 
   const handleEdit = (item: NewsItem) => {
     setEditingId(item.id);
@@ -85,7 +76,7 @@ const AdminPage = () => {
     } catch (err: any) {
       toast({
         title: 'Erro',
-        description: err.message || 'Erro ao salvar notícia. Verifique se você tem permissão de admin.',
+        description: err.message || 'Erro ao salvar notícia.',
         variant: 'destructive',
       });
     } finally {
@@ -109,30 +100,11 @@ const AdminPage = () => {
     } catch (err: any) {
       toast({
         title: 'Erro',
-        description: err.message || 'Erro ao remover notícia. Verifique se você tem permissão de admin.',
+        description: err.message || 'Erro ao remover notícia.',
         variant: 'destructive',
       });
     }
   };
-
-  const handleLogout = async () => {
-    await signOut();
-    navigate('/');
-  };
-
-  if (authLoading) {
-    return (
-      <MainLayout showSidebars={false}>
-        <div className="flex items-center justify-center py-20">
-          <Loader2 className="w-8 h-8 animate-spin text-gold" />
-        </div>
-      </MainLayout>
-    );
-  }
-
-  if (!user) {
-    return null;
-  }
 
   return (
     <MainLayout showSidebars={false}>
@@ -141,39 +113,20 @@ const AdminPage = () => {
         <div className="news-box">
           <header className="news-box-header">
             <h1 className="font-semibold">Painel Administrativo</h1>
-            <div className="flex items-center gap-2">
-              <Button 
-                onClick={fetchNews} 
-                variant="ghost" 
-                size="sm"
-                disabled={loading}
-                className="text-white hover:bg-primary/20"
-              >
-                <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
-              </Button>
-              <Button 
-                onClick={handleLogout} 
-                variant="ghost" 
-                size="sm"
-                className="text-white hover:bg-primary/20"
-              >
-                <LogOut className="w-4 h-4" />
-              </Button>
-            </div>
+            <Button 
+              onClick={fetchNews} 
+              variant="ghost" 
+              size="sm"
+              disabled={loading}
+              className="text-white hover:bg-primary/20"
+            >
+              <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+            </Button>
           </header>
           <div className="news-box-content">
-            <p className="text-sm mb-2">
-              Logado como: <span className="text-gold">{user.email}</span>
+            <p className="text-sm text-muted-foreground">
+              Gerencie as notícias do site
             </p>
-            {isAdmin ? (
-              <p className="text-xs text-green-600 bg-green-600/10 p-2 rounded">
-                ✓ Você tem permissões de administrador
-              </p>
-            ) : (
-              <p className="text-xs text-yellow-600 bg-yellow-600/10 p-2 rounded">
-                ⚠ Você não tem permissões de administrador. Somente leitura.
-              </p>
-            )}
             {error && (
               <p className="text-xs text-destructive bg-destructive/10 p-2 rounded mt-2">
                 <strong>Erro:</strong> {error}
@@ -182,8 +135,8 @@ const AdminPage = () => {
           </div>
         </div>
 
-        {/* Add Button - Only for admins */}
-        {isAdmin && !isAdding && !editingId && (
+        {/* Add Button */}
+        {!isAdding && !editingId && (
           <Button onClick={handleAdd} className="retro-btn w-full flex items-center gap-2 justify-center">
             <Plus className="w-4 h-4" />
             Adicionar Notícia
@@ -191,7 +144,7 @@ const AdminPage = () => {
         )}
 
         {/* Add/Edit Form */}
-        {isAdmin && (isAdding || editingId) && (
+        {(isAdding || editingId) && (
           <div className="news-box animate-fade-in">
             <header className="news-box-header">
               <h3 className="font-semibold">
@@ -287,11 +240,9 @@ const AdminPage = () => {
               <div className="news-box">
                 <div className="news-box-content text-center py-6">
                   <p className="text-muted-foreground">Nenhuma notícia cadastrada.</p>
-                  {isAdmin && (
-                    <p className="text-xs text-muted-foreground mt-2">
-                      Clique em "Adicionar Notícia" para criar a primeira.
-                    </p>
-                  )}
+                  <p className="text-xs text-muted-foreground mt-2">
+                    Clique em "Adicionar Notícia" para criar a primeira.
+                  </p>
                 </div>
               </div>
             )}
@@ -302,24 +253,20 @@ const AdminPage = () => {
                   <h3 className="font-semibold">{item.title}</h3>
                   <div className="flex items-center gap-2">
                     <span className="text-xs opacity-80">{item.date}</span>
-                    {isAdmin && (
-                      <>
-                        <button
-                          onClick={() => handleEdit(item)}
-                          className="p-1 hover:bg-primary/20 rounded transition-colors"
-                          title="Editar"
-                        >
-                          <Edit className="w-4 h-4" />
-                        </button>
-                        <button
-                          onClick={() => handleDelete(item.id)}
-                          className="p-1 hover:bg-destructive/20 rounded transition-colors"
-                          title="Excluir"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
-                      </>
-                    )}
+                    <button
+                      onClick={() => handleEdit(item)}
+                      className="p-1 hover:bg-primary/20 rounded transition-colors"
+                      title="Editar"
+                    >
+                      <Edit className="w-4 h-4" />
+                    </button>
+                    <button
+                      onClick={() => handleDelete(item.id)}
+                      className="p-1 hover:bg-destructive/20 rounded transition-colors"
+                      title="Excluir"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
                   </div>
                 </header>
                 <div className="news-box-content">
