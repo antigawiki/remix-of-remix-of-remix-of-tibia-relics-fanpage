@@ -16,7 +16,7 @@ const CalculatorCard = ({ to, title, description }: CalculatorCardProps) => (
     <div className="w-12 h-12 flex items-center justify-center text-maroon mb-3">
       <Calculator className="w-10 h-10" />
     </div>
-    <h3 className="font-semibold text-foreground mb-1">{title}</h3>
+    <h3 className="font-semibold text-maroon mb-1">{title}</h3>
     <p className="text-xs text-muted-foreground">{description}</p>
   </Link>
 );
