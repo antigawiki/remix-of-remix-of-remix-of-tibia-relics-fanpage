@@ -20,17 +20,33 @@ const categoryData: Record<string, Equipment[]> = {
   ammo,
 };
 
+// Custom SVG icons for categories without good lucide alternatives
+const LegsIcon = () => (
+  <svg className="w-6 h-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M6 4h12v4l-2 12h-2l-2-10-2 10h-2L6 8V4z" />
+  </svg>
+);
+
+const ArrowAmmoIcon = () => (
+  <svg className="w-6 h-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <line x1="5" y1="19" x2="19" y2="5" />
+    <polyline points="15 5 19 5 19 9" />
+    <line x1="5" y1="19" x2="8" y2="16" />
+    <line x1="5" y1="17" x2="7" y2="19" />
+  </svg>
+);
+
 const categoryIcons: Record<string, React.ReactNode> = {
   helmets: <HardHat className="w-6 h-6" />,
   armors: <Shirt className="w-6 h-6" />,
-  legs: <span className="w-6 h-6 flex items-center justify-center text-lg">👖</span>,
+  legs: <LegsIcon />,
   boots: <Footprints className="w-6 h-6" />,
   shields: <Shield className="w-6 h-6" />,
   swords: <Sword className="w-6 h-6" />,
   axes: <Axe className="w-6 h-6" />,
   clubs: <Hammer className="w-6 h-6" />,
   distance: <Crosshair className="w-6 h-6" />,
-  ammo: <ArrowUp className="w-6 h-6" />,
+  ammo: <ArrowAmmoIcon />,
 };
 
 const EquipmentPage = () => {
