@@ -26,6 +26,9 @@ const Header = () => {
               src={mainLogo} 
               alt="Tibia Relic Logo" 
               className="h-16 md:h-20 w-auto drop-shadow-lg"
+              loading="eager"
+              fetchPriority="high"
+              decoding="sync"
             />
             <div className="hidden sm:block">
               <h1 className="font-heading text-2xl md:text-3xl font-bold text-gold drop-shadow-lg">
