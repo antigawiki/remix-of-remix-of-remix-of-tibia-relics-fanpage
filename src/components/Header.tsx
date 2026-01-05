@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Menu, X, Users, Skull, Map, Home, Shield, Sparkles, Bug, ScrollText, Calculator, Info } from 'lucide-react';
 import headerBg from '@/assets/header-bg.jpg';
+import mainLogo from '@/assets/main-logo.webp';
 
 const Header = () => {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
@@ -21,13 +22,12 @@ const Header = () => {
         {/* Top Bar */}
         <div className="flex items-center justify-between mb-4">
           <Link to="/" className="flex items-center gap-3 group">
-            <div className="w-12 h-12 rounded-full bg-maroon flex items-center justify-center border-2 border-gold shadow-lg">
-              <span className="text-gold font-heading font-bold text-xl">TR</span>
-            </div>
-            <div>
-              <h1 className="font-heading text-2xl md:text-3xl font-bold text-gold drop-shadow-lg">
-                Tibia Relic
-              </h1>
+            <img 
+              src={mainLogo} 
+              alt="Tibia Relic Logo" 
+              className="h-16 md:h-20 w-auto drop-shadow-lg"
+            />
+            <div className="hidden sm:block">
               <p className="text-xs text-muted-foreground">Fan Page • OT Server Wiki</p>
             </div>
           </Link>
