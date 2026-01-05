@@ -28,7 +28,10 @@ const Header = () => {
               className="h-16 md:h-20 w-auto drop-shadow-lg"
             />
             <div className="hidden sm:block">
-              <p className="text-xs text-muted-foreground">Fan Page • OT Server Wiki</p>
+              <h1 className="font-heading text-2xl md:text-3xl font-bold text-gold drop-shadow-lg">
+                Tibia Relic
+              </h1>
+              <p className="text-sm text-gold/80 font-medium">Fansite Wiki</p>
             </div>
           </Link>
 
