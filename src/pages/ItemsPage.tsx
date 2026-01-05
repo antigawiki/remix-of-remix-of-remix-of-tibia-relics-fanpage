@@ -5,7 +5,7 @@ import {
   foods, amulets, rings, valuables, backpacks,
   itemCategories, Item 
 } from '@/data/items';
-import { Cookie, Gem, CircleDot, Diamond, Backpack, ChevronLeft } from 'lucide-react';
+import { Cookie, Diamond, Backpack, ChevronLeft } from 'lucide-react';
 
 const categoryData: Record<string, Item[]> = {
   foods,
@@ -15,10 +15,26 @@ const categoryData: Record<string, Item[]> = {
   backpacks,
 };
 
+// Custom SVG icons
+const NecklaceIcon = () => (
+  <svg className="w-6 h-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M12 2C8 2 5 5 5 8c0 2 1 3.5 2 4.5L12 22l5-9.5c1-1 2-2.5 2-4.5 0-3-3-6-7-6z" />
+    <circle cx="12" cy="9" r="2" />
+  </svg>
+);
+
+const RingIcon = () => (
+  <svg className="w-6 h-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <ellipse cx="12" cy="14" rx="7" ry="5" />
+    <path d="M5 14V10c0-2.5 3-5 7-5s7 2.5 7 5v4" />
+    <rect x="10" y="5" width="4" height="4" rx="1" />
+  </svg>
+);
+
 const categoryIcons: Record<string, React.ReactNode> = {
   foods: <Cookie className="w-6 h-6" />,
-  amulets: <Gem className="w-6 h-6" />,
-  rings: <CircleDot className="w-6 h-6" />,
+  amulets: <NecklaceIcon />,
+  rings: <RingIcon />,
   valuables: <Diamond className="w-6 h-6" />,
   backpacks: <Backpack className="w-6 h-6" />,
 };
