@@ -5,7 +5,7 @@ import {
   helmets, armors, legs, boots, shields, swords, axes, clubs, distance, ammo,
   equipmentCategories, Equipment 
 } from '@/data/equipment';
-import { Shield, Sword, HardHat, Footprints, ChevronLeft, Target, Circle } from 'lucide-react';
+import { Shield, Sword, HardHat, Footprints, ChevronLeft, Crosshair, ArrowUp, Shirt, Axe, Hammer } from 'lucide-react';
 
 const categoryData: Record<string, Equipment[]> = {
   helmets,
@@ -22,15 +22,15 @@ const categoryData: Record<string, Equipment[]> = {
 
 const categoryIcons: Record<string, React.ReactNode> = {
   helmets: <HardHat className="w-6 h-6" />,
-  armors: <Shield className="w-6 h-6" />,
-  legs: <Footprints className="w-6 h-6" />,
+  armors: <Shirt className="w-6 h-6" />,
+  legs: <span className="w-6 h-6 flex items-center justify-center text-lg">👖</span>,
   boots: <Footprints className="w-6 h-6" />,
   shields: <Shield className="w-6 h-6" />,
   swords: <Sword className="w-6 h-6" />,
-  axes: <Sword className="w-6 h-6" />,
-  clubs: <Sword className="w-6 h-6" />,
-  distance: <Target className="w-6 h-6" />,
-  ammo: <Circle className="w-6 h-6" />,
+  axes: <Axe className="w-6 h-6" />,
+  clubs: <Hammer className="w-6 h-6" />,
+  distance: <Crosshair className="w-6 h-6" />,
+  ammo: <ArrowUp className="w-6 h-6" />,
 };
 
 const EquipmentPage = () => {
