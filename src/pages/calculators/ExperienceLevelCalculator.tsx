@@ -132,6 +132,7 @@ const ExperienceLevelCalculator = () => {
                   onChange={handleExpChange}
                   placeholder="exemplo: 1893256"
                   min={0}
+                  className="bg-cream border-border-light text-foreground"
                 />
               </div>
               <div className="space-y-2">
@@ -144,6 +145,7 @@ const ExperienceLevelCalculator = () => {
                   placeholder="exemplo: 100"
                   min={1}
                   max={300}
+                  className="bg-cream border-border-light text-foreground"
                 />
               </div>
             </div>
