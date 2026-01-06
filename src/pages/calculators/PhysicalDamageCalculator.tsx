@@ -14,34 +14,18 @@ import {
 
 const PhysicalDamageCalculator = () => {
   const [vocation, setVocation] = useState<Vocation>("knight");
-  const [skillInput, setSkillInput] = useState<string>("10");
   const [skill, setSkill] = useState<number>(10);
-  const [weaponAttackInput, setWeaponAttackInput] = useState<string>("5");
   const [weaponAttack, setWeaponAttack] = useState<number>(5);
   const [selectedAmmo, setSelectedAmmo] = useState<string>("arrow");
 
-  const handleSkillInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    setSkillInput(e.target.value);
+  const handleSkillChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const value = parseInt(e.target.value);
+    setSkill(isNaN(value) ? 0 : value);
   };
 
-  const handleSkillBlur = () => {
-    let num = parseInt(skillInput) || 10;
-    if (num < 10) num = 10;
-    if (num > 140) num = 140;
-    setSkill(num);
-    setSkillInput(num.toString());
-  };
-
-  const handleWeaponAttackInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    setWeaponAttackInput(e.target.value);
-  };
-
-  const handleWeaponAttackBlur = () => {
-    let num = parseInt(weaponAttackInput) || 5;
-    if (num < 5) num = 5;
-    if (num > 55) num = 55;
-    setWeaponAttack(num);
-    setWeaponAttackInput(num.toString());
+  const handleWeaponAttackChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const value = parseInt(e.target.value);
+    setWeaponAttack(isNaN(value) ? 0 : value);
   };
 
   const result = useMemo(() => {
@@ -92,16 +76,13 @@ const PhysicalDamageCalculator = () => {
             <div className="flex flex-wrap gap-4">
               <div className="flex items-center gap-2">
                 <Label htmlFor="skill" className="text-text-dark font-semibold whitespace-nowrap">
-                  Skill (10-140):
+                  Skill:
                 </Label>
                 <Input
                   id="skill"
                   type="number"
-                  min={10}
-                  max={140}
-                  value={skillInput}
-                  onChange={handleSkillInputChange}
-                  onBlur={handleSkillBlur}
+                  value={skill}
+                  onChange={handleSkillChange}
                   className="w-24 bg-secondary text-text-dark border-border"
                 />
               </div>
@@ -134,16 +115,13 @@ const PhysicalDamageCalculator = () => {
               {vocation !== "paladin" && (
                 <div className="flex items-center gap-2">
                   <Label htmlFor="weaponAttack" className="text-text-dark font-semibold whitespace-nowrap">
-                    Ataque da Arma (5-55):
+                    Ataque da Arma:
                   </Label>
                   <Input
                     id="weaponAttack"
                     type="number"
-                    min={5}
-                    max={55}
-                    value={weaponAttackInput}
-                    onChange={handleWeaponAttackInputChange}
-                    onBlur={handleWeaponAttackBlur}
+                    value={weaponAttack}
+                    onChange={handleWeaponAttackChange}
                     className="w-24 bg-secondary text-text-dark border-border"
                   />
                 </div>
