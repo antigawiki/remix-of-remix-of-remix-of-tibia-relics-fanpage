@@ -10,7 +10,7 @@ export interface MonsterData {
 export const referenceMonsters: MonsterData[] = [
   { id: 'ghoul', name: 'Ghoul', experience: 85, image: 'https://usa.michal.es/tibiantis/images/creatures/ghoul.gif' },
   { id: 'cyclops', name: 'Cyclops', experience: 150, image: 'https://usa.michal.es/tibiantis/images/creatures/cyclops.gif' },
-  { id: 'bonebeast', name: 'Bonebeast', experience: 580, image: 'https://usa.michal.es/tibiantis/images/creatures/demon_skeleton.gif' },
+  { id: 'necromancer', name: 'Necromancer', experience: 580, image: 'https://usa.michal.es/tibiantis/images/creatures/necromancer.gif' },
   { id: 'dragon', name: 'Dragon', experience: 700, image: 'https://usa.michal.es/tibiantis/images/creatures/dragon.gif' },
   { id: 'dragonlord', name: 'Dragon Lord', experience: 2100, image: 'https://usa.michal.es/tibiantis/images/creatures/dragon_lord.gif' },
 ];
