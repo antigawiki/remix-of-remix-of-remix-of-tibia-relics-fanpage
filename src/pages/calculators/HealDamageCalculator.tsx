@@ -1,8 +1,8 @@
-import { useState, useMemo } from "react";
-import MainLayout from "@/layouts/MainLayout";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { spellDamageData, calculateSpellDamage, SpellDamageData } from "@/data/calculators/spellDamage";
+import { useState, useMemo } from 'react';
+import MainLayout from '@/layouts/MainLayout';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { spellDamageData, calculateSpellDamage, SpellDamageData } from '@/data/calculators/spellDamage';
 
 interface SpellCardProps {
   spell: SpellDamageData;
@@ -18,12 +18,12 @@ const SpellCard = ({ spell, level, magicLevel }: SpellCardProps) => {
   return (
     <div className="parchment p-3 rounded-sm">
       <div className="flex items-center gap-3 mb-3">
-        <img
-          src={spell.image}
-          alt={spell.name}
+        <img 
+          src={spell.image} 
+          alt={spell.name} 
           className="w-8 h-8 object-contain"
           onError={(e) => {
-            e.currentTarget.src = "https://tibiara.netlify.app/en/img/runes/exura.gif";
+            e.currentTarget.src = 'https://tibiara.netlify.app/en/img/runes/exura.gif';
           }}
         />
         <div>
@@ -31,7 +31,7 @@ const SpellCard = ({ spell, level, magicLevel }: SpellCardProps) => {
           <p className="text-xs text-muted-foreground">{spell.words}</p>
         </div>
       </div>
-
+      
       <div className="grid grid-cols-5 gap-2 text-xs">
         <div className="text-center">
           <div className="text-muted-foreground mb-1">Base Min</div>
@@ -72,10 +72,10 @@ const HealDamageCalculator = () => {
     setMagicLevel(Math.max(0, value));
   };
 
-  const healingSpells = spellDamageData.filter((s) => s.type === "heal" && s.category === "spell");
-  const healingRunes = spellDamageData.filter((s) => s.type === "heal" && s.category === "rune");
-  const attackRunes = spellDamageData.filter((s) => s.type === "attack" && s.category === "rune");
-  const attackSpells = spellDamageData.filter((s) => s.type === "attack" && s.category === "spell");
+  const healingSpells = spellDamageData.filter(s => s.type === 'heal' && s.category === 'spell');
+  const healingRunes = spellDamageData.filter(s => s.type === 'heal' && s.category === 'rune');
+  const attackRunes = spellDamageData.filter(s => s.type === 'attack' && s.category === 'rune');
+  const attackSpells = spellDamageData.filter(s => s.type === 'attack' && s.category === 'spell');
 
   return (
     <MainLayout>
@@ -86,14 +86,14 @@ const HealDamageCalculator = () => {
             <h1 className="text-lg font-bold">Calculadora de Heal / Dano com Magias</h1>
           </header>
           <div className="news-box-content">
-            <p className="text-sm mb-4">Calcule o heal e dano de magias e runas baseado no seu Level e Magic Level.</p>
-
+            <p className="text-sm mb-4">
+              Calcule o heal e dano de magias e runas baseado no seu Level e Magic Level.
+            </p>
+            
             {/* Input Controls */}
             <div className="flex flex-wrap gap-4 mb-2">
               <div className="flex items-center gap-2">
-                <Label htmlFor="level" className="text-text-dark font-semibold whitespace-nowrap">
-                  Level:
-                </Label>
+                <Label htmlFor="level" className="text-text-dark font-semibold whitespace-nowrap">Level:</Label>
                 <Input
                   id="level"
                   type="number"
@@ -104,9 +104,7 @@ const HealDamageCalculator = () => {
                 />
               </div>
               <div className="flex items-center gap-2">
-                <Label htmlFor="mlvl" className="text-text-dark font-semibold whitespace-nowrap">
-                  Magic Level:
-                </Label>
+                <Label htmlFor="mlvl" className="text-text-dark font-semibold whitespace-nowrap">Magic Level:</Label>
                 <Input
                   id="mlvl"
                   type="number"
@@ -117,7 +115,9 @@ const HealDamageCalculator = () => {
                 />
               </div>
             </div>
-            <p className="text-xs text-muted-foreground"></p>
+            <p className="text-xs text-muted-foreground">
+              Fórmula: (Magic Level × 3 + Level × 2) / 100
+            </p>
           </div>
         </section>
 
@@ -128,7 +128,7 @@ const HealDamageCalculator = () => {
           </header>
           <div className="news-box-content">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-              {healingSpells.map((spell) => (
+              {healingSpells.map(spell => (
                 <SpellCard key={spell.id} spell={spell} level={level} magicLevel={magicLevel} />
               ))}
             </div>
@@ -142,7 +142,7 @@ const HealDamageCalculator = () => {
           </header>
           <div className="news-box-content">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-              {healingRunes.map((spell) => (
+              {healingRunes.map(spell => (
                 <SpellCard key={spell.id} spell={spell} level={level} magicLevel={magicLevel} />
               ))}
             </div>
@@ -156,7 +156,7 @@ const HealDamageCalculator = () => {
           </header>
           <div className="news-box-content">
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-              {attackRunes.map((spell) => (
+              {attackRunes.map(spell => (
                 <SpellCard key={spell.id} spell={spell} level={level} magicLevel={magicLevel} />
               ))}
             </div>
@@ -170,7 +170,7 @@ const HealDamageCalculator = () => {
           </header>
           <div className="news-box-content">
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-              {attackSpells.map((spell) => (
+              {attackSpells.map(spell => (
                 <SpellCard key={spell.id} spell={spell} level={level} magicLevel={magicLevel} />
               ))}
             </div>
