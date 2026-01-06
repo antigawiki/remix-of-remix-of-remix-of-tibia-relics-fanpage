@@ -124,7 +124,7 @@ const ExperienceLevelCalculator = () => {
             {/* Inputs */}
             <div className="grid gap-4 sm:grid-cols-2">
               <div className="space-y-2">
-                <Label htmlFor="currentExp">Experiência Atual:</Label>
+                <Label htmlFor="currentExp" className="text-text-dark font-semibold">Experiência Atual:</Label>
                 <Input
                   id="currentExp"
                   type="number"
@@ -132,11 +132,11 @@ const ExperienceLevelCalculator = () => {
                   onChange={handleExpChange}
                   placeholder="exemplo: 1893256"
                   min={0}
-                  className="bg-cream border-border-light text-foreground"
+                  className="bg-secondary text-text-dark border-border"
                 />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="targetLevel">Level Desejado:</Label>
+                <Label htmlFor="targetLevel" className="text-text-dark font-semibold">Level Desejado:</Label>
                 <Input
                   id="targetLevel"
                   type="number"
@@ -145,7 +145,7 @@ const ExperienceLevelCalculator = () => {
                   placeholder="exemplo: 100"
                   min={1}
                   max={300}
-                  className="bg-cream border-border-light text-foreground"
+                  className="bg-secondary text-text-dark border-border"
                 />
               </div>
             </div>
