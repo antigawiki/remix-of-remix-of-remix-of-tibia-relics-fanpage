@@ -63,13 +63,13 @@ const HealDamageCalculator = () => {
   const [magicLevel, setMagicLevel] = useState<number>(50);
 
   const handleLevelChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const value = parseInt(e.target.value) || 0;
-    setLevel(Math.max(0, value));
+    const value = parseInt(e.target.value);
+    setLevel(isNaN(value) ? 0 : value);
   };
 
   const handleMagicLevelChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const value = parseInt(e.target.value) || 0;
-    setMagicLevel(Math.max(0, value));
+    const value = parseInt(e.target.value);
+    setMagicLevel(isNaN(value) ? 0 : value);
   };
 
   const healingSpells = spellDamageData.filter(s => s.type === 'heal' && s.category === 'spell');
@@ -100,7 +100,6 @@ const HealDamageCalculator = () => {
                   value={level}
                   onChange={handleLevelChange}
                   className="w-24 bg-secondary text-text-dark border-border"
-                  min={0}
                 />
               </div>
               <div className="flex items-center gap-2">
@@ -111,7 +110,6 @@ const HealDamageCalculator = () => {
                   value={magicLevel}
                   onChange={handleMagicLevelChange}
                   className="w-24 bg-secondary text-text-dark border-border"
-                  min={0}
                 />
               </div>
             </div>
