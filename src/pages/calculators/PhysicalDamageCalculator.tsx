@@ -4,7 +4,6 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Sword, Target, Shield, Sparkles } from "lucide-react";
 import {
   ammoData,
   calculatePhysicalDamage,
@@ -19,15 +18,15 @@ const PhysicalDamageCalculator = () => {
   const [weaponAttack, setWeaponAttack] = useState<number>(5);
   const [selectedAmmo, setSelectedAmmo] = useState<string>("arrow");
 
-  const handleSkillChange = (value: string) => {
-    let num = parseInt(value) || 10;
+  const handleSkillChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    let num = parseInt(e.target.value) || 10;
     if (num < 10) num = 10;
     if (num > 140) num = 140;
     setSkill(num);
   };
 
-  const handleWeaponAttackChange = (value: string) => {
-    let num = parseInt(value) || 5;
+  const handleWeaponAttackChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    let num = parseInt(e.target.value) || 5;
     if (num < 5) num = 5;
     if (num > 55) num = 55;
     setWeaponAttack(num);
@@ -47,17 +46,20 @@ const PhysicalDamageCalculator = () => {
 
   return (
     <MainLayout>
-      <div className="space-y-6">
+      <div className="space-y-4">
         {/* Header */}
         <section className="news-box">
-          <div className="news-header flex items-center gap-2">
-            <Sword className="w-5 h-5" />
-            <span>Physical Damage Calculator (Melee)</span>
-          </div>
-          <div className="news-content space-y-6">
+          <header className="news-box-header">
+            <h1 className="text-lg font-bold">Calculadora de Dano Físico (Melee)</h1>
+          </header>
+          <div className="news-box-content">
+            <p className="text-sm mb-4">
+              Calcule o dano físico baseado na sua vocação, skill e ataque da arma/munição.
+            </p>
+            
             {/* Vocation Selection */}
-            <div className="space-y-3">
-              <Label className="text-sm font-medium">Choose your Vocation:</Label>
+            <div className="parchment p-4 rounded-sm mb-4">
+              <Label className="text-text-dark font-semibold block mb-3">Escolha sua Vocação:</Label>
               <RadioGroup
                 value={vocation}
                 onValueChange={(v) => setVocation(v as Vocation)}
@@ -65,12 +67,8 @@ const PhysicalDamageCalculator = () => {
               >
                 {(Object.keys(vocationLabels) as Vocation[]).map((voc) => (
                   <div key={voc} className="flex items-center space-x-2">
-                    <RadioGroupItem value={voc} id={voc} />
-                    <Label htmlFor={voc} className="cursor-pointer flex items-center gap-1">
-                      {voc === "knight" && <Shield className="w-4 h-4" />}
-                      {voc === "paladin" && <Target className="w-4 h-4" />}
-                      {voc === "sorcerer" && <Sparkles className="w-4 h-4" />}
-                      {voc === "druid" && <Sparkles className="w-4 h-4" />}
+                    <RadioGroupItem value={voc} id={voc} className="border-maroon text-maroon" />
+                    <Label htmlFor={voc} className="cursor-pointer text-text-dark font-medium">
                       {vocationLabels[voc]}
                     </Label>
                   </div>
@@ -78,36 +76,39 @@ const PhysicalDamageCalculator = () => {
               </RadioGroup>
             </div>
 
-            {/* Skill Input - Always visible */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label htmlFor="skill">Skill (10-140)</Label>
+            {/* Input Controls */}
+            <div className="flex flex-wrap gap-4">
+              <div className="flex items-center gap-2">
+                <Label htmlFor="skill" className="text-text-dark font-semibold whitespace-nowrap">
+                  Skill (10-140):
+                </Label>
                 <Input
                   id="skill"
                   type="number"
                   min={10}
                   max={140}
                   value={skill}
-                  onChange={(e) => handleSkillChange(e.target.value)}
-                  className="bg-background"
+                  onChange={handleSkillChange}
+                  className="w-24 bg-secondary text-text-dark border-border"
                 />
               </div>
 
               {/* Paladin: Ammo Selection */}
               {vocation === "paladin" && (
-                <div className="space-y-2">
-                  <Label htmlFor="ammo">Ammunition</Label>
+                <div className="flex items-center gap-2">
+                  <Label htmlFor="ammo" className="text-text-dark font-semibold whitespace-nowrap">
+                    Munição:
+                  </Label>
                   <Select value={selectedAmmo} onValueChange={setSelectedAmmo}>
-                    <SelectTrigger className="bg-background">
+                    <SelectTrigger className="w-44 bg-secondary text-text-dark border-border">
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
                       {ammoData.map((ammo) => (
                         <SelectItem key={ammo.id} value={ammo.id}>
                           <div className="flex items-center gap-2">
-                            <img src={ammo.image} alt={ammo.name} className="w-6 h-6" />
+                            <img src={ammo.image} alt={ammo.name} className="w-5 h-5" />
                             <span>{ammo.name}</span>
-                            <span className="text-muted-foreground text-xs">(Atk: {ammo.attack})</span>
                           </div>
                         </SelectItem>
                       ))}
@@ -118,16 +119,18 @@ const PhysicalDamageCalculator = () => {
 
               {/* Other Vocations: Weapon Attack Input */}
               {vocation !== "paladin" && (
-                <div className="space-y-2">
-                  <Label htmlFor="weaponAttack">Weapon Attack (5-55)</Label>
+                <div className="flex items-center gap-2">
+                  <Label htmlFor="weaponAttack" className="text-text-dark font-semibold whitespace-nowrap">
+                    Ataque da Arma (5-55):
+                  </Label>
                   <Input
                     id="weaponAttack"
                     type="number"
                     min={5}
                     max={55}
                     value={weaponAttack}
-                    onChange={(e) => handleWeaponAttackChange(e.target.value)}
-                    className="bg-background"
+                    onChange={handleWeaponAttackChange}
+                    className="w-24 bg-secondary text-text-dark border-border"
                   />
                 </div>
               )}
@@ -137,45 +140,85 @@ const PhysicalDamageCalculator = () => {
 
         {/* Results */}
         <section className="news-box">
-          <div className="news-header flex items-center gap-2">
-            <Target className="w-5 h-5" />
-            <span>Damage Result</span>
-          </div>
-          <div className="news-content">
-            <div className="flex flex-col md:flex-row items-center justify-between gap-6">
-              <div className="space-y-4 flex-1">
-                <div className="text-center md:text-left">
-                  <p className="text-sm text-muted-foreground mb-1">
-                    The maximum damage you will achieve is approximately:
-                  </p>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-4">
-                    <div className="bg-accent/30 rounded-lg p-4 text-center">
-                      <p className="text-xs text-muted-foreground uppercase tracking-wide">vs Monsters (PvE)</p>
-                      <p className="text-3xl font-bold text-primary">{result.maxDamage}</p>
+          <header className="news-box-header">
+            <h2 className="font-semibold">Resultado do Cálculo</h2>
+          </header>
+          <div className="news-box-content">
+            <div className="flex flex-col md:flex-row items-center gap-6">
+              {/* Results Cards */}
+              <div className="flex-1 w-full">
+                <p className="text-sm text-text-dark mb-4">
+                  O dano máximo que você alcançará é aproximadamente:
+                </p>
+                
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-4">
+                  {/* PvE Damage */}
+                  <div className="parchment p-4 rounded-sm text-center">
+                    <div className="text-xs text-muted-foreground uppercase tracking-wide mb-2">
+                      vs Monstros (PvE)
                     </div>
-                    <div className="bg-destructive/20 rounded-lg p-4 text-center">
-                      <p className="text-xs text-muted-foreground uppercase tracking-wide">vs Players (PvP)</p>
-                      <p className="text-3xl font-bold text-destructive">{result.pvpDamage}</p>
+                    <div className="text-4xl font-heading font-bold text-maroon">
+                      {result.maxDamage}
+                    </div>
+                  </div>
+                  
+                  {/* PvP Damage */}
+                  <div className="parchment p-4 rounded-sm text-center">
+                    <div className="text-xs text-muted-foreground uppercase tracking-wide mb-2">
+                      vs Jogadores (PvP)
+                    </div>
+                    <div className="text-4xl font-heading font-bold text-red-700">
+                      {result.pvpDamage}
                     </div>
                   </div>
                 </div>
 
-                {/* Ammo info for Paladin */}
-                {vocation === "paladin" && selectedAmmoData && (
-                  <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                    <img src={selectedAmmoData.image} alt={selectedAmmoData.name} className="w-6 h-6" />
-                    <span>Using {selectedAmmoData.name} (Attack: {selectedAmmoData.attack})</span>
+                {/* Extra Info */}
+                <div className="parchment p-3 rounded-sm">
+                  <div className="grid grid-cols-3 gap-2 text-xs text-center">
+                    <div>
+                      <div className="text-muted-foreground mb-1">Vocação</div>
+                      <div className="bg-secondary/50 rounded px-2 py-1 text-text-dark font-medium">
+                        {vocationLabels[vocation]}
+                      </div>
+                    </div>
+                    <div>
+                      <div className="text-muted-foreground mb-1">Skill</div>
+                      <div className="bg-secondary/50 rounded px-2 py-1 text-text-dark font-medium">
+                        {skill}
+                      </div>
+                    </div>
+                    <div>
+                      <div className="text-muted-foreground mb-1">
+                        {vocation === "paladin" ? "Munição" : "Atk Arma"}
+                      </div>
+                      <div className="bg-secondary/50 rounded px-2 py-1 text-text-dark font-medium flex items-center justify-center gap-1">
+                        {vocation === "paladin" && selectedAmmoData ? (
+                          <>
+                            <img src={selectedAmmoData.image} alt={selectedAmmoData.name} className="w-4 h-4" />
+                            <span>{selectedAmmoData.attack}</span>
+                          </>
+                        ) : (
+                          <span>{weaponAttack}</span>
+                        )}
+                      </div>
+                    </div>
                   </div>
-                )}
+                </div>
               </div>
 
               {/* Vocation Image */}
               <div className="flex-shrink-0">
-                <img
-                  src={vocationImages[vocation]}
-                  alt={vocationLabels[vocation]}
-                  className="w-48 h-auto rounded-lg"
-                />
+                <div className="parchment p-3 rounded-sm">
+                  <img
+                    src={vocationImages[vocation]}
+                    alt={vocationLabels[vocation]}
+                    className="w-48 h-auto"
+                    onError={(e) => {
+                      e.currentTarget.style.display = 'none';
+                    }}
+                  />
+                </div>
               </div>
             </div>
           </div>
