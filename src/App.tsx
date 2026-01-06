@@ -14,6 +14,7 @@ import CalculatorsPage from "./pages/CalculatorsPage";
 import HealDamageCalculator from "./pages/calculators/HealDamageCalculator";
 import PhysicalDamageCalculator from "./pages/calculators/PhysicalDamageCalculator";
 import DeathExperienceCalculator from "./pages/calculators/DeathExperienceCalculator";
+import ExperienceLevelCalculator from "./pages/calculators/ExperienceLevelCalculator";
 import QuestsPage from "./pages/QuestsPage";
 import NotFound from "./pages/NotFound";
 const queryClient = new QueryClient();
@@ -39,6 +40,7 @@ const App = () => (
           <Route path="/calculators/heal-damage" element={<HealDamageCalculator />} />
           <Route path="/calculators/physical-damage" element={<PhysicalDamageCalculator />} />
           <Route path="/calculators/death-experience" element={<DeathExperienceCalculator />} />
+          <Route path="/calculators/experience-level" element={<ExperienceLevelCalculator />} />
           <Route path="/quests" element={<QuestsPage />} />
           {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
           <Route path="*" element={<NotFound />} />
