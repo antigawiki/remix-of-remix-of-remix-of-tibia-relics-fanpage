@@ -14,22 +14,34 @@ import {
 
 const PhysicalDamageCalculator = () => {
   const [vocation, setVocation] = useState<Vocation>("knight");
+  const [skillInput, setSkillInput] = useState<string>("10");
   const [skill, setSkill] = useState<number>(10);
+  const [weaponAttackInput, setWeaponAttackInput] = useState<string>("5");
   const [weaponAttack, setWeaponAttack] = useState<number>(5);
   const [selectedAmmo, setSelectedAmmo] = useState<string>("arrow");
 
-  const handleSkillChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    let num = parseInt(e.target.value) || 10;
+  const handleSkillInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setSkillInput(e.target.value);
+  };
+
+  const handleSkillBlur = () => {
+    let num = parseInt(skillInput) || 10;
     if (num < 10) num = 10;
     if (num > 140) num = 140;
     setSkill(num);
+    setSkillInput(num.toString());
   };
 
-  const handleWeaponAttackChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    let num = parseInt(e.target.value) || 5;
+  const handleWeaponAttackInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setWeaponAttackInput(e.target.value);
+  };
+
+  const handleWeaponAttackBlur = () => {
+    let num = parseInt(weaponAttackInput) || 5;
     if (num < 5) num = 5;
     if (num > 55) num = 55;
     setWeaponAttack(num);
+    setWeaponAttackInput(num.toString());
   };
 
   const result = useMemo(() => {
@@ -87,8 +99,9 @@ const PhysicalDamageCalculator = () => {
                   type="number"
                   min={10}
                   max={140}
-                  value={skill}
-                  onChange={handleSkillChange}
+                  value={skillInput}
+                  onChange={handleSkillInputChange}
+                  onBlur={handleSkillBlur}
                   className="w-24 bg-secondary text-text-dark border-border"
                 />
               </div>
@@ -128,8 +141,9 @@ const PhysicalDamageCalculator = () => {
                     type="number"
                     min={5}
                     max={55}
-                    value={weaponAttack}
-                    onChange={handleWeaponAttackChange}
+                    value={weaponAttackInput}
+                    onChange={handleWeaponAttackInputChange}
+                    onBlur={handleWeaponAttackBlur}
                     className="w-24 bg-secondary text-text-dark border-border"
                   />
                 </div>
