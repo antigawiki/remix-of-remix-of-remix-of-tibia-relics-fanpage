@@ -23,7 +23,7 @@ const SpellCard = ({ spell, level, magicLevel }: SpellCardProps) => {
           alt={spell.name}
           className="w-8 h-8 object-contain"
           onError={(e) => {
-            e.currentTarget.src = "https://tibiara.netlify.app/en/monsters/img/spells.gif";
+            e.currentTarget.src = "https://tibiara.netlify.app/en/img/runes/exura.gif";
           }}
         />
         <div>
