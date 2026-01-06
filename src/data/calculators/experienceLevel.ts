@@ -3,15 +3,16 @@ export interface MonsterData {
   id: string;
   name: string;
   experience: number;
+  image: string;
 }
 
 // Lista de monstros de referência para calcular kills necessárias
 export const referenceMonsters: MonsterData[] = [
-  { id: 'ghoul', name: 'Ghoul', experience: 85 },
-  { id: 'cyclops', name: 'Cyclops', experience: 150 },
-  { id: 'bonebeast', name: 'Bonebeast', experience: 580 },
-  { id: 'dragon', name: 'Dragon', experience: 700 },
-  { id: 'dragonlord', name: 'Dragon Lord', experience: 2100 },
+  { id: 'ghoul', name: 'Ghoul', experience: 85, image: 'https://usa.michal.es/tibiantis/images/creatures/ghoul.gif' },
+  { id: 'cyclops', name: 'Cyclops', experience: 150, image: 'https://usa.michal.es/tibiantis/images/creatures/cyclops.gif' },
+  { id: 'bonebeast', name: 'Bonebeast', experience: 580, image: 'https://usa.michal.es/tibiantis/images/creatures/demon_skeleton.gif' },
+  { id: 'dragon', name: 'Dragon', experience: 700, image: 'https://usa.michal.es/tibiantis/images/creatures/dragon.gif' },
+  { id: 'dragonlord', name: 'Dragon Lord', experience: 2100, image: 'https://usa.michal.es/tibiantis/images/creatures/dragon_lord.gif' },
 ];
 
 // Fórmula oficial do Tibia para XP necessária para atingir um level

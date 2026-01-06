@@ -2,21 +2,12 @@ import React, { useState, useMemo } from "react";
 import MainLayout from "@/layouts/MainLayout";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Skull, Eye, Flame, Target, TrendingUp, Trophy } from "lucide-react";
+import { Target, TrendingUp, Trophy } from "lucide-react";
 import {
   calculateExperienceDifference,
   getLevelProgress,
-  referenceMonsters,
+  MonsterData,
 } from "@/data/calculators/experienceLevel";
-
-// Ícones para cada monstro
-const monsterIcons: Record<string, React.ReactNode> = {
-  ghoul: <Skull className="w-5 h-5" />,
-  cyclops: <Eye className="w-5 h-5" />,
-  bonebeast: <Skull className="w-5 h-5" />,
-  dragon: <Flame className="w-5 h-5" />,
-  dragonlord: <Flame className="w-5 h-5 text-red-500" />,
-};
 
 // Componente para card de status
 const StatusCard = ({
@@ -45,7 +36,7 @@ const StatusCard = ({
         </span>
       </div>
       <div className="flex justify-between items-center">
-        <span className="text-muted-foreground text-sm">Experience:</span>
+        <span className="text-muted-foreground text-sm">Experiência:</span>
         <span className="font-mono text-sm">{experience.toLocaleString("pt-BR")}</span>
       </div>
     </div>
@@ -54,27 +45,29 @@ const StatusCard = ({
 
 // Componente para card de monstro
 const MonsterCard = ({
-  name,
-  experience,
+  monster,
   count,
-  icon,
 }: {
-  name: string;
-  experience: number;
+  monster: MonsterData;
   count: number;
-  icon: React.ReactNode;
 }) => (
   <div className="flex items-center justify-between p-3 bg-background/50 rounded border border-border/50">
     <div className="flex items-center gap-3">
-      <div className="p-2 rounded bg-muted">{icon}</div>
+      <div className="w-10 h-10 flex items-center justify-center">
+        <img 
+          src={monster.image} 
+          alt={monster.name} 
+          className="max-w-full max-h-full object-contain"
+        />
+      </div>
       <div>
-        <div className="font-medium text-sm">{name}</div>
-        <div className="text-xs text-muted-foreground">{experience} XP each</div>
+        <div className="font-medium text-sm">{monster.name}</div>
+        <div className="text-xs text-muted-foreground">{monster.experience} XP cada</div>
       </div>
     </div>
     <div className="text-right">
       <div className="font-bold text-lg">{count.toLocaleString("pt-BR")}</div>
-      <div className="text-xs text-muted-foreground">monsters</div>
+      <div className="text-xs text-muted-foreground">monstros</div>
     </div>
   </div>
 );
@@ -122,33 +115,33 @@ const ExperienceLevelCalculator = () => {
       <div className="space-y-6">
         {/* Header */}
         <div className="news-box">
-          <div className="news-box-header">Experience Calculator</div>
+          <div className="news-box-header">Calculadora de Experiência</div>
           <div className="news-box-content p-4">
             <p className="text-sm text-muted-foreground mb-4">
-              Calculate how many monsters you need to kill to reach your desired level.
+              Calcule quantos monstros você precisa matar para atingir o level desejado.
             </p>
 
             {/* Inputs */}
             <div className="grid gap-4 sm:grid-cols-2">
               <div className="space-y-2">
-                <Label htmlFor="currentExp">Current Experience:</Label>
+                <Label htmlFor="currentExp">Experiência Atual:</Label>
                 <Input
                   id="currentExp"
                   type="number"
                   value={currentExp}
                   onChange={handleExpChange}
-                  placeholder="example: 1893256"
+                  placeholder="exemplo: 1893256"
                   min={0}
                 />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="targetLevel">Desired Level:</Label>
+                <Label htmlFor="targetLevel">Level Desejado:</Label>
                 <Input
                   id="targetLevel"
                   type="number"
                   value={targetLevel}
                   onChange={handleLevelChange}
-                  placeholder="example: 100"
+                  placeholder="exemplo: 100"
                   min={1}
                   max={300}
                 />
@@ -162,13 +155,13 @@ const ExperienceLevelCalculator = () => {
             {/* Status Cards */}
             <div className="grid gap-4 sm:grid-cols-2">
               <StatusCard
-                title="Your Current Status"
+                title="Seu Status Atual"
                 level={result.currentLevel}
                 experience={currentExp}
                 icon={<TrendingUp className="w-4 h-4" />}
               />
               <StatusCard
-                title="Target"
+                title="Objetivo"
                 level={targetLevel}
                 experience={result.targetExp}
                 icon={<Target className="w-4 h-4" />}
@@ -180,7 +173,7 @@ const ExperienceLevelCalculator = () => {
             <div className="news-box">
               <div className="news-box-content p-4 space-y-2">
                 <div className="flex justify-between text-sm">
-                  <span>Progress to Level {result.currentLevel + 1}</span>
+                  <span>Progresso para o Level {result.currentLevel + 1}</span>
                   <span>{currentProgress.toFixed(1)}%</span>
                 </div>
                 <ProgressBar progress={currentProgress} />
@@ -188,30 +181,30 @@ const ExperienceLevelCalculator = () => {
             </div>
 
             {/* Result Banner */}
-            <div className={`news-box ${result.alreadyReached ? "" : ""}`}>
+            <div className="news-box">
               <div className="news-box-header flex items-center gap-2">
                 {result.alreadyReached ? (
                   <Trophy className="w-4 h-4 text-yellow-500" />
                 ) : (
                   <Target className="w-4 h-4" />
                 )}
-                <span>{result.alreadyReached ? "Congratulations!" : "Experience Needed"}</span>
+                <span>{result.alreadyReached ? "Parabéns!" : "Experiência Necessária"}</span>
               </div>
               <div className="news-box-content p-4">
                 {result.alreadyReached ? (
                   <p className="text-green-600 font-medium">
-                    You have already reached the desired level!
+                    Você já atingiu o level desejado!
                   </p>
                 ) : (
                   <div className="space-y-1">
                     <p className="text-lg">
-                      <span className="text-muted-foreground">Missing:</span>{" "}
+                      <span className="text-muted-foreground">Faltam:</span>{" "}
                       <span className="font-bold text-destructive">
                         {result.neededExp.toLocaleString("pt-BR")} XP
                       </span>
                     </p>
                     <p className="text-sm text-muted-foreground">
-                      to reach level {targetLevel}
+                      para atingir o level {targetLevel}
                     </p>
                   </div>
                 )}
@@ -221,24 +214,22 @@ const ExperienceLevelCalculator = () => {
             {/* Monster Cards */}
             {!result.alreadyReached && (
               <div className="news-box">
-                <div className="news-box-header">Monsters Needed</div>
+                <div className="news-box-header">Monstros Necessários</div>
                 <div className="news-box-content p-4 space-y-3">
                   <p className="text-sm text-muted-foreground mb-4">
-                    You can reach level {targetLevel} by defeating approximately:
+                    Você pode atingir o level {targetLevel} derrotando aproximadamente:
                   </p>
                   <div className="space-y-2">
                     {result.monstersNeeded.map(({ monster, count }) => (
                       <MonsterCard
                         key={monster.id}
-                        name={monster.name}
-                        experience={monster.experience}
+                        monster={monster}
                         count={count}
-                        icon={monsterIcons[monster.id] || <Skull className="w-5 h-5" />}
                       />
                     ))}
                   </div>
                   <p className="text-xs text-muted-foreground mt-4 italic">
-                    The suggestions above are illustrative and not mandatory.
+                    As sugestões acima são ilustrativas e não obrigatórias.
                   </p>
                 </div>
               </div>
