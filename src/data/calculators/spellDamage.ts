@@ -11,10 +11,10 @@ export interface SpellDamageData {
 
 export const spellDamageData: SpellDamageData[] = [
   // Healing Spells
-  { id: 'exura', name: 'Exura', words: 'exura', type: 'heal', category: 'spell', baseMin: 10, baseMax: 30, image: 'https://tibiara.netlify.app/en/img/runes/exura.gif' },
-  { id: 'exuragran', name: 'Exura Gran', words: 'exura gran', type: 'heal', category: 'spell', baseMin: 20, baseMax: 60, image: 'https://tibiara.netlify.app/en/img/runes/exura.gif' },
-  { id: 'exuravita', name: 'Exura Vita', words: 'exura vita', type: 'heal', category: 'spell', baseMin: 200, baseMax: 300, image: 'https://tibiara.netlify.app/en/img/runes/exura.gif' },
-  { id: 'exurasio', name: 'Exura Sio', words: 'exura sio "name"', type: 'heal', category: 'spell', baseMin: 160, baseMax: 240, image: 'https://tibiara.netlify.app/en/img/runes/exura.gif' },
+  { id: 'exura', name: 'Exura', words: 'exura', type: 'heal', category: 'spell', baseMin: 10, baseMax: 30, image: 'https://tibiara.netlify.app/en/monsters/img/spells.gif' },
+  { id: 'exuragran', name: 'Exura Gran', words: 'exura gran', type: 'heal', category: 'spell', baseMin: 20, baseMax: 60, image: 'https://tibiara.netlify.app/en/monsters/img/spells.gif' },
+  { id: 'exuravita', name: 'Exura Vita', words: 'exura vita', type: 'heal', category: 'spell', baseMin: 200, baseMax: 300, image: 'https://tibiara.netlify.app/en/monsters/img/spells.gif' },
+  { id: 'exurasio', name: 'Exura Sio', words: 'exura sio "name"', type: 'heal', category: 'spell', baseMin: 160, baseMax: 240, image: 'https://tibiara.netlify.app/en/monsters/img/spells.gif' },
   
   // Healing Runes
   { id: 'ih', name: 'Intense Healing', words: 'IH Rune', type: 'heal', category: 'rune', baseMin: 40, baseMax: 100, image: 'https://tibiara.netlify.app/en/img/runes/ih.gif' },

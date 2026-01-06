@@ -115,9 +115,6 @@ const HealDamageCalculator = () => {
                 />
               </div>
             </div>
-            <p className="text-xs text-muted-foreground">
-              Fórmula: (Magic Level × 3 + Level × 2) / 100
-            </p>
           </div>
         </section>
 
