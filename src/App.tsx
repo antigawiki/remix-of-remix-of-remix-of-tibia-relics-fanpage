@@ -11,9 +11,9 @@ import SpellsPage from "./pages/SpellsPage";
 import CreaturesPage from "./pages/CreaturesPage";
 import InfoPage from "./pages/InfoPage";
 import CalculatorsPage from "./pages/CalculatorsPage";
+import HealDamageCalculator from "./pages/calculators/HealDamageCalculator";
 import QuestsPage from "./pages/QuestsPage";
 import NotFound from "./pages/NotFound";
-
 const queryClient = new QueryClient();
 
 const App = () => (
@@ -34,6 +34,7 @@ const App = () => (
           <Route path="/creatures" element={<CreaturesPage />} />
           <Route path="/info" element={<InfoPage />} />
           <Route path="/calculators" element={<CalculatorsPage />} />
+          <Route path="/calculators/heal-damage" element={<HealDamageCalculator />} />
           <Route path="/quests" element={<QuestsPage />} />
           {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
           <Route path="*" element={<NotFound />} />
