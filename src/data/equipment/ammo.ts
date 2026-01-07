@@ -1,4 +1,4 @@
-import { Equipment } from './helmets';
+import { Equipment } from "./helmets";
 
 export const ammo: Equipment[] = [
   {
@@ -6,14 +6,14 @@ export const ammo: Equipment[] = [
     image: "https://tibiara.netlify.app/en/img/distance/arrow.gif",
     attack: 25,
     weight: "0.70 oz.",
-    attributes: "Usado com arcos",
+    attributes: "Usado com Bow",
   },
   {
     name: "Bolt",
     image: "https://tibiara.netlify.app/en/img/distance/bolt.gif",
     attack: 30,
     weight: "0.80 oz.",
-    attributes: "Usado com bestas",
+    attributes: "Usado com Crossbow",
   },
   {
     name: "Burst Arrow",
@@ -34,6 +34,6 @@ export const ammo: Equipment[] = [
     image: "https://tibiara.netlify.app/en/img/distance/powerbolt.gif",
     attack: 40,
     weight: "0.90 oz.",
-    attributes: "Virote forte",
+    attributes: "Bolt mais forte do jogo",
   },
 ];
