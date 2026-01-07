@@ -33,22 +33,37 @@ const ServerInfo = () => {
           <h4 className="font-heading text-sm font-semibold text-maroon mb-2 border-b border-border pb-1">
             Sistema de Skull
           </h4>
-          <div className="grid grid-cols-2 gap-2 text-sm">
-            <div className="flex justify-between">
-              <span className="text-muted-foreground">Tempo PZ:</span>
-              <span className="font-semibold">1 min sem Kill / 15 min com Kill</span>
+          <div className="space-y-3 text-sm">
+            {/* Tempo PZ */}
+            <div className="bg-muted/30 rounded p-2">
+              <span className="text-muted-foreground font-medium block mb-1">⏱️ Tempo PZ</span>
+              <span className="text-text-dark">1 min sem Kill / 15 min com Kill</span>
             </div>
-            <div className="flex justify-between">
-              <span className="text-muted-foreground">White Skull:</span>
-              <span className="font-semibold">Até 2 Kills em 24 hrs, até 4 em 7 dias e até 9 em 30 dias.</span>
+            
+            {/* White Skull */}
+            <div className="bg-muted/30 rounded p-2">
+              <span className="text-muted-foreground font-medium block mb-1">💀 White Skull</span>
+              <div className="text-text-dark space-y-0.5">
+                <div>• Até <span className="font-semibold">2 Kills</span> em 24 horas</div>
+                <div>• Até <span className="font-semibold">4 Kills</span> em 7 dias</div>
+                <div>• Até <span className="font-semibold">9 Kills</span> em 30 dias</div>
+              </div>
             </div>
-            <div className="flex justify-between">
-              <span className="text-muted-foreground">Red Skull:</span>
-              <span className="font-semibold">A partir de 3 Kills em 24 horas, 5 em 7 dias e 10 em 30 dias. Dias</span>
+            
+            {/* Red Skull */}
+            <div className="bg-destructive/10 rounded p-2 border border-destructive/20">
+              <span className="text-destructive font-medium block mb-1">☠️ Red Skull</span>
+              <div className="text-text-dark space-y-0.5">
+                <div>• A partir de <span className="font-semibold">3 Kills</span> em 24 horas</div>
+                <div>• A partir de <span className="font-semibold">5 Kills</span> em 7 dias</div>
+                <div>• A partir de <span className="font-semibold">10 Kills</span> em 30 dias</div>
+              </div>
             </div>
-            <div className="flex justify-between">
-              <span className="text-muted-foreground">Frags/Ban:</span>
-              <span className="font-semibold">Quando Exceder 2x o Necessário para Red Skull</span>
+            
+            {/* Ban */}
+            <div className="bg-destructive/20 rounded p-2 border border-destructive/30">
+              <span className="text-destructive font-medium block mb-1">🚫 Frags/Ban</span>
+              <span className="text-text-dark">Quando exceder 2x o necessário para Red Skull</span>
             </div>
           </div>
         </div>
