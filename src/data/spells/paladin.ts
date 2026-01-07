@@ -212,16 +212,6 @@ export const paladinSpells: Spell[] = [
     type: "Support",
   },
   {
-    name: "Strong Haste",
-    words: "utani gran hur",
-    image: "https://tibiara.netlify.app/en/img/runes/strong_haste.gif",
-    level: 20,
-    mana: 100,
-    price: "1300 gp",
-    isPremium: true,
-    type: "Support",
-  },
-  {
     name: "Desintegrate",
     words: "adito tera",
     image: "https://tibiara.netlify.app/en/img/runes/desintegrate.gif",
