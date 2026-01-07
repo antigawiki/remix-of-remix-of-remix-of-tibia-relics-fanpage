@@ -63,7 +63,7 @@ export const helmets: Equipment[] = [
   {
     name: "Dragon Scale Helmet",
     image: "https://tibiara.netlify.app/en/img/helmets/6535.png",
-    armor: 11,
+    armor: 14,
     weight: "29.5 oz.",
   },
   { name: "Horned Helmet", image: "https://tibiara.netlify.app/en/img/helmets/1056.png", armor: 15, weight: "51 oz." },
