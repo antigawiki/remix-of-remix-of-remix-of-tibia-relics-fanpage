@@ -61,8 +61,8 @@ const Sidebar = ({ position }: SidebarProps) => {
             <Link to="/equipment/armors" className="sidebar-menu-item text-xs">
               → Armaduras
             </Link>
-            <Link to="/equipment/weapons" className="sidebar-menu-item text-xs">
-              → Armas
+            <Link to="/equipment/swords" className="sidebar-menu-item text-xs">
+              → Espadas
             </Link>
             <Link to="/spells/sorcerer" className="sidebar-menu-item text-xs">
               → Magias Sorcerer
