@@ -36,9 +36,7 @@ const ServerInfo = () => {
           <div className="grid grid-cols-2 gap-2 text-sm">
             <div className="flex justify-between">
               <span className="text-muted-foreground">Tempo PZ:</span>
-              <span className="font-semibold">1 min sem Kill</span>
-              <br>
-              <span className="font-semibold">15 min com Kill.</span>
+              <span className="font-semibold">1 min sem Kill / 15 min com Kill</span>
             </div>
             <div className="flex justify-between">
               <span className="text-muted-foreground">White Skull:</span>
