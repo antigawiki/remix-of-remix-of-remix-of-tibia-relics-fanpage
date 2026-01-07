@@ -15,7 +15,7 @@ export interface Spell {
 export const sorcererSpells: Spell[] = [
   { name: "Find Person", words: 'exiva "name"', image: "https://tibiara.netlify.app/en/img/runes/find_person.gif", level: 8, mana: 20, price: "80 gp", isPremium: false, type: "Support" },
   { name: "Light", words: "utevo lux", image: "https://tibiara.netlify.app/en/img/runes/light.gif", level: 8, mana: 20, price: "100 gp", isPremium: false, type: "Support" },
-  { name: "Light Healing", words: "exura", image: "https://tibiara.netlify.app/en/img/runes/exura.gif", level: 9, mana: 20, price: "170 gp", isPremium: false, type: "Healing" },
+  { name: "Light Healing", words: "exura", image: "https://tibiara.netlify.app/en/monsters/img/spells.gif", level: 9, mana: 20, price: "170 gp", isPremium: false, type: "Healing" },
   { name: "Light Magic Missile", words: "adori min vis", image: "https://tibiara.netlify.app/en/img/runes/lmm.gif", level: 15, mana: 120, price: "500 gp", isPremium: false, type: "Attack" },
   { name: "Magic Rope", words: "exani tera", image: "https://tibiara.netlify.app/en/img/runes/magic_rope.gif", level: 9, mana: 20, price: "200 gp", isPremium: true, type: "Support" },
   { name: "Antidote", words: "exana pox", image: "https://tibiara.netlify.app/en/img/runes/antidote.gif", level: 10, mana: 30, price: "150 gp", isPremium: false, type: "Healing" },

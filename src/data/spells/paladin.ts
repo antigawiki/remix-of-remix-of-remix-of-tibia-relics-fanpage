@@ -3,7 +3,7 @@ import { Spell } from './sorcerer';
 export const paladinSpells: Spell[] = [
   { name: "Find Person", words: 'exiva "name"', image: "https://tibiara.netlify.app/en/img/runes/find_person.gif", level: 8, mana: 20, price: "80 gp", isPremium: false, type: "Support" },
   { name: "Light", words: "utevo lux", image: "https://tibiara.netlify.app/en/img/runes/light.gif", level: 8, mana: 20, price: "100 gp", isPremium: false, type: "Support" },
-  { name: "Light Healing", words: "exura", image: "https://tibiara.netlify.app/en/img/runes/exura.gif", level: 9, mana: 20, price: "170 gp", isPremium: false, type: "Healing" },
+  { name: "Light Healing", words: "exura", image: "https://tibiara.netlify.app/en/monsters/img/spells.gif", level: 9, mana: 20, price: "170 gp", isPremium: false, type: "Healing" },
   { name: "Light Magic Missile", words: "adori min vis", image: "https://tibiara.netlify.app/en/img/runes/lmm.gif", level: 15, mana: 120, price: "500 gp", isPremium: false, type: "Attack" },
   { name: "Magic Rope", words: "exani tera", image: "https://tibiara.netlify.app/en/img/runes/magic_rope.gif", level: 9, mana: 20, price: "200 gp", isPremium: true, type: "Support" },
   { name: "Antidote", words: "exana pox", image: "https://tibiara.netlify.app/en/img/runes/antidote.gif", level: 10, mana: 30, price: "150 gp", isPremium: false, type: "Healing" },
@@ -24,5 +24,5 @@ export const paladinSpells: Spell[] = [
   { name: "Magic Shield", words: "utamo vita", image: "https://tibiara.netlify.app/en/img/runes/magic_shield.gif", level: 14, mana: 50, price: "450 gp", isPremium: false, type: "Support" },
   { name: "Strong Haste", words: "utani gran hur", image: "https://tibiara.netlify.app/en/img/runes/strong_haste.gif", level: 20, mana: 100, price: "1300 gp", isPremium: true, type: "Support" },
   { name: "Desintegrate", words: "adito tera", image: "https://tibiara.netlify.app/en/img/runes/desintegrate.gif", level: 21, mana: 200, price: "900 gp", isPremium: true, type: "Support" },
-  { name: "Ethereal Spear", words: "exori con", image: "https://tibiara.netlify.app/en/img/runes/ethereal_spear.gif", level: 23, mana: 55, price: "1100 gp", isPremium: true, type: "Attack" },
+  { name: "Ethereal Spear", words: "exori con", image: "https://tibiara.netlify.app/en/monsters/img/spells.gif", level: 23, mana: 55, price: "1100 gp", isPremium: true, type: "Attack" },
 ];
