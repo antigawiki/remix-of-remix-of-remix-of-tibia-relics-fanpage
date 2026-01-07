@@ -36,30 +36,42 @@ const ServerInfo = () => {
           <div className="space-y-3 text-sm">
             {/* Tempo PZ */}
             <div className="bg-muted/30 rounded p-2">
-              <span className="text-muted-foreground font-medium block mb-1">⏱️ Tempo PZ</span>
+              <span className="text-destructive font-medium block mb-1">⏱️ Tempo PZ</span>
               <span className="text-text-dark">1 min sem Kill / 15 min com Kill</span>
             </div>
-            
+
             {/* White Skull */}
             <div className="bg-muted/30 rounded p-2">
-              <span className="text-muted-foreground font-medium block mb-1">💀 White Skull</span>
+              <span className="text-destructive font-medium block mb-1">💀 White Skull</span>
               <div className="text-text-dark space-y-0.5">
-                <div>• Até <span className="font-semibold">2 Kills</span> em 24 horas</div>
-                <div>• Até <span className="font-semibold">4 Kills</span> em 7 dias</div>
-                <div>• Até <span className="font-semibold">9 Kills</span> em 30 dias</div>
+                <div>
+                  • Até <span className="font-semibold">2 Kills</span> em 24 horas
+                </div>
+                <div>
+                  • Até <span className="font-semibold">4 Kills</span> em 7 dias
+                </div>
+                <div>
+                  • Até <span className="font-semibold">9 Kills</span> em 30 dias
+                </div>
               </div>
             </div>
-            
+
             {/* Red Skull */}
             <div className="bg-destructive/10 rounded p-2 border border-destructive/20">
               <span className="text-destructive font-medium block mb-1">☠️ Red Skull</span>
               <div className="text-text-dark space-y-0.5">
-                <div>• A partir de <span className="font-semibold">3 Kills</span> em 24 horas</div>
-                <div>• A partir de <span className="font-semibold">5 Kills</span> em 7 dias</div>
-                <div>• A partir de <span className="font-semibold">10 Kills</span> em 30 dias</div>
+                <div>
+                  • A partir de <span className="font-semibold">3 Kills</span> em 24 horas
+                </div>
+                <div>
+                  • A partir de <span className="font-semibold">5 Kills</span> em 7 dias
+                </div>
+                <div>
+                  • A partir de <span className="font-semibold">10 Kills</span> em 30 dias
+                </div>
               </div>
             </div>
-            
+
             {/* Ban */}
             <div className="bg-destructive/20 rounded p-2 border border-destructive/30">
               <span className="text-destructive font-medium block mb-1">🚫 Frags/Ban</span>
