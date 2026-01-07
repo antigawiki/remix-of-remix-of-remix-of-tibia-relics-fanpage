@@ -36,13 +36,13 @@ const ServerInfo = () => {
           <div className="space-y-3 text-sm">
             {/* Tempo PZ */}
             <div className="bg-muted/30 rounded p-2">
-              <span className="text-destructive font-medium block mb-1">⏱️ Tempo PZ</span>
+              <span className="text-foreground font-medium block mb-1">⏱️ Tempo PZ</span>
               <span className="text-text-dark">1 min sem Kill / 15 min com Kill</span>
             </div>
 
             {/* White Skull */}
             <div className="bg-muted/30 rounded p-2">
-              <span className="text-destructive font-medium block mb-1">💀 White Skull</span>
+              <span className="text-foreground font-medium block mb-1">💀 White Skull</span>
               <div className="text-text-dark space-y-0.5">
                 <div>
                   • Até <span className="font-semibold">2 Kills</span> em 24 horas
