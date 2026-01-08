@@ -1,16 +1,11 @@
-import { useState, useMemo } from 'react';
-import MainLayout from '@/layouts/MainLayout';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Checkbox } from '@/components/ui/checkbox';
-import { Button } from '@/components/ui/button';
-import { BookOpen, Clock, Droplets, Fish, Coins, Sparkles } from 'lucide-react';
-import { 
-  vocations, 
-  calculateMagicLevel,
-  VocationData,
-  MagicLevelResult
-} from '@/data/calculators/magicLevel';
+import { useState, useMemo } from "react";
+import MainLayout from "@/layouts/MainLayout";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Button } from "@/components/ui/button";
+import { BookOpen, Clock, Droplets, Fish, Coins, Sparkles } from "lucide-react";
+import { vocations, calculateMagicLevel, VocationData, MagicLevelResult } from "@/data/calculators/magicLevel";
 
 interface VocationCardProps {
   vocation: VocationData;
@@ -22,9 +17,7 @@ const VocationCard = ({ vocation, isSelected, onSelect }: VocationCardProps) => 
   <button
     onClick={onSelect}
     className={`p-3 rounded border-2 transition-all text-center ${
-      isSelected 
-        ? 'border-maroon bg-maroon/10 text-maroon' 
-        : 'border-border-light bg-cream hover:border-maroon/50'
+      isSelected ? "border-maroon bg-maroon/10 text-maroon" : "border-border-light bg-cream hover:border-maroon/50"
     }`}
   >
     <span className="font-medium text-sm">{vocation.name}</span>
@@ -57,9 +50,9 @@ const ResultCard = ({ icon, title, value, description, imageUrl }: ResultCardPro
 const MagicLevelCalculator = () => {
   const [selectedVocation, setSelectedVocation] = useState<VocationData | null>(null);
   const [hasPromotion, setHasPromotion] = useState(false);
-  const [currentML, setCurrentML] = useState('');
-  const [percentageToNext, setPercentageToNext] = useState('');
-  const [desiredML, setDesiredML] = useState('');
+  const [currentML, setCurrentML] = useState("");
+  const [percentageToNext, setPercentageToNext] = useState("");
+  const [desiredML, setDesiredML] = useState("");
   const [showResults, setShowResults] = useState(false);
 
   const result = useMemo<MagicLevelResult | null>(() => {
@@ -89,16 +82,16 @@ const MagicLevelCalculator = () => {
   };
 
   const formatNumber = (num: number) => {
-    return Math.ceil(num).toLocaleString('pt-BR');
+    return Math.ceil(num).toLocaleString("pt-BR");
   };
 
-  const formatTime = (time: MagicLevelResult['trainingTime']) => {
+  const formatTime = (time: MagicLevelResult["trainingTime"]) => {
     const parts = [];
-    if (time.days > 0) parts.push(`${time.days.toLocaleString('pt-BR')} dias`);
+    if (time.days > 0) parts.push(`${time.days.toLocaleString("pt-BR")} dias`);
     if (time.hours > 0) parts.push(`${time.hours} horas`);
     if (time.minutes > 0) parts.push(`${time.minutes} minutos`);
     if (time.seconds > 0) parts.push(`${time.seconds} segundos`);
-    return parts.join(', ') || '0 segundos';
+    return parts.join(", ") || "0 segundos";
   };
 
   const isFormValid = selectedVocation && currentML && percentageToNext && desiredML && result;
@@ -115,8 +108,8 @@ const MagicLevelCalculator = () => {
           </header>
           <div className="news-box-content space-y-6">
             <p className="text-sm text-muted-foreground">
-              Calcule quanto de mana você precisa gastar para atingir o Magic Level desejado, 
-              tempo de treino e quantidade de magias/runas necessárias.
+              Calcule quanto de mana você precisa gastar para atingir o Magic Level desejado, tempo de treino e
+              quantidade de magias/runas necessárias.
             </p>
 
             {/* Seleção de Vocação */}
@@ -136,8 +129,8 @@ const MagicLevelCalculator = () => {
 
             {/* Checkbox Promoção */}
             <div className="flex items-center gap-2">
-              <Checkbox 
-                id="promotion" 
+              <Checkbox
+                id="promotion"
                 checked={hasPromotion}
                 onCheckedChange={(checked) => setHasPromotion(checked === true)}
               />
@@ -147,9 +140,11 @@ const MagicLevelCalculator = () => {
             </div>
 
             {/* Inputs */}
-            <div className="grid sm:grid-cols-3 gap-4">
-              <div className="space-y-2">
-                <Label htmlFor="currentML" className="text-sm">Magic Level Atual:</Label>
+            <div className="grid sm:grid-cols-2 gap-2">
+              <div className="space-y-3">
+                <Label htmlFor="currentML" className="text-sm">
+                  Magic Level Atual:
+                </Label>
                 <Input
                   id="currentML"
                   type="number"
@@ -163,7 +158,9 @@ const MagicLevelCalculator = () => {
                 />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="percentage" className="text-sm">% para o Próximo ML:</Label>
+                <Label htmlFor="percentage" className="text-sm">
+                  % para o Próximo ML:
+                </Label>
                 <Input
                   id="percentage"
                   type="number"
@@ -178,7 +175,9 @@ const MagicLevelCalculator = () => {
                 />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="desiredML" className="text-sm">Magic Level Desejado:</Label>
+                <Label htmlFor="desiredML" className="text-sm">
+                  Magic Level Desejado:
+                </Label>
                 <Input
                   id="desiredML"
                   type="number"
@@ -195,7 +194,7 @@ const MagicLevelCalculator = () => {
 
             {/* Botão Calcular */}
             <div className="flex justify-center">
-              <Button 
+              <Button
                 onClick={handleCalculate}
                 disabled={!isFormValid}
                 className="bg-maroon hover:bg-maroon/90 text-white px-8"
@@ -224,7 +223,7 @@ const MagicLevelCalculator = () => {
                     icon={<Clock className="w-6 h-6" />}
                     title="Tempo de Treino"
                     value={formatTime(result.trainingTime)}
-                    description={hasPromotion ? 'Com promoção' : 'Sem promoção'}
+                    description={hasPromotion ? "Com promoção" : "Sem promoção"}
                   />
 
                   <ResultCard
@@ -251,10 +250,9 @@ const MagicLevelCalculator = () => {
 
                 <div className="bg-maroon/5 border border-maroon/20 rounded p-4 text-sm">
                   <p>
-                    <strong>Resumo:</strong> Você precisará gastar aproximadamente{' '}
-                    <strong className="text-maroon">{formatNumber(result.manaNeeded)}</strong> de mana 
-                    para atingir Magic Level <strong className="text-maroon">{desiredML}</strong>. 
-                    Isso levará aproximadamente{' '}
+                    <strong>Resumo:</strong> Você precisará gastar aproximadamente{" "}
+                    <strong className="text-maroon">{formatNumber(result.manaNeeded)}</strong> de mana para atingir
+                    Magic Level <strong className="text-maroon">{desiredML}</strong>. Isso levará aproximadamente{" "}
                     <strong className="text-maroon">{formatTime(result.trainingTime)}</strong>.
                   </p>
                 </div>
