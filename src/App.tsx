@@ -17,6 +17,7 @@ import DeathExperienceCalculator from "./pages/calculators/DeathExperienceCalcul
 import ExperienceLevelCalculator from "./pages/calculators/ExperienceLevelCalculator";
 import MagicLevelCalculator from "./pages/calculators/MagicLevelCalculator";
 import SkillsCalculator from "./pages/calculators/SkillsCalculator";
+import StatsCalculator from "./pages/calculators/StatsCalculator";
 import QuestsPage from "./pages/QuestsPage";
 import NotFound from "./pages/NotFound";
 const queryClient = new QueryClient();
@@ -45,6 +46,7 @@ const App = () => (
           <Route path="/calculators/experience-level" element={<ExperienceLevelCalculator />} />
           <Route path="/calculators/magic-level" element={<MagicLevelCalculator />} />
           <Route path="/calculators/skills" element={<SkillsCalculator />} />
+          <Route path="/calculators/stats" element={<StatsCalculator />} />
           <Route path="/quests" element={<QuestsPage />} />
           {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
           <Route path="*" element={<NotFound />} />
