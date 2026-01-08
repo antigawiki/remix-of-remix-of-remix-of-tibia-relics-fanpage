@@ -182,10 +182,10 @@ const SkillsCalculator = () => {
                   <button
                     key={vocation.id}
                     onClick={() => handleVocationSelect(vocation)}
-                    className={`p-3 rounded border text-center transition-colors ${
+                    className={`p-3 rounded border-2 text-center transition-all ${
                       selectedVocation?.id === vocation.id
-                        ? 'bg-maroon text-cream border-maroon'
-                        : 'bg-cream border-border-light hover:bg-cream-dark'
+                        ? 'border-maroon bg-maroon/10 text-maroon'
+                        : 'border-border-light bg-cream hover:border-maroon/50'
                     }`}
                   >
                     <span className="text-sm font-medium">{vocation.name}</span>
@@ -402,17 +402,6 @@ const SkillsCalculator = () => {
                       </p>
                     </div>
                   ))}
-                </div>
-                
-                {/* Imagem de treino */}
-                <div className="flex justify-center pt-4">
-                  <img
-                    src="https://tibiara.netlify.app/en/img/treino.gif"
-                    alt="Treino"
-                    className="rounded"
-                    width={340}
-                    height={204}
-                  />
                 </div>
               </div>
             )}
