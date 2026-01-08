@@ -107,7 +107,7 @@ const MagicLevelCalculator = () => {
             </h2>
           </header>
           <div className="news-box-content space-y-6">
-            <p className="text-sm text-muted-foreground">
+            <p className="text-sm text-foreground">
               Calcule quanto de mana você precisa gastar para atingir o Magic Level desejado, tempo de treino e
               quantidade de magias/runas necessárias.
             </p>
@@ -155,6 +155,7 @@ const MagicLevelCalculator = () => {
                     setShowResults(false);
                   }}
                   min={0}
+                  className="bg-transparent text-foreground"
                 />
               </div>
               <div className="space-y-2">
@@ -172,6 +173,7 @@ const MagicLevelCalculator = () => {
                   }}
                   min={0}
                   max={100}
+                  className="bg-transparent text-foreground"
                 />
               </div>
               <div className="space-y-2">
@@ -188,6 +190,7 @@ const MagicLevelCalculator = () => {
                     setShowResults(false);
                   }}
                   min={0}
+                  className="bg-transparent text-foreground"
                 />
               </div>
             </div>
