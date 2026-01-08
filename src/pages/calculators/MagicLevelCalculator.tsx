@@ -140,8 +140,8 @@ const MagicLevelCalculator = () => {
             </div>
 
             {/* Inputs */}
-            <div className="grid sm:grid-cols-3 gap-4">
-              <div className="space-y-1">
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+              <div className="space-y-2">
                 <Label htmlFor="currentML" className="text-sm">
                   Magic Level Atual:
                 </Label>
@@ -157,7 +157,7 @@ const MagicLevelCalculator = () => {
                   min={0}
                 />
               </div>
-              <div className="space-y-1">
+              <div className="space-y-2">
                 <Label htmlFor="percentage" className="text-sm">
                   % para o Próximo ML:
                 </Label>
@@ -174,7 +174,7 @@ const MagicLevelCalculator = () => {
                   max={100}
                 />
               </div>
-              <div className="space-y-1">
+              <div className="space-y-2">
                 <Label htmlFor="desiredML" className="text-sm">
                   Magic Level Desejado:
                 </Label>
