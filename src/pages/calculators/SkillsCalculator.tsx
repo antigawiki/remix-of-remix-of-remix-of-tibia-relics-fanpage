@@ -3,8 +3,7 @@ import MainLayout from '@/layouts/MainLayout';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Checkbox } from '@/components/ui/checkbox';
-import { Sword, Target, Shield, ArrowLeft } from 'lucide-react';
-import { Link } from 'react-router-dom';
+import { Sword, Target, Shield } from 'lucide-react';
 import {
   skillVocations,
   SkillVocationData,
@@ -163,11 +162,11 @@ const SkillsCalculator = () => {
     <MainLayout>
       <div className="space-y-6">
         <section className="news-box">
-          <header className="news-box-header flex items-center gap-2">
-            <Link to="/calculators" className="hover:text-cream">
-              <ArrowLeft className="w-4 h-4" />
-            </Link>
-            <h2 className="font-semibold">Calculadora de Skills</h2>
+          <header className="news-box-header">
+            <h2 className="font-semibold flex items-center gap-2">
+              <Target className="w-5 h-5" />
+              Calculadora de Skills
+            </h2>
           </header>
           <div className="news-box-content space-y-6">
             <p className="text-sm">

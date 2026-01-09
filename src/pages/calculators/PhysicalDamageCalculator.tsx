@@ -4,6 +4,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Swords } from "lucide-react";
 import {
   ammoData,
   calculatePhysicalDamage,
@@ -46,7 +47,10 @@ const PhysicalDamageCalculator = () => {
         {/* Header */}
         <section className="news-box">
           <header className="news-box-header">
-            <h1 className="text-lg font-bold">Calculadora de Dano Físico (Melee)</h1>
+            <h2 className="font-semibold flex items-center gap-2">
+              <Swords className="w-5 h-5" />
+              Calculadora de Dano Físico
+            </h2>
           </header>
           <div className="news-box-content">
             <p className="text-sm mb-4">

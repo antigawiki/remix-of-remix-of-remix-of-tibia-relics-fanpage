@@ -66,10 +66,12 @@ const LootCalculator = () => {
   return (
     <MainLayout>
       <div className="news-box">
-        <div className="news-box-header">
-          <Coins className="w-5 h-5" />
-          <span>Calculadora de Loot</span>
-        </div>
+        <header className="news-box-header">
+          <h2 className="font-semibold flex items-center gap-2">
+            <Coins className="w-5 h-5" />
+            Calculadora de Loot
+          </h2>
+        </header>
         <div className="news-box-content">
           <p className="mb-6">
             Adicione os itens do seu loot e calcule o valor total de venda no NPC.
