@@ -116,7 +116,10 @@ const DeathExperienceCalculator = () => {
       <div className="space-y-6">
         <section className="news-box">
           <header className="news-box-header">
-            <h2 className="font-semibold">Calculadora de XP na Morte</h2>
+            <h2 className="font-semibold flex items-center gap-2">
+              <Skull className="w-5 h-5" />
+              Calculadora de XP na Morte
+            </h2>
           </header>
           <div className="news-box-content space-y-6">
             <p className="text-sm">

@@ -2,6 +2,7 @@ import { useState, useMemo } from 'react';
 import MainLayout from '@/layouts/MainLayout';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Sparkles } from 'lucide-react';
 import { spellDamageData, calculateSpellDamage, SpellDamageData } from '@/data/calculators/spellDamage';
 
 interface SpellCardProps {
@@ -83,7 +84,10 @@ const HealDamageCalculator = () => {
         {/* Header */}
         <section className="news-box">
           <header className="news-box-header">
-            <h1 className="text-lg font-bold">Calculadora de Heal / Dano com Magias</h1>
+            <h2 className="font-semibold flex items-center gap-2">
+              <Sparkles className="w-5 h-5" />
+              Calculadora de Heal / Dano
+            </h2>
           </header>
           <div className="news-box-content">
             <p className="text-sm mb-4">
