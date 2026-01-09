@@ -73,7 +73,7 @@ const LootCalculator = () => {
           </h2>
         </header>
         <div className="news-box-content">
-          <p className="mb-6">
+          <p className="text-sm mb-4">
             Adicione os itens do seu loot e calcule o valor total de venda no NPC.
           </p>
 
