@@ -11,6 +11,7 @@ import SpellsPage from "./pages/SpellsPage";
 import CreaturesPage from "./pages/CreaturesPage";
 import InfoPage from "./pages/InfoPage";
 import CalculatorsPage from "./pages/CalculatorsPage";
+import LootCalculator from "./pages/calculators/LootCalculator";
 import HealDamageCalculator from "./pages/calculators/HealDamageCalculator";
 import PhysicalDamageCalculator from "./pages/calculators/PhysicalDamageCalculator";
 import DeathExperienceCalculator from "./pages/calculators/DeathExperienceCalculator";
@@ -47,6 +48,7 @@ const App = () => (
           <Route path="/calculators/magic-level" element={<MagicLevelCalculator />} />
           <Route path="/calculators/skills" element={<SkillsCalculator />} />
           <Route path="/calculators/stats" element={<StatsCalculator />} />
+          <Route path="/calculators/loot" element={<LootCalculator />} />
           <Route path="/quests" element={<QuestsPage />} />
           {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
           <Route path="*" element={<NotFound />} />
