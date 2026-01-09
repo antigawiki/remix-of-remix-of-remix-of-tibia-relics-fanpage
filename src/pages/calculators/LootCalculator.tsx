@@ -71,7 +71,7 @@ const LootCalculator = () => {
           <span>Calculadora de Loot</span>
         </div>
         <div className="news-box-content">
-          <p className="text-muted-foreground mb-6">
+          <p className="mb-6">
             Adicione os itens do seu loot e calcule o valor total de venda no NPC.
           </p>
 
@@ -164,7 +164,7 @@ const LootCalculator = () => {
             <Button
               variant="outline"
               onClick={handleClearAll}
-              className="border-border"
+              className="border-maroon/50 bg-maroon/10 hover:bg-maroon/20"
             >
               <RotateCcw className="w-4 h-4 mr-2" />
               Limpar Tudo
