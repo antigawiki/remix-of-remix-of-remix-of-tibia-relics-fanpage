@@ -122,7 +122,7 @@ const ExperienceLevelCalculator = () => {
           </h2>
         </header>
           <div className="news-box-content p-4">
-            <p className="text-sm text-muted-foreground mb-4">
+            <p className="text-sm mb-4">
               Calcule quantos monstros você precisa matar para atingir o level desejado.
             </p>
 

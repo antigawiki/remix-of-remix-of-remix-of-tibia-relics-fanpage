@@ -84,7 +84,7 @@ const StatsCalculator = () => {
             </h2>
           </header>
           <div className="news-box-content space-y-6">
-            <p className="text-sm">
+            <p className="text-sm mb-4">
               Calcule o HP, Mana e Capacidade do seu personagem baseado na vocação e nível.
             </p>
 

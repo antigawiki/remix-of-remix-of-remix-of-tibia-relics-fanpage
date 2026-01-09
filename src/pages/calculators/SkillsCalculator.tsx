@@ -169,7 +169,7 @@ const SkillsCalculator = () => {
             </h2>
           </header>
           <div className="news-box-content space-y-6">
-            <p className="text-sm">
+            <p className="text-sm mb-4">
               Calcule quanto tempo você precisa treinar para atingir as skills desejadas.
             </p>
 
