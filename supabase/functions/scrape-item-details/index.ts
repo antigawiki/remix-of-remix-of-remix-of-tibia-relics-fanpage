@@ -61,12 +61,19 @@ function parseNpcTable(html: string, tableId: string): NpcInfo[] {
   
   const tbody = html.substring(tbodyStart, tbodyEnd);
   
-  // Extract rows
-  const rowRegex = /<tr[^>]*>([\s\S]*?)<\/tr>/gi;
+  // Extract rows - skip header rows with id="topsbi"
+  const rowRegex = /<tr(?:\s+[^>]*)?>(?!.*id="topsbi")([\s\S]*?)<\/tr>/gi;
   let rowMatch;
   
   while ((rowMatch = rowRegex.exec(tbody)) !== null) {
+    const fullRow = rowMatch[0];
     const row = rowMatch[1];
+    
+    // Skip header row (has id="topsbi")
+    if (fullRow.includes('id="topsbi"')) {
+      continue;
+    }
+    
     const cells: string[] = [];
     const cellRegex = /<td[^>]*>([\s\S]*?)<\/td>/gi;
     let cellMatch;
@@ -79,22 +86,31 @@ function parseNpcTable(html: string, tableId: string): NpcInfo[] {
       // Extract city (remove HTML tags)
       const city = cells[0].replace(/<[^>]*>/g, '').trim();
       
-      // Extract NPC name
+      // Skip if city is "City" (header) or empty
+      if (!city || city.toLowerCase() === 'city') {
+        continue;
+      }
+      
+      // Extract map URL from the NPC cell (it's in the same cell as NPC name)
+      let mapUrl: string | undefined;
+      const mapMatch = cells[1].match(/href="([^"]*)"/i);
+      if (mapMatch) {
+        mapUrl = mapMatch[1];
+        // Make URL absolute if needed
+        if (!mapUrl.startsWith('http')) {
+          mapUrl = 'https://tibiara.netlify.app/en/pages/items/' + mapUrl;
+        }
+      }
+      
+      // Extract NPC name (remove HTML tags and clean up)
       const npc = cells[1].replace(/<[^>]*>/g, '').trim();
       
       // Extract price
       const price = cells[2].replace(/<[^>]*>/g, '').trim();
       
-      // Extract map URL if exists
-      let mapUrl: string | undefined;
-      const mapMatch = cells[3]?.match(/href="([^"]*map[^"]*)"/i);
-      if (mapMatch) {
-        mapUrl = mapMatch[1];
-        if (mapUrl.startsWith('../')) {
-          mapUrl = 'https://tibiara.netlify.app/en/' + mapUrl.replace('../', '');
-        } else if (!mapUrl.startsWith('http')) {
-          mapUrl = 'https://tibiara.netlify.app/en/pages/items/' + mapUrl;
-        }
+      // Skip rows with empty values
+      if (!npc || !price) {
+        continue;
       }
       
       npcs.push({ city, npc, price, mapUrl });
@@ -173,30 +189,49 @@ function parseItemDetails(html: string, itemName: string): ItemDetails {
   const imgMatch = html.match(/id="oneitems"[\s\S]*?<img[^>]*src="([^"]*)"/i);
   if (imgMatch) {
     let imgUrl = imgMatch[1];
+    // Make URL absolute if needed
     if (!imgUrl.startsWith('http')) {
-      imgUrl = 'https://tibiara.netlify.app' + (imgUrl.startsWith('/') ? '' : '/') + imgUrl;
+      imgUrl = 'https://tibiara.netlify.app/en/pages/items/' + imgUrl;
     }
     details.image = imgUrl;
   }
   
-  // Extract stats from oneitems table
+  // Extract stats from oneitems table - parse the data row, not headers
   const oneItemsStart = html.indexOf('id="oneitems"');
   if (oneItemsStart !== -1) {
     const tableEnd = html.indexOf('</table>', oneItemsStart);
     const tableHtml = html.substring(oneItemsStart, tableEnd);
     
-    // Look for Arm, Atk, Def, Weight
-    const armorMatch = tableHtml.match(/Arm:\s*(\d+)/i);
-    if (armorMatch) details.stats.armor = parseInt(armorMatch[1]);
+    // Find all rows
+    const rowRegex = /<tr[^>]*>([\s\S]*?)<\/tr>/gi;
+    let rowMatch;
+    let rowIndex = 0;
     
-    const attackMatch = tableHtml.match(/Atk:\s*(\d+)/i);
-    if (attackMatch) details.stats.attack = parseInt(attackMatch[1]);
-    
-    const defenseMatch = tableHtml.match(/Def:\s*(\d+)/i);
-    if (defenseMatch) details.stats.defense = parseInt(defenseMatch[1]);
-    
-    const weightMatch = tableHtml.match(/Weight:\s*([0-9.]+\s*oz\.?)/i);
-    if (weightMatch) details.stats.weight = weightMatch[1];
+    while ((rowMatch = rowRegex.exec(tableHtml)) !== null) {
+      rowIndex++;
+      // Skip header row (first row)
+      if (rowIndex === 1) continue;
+      
+      const row = rowMatch[1];
+      const cells: string[] = [];
+      const cellRegex = /<td[^>]*>([\s\S]*?)<\/td>/gi;
+      let cellMatch;
+      
+      while ((cellMatch = cellRegex.exec(row)) !== null) {
+        cells.push(cellMatch[1].replace(/<[^>]*>/g, '').trim());
+      }
+      
+      // cells[0] = name, cells[1] = image, cells[2] = armor/atk, cells[3] = weight
+      if (cells.length >= 4) {
+        const statValue = parseInt(cells[2]);
+        if (!isNaN(statValue)) {
+          details.stats.armor = statValue;
+        }
+        details.stats.weight = cells[3];
+      }
+      
+      break; // Only need first data row
+    }
   }
   
   // Parse NPC tables
