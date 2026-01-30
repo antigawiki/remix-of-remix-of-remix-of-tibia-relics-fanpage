@@ -9,12 +9,12 @@ interface SpellsTableProps {
   vocation: string;
 }
 
-type SortKey = 'name' | 'level' | 'mana' | 'price';
+type SortKey = 'name' | 'mlvl' | 'mana' | 'price';
 type SortDirection = 'asc' | 'desc';
 
 const SpellsTable = ({ spells, vocation }: SpellsTableProps) => {
   const [search, setSearch] = useState('');
-  const [sortKey, setSortKey] = useState<SortKey>('level');
+  const [sortKey, setSortKey] = useState<SortKey>('mlvl');
   const [sortDirection, setSortDirection] = useState<SortDirection>('asc');
 
   const handleSort = (key: SortKey) => {
@@ -40,6 +40,13 @@ const SpellsTable = ({ spells, vocation }: SpellsTableProps) => {
       bVal = parseInt(String(bVal).replace(/\D/g, ''));
     }
 
+    if (sortKey === 'mana') {
+      // Handle mana as string (e.g. "40%") or number
+      const aNum = typeof aVal === 'string' ? parseInt(aVal.replace(/\D/g, '')) || 0 : Number(aVal);
+      const bNum = typeof bVal === 'string' ? parseInt(bVal.replace(/\D/g, '')) || 0 : Number(bVal);
+      return sortDirection === 'asc' ? aNum - bNum : bNum - aNum;
+    }
+
     if (typeof aVal === 'string' && typeof bVal === 'string') {
       return sortDirection === 'asc' 
         ? aVal.localeCompare(bVal) 
@@ -50,6 +57,16 @@ const SpellsTable = ({ spells, vocation }: SpellsTableProps) => {
       ? Number(aVal) - Number(bVal) 
       : Number(bVal) - Number(aVal);
   });
+
+  const getTypeTranslation = (type: string | undefined) => {
+    switch (type) {
+      case 'Attack': return 'Ataque';
+      case 'Healing': return 'Cura';
+      case 'Support': return 'Suporte';
+      case 'Summon': return 'Invocação';
+      default: return type || 'Outro';
+    }
+  };
 
   return (
     <div className="space-y-4">
@@ -80,10 +97,10 @@ const SpellsTable = ({ spells, vocation }: SpellsTableProps) => {
               <TableHead className="text-parchment">Palavras</TableHead>
               <TableHead 
                 className="text-parchment cursor-pointer hover:bg-maroon/80"
-                onClick={() => handleSort('level')}
+                onClick={() => handleSort('mlvl')}
               >
                 <div className="flex items-center gap-1">
-                  Level
+                  Magic Lvl
                   <ArrowUpDown className="h-3 w-3" />
                 </div>
               </TableHead>
@@ -105,7 +122,6 @@ const SpellsTable = ({ spells, vocation }: SpellsTableProps) => {
                   <ArrowUpDown className="h-3 w-3" />
                 </div>
               </TableHead>
-              <TableHead className="text-parchment w-12">P</TableHead>
               <TableHead className="text-parchment">Tipo</TableHead>
             </TableRow>
           </TableHeader>
@@ -125,12 +141,9 @@ const SpellsTable = ({ spells, vocation }: SpellsTableProps) => {
                 </TableCell>
                 <TableCell className="font-medium text-text-dark">{spell.name}</TableCell>
                 <TableCell className="font-mono text-xs text-maroon">{spell.words}</TableCell>
-                <TableCell>{spell.level}</TableCell>
+                <TableCell>{spell.mlvl}</TableCell>
                 <TableCell>{spell.mana}</TableCell>
                 <TableCell>{spell.price}</TableCell>
-                <TableCell>
-                  {spell.isPremium && <Star className="h-4 w-4 text-gold fill-gold" />}
-                </TableCell>
                 <TableCell className="text-xs">
                   <span className={`px-2 py-0.5 rounded-sm ${
                     spell.type === 'Attack' ? 'bg-red-100 text-red-800' :
@@ -139,7 +152,7 @@ const SpellsTable = ({ spells, vocation }: SpellsTableProps) => {
                     spell.type === 'Summon' ? 'bg-purple-100 text-purple-800' :
                     'bg-gray-100 text-gray-800'
                   }`}>
-                    {spell.type || 'Other'}
+                    {getTypeTranslation(spell.type)}
                   </span>
                 </TableCell>
               </TableRow>
