@@ -5,11 +5,13 @@ import { ChevronUp, ChevronDown } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 
 // Tibia map coordinate system
-// Origin offset - the top-left corner of the map in Tibia world coordinates
+// The floor images represent a specific area of the Tibia world
+// Based on analysis of the reference map at maprelic.netlify.app
+// The images are 2048x2048 pixels and represent world coordinates
 const MAP_ORIGIN_X = 31744;
 const MAP_ORIGIN_Y = 30976;
 
-// Image dimensions (from the uploaded floor images)
+// Image dimensions
 const IMAGE_WIDTH = 2048;
 const IMAGE_HEIGHT = 2048;
 
@@ -21,7 +23,7 @@ interface MapViewerProps {
   className?: string;
 }
 
-const MapViewer = ({ x, y, z, zoom = 1, className = '' }: MapViewerProps) => {
+const MapViewer = ({ x, y, z, zoom = 2, className = '' }: MapViewerProps) => {
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const leafletMap = useRef<L.Map | null>(null);
   const imageOverlay = useRef<L.ImageOverlay | null>(null);
@@ -33,11 +35,17 @@ const MapViewer = ({ x, y, z, zoom = 1, className = '' }: MapViewerProps) => {
     return `/map/floor-${floorNum}-map.png`;
   };
 
-  // Convert Tibia world coordinates to image pixel coordinates
-  const worldToPixel = (worldX: number, worldY: number): [number, number] => {
+  // Convert Tibia world coordinates to Leaflet coordinates
+  // The floor images have 1:1 pixel to coordinate mapping
+  // Leaflet uses [lat, lng] format where lat is Y and lng is X
+  const worldToLeaflet = (worldX: number, worldY: number): L.LatLngExpression => {
+    // Direct mapping - the images start at MAP_ORIGIN coordinates
     const pixelX = worldX - MAP_ORIGIN_X;
     const pixelY = worldY - MAP_ORIGIN_Y;
-    return [pixelX, pixelY];
+    
+    // Leaflet expects [y, x] format
+    // In our image, Y increases downward, which matches Leaflet's default behavior
+    return [pixelY, pixelX];
   };
 
   // Initialize map
@@ -55,11 +63,12 @@ const MapViewer = ({ x, y, z, zoom = 1, className = '' }: MapViewerProps) => {
 
     leafletMap.current = map;
 
-    // Define bounds: [[y_min, x_min], [y_max, x_max]]
-    // Since Leaflet CRS.Simple has Y increasing upward, we use negative Y
+    // Define bounds for the image: [[y_min, x_min], [y_max, x_max]]
+    // In Leaflet CRS.Simple, the origin (0,0) is at bottom-left by default
+    // But we want top-left origin to match image coordinates
     const bounds: L.LatLngBoundsExpression = [
-      [-IMAGE_HEIGHT, 0],
-      [0, IMAGE_WIDTH]
+      [0, 0],                          // top-left corner
+      [IMAGE_HEIGHT, IMAGE_WIDTH]      // bottom-right corner
     ];
 
     // Add initial floor image
@@ -69,17 +78,14 @@ const MapViewer = ({ x, y, z, zoom = 1, className = '' }: MapViewerProps) => {
 
     // Set map bounds for panning
     map.setMaxBounds([
-      [-IMAGE_HEIGHT - 200, -200],
-      [200, IMAGE_WIDTH + 200]
+      [-200, -200],
+      [IMAGE_HEIGHT + 200, IMAGE_WIDTH + 200]
     ]);
 
-    // Convert target coordinates to pixel position
-    const [pixelX, pixelY] = worldToPixel(x, y);
-    
-    // Marker position: (-pixelY, pixelX) because Leaflet Y is inverted
-    const markerPos: L.LatLngExpression = [-pixelY, pixelX];
+    // Convert target coordinates to Leaflet position
+    const markerPos = worldToLeaflet(x, y);
 
-    console.log(`Map: World (${x}, ${y}, ${z}) -> Pixel (${pixelX}, ${pixelY}) -> Leaflet`, markerPos);
+    console.log(`Map: World (${x}, ${y}, ${z}) -> Leaflet`, markerPos);
 
     // Add marker at target location
     const targetMarker = L.circleMarker(markerPos, {
@@ -99,13 +105,6 @@ const MapViewer = ({ x, y, z, zoom = 1, className = '' }: MapViewerProps) => {
 
     // Center on target
     map.setView(markerPos, zoom);
-
-    // Fit bounds to show area around marker
-    const viewBounds = L.latLngBounds(
-      [-pixelY - 150, pixelX - 200],
-      [-pixelY + 150, pixelX + 200]
-    );
-    map.fitBounds(viewBounds);
 
     return () => {
       map.remove();
