@@ -3,6 +3,7 @@ import { Equipment } from '@/data/equipment';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { ArrowUpDown, Search } from 'lucide-react';
 import { Input } from '@/components/ui/input';
+import ItemDetailsModal from '@/components/ItemDetailsModal';
 
 interface EquipmentTableProps {
   items: Equipment[];
@@ -16,6 +17,13 @@ const EquipmentTable = ({ items, category }: EquipmentTableProps) => {
   const [search, setSearch] = useState('');
   const [sortKey, setSortKey] = useState<SortKey>('name');
   const [sortDirection, setSortDirection] = useState<SortDirection>('asc');
+  const [selectedItem, setSelectedItem] = useState<Equipment | null>(null);
+  const [modalOpen, setModalOpen] = useState(false);
+
+  const handleRowClick = (item: Equipment) => {
+    setSelectedItem(item);
+    setModalOpen(true);
+  };
 
   const handleSort = (key: SortKey) => {
     if (sortKey === key) {
@@ -132,7 +140,8 @@ const EquipmentTable = ({ items, category }: EquipmentTableProps) => {
             {sortedItems.map((item, index) => (
               <TableRow 
                 key={item.name} 
-                className={index % 2 === 0 ? 'bg-parchment' : 'bg-parchment-dark'}
+                className={`${index % 2 === 0 ? 'bg-parchment' : 'bg-parchment-dark'} cursor-pointer hover:bg-gold/20 transition-colors`}
+                onClick={() => handleRowClick(item)}
               >
                 <TableCell>
                   <img 
@@ -157,8 +166,14 @@ const EquipmentTable = ({ items, category }: EquipmentTableProps) => {
       </div>
 
       <p className="text-xs text-muted-foreground text-center">
-        Exibindo {sortedItems.length} de {items.length} itens
+        Exibindo {sortedItems.length} de {items.length} itens • Clique em um item para mais detalhes
       </p>
+
+      <ItemDetailsModal 
+        item={selectedItem}
+        open={modalOpen}
+        onOpenChange={setModalOpen}
+      />
     </div>
   );
 };
