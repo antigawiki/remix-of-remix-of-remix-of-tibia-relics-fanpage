@@ -19,7 +19,7 @@ const Index = () => {
             </p>
             <div className="flex flex-wrap gap-2">
               <a 
-                href="https://tibiarelic.com" 
+                href="https://www.tibiarelic.com/register" 
                 target="_blank" 
                 rel="noopener noreferrer"
                 className="retro-btn"
@@ -27,12 +27,12 @@ const Index = () => {
                 Criar Conta
               </a>
               <a 
-                href="https://tibiarelic.com" 
+                href="https://public.tibiarelic.com/client/Tibia%20Relic.zip" 
                 target="_blank" 
                 rel="noopener noreferrer"
                 className="retro-btn"
               >
-                Download Client
+                Download Cliente
               </a>
             </div>
           </div>

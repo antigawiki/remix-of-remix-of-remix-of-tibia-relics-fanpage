@@ -63,7 +63,7 @@ const Sidebar = ({ position }: SidebarProps) => {
             </Link>
             <Link to="/death-row" className="sidebar-menu-item flex items-center gap-2">
               <Skull className="w-4 h-4 text-gold" />
-              Death Row
+              Banidos
             </Link>
             <Link to="/info" className="sidebar-menu-item flex items-center gap-2">
               <Info className="w-4 h-4 text-gold" />
