@@ -7,7 +7,13 @@ export interface OnlinePlayer {
 }
 
 const fetchOnlinePlayers = async (): Promise<OnlinePlayer[]> => {
-  const response = await fetch('https://api.tibiarelic.com/api/Community/Relic/who-is-online');
+  const url = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/tibia-relic-proxy?endpoint=who-is-online`;
+  
+  const response = await fetch(url, {
+    headers: {
+      'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
+    },
+  });
   
   if (!response.ok) {
     throw new Error('Failed to fetch online players');

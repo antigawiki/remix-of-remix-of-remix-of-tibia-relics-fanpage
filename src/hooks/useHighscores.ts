@@ -36,8 +36,13 @@ const fetchHighscores = async (
   category: HighscoreCategory = 'Experience',
   vocation: HighscoreVocation = 'All'
 ): Promise<HighscoresResponse> => {
-  const url = `https://api.tibiarelic.com/api/Highscores?worldName=Relic&category=${category}&vocation=${vocation}`;
-  const response = await fetch(url);
+  const url = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/tibia-relic-proxy?endpoint=highscores&category=${category}&vocation=${vocation}`;
+  
+  const response = await fetch(url, {
+    headers: {
+      'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
+    },
+  });
   
   if (!response.ok) {
     throw new Error('Failed to fetch highscores');
