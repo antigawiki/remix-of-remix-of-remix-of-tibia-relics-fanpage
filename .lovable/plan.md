@@ -1,292 +1,174 @@
 
-## Plano: Integrar APIs do Tibia Relic
 
-### Objetivo
-Integrar 3 APIs do servidor Tibia Relic para exibir dados reais de:
-1. **Server Status** - Players online, recorde, próximo server save
-2. **Ranking/Highscores** - Top players por categoria e vocação
-3. **Who is Online** - Lista de jogadores online
+# Sistema de Top Gainers (Maiores Ganhadores de XP)
 
----
+## Resumo
 
-### Estrutura das APIs
-
-**1. Server Stats**
-```
-GET https://api.tibiarelic.com/api/Community/Relic/stats
-```
-Resposta:
-```json
-{
-  "playersOnline": 0,
-  "recordOnline": 52,
-  "recordOnlineDate": "2026-01-23T19:30:30.533977Z",
-  "nextServerSave": "2026-01-31T09:00:00Z"
-}
-```
-
-**2. Highscores**
-```
-GET https://api.tibiarelic.com/api/Highscores?worldName=Relic&category=Experience&vocation=All
-```
-Categorias: Experience, MagicLevel, FistFighting, ClubFighting, SwordFighting, AxeFighting, DistanceFighting, Shielding, Fishing
-
-Vocações: All, None, Knights, Paladins, Sorcerers, Druids
-
-Resposta:
-```json
-{
-  "highscores": [
-    {
-      "name": "Weedhahaha",
-      "profession": "Knight",
-      "worldName": "Relic",
-      "level": 30,
-      "skillLevel": 405042
-    },
-    ...
-  ],
-  "lastUpdatedUtc": "2026-01-30T08:47:55Z"
-}
-```
-
-**3. Who is Online**
-```
-GET https://api.tibiarelic.com/api/Community/Relic/who-is-online
-```
-Resposta: Array de players online (estrutura similar ao highscores)
+Como a API do Tibia Relic nao fornece dados de ganho de experiencia diario, vamos criar um sistema proprio que:
+1. Salva automaticamente um snapshot dos top 100 jogadores a cada server save (06:00 UTC)
+2. Compara o snapshot atual com o anterior para calcular o ganho de XP
+3. Exibe uma pagina com os maiores ganhadores do dia
 
 ---
 
-### Arquivos a criar
-
-| Arquivo | Descrição |
-|---------|-----------|
-| `src/hooks/useServerStats.ts` | Hook para buscar status do servidor |
-| `src/hooks/useHighscores.ts` | Hook para buscar ranking |
-| `src/hooks/useOnlinePlayers.ts` | Hook para buscar players online |
-| `src/pages/HighscoresPage.tsx` | Página de ranking completo |
-| `src/pages/OnlinePlayersPage.tsx` | Página de quem está online |
-
----
-
-### Arquivos a modificar
-
-| Arquivo | Mudança |
-|---------|---------|
-| `src/components/Sidebar.tsx` | Integrar dados reais no Server Status e Top 5 |
-| `src/App.tsx` | Adicionar rotas para novas páginas |
-
----
-
-### 1. Criar Hook: `src/hooks/useServerStats.ts`
-
-```typescript
-interface ServerStats {
-  playersOnline: number;
-  recordOnline: number;
-  recordOnlineDate: string;
-  nextServerSave: string;
-}
-```
-
-- Usa `@tanstack/react-query` para cache e refetch automático
-- Refetch a cada 60 segundos para manter dados atualizados
-- Tratamento de erro com fallback para dados vazios
-
----
-
-### 2. Criar Hook: `src/hooks/useHighscores.ts`
-
-```typescript
-interface HighscoreEntry {
-  name: string;
-  profession: string;
-  worldName: string;
-  level: number;
-  skillLevel: number;
-}
-
-interface HighscoresResponse {
-  highscores: HighscoreEntry[];
-  lastUpdatedUtc: string;
-}
-
-type Category = 'Experience' | 'MagicLevel' | 'FistFighting' | 'ClubFighting' | 
-                'SwordFighting' | 'AxeFighting' | 'DistanceFighting' | 'Shielding' | 'Fishing';
-
-type Vocation = 'All' | 'None' | 'Knights' | 'Paladins' | 'Sorcerers' | 'Druids';
-```
-
-- Aceita parâmetros `category` e `vocation`
-- Cache de 5 minutos (dados não mudam frequentemente)
-- Função auxiliar `useTopPlayers(limit: number)` para pegar Top 5
-
----
-
-### 3. Criar Hook: `src/hooks/useOnlinePlayers.ts`
-
-```typescript
-interface OnlinePlayer {
-  name: string;
-  profession: string;
-  level: number;
-}
-```
-
-- Refetch a cada 30 segundos
-- Retorna array vazio se ninguém online
-
----
-
-### 4. Atualizar Sidebar (Right)
-
-**Server Status:**
-- Players Online: Dado real da API
-- Record: Mostrar recorde com data
-- Next SS: Tempo até próximo server save (countdown)
-- Status: Verde se API responde, vermelho se erro
-
-**Top 5 Players:**
-- Dados reais do ranking de Experience
-- Nome do player clicável (link futuro)
-- Level real
-- Cor dourada #1, prata #2, bronze #3
-- Link "Ver ranking completo" aponta para `/highscores`
-
----
-
-### 5. Criar Página: `src/pages/HighscoresPage.tsx`
-
-**Layout:**
-- Usa `MainLayout` com sidebars
-- Título: "Ranking" com ícone Trophy
-
-**Filtros:**
-- Select de Categoria (Experience padrão)
-- Select de Vocação (All padrão)
-
-**Tabela de ranking:**
-| # | Nome | Vocação | Level | Pontuação |
-|---|------|---------|-------|-----------|
-| 1 | Weedhahaha | Knight | 30 | 405,042 |
-| ... | ... | ... | ... | ... |
-
-**Informações adicionais:**
-- Última atualização: data/hora
-- Paginação se necessário (API retorna ~100 players)
-
----
-
-### 6. Criar Página: `src/pages/OnlinePlayersPage.tsx`
-
-**Layout:**
-- Usa `MainLayout` com sidebars
-- Título: "Jogadores Online" com ícone Users
-
-**Conteúdo:**
-- Contador de players online
-- Tabela com jogadores:
-  | Nome | Vocação | Level |
-  |------|---------|-------|
-  | Player1 | Knight | 25 |
-
-- Mensagem especial se ninguém online: "Nenhum jogador online no momento"
-- Atualização automática a cada 30 segundos
-- Indicador de "Atualizando..." durante refetch
-
----
-
-### 7. Atualizar Sidebar (Left)
-
-Adicionar links na navegação:
-- Ranking (ícone Trophy) -> `/highscores`
-- Online (ícone Users) -> `/online`
-
----
-
-### 8. Atualizar `src/App.tsx`
-
-Adicionar rotas:
-```tsx
-<Route path="/highscores" element={<HighscoresPage />} />
-<Route path="/online" element={<OnlinePlayersPage />} />
-```
-
----
-
-### Detalhes de implementação
-
-**Formatação de números:**
-- skillLevel com separador de milhares (405.042)
-- Usar `toLocaleString('pt-BR')`
-
-**Formatação de datas:**
-- Usar `date-fns` (já instalado)
-- `format(new Date(date), "dd/MM/yyyy 'às' HH:mm")`
-- Countdown para server save: `formatDistanceToNow`
-
-**Tratamento de vocações (API -> Display):**
-| API | Display |
-|-----|---------|
-| Knight | Knight |
-| Elite Knight | Elite Knight |
-| Paladin | Paladin |
-| Royal Paladin | Royal Paladin |
-| Sorcerer | Sorcerer |
-| Master Sorcerer | Master Sorcerer |
-| Druid | Druid |
-| Elder Druid | Elder Druid |
-| None | Sem vocação |
-
----
-
-### Ordem de implementação
-
-1. Criar hooks (useServerStats, useHighscores, useOnlinePlayers)
-2. Atualizar Sidebar com dados reais
-3. Criar HighscoresPage
-4. Criar OnlinePlayersPage
-5. Atualizar rotas no App.tsx
-6. Adicionar links na navegação
-
----
-
-### Resumo visual
+## Arquitetura
 
 ```text
-┌─────────────────────────────────────────────────────────────┐
-│                         SIDEBAR (Right)                      │
-├─────────────────────────────────────────────────────────────┤
-│  ● Server Status                                             │
-│    Status: Online                                            │
-│    Players: 0 (Recorde: 52)                                  │
-│    Next SS: em 2h 30min                                      │
-├─────────────────────────────────────────────────────────────┤
-│  🏆 Top 5 Players                                            │
-│    #1 Weedhahaha      Lvl 30                                 │
-│    #2 Mirana Night... Lvl 30                                 │
-│    #3 Icsea           Lvl 27                                 │
-│    #4 Gnoll           Lvl 26                                 │
-│    #5 Destroyer       Lvl 26                                 │
-│    Ver ranking completo →                                    │
-└─────────────────────────────────────────────────────────────┘
-
-┌─────────────────────────────────────────────────────────────┐
-│                     HIGHSCORES PAGE                          │
-├─────────────────────────────────────────────────────────────┤
-│  🏆 Ranking                                                  │
-│                                                              │
-│  Categoria: [Experience ▼]  Vocação: [Todas ▼]              │
-│                                                              │
-│  ┌────┬────────────────┬────────────────┬───────┬──────────┐│
-│  │ #  │ Nome           │ Vocação        │ Level │ XP       ││
-│  ├────┼────────────────┼────────────────┼───────┼──────────┤│
-│  │ 1  │ Weedhahaha     │ Knight         │ 30    │ 405.042  ││
-│  │ 2  │ Mirana Night...│ Paladin        │ 30    │ 387.495  ││
-│  │ ...│ ...            │ ...            │ ...   │ ...      ││
-│  └────┴────────────────┴────────────────┴───────┴──────────┘│
-│                                                              │
-│  Última atualização: 30/01/2026 às 08:47                    │
-└─────────────────────────────────────────────────────────────┘
++------------------+     +----------------------+     +------------------+
+|   Cron Job       | --> | Edge Function        | --> | Tabela Supabase  |
+|   (Diario 06h)   |     | save-highscores      |     | highscore_snapshots |
++------------------+     +----------------------+     +------------------+
+                                                              |
+                                                              v
++------------------+     +----------------------+     +------------------+
+|   Frontend       | <-- | Edge Function        | <-- | Calculo de       |
+|   TopGainersPage |     | get-top-gainers      |     | Diferenca XP     |
++------------------+     +----------------------+     +------------------+
 ```
+
+---
+
+## Etapas de Implementacao
+
+### 1. Criar Tabela no Banco de Dados
+
+Criar tabela `highscore_snapshots` para armazenar os dados diarios:
+
+```sql
+CREATE TABLE highscore_snapshots (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  snapshot_date DATE NOT NULL,
+  player_name TEXT NOT NULL,
+  profession TEXT,
+  level INTEGER,
+  experience BIGINT,
+  created_at TIMESTAMPTZ DEFAULT now(),
+  UNIQUE(snapshot_date, player_name)
+);
+
+-- Indices para performance
+CREATE INDEX idx_snapshots_date ON highscore_snapshots(snapshot_date);
+CREATE INDEX idx_snapshots_player ON highscore_snapshots(player_name);
+
+-- RLS: Leitura publica, escrita apenas via service role
+ALTER TABLE highscore_snapshots ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Anyone can read snapshots" ON highscore_snapshots FOR SELECT USING (true);
+```
+
+### 2. Criar Edge Function para Salvar Snapshot
+
+Arquivo: `supabase/functions/save-highscores/index.ts`
+
+Esta funcao:
+- Busca os top 100 jogadores da API do Tibia Relic
+- Salva na tabela `highscore_snapshots` com a data atual
+- Usa UPSERT para evitar duplicatas
+
+### 3. Configurar Cron Job
+
+Agendar a execucao diaria as 06:00 UTC (horario do server save + 1 hora para garantir atualizacao):
+
+```sql
+-- Habilitar extensoes necessarias
+CREATE EXTENSION IF NOT EXISTS pg_cron;
+CREATE EXTENSION IF NOT EXISTS pg_net;
+
+-- Criar cron job
+SELECT cron.schedule(
+  'save-daily-highscores',
+  '0 9 * * *', -- 09:00 UTC (server save do Relic e 09:00)
+  $$
+  SELECT net.http_post(
+    url:='https://adagjmvhlmghhmadtpwv.supabase.co/functions/v1/save-highscores',
+    headers:='{"Authorization": "Bearer <anon_key>"}'::jsonb,
+    body:='{}'::jsonb
+  );
+  $$
+);
+```
+
+### 4. Criar Edge Function para Calcular Top Gainers
+
+Arquivo: `supabase/functions/get-top-gainers/index.ts`
+
+Esta funcao:
+- Busca o snapshot de hoje e de ontem
+- Calcula a diferenca de XP para cada jogador
+- Retorna os top 10 maiores ganhadores ordenados
+
+### 5. Criar Hook React
+
+Arquivo: `src/hooks/useTopGainers.ts`
+
+Hook para buscar e cachear os dados dos top gainers.
+
+### 6. Criar Pagina Top Gainers
+
+Arquivo: `src/pages/TopGainersPage.tsx`
+
+Pagina com:
+- Tabela mostrando: Rank, Nome (com PlayerLink), Nivel, XP Ganha, XP Total
+- Data de referencia (ontem para hoje)
+- Icones de trofeu para top 3
+- Estado de loading e erro
+
+### 7. Atualizar Navegacao
+
+Adicionar link na Sidebar esquerda com icone de tendencia (TrendingUp).
+
+---
+
+## Detalhes Tecnicos
+
+### Estrutura de Dados do Snapshot
+
+| Campo | Tipo | Descricao |
+|-------|------|-----------|
+| id | UUID | Identificador unico |
+| snapshot_date | DATE | Data do snapshot (ex: 2026-01-30) |
+| player_name | TEXT | Nome do personagem |
+| profession | TEXT | Vocacao do personagem |
+| level | INTEGER | Nivel atual |
+| experience | BIGINT | Experiencia total |
+
+### Resposta da API get-top-gainers
+
+```json
+{
+  "gainers": [
+    {
+      "rank": 1,
+      "name": "Weedhahaha",
+      "profession": "Knight",
+      "level": 30,
+      "experienceGained": 45000,
+      "currentExperience": 405042
+    }
+  ],
+  "periodStart": "2026-01-29",
+  "periodEnd": "2026-01-30"
+}
+```
+
+### Consideracoes
+
+- **Retencao de dados**: Manter apenas os ultimos 30 dias de snapshots para economizar espaco
+- **Jogadores novos**: Se um jogador aparece hoje mas nao ontem, o ganho sera a XP total
+- **Jogadores que sairam**: Nao aparecerao no ranking de gainers
+- **Primeiro dia**: Sem dados anteriores, a pagina mostrara mensagem informativa
+
+---
+
+## Arquivos a Criar/Modificar
+
+| Arquivo | Acao |
+|---------|------|
+| Tabela `highscore_snapshots` | Criar (migracao) |
+| `supabase/functions/save-highscores/index.ts` | Criar |
+| `supabase/functions/get-top-gainers/index.ts` | Criar |
+| `supabase/config.toml` | Atualizar |
+| `src/hooks/useTopGainers.ts` | Criar |
+| `src/pages/TopGainersPage.tsx` | Criar |
+| `src/components/Sidebar.tsx` | Atualizar |
+| `src/App.tsx` | Atualizar rotas |
+
