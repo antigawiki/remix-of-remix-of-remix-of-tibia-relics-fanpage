@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Trophy, RefreshCw } from 'lucide-react';
 import { format } from 'date-fns';
+import PlayerLink from '@/components/PlayerLink';
 import { ptBR } from 'date-fns/locale';
 import MainLayout from '@/layouts/MainLayout';
 import { 
@@ -144,7 +145,9 @@ const HighscoresPage = () => {
                       <TableCell className={getRankColor(index + 1)}>
                         #{index + 1}
                       </TableCell>
-                      <TableCell className="font-medium">{player.name}</TableCell>
+                      <TableCell className="font-medium">
+                        <PlayerLink name={player.name} />
+                      </TableCell>
                       <TableCell className="text-muted-foreground">
                         {getVocationDisplayName(player.profession)}
                       </TableCell>

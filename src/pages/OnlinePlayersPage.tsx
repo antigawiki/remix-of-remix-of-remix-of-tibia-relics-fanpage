@@ -2,6 +2,7 @@ import { Users, RefreshCw } from 'lucide-react';
 import MainLayout from '@/layouts/MainLayout';
 import { useOnlinePlayers } from '@/hooks/useOnlinePlayers';
 import { getVocationDisplayName } from '@/hooks/useHighscores';
+import PlayerLink from '@/components/PlayerLink';
 import {
   Table,
   TableBody,
@@ -59,7 +60,9 @@ const OnlinePlayersPage = () => {
               <TableBody>
                 {players.map((player, index) => (
                   <TableRow key={`${player.name}-${index}`}>
-                    <TableCell className="font-medium">{player.name}</TableCell>
+                    <TableCell className="font-medium">
+                      <PlayerLink name={player.name} />
+                    </TableCell>
                     <TableCell className="text-muted-foreground">
                       {getVocationDisplayName(player.profession)}
                     </TableCell>
