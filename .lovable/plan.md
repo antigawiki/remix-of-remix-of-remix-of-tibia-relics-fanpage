@@ -1,174 +1,178 @@
 
+# Plano: Modal de Detalhes de Itens com Scraping do Tibiara
 
-# Sistema de Top Gainers (Maiores Ganhadores de XP)
-
-## Resumo
-
-Como a API do Tibia Relic nao fornece dados de ganho de experiencia diario, vamos criar um sistema proprio que:
-1. Salva automaticamente um snapshot dos top 100 jogadores a cada server save (06:00 UTC)
-2. Compara o snapshot atual com o anterior para calcular o ganho de XP
-3. Exibe uma pagina com os maiores ganhadores do dia
+## Objetivo
+Implementar funcionalidade de abrir um modal ao clicar em qualquer item da tabela de equipamentos, exibindo informações detalhadas obtidas dinamicamente do site tibiara.netlify.app, incluindo:
+- Onde comprar/vender o item
+- NPCs e precos
+- Links para mapa de localizacao dos NPCs
+- Monstros que dropam o item e chance de drop
 
 ---
 
-## Arquitetura
+## Arquitetura da Solucao
 
 ```text
-+------------------+     +----------------------+     +------------------+
-|   Cron Job       | --> | Edge Function        | --> | Tabela Supabase  |
-|   (Diario 06h)   |     | save-highscores      |     | highscore_snapshots |
-+------------------+     +----------------------+     +------------------+
-                                                              |
-                                                              v
-+------------------+     +----------------------+     +------------------+
-|   Frontend       | <-- | Edge Function        | <-- | Calculo de       |
-|   TopGainersPage |     | get-top-gainers      |     | Diferenca XP     |
-+------------------+     +----------------------+     +------------------+
++----------------+     +----------------------+     +------------------------+
+|  EquipmentTable|     | Edge Function        |     | tibiara.netlify.app    |
+|  (Click Item)  | --> | scrape-item-details  | --> | /en/pages/items/{item} |
++----------------+     +----------------------+     +------------------------+
+        |                       |
+        v                       v
++------------------+    +------------------+
+| ItemDetailsModal |<-- | Parsed HTML Data |
+| (UI Component)   |    | (JSON Response)  |
++------------------+    +------------------+
 ```
 
 ---
 
 ## Etapas de Implementacao
 
-### 1. Criar Tabela no Banco de Dados
+### 1. Criar Edge Function para Scraping
+**Arquivo:** `supabase/functions/scrape-item-details/index.ts`
 
-Criar tabela `highscore_snapshots` para armazenar os dados diarios:
+Responsabilidades:
+- Receber nome do item como parametro
+- Converter para formato URL (ex: "Viking Helmet" -> "viking_helmet")
+- Fazer fetch da pagina do tibiara
+- Fazer parsing do HTML para extrair:
+  - Dados basicos (nome, imagem, stats)
+  - Lista de NPCs que compram (cidade, npc, preco, coordenadas mapa)
+  - Lista de NPCs que vendem (cidade, npc, preco, coordenadas mapa)
+  - Lista de monstros que dropam (nome, imagem, quantidade, chance)
+- Retornar dados estruturados em JSON
 
-```sql
-CREATE TABLE highscore_snapshots (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  snapshot_date DATE NOT NULL,
-  player_name TEXT NOT NULL,
-  profession TEXT,
-  level INTEGER,
-  experience BIGINT,
-  created_at TIMESTAMPTZ DEFAULT now(),
-  UNIQUE(snapshot_date, player_name)
-);
+### 2. Criar Hook de Fetching
+**Arquivo:** `src/hooks/useItemDetails.ts`
 
--- Indices para performance
-CREATE INDEX idx_snapshots_date ON highscore_snapshots(snapshot_date);
-CREATE INDEX idx_snapshots_player ON highscore_snapshots(player_name);
+- Hook personalizado usando React Query
+- Faz chamada para Edge Function
+- Gerencia loading state e cache
+- Tratamento de erros
 
--- RLS: Leitura publica, escrita apenas via service role
-ALTER TABLE highscore_snapshots ENABLE ROW LEVEL SECURITY;
-CREATE POLICY "Anyone can read snapshots" ON highscore_snapshots FOR SELECT USING (true);
+### 3. Criar Componente Modal
+**Arquivo:** `src/components/ItemDetailsModal.tsx`
+
+Layout do modal:
+```text
++------------------------------------------------+
+| [Imagem] Nome do Item           [X]            |
+|------------------------------------------------|
+| Arm: 4 | Peso: 39 oz.                          |
+|================================================|
+| VENDER PARA                | COMPRAR DE        |
+|---------------------------|-------------------|
+| Cidade | NPC | Preco | Map| Cidade | NPC |Preco|
+| Thais  |Hardek| 66gp | [M]| Darash |Azil| 265gp|
+| ...    | ...  | ...  |    | ...    | ...| ...  |
+|================================================|
+| DROPADO POR                                    |
+|------------------------------------------------|
+| Monstro    | [img] | Qtd | Chance              |
+| Ghoul      | [gif] | 1   | 5%                  |
+| Skeleton   | [gif] | 1   | 8%                  |
++------------------------------------------------+
 ```
 
-### 2. Criar Edge Function para Salvar Snapshot
+Caracteristicas:
+- Estilo visual seguindo o tema retro/parchment do site
+- Icone de mapa abrindo em nova aba para localizacao do NPC
+- Indicador de loading enquanto busca dados
+- Fallback para itens sem dados
 
-Arquivo: `supabase/functions/save-highscores/index.ts`
+### 4. Integrar no EquipmentTable
+**Arquivo:** `src/components/EquipmentTable.tsx`
 
-Esta funcao:
-- Busca os top 100 jogadores da API do Tibia Relic
-- Salva na tabela `highscore_snapshots` com a data atual
-- Usa UPSERT para evitar duplicatas
-
-### 3. Configurar Cron Job
-
-Agendar a execucao diaria as 06:00 UTC (horario do server save + 1 hora para garantir atualizacao):
-
-```sql
--- Habilitar extensoes necessarias
-CREATE EXTENSION IF NOT EXISTS pg_cron;
-CREATE EXTENSION IF NOT EXISTS pg_net;
-
--- Criar cron job
-SELECT cron.schedule(
-  'save-daily-highscores',
-  '0 9 * * *', -- 09:00 UTC (server save do Relic e 09:00)
-  $$
-  SELECT net.http_post(
-    url:='https://adagjmvhlmghhmadtpwv.supabase.co/functions/v1/save-highscores',
-    headers:='{"Authorization": "Bearer <anon_key>"}'::jsonb,
-    body:='{}'::jsonb
-  );
-  $$
-);
-```
-
-### 4. Criar Edge Function para Calcular Top Gainers
-
-Arquivo: `supabase/functions/get-top-gainers/index.ts`
-
-Esta funcao:
-- Busca o snapshot de hoje e de ontem
-- Calcula a diferenca de XP para cada jogador
-- Retorna os top 10 maiores ganhadores ordenados
-
-### 5. Criar Hook React
-
-Arquivo: `src/hooks/useTopGainers.ts`
-
-Hook para buscar e cachear os dados dos top gainers.
-
-### 6. Criar Pagina Top Gainers
-
-Arquivo: `src/pages/TopGainersPage.tsx`
-
-Pagina com:
-- Tabela mostrando: Rank, Nome (com PlayerLink), Nivel, XP Ganha, XP Total
-- Data de referencia (ontem para hoje)
-- Icones de trofeu para top 3
-- Estado de loading e erro
-
-### 7. Atualizar Navegacao
-
-Adicionar link na Sidebar esquerda com icone de tendencia (TrendingUp).
+- Adicionar estado para item selecionado
+- Tornar linhas da tabela clicaveis (cursor pointer, hover effect)
+- Abrir modal ao clicar em qualquer linha
+- Passar nome do item para o modal
 
 ---
 
 ## Detalhes Tecnicos
 
-### Estrutura de Dados do Snapshot
-
-| Campo | Tipo | Descricao |
-|-------|------|-----------|
-| id | UUID | Identificador unico |
-| snapshot_date | DATE | Data do snapshot (ex: 2026-01-30) |
-| player_name | TEXT | Nome do personagem |
-| profession | TEXT | Vocacao do personagem |
-| level | INTEGER | Nivel atual |
-| experience | BIGINT | Experiencia total |
-
-### Resposta da API get-top-gainers
-
-```json
-{
-  "gainers": [
-    {
-      "rank": 1,
-      "name": "Weedhahaha",
-      "profession": "Knight",
-      "level": 30,
-      "experienceGained": 45000,
-      "currentExperience": 405042
-    }
-  ],
-  "periodStart": "2026-01-29",
-  "periodEnd": "2026-01-30"
+### Conversao de Nome para URL
+```typescript
+function itemNameToUrl(name: string): string {
+  return name
+    .toLowerCase()
+    .replace(/'/g, '')  // Remove apostrofos (Ab'dendriel -> abdendriel)
+    .replace(/\s+/g, '_');  // Espacos para underscore
 }
+// "Viking Helmet" -> "viking_helmet"
+// "Hat of the Mad" -> "hat_of_the_mad"
 ```
 
-### Consideracoes
+### Parsing do HTML
+O HTML do tibiara segue estrutura consistente:
+- `table#oneitems` - dados basicos
+- `table#sbileft` - NPCs que compram (Sell)
+- `table#sbiright` - NPCs que vendem (Buy)
+- `table#looted` - monstros que dropam
+- Links de mapa contem coordenadas: `map/index.html#32270,32329,7:2`
 
-- **Retencao de dados**: Manter apenas os ultimos 30 dias de snapshots para economizar espaco
-- **Jogadores novos**: Se um jogador aparece hoje mas nao ontem, o ganho sera a XP total
-- **Jogadores que sairam**: Nao aparecerao no ranking de gainers
-- **Primeiro dia**: Sem dados anteriores, a pagina mostrara mensagem informativa
+### Estrutura de Dados Retornada
+```typescript
+interface ItemDetails {
+  name: string;
+  image: string;
+  stats: {
+    armor?: number;
+    attack?: number;
+    defense?: number;
+    weight: string;
+  };
+  sellTo: Array<{
+    city: string;
+    npc: string;
+    price: string;
+    mapUrl?: string;
+  }>;
+  buyFrom: Array<{
+    city: string;
+    npc: string;
+    price: string;
+    mapUrl?: string;
+  }>;
+  lootedFrom: Array<{
+    monster: string;
+    image: string;
+    amount: string;
+    chance: string;
+  }>;
+}
+```
 
 ---
 
 ## Arquivos a Criar/Modificar
 
-| Arquivo | Acao |
-|---------|------|
-| Tabela `highscore_snapshots` | Criar (migracao) |
-| `supabase/functions/save-highscores/index.ts` | Criar |
-| `supabase/functions/get-top-gainers/index.ts` | Criar |
-| `supabase/config.toml` | Atualizar |
-| `src/hooks/useTopGainers.ts` | Criar |
-| `src/pages/TopGainersPage.tsx` | Criar |
-| `src/components/Sidebar.tsx` | Atualizar |
-| `src/App.tsx` | Atualizar rotas |
+| Acao | Arquivo | Descricao |
+|------|---------|-----------|
+| Criar | `supabase/functions/scrape-item-details/index.ts` | Edge function para scraping |
+| Atualizar | `supabase/config.toml` | Registrar nova edge function |
+| Criar | `src/hooks/useItemDetails.ts` | Hook para buscar detalhes |
+| Criar | `src/components/ItemDetailsModal.tsx` | Modal com detalhes do item |
+| Modificar | `src/components/EquipmentTable.tsx` | Tornar linhas clicaveis |
 
+---
+
+## Consideracoes
+
+### Performance
+- Cache via React Query (staleTime de 5 minutos)
+- Lazy loading - so busca quando usuario clica
+- Loading skeleton enquanto carrega
+
+### Tratamento de Erros
+- Alguns itens podem nao existir no tibiara (retorna 404)
+- Modal exibe mensagem amigavel: "Detalhes nao disponiveis para este item"
+- Fallback mostra apenas dados locais (armor, peso, etc)
+
+### UX
+- Feedback visual de hover na linha da tabela
+- Loading spinner durante fetch
+- Transicao suave de abertura do modal
+- Icones de mapa abrem em nova aba
