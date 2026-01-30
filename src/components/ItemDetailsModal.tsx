@@ -58,8 +58,8 @@ const NpcTable = ({
                 key={`${npc.npc}-${index}`}
                 className={index % 2 === 0 ? 'bg-parchment' : 'bg-parchment-dark'}
               >
-                <TableCell className="text-xs py-1">{npc.city}</TableCell>
-                <TableCell className="text-xs py-1 font-medium">{npc.npc}</TableCell>
+                <TableCell className="text-xs py-1 text-text-dark">{npc.city}</TableCell>
+                <TableCell className="text-xs py-1 font-medium text-text-dark">{npc.npc}</TableCell>
                 <TableCell className="text-xs py-1 text-gold font-semibold">{npc.price}</TableCell>
                 <TableCell className="text-xs py-1">
                   {npc.mapUrl && (
@@ -67,7 +67,7 @@ const NpcTable = ({
                       href={npc.mapUrl} 
                       target="_blank" 
                       rel="noopener noreferrer"
-                      className="text-maroon hover:text-maroon/80 inline-flex items-center"
+                      className="text-maroon hover:text-maroon/80 inline-flex items-center justify-center"
                       title="Ver no mapa"
                     >
                       <MapPin className="w-4 h-4" />
@@ -108,7 +108,7 @@ const LootTable = ({ loot }: { loot: ItemDetails['lootedFrom'] }) => {
                 key={`${item.monster}-${index}`}
                 className={index % 2 === 0 ? 'bg-parchment' : 'bg-parchment-dark'}
               >
-                <TableCell className="text-xs py-1 font-medium">{item.monster}</TableCell>
+                <TableCell className="text-xs py-1 font-medium text-text-dark">{item.monster}</TableCell>
                 <TableCell className="py-1">
                   {item.image && (
                     <img 
@@ -119,7 +119,7 @@ const LootTable = ({ loot }: { loot: ItemDetails['lootedFrom'] }) => {
                     />
                   )}
                 </TableCell>
-                <TableCell className="text-xs py-1">{item.amount}</TableCell>
+                <TableCell className="text-xs py-1 text-text-dark">{item.amount}</TableCell>
                 <TableCell className="text-xs py-1 text-maroon font-semibold">{item.chance}</TableCell>
               </TableRow>
             ))}
@@ -159,13 +159,13 @@ const ItemDetailsModal = ({ item, open, onOpenChange }: ItemDetailsModalProps) =
               Detalhes não disponíveis para este item.
             </p>
             {item && (
-              <div className="parchment-dark p-4 rounded-sm">
+              <div className="parchment-dark p-4 rounded-sm text-text-dark">
                 <p className="text-sm">
                   <strong>Armadura:</strong> {item.armor ?? '-'} | 
                   <strong> Peso:</strong> {item.weight}
                 </p>
                 {item.attributes && (
-                  <p className="text-xs text-muted-foreground mt-1">{item.attributes}</p>
+                  <p className="text-xs text-text-dark/70 mt-1">{item.attributes}</p>
                 )}
               </div>
             )}
@@ -181,7 +181,7 @@ const ItemDetailsModal = ({ item, open, onOpenChange }: ItemDetailsModalProps) =
         ) : (
           <div className="space-y-4">
             {/* Stats */}
-            <div className="parchment-dark p-3 rounded-sm flex flex-wrap gap-4 text-sm">
+            <div className="parchment-dark p-3 rounded-sm flex flex-wrap gap-4 text-sm text-text-dark">
               {details.stats.armor !== undefined && (
                 <span><strong>Arm:</strong> {details.stats.armor}</span>
               )}
