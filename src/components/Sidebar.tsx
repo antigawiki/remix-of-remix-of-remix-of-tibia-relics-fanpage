@@ -59,7 +59,7 @@ const Sidebar = ({ position }: SidebarProps) => {
             </Link>
             <Link to="/online" className="sidebar-menu-item flex items-center gap-2">
               <Users className="w-4 h-4 text-gold" />
-              Online
+              Players Online
             </Link>
             <Link to="/death-row" className="sidebar-menu-item flex items-center gap-2">
               <Skull className="w-4 h-4 text-gold" />
