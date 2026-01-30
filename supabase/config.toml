@@ -8,3 +8,6 @@ verify_jwt = false
 
 [functions.get-top-gainers]
 verify_jwt = false
+
+[functions.scrape-item-details]
+verify_jwt = false
