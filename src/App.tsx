@@ -22,6 +22,7 @@ import StatsCalculator from "./pages/calculators/StatsCalculator";
 import QuestsPage from "./pages/QuestsPage";
 import HighscoresPage from "./pages/HighscoresPage";
 import OnlinePlayersPage from "./pages/OnlinePlayersPage";
+import DeathRowPage from "./pages/DeathRowPage";
 import NotFound from "./pages/NotFound";
 const queryClient = new QueryClient();
 
@@ -54,6 +55,7 @@ const App = () => (
           <Route path="/quests" element={<QuestsPage />} />
           <Route path="/highscores" element={<HighscoresPage />} />
           <Route path="/online" element={<OnlinePlayersPage />} />
+          <Route path="/death-row" element={<DeathRowPage />} />
           {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
           <Route path="*" element={<NotFound />} />
         </Routes>

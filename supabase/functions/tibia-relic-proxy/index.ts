@@ -33,6 +33,9 @@ serve(async (req) => {
       case "who-is-online":
         apiUrl = `${API_BASE}/Community/Relic/who-is-online`;
         break;
+      case "bans":
+        apiUrl = `${API_BASE}/Community/Relic/bans`;
+        break;
       case "highscores":
         const category = url.searchParams.get("category") || "Experience";
         const vocation = url.searchParams.get("vocation") || "All";

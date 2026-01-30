@@ -1,12 +1,13 @@
 import { Link } from 'react-router-dom';
 import { 
   Shield, Wand2, Bug, Scroll, Calculator, 
-  Info, Trophy, Clock, Package, Users
+  Info, Trophy, Clock, Package, Users, Skull
 } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { useServerStats } from '@/hooks/useServerStats';
 import { useTopPlayers } from '@/hooks/useHighscores';
+import { useBans } from '@/hooks/useBans';
 import { Skeleton } from '@/components/ui/skeleton';
 
 interface SidebarProps {
@@ -55,6 +56,10 @@ const Sidebar = ({ position }: SidebarProps) => {
               <Users className="w-4 h-4 text-gold" />
               Online
             </Link>
+            <Link to="/death-row" className="sidebar-menu-item flex items-center gap-2">
+              <Skull className="w-4 h-4 text-gold" />
+              Death Row
+            </Link>
             <Link to="/info" className="sidebar-menu-item flex items-center gap-2">
               <Info className="w-4 h-4 text-gold" />
               Informações
@@ -95,6 +100,7 @@ const Sidebar = ({ position }: SidebarProps) => {
 const RightSidebar = () => {
   const { data: stats, isLoading: statsLoading, isError: statsError } = useServerStats();
   const { data: topPlayersData, isLoading: topLoading } = useTopPlayers(5);
+  const { data: bans } = useBans();
 
   const getServerSaveCountdown = () => {
     if (!stats?.nextServerSave) return '--';
@@ -154,6 +160,12 @@ const RightSidebar = () => {
             ) : (
               <span className="text-foreground">em {getServerSaveCountdown()}</span>
             )}
+          </div>
+          <div className="flex items-center justify-between text-sm">
+            <span className="text-muted-foreground">Banidos:</span>
+            <Link to="/death-row" className="text-destructive font-semibold hover:underline">
+              {bans?.length ?? 0}
+            </Link>
           </div>
         </div>
       </div>
