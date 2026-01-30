@@ -9,6 +9,7 @@ import { useServerStats } from '@/hooks/useServerStats';
 import { useTopPlayers } from '@/hooks/useHighscores';
 import { useBans } from '@/hooks/useBans';
 import { Skeleton } from '@/components/ui/skeleton';
+import PlayerLink from '@/components/PlayerLink';
 
 interface SidebarProps {
   position: 'left' | 'right';
@@ -189,7 +190,7 @@ const RightSidebar = () => {
                 <span className={`font-bold ${getRankColor(index + 1)}`}>
                   #{index + 1}
                 </span>
-                <span className="text-foreground truncate flex-1">{player.name}</span>
+                <PlayerLink name={player.name} className="text-foreground truncate flex-1" />
                 <span className="text-muted-foreground text-xs">Lvl {player.level}</span>
               </div>
             ))

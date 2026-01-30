@@ -2,6 +2,7 @@ import { Skull, RefreshCw } from 'lucide-react';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import MainLayout from '@/layouts/MainLayout';
+import PlayerLink from '@/components/PlayerLink';
 import { useBans, getBanReasonDisplayName } from '@/hooks/useBans';
 import {
   Table,
@@ -74,7 +75,9 @@ const DeathRowPage = () => {
                     <TableCell className="text-sm text-muted-foreground">
                       {format(new Date(ban.issued), "dd/MM/yyyy", { locale: ptBR })}
                     </TableCell>
-                    <TableCell className="font-medium">{ban.characterName}</TableCell>
+                    <TableCell className="font-medium">
+                      <PlayerLink name={ban.characterName} />
+                    </TableCell>
                     <TableCell className="text-right">{ban.characterLevel}</TableCell>
                     <TableCell className="text-destructive text-sm">
                       {getBanReasonDisplayName(ban.reason)}
