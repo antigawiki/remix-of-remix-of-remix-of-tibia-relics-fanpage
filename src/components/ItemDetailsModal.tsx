@@ -1,9 +1,11 @@
+import { useState } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { useItemDetails, ItemDetails } from '@/hooks/useItemDetails';
 import { Equipment } from '@/data/equipment';
 import { Skeleton } from '@/components/ui/skeleton';
-import { MapPin, ExternalLink, Coins, ShoppingCart, Skull } from 'lucide-react';
+import { MapPin, Coins, ShoppingCart, Skull } from 'lucide-react';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import MapModal, { parseMapCoordinates } from './MapModal';
 
 interface ItemDetailsModalProps {
   item: Equipment | null;
@@ -25,15 +27,14 @@ const LoadingSkeleton = () => (
   </div>
 );
 
-const NpcTable = ({ 
-  title, 
-  npcs, 
-  icon 
-}: { 
-  title: string; 
-  npcs: ItemDetails['sellTo']; 
+interface NpcTableProps {
+  title: string;
+  npcs: ItemDetails['sellTo'];
   icon: React.ReactNode;
-}) => {
+  onMapClick: (mapUrl: string, npcName: string) => void;
+}
+
+const NpcTable = ({ title, npcs, icon, onMapClick }: NpcTableProps) => {
   if (npcs.length === 0) return null;
   
   return (
@@ -63,15 +64,13 @@ const NpcTable = ({
                 <TableCell className="text-xs py-1 text-gold font-semibold">{npc.price}</TableCell>
                 <TableCell className="text-xs py-1">
                   {npc.mapUrl && (
-                    <a 
-                      href={npc.mapUrl} 
-                      target="_blank" 
-                      rel="noopener noreferrer"
-                      className="text-maroon hover:text-maroon/80 inline-flex items-center justify-center"
+                    <button 
+                      onClick={() => onMapClick(npc.mapUrl!, npc.npc)}
+                      className="text-maroon hover:text-maroon/80 inline-flex items-center justify-center cursor-pointer"
                       title="Ver no mapa"
                     >
                       <MapPin className="w-4 h-4" />
-                    </a>
+                    </button>
                   )}
                 </TableCell>
               </TableRow>
@@ -132,90 +131,113 @@ const LootTable = ({ loot }: { loot: ItemDetails['lootedFrom'] }) => {
 
 const ItemDetailsModal = ({ item, open, onOpenChange }: ItemDetailsModalProps) => {
   const { data: details, isLoading, isError } = useItemDetails(item?.name || null, open);
+  const [mapModalOpen, setMapModalOpen] = useState(false);
+  const [mapCoordinates, setMapCoordinates] = useState<ReturnType<typeof parseMapCoordinates>>(null);
+  const [mapTitle, setMapTitle] = useState('Localização no Mapa');
+
+  const handleMapClick = (mapUrl: string, npcName: string) => {
+    const coords = parseMapCoordinates(mapUrl);
+    if (coords) {
+      setMapCoordinates(coords);
+      setMapTitle(`Localização: ${npcName}`);
+      setMapModalOpen(true);
+    }
+  };
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto bg-parchment border-2 border-maroon/30">
-        <DialogHeader>
-          <DialogTitle className="flex items-center gap-3 font-heading text-maroon">
-            {item && (
-              <>
-                <img 
-                  src={details?.image || item.image} 
-                  alt={item.name}
-                  className="w-10 h-10 object-contain"
-                />
-                <span>{item.name}</span>
-              </>
-            )}
-          </DialogTitle>
-        </DialogHeader>
+    <>
+      <Dialog open={open} onOpenChange={onOpenChange}>
+        <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto bg-parchment border-2 border-maroon/30">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-3 font-heading text-maroon">
+              {item && (
+                <>
+                  <img 
+                    src={details?.image || item.image} 
+                    alt={item.name}
+                    className="w-10 h-10 object-contain"
+                  />
+                  <span>{item.name}</span>
+                </>
+              )}
+            </DialogTitle>
+          </DialogHeader>
 
-        {isLoading ? (
-          <LoadingSkeleton />
-        ) : isError || !details ? (
-          <div className="py-6 text-center">
-            <p className="text-muted-foreground mb-2">
-              Detalhes não disponíveis para este item.
-            </p>
-            {item && (
-              <div className="parchment-dark p-4 rounded-sm text-text-dark">
-                <p className="text-sm">
-                  <strong>Armadura:</strong> {item.armor ?? '-'} | 
-                  <strong> Peso:</strong> {item.weight}
-                </p>
-                {item.attributes && (
-                  <p className="text-xs text-text-dark/70 mt-1">{item.attributes}</p>
+          {isLoading ? (
+            <LoadingSkeleton />
+          ) : isError || !details ? (
+            <div className="py-6 text-center">
+              <p className="text-muted-foreground mb-2">
+                Detalhes não disponíveis para este item.
+              </p>
+              {item && (
+                <div className="parchment-dark p-4 rounded-sm text-text-dark">
+                  <p className="text-sm">
+                    <strong>Armadura:</strong> {item.armor ?? '-'} | 
+                    <strong> Peso:</strong> {item.weight}
+                  </p>
+                  {item.attributes && (
+                    <p className="text-xs text-text-dark/70 mt-1">{item.attributes}</p>
+                  )}
+                </div>
+              )}
+            </div>
+          ) : (
+            <div className="space-y-4">
+              {/* Stats */}
+              <div className="parchment-dark p-3 rounded-sm flex flex-wrap gap-4 text-sm text-text-dark">
+                {details.stats.armor !== undefined && (
+                  <span><strong>Arm:</strong> {details.stats.armor}</span>
+                )}
+                {details.stats.attack !== undefined && (
+                  <span><strong>Atk:</strong> {details.stats.attack}</span>
+                )}
+                {details.stats.defense !== undefined && (
+                  <span><strong>Def:</strong> {details.stats.defense}</span>
+                )}
+                {details.stats.weight && (
+                  <span><strong>Peso:</strong> {details.stats.weight}</span>
                 )}
               </div>
-            )}
-          </div>
-        ) : (
-          <div className="space-y-4">
-            {/* Stats */}
-            <div className="parchment-dark p-3 rounded-sm flex flex-wrap gap-4 text-sm text-text-dark">
-              {details.stats.armor !== undefined && (
-                <span><strong>Arm:</strong> {details.stats.armor}</span>
-              )}
-              {details.stats.attack !== undefined && (
-                <span><strong>Atk:</strong> {details.stats.attack}</span>
-              )}
-              {details.stats.defense !== undefined && (
-                <span><strong>Def:</strong> {details.stats.defense}</span>
-              )}
-              {details.stats.weight && (
-                <span><strong>Peso:</strong> {details.stats.weight}</span>
+
+              {/* Buy/Sell Tables Side by Side */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <NpcTable 
+                  title="Vender Para" 
+                  npcs={details.sellTo} 
+                  icon={<Coins className="w-4 h-4" />}
+                  onMapClick={handleMapClick}
+                />
+                <NpcTable 
+                  title="Comprar De" 
+                  npcs={details.buyFrom} 
+                  icon={<ShoppingCart className="w-4 h-4" />}
+                  onMapClick={handleMapClick}
+                />
+              </div>
+
+              {/* Loot Table */}
+              <LootTable loot={details.lootedFrom} />
+
+              {/* Empty States */}
+              {details.sellTo.length === 0 && details.buyFrom.length === 0 && details.lootedFrom.length === 0 && (
+                <p className="text-center text-muted-foreground py-4">
+                  Nenhuma informação adicional disponível.
+                </p>
               )}
             </div>
+          )}
+        </DialogContent>
+      </Dialog>
 
-            {/* Buy/Sell Tables Side by Side */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <NpcTable 
-                title="Vender Para" 
-                npcs={details.sellTo} 
-                icon={<Coins className="w-4 h-4" />}
-              />
-              <NpcTable 
-                title="Comprar De" 
-                npcs={details.buyFrom} 
-                icon={<ShoppingCart className="w-4 h-4" />}
-              />
-            </div>
-
-            {/* Loot Table */}
-            <LootTable loot={details.lootedFrom} />
-
-            {/* Empty States */}
-            {details.sellTo.length === 0 && details.buyFrom.length === 0 && details.lootedFrom.length === 0 && (
-              <p className="text-center text-muted-foreground py-4">
-                Nenhuma informação adicional disponível.
-              </p>
-            )}
-
-          </div>
-        )}
-      </DialogContent>
-    </Dialog>
+      {/* Map Modal */}
+      <MapModal
+        open={mapModalOpen}
+        onOpenChange={setMapModalOpen}
+        coordinates={mapCoordinates}
+        title={mapTitle}
+      />
+    </>
   );
 };
 

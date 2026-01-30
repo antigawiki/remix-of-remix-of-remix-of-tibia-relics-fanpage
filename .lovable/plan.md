@@ -1,90 +1,45 @@
+# Plano: Integrar Mapa Próprio
 
-# Plano: Remover Referências ao Tibiara e Integrar Mapa Próprio
+## Status: ✅ Concluído
 
-## Objetivo
-1. Remover todas as menções ao "Tibiara" da interface do usuário
-2. Integrar o visualizador de mapa do jogo diretamente no projeto
-3. Usar as coordenadas já presentes nos links (ex: `#32270,32329,7:2`) para exibir o mapa internamente
+## O que foi implementado
 
----
+### 1. Remoção de Referências Externas
+- Removido bloco "Fonte: Tibiara" do modal de detalhes
+- Removido link "Buscar no Tibiara" do estado de erro
+- Links de mapa agora abrem modal interno em vez de site externo
 
-## Etapa 1: Remover Referências ao Tibiara
+### 2. Sistema de Mapa Interativo
+- **16 floors** (0-15) copiados para `public/map/`
+- Visualizador usando **Leaflet.js** para navegação interativa
+- Suporte a pan, zoom e troca de andares
 
-**Arquivo:** `src/components/ItemDetailsModal.tsx`
+### 3. Componentes Criados
 
-Alterações:
-- Remover o bloco "Fonte: Tibiara" (linhas 223-233)
-- Remover o link "Buscar no Tibiara" do estado de erro (linhas 172-179)
+| Componente | Descrição |
+|------------|-----------|
+| `MapViewer.tsx` | Visualizador de mapa com Leaflet |
+| `MapModal.tsx` | Modal para exibir o mapa |
 
----
+### 4. Funcionalidades do Mapa
+- ✅ Navegação por arrastar (pan)
+- ✅ Zoom in/out
+- ✅ Troca de andares (floors 0-15)
+- ✅ Marcador na posição do NPC
+- ✅ Exibição de coordenadas
+- ✅ Parse automático de coordenadas do formato `#X,Y,Z:ZOOM`
 
-## Etapa 2: Aguardar Upload dos Arquivos do Mapa
-
-Você mencionou que vai me enviar:
-- **Imagens dos tiles** do mapa (PNGs)
-- **Código do visualizador** (HTML + JS)
-
-Após receber os arquivos, irei:
-
-1. **Analisar a estrutura do visualizador** para entender:
-   - Como as coordenadas `X,Y,Z:ZOOM` funcionam
-   - Como os tiles são carregados
-   - Dependências necessárias (se houver)
-
-2. **Converter para React**:
-   - Criar componente `src/components/MapViewer.tsx`
-   - Adaptar a lógica JavaScript para React/TypeScript
-   - Manter a mesma funcionalidade de navegação
-
-3. **Organizar os assets**:
-   - Imagens do mapa em `public/map/` ou similar
-   - Estrutura de pastas conforme o visualizador original
+### 5. Sistema de Coordenadas
+- Formato: `#X,Y,Z:ZOOM` (ex: `#32270,32329,7:2`)
+- X, Y = posição no mapa
+- Z = andar (7 = superfície, <7 = céu, >7 = subterrâneo)
+- ZOOM = nível de zoom inicial
 
 ---
 
-## Etapa 3: Integrar Mapa no Modal
+## Arquivos Modificados/Criados
 
-**Nova funcionalidade:**
-
-Quando o usuário clicar no ícone de mapa (MapPin) em um NPC:
-- Em vez de abrir link externo, abre um modal/drawer com o mapa interno
-- As coordenadas após o `#` (ex: `32270,32329,7:2`) serão parseadas:
-  - `32270` = coordenada X
-  - `32329` = coordenada Y  
-  - `7` = andar/floor (Z)
-  - `2` = zoom
-
-```text
-+-----------------------------------------+
-|  Mapa - Localização do NPC              |
-|-----------------------------------------|
-|                                         |
-|    [Visualizador de Mapa Interativo]    |
-|    Mostrando coordenadas X,Y no floor Z |
-|                                         |
-|    [Marcador indicando posição do NPC]  |
-|                                         |
-+-----------------------------------------+
-```
-
----
-
-## Arquivos a Criar/Modificar
-
-| Ação | Arquivo | Descrição |
-|------|---------|-----------|
-| Modificar | `src/components/ItemDetailsModal.tsx` | Remover refs ao Tibiara |
-| Criar | `src/components/MapViewer.tsx` | Visualizador de mapa React |
-| Criar | `src/components/MapModal.tsx` | Modal para exibir o mapa |
-| Criar | `public/map/` | Pasta para tiles do mapa |
-| Modificar | Edge Function | Extrair apenas coordenadas (sem URL completa) |
-
----
-
-## Próximos Passos
-
-1. **Imediato**: Remover referências ao Tibiara do código atual
-2. **Aguardando você**: Envie os arquivos do mapa (imagens + código)
-3. **Após receber**: Analisar e converter para React
-
-Por favor, faça o upload dos arquivos do mapa para eu analisar a estrutura e implementar a integração completa.
+- `src/components/ItemDetailsModal.tsx` - Integração com MapModal
+- `src/components/MapViewer.tsx` - Novo componente de mapa
+- `src/components/MapModal.tsx` - Novo modal de mapa
+- `public/map/floor-XX-map.png` - 16 imagens de andares
