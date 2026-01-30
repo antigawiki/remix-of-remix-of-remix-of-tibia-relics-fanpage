@@ -169,14 +169,6 @@ const ItemDetailsModal = ({ item, open, onOpenChange }: ItemDetailsModalProps) =
                 )}
               </div>
             )}
-            <a 
-              href={`https://tibiara.netlify.app/en/pages/items/${item?.name.toLowerCase().replace(/'/g, '').replace(/\s+/g, '_')}.html`}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="inline-flex items-center gap-1 text-maroon hover:underline mt-4 text-sm"
-            >
-              Buscar no Tibiara <ExternalLink className="w-3 h-3" />
-            </a>
           </div>
         ) : (
           <div className="space-y-4">
@@ -220,17 +212,6 @@ const ItemDetailsModal = ({ item, open, onOpenChange }: ItemDetailsModalProps) =
               </p>
             )}
 
-            {/* Source Link */}
-            <div className="pt-2 border-t border-border/50">
-              <a 
-                href={`https://tibiara.netlify.app/en/pages/items/${item?.name.toLowerCase().replace(/'/g, '').replace(/\s+/g, '_')}.html`}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-maroon"
-              >
-                Fonte: Tibiara <ExternalLink className="w-3 h-3" />
-              </a>
-            </div>
           </div>
         )}
       </DialogContent>
