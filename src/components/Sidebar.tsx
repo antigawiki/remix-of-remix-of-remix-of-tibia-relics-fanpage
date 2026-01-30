@@ -1,8 +1,13 @@
 import { Link } from 'react-router-dom';
 import { 
-  Shield, Sword, Wand2, Bug, Scroll, Calculator, 
-  Info, Users, Trophy, Clock, Package
+  Shield, Wand2, Bug, Scroll, Calculator, 
+  Info, Trophy, Clock, Package, Users
 } from 'lucide-react';
+import { formatDistanceToNow } from 'date-fns';
+import { ptBR } from 'date-fns/locale';
+import { useServerStats } from '@/hooks/useServerStats';
+import { useTopPlayers } from '@/hooks/useHighscores';
+import { Skeleton } from '@/components/ui/skeleton';
 
 interface SidebarProps {
   position: 'left' | 'right';
@@ -42,6 +47,14 @@ const Sidebar = ({ position }: SidebarProps) => {
               <Calculator className="w-4 h-4 text-gold" />
               Calculadoras
             </Link>
+            <Link to="/highscores" className="sidebar-menu-item flex items-center gap-2">
+              <Trophy className="w-4 h-4 text-gold" />
+              Ranking
+            </Link>
+            <Link to="/online" className="sidebar-menu-item flex items-center gap-2">
+              <Users className="w-4 h-4 text-gold" />
+              Online
+            </Link>
             <Link to="/info" className="sidebar-menu-item flex items-center gap-2">
               <Info className="w-4 h-4 text-gold" />
               Informações
@@ -76,26 +89,71 @@ const Sidebar = ({ position }: SidebarProps) => {
     );
   }
 
+  return <RightSidebar />;
+};
+
+const RightSidebar = () => {
+  const { data: stats, isLoading: statsLoading, isError: statsError } = useServerStats();
+  const { data: topPlayersData, isLoading: topLoading } = useTopPlayers(5);
+
+  const getServerSaveCountdown = () => {
+    if (!stats?.nextServerSave) return '--';
+    try {
+      return formatDistanceToNow(new Date(stats.nextServerSave), { 
+        locale: ptBR,
+        addSuffix: false 
+      });
+    } catch {
+      return '--';
+    }
+  };
+
+  const getRankColor = (rank: number) => {
+    if (rank === 1) return 'text-gold';
+    if (rank === 2) return 'text-gray-400';
+    if (rank === 3) return 'text-amber-600';
+    return 'text-muted-foreground';
+  };
+
   return (
     <aside className="space-y-4">
       {/* Server Status */}
       <div className="wood-panel rounded-sm overflow-hidden">
         <div className="maroon-header px-4 py-2 flex items-center gap-2">
-          <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
+          <div className={`w-2 h-2 rounded-full ${statsError ? 'bg-red-500' : 'bg-green-500'} animate-pulse`} />
           <span className="font-heading text-sm font-semibold">Server Status</span>
         </div>
         <div className="p-3 space-y-2">
           <div className="flex items-center justify-between text-sm">
             <span className="text-muted-foreground">Status:</span>
-            <span className="text-green-400 font-semibold">Online</span>
+            {statsLoading ? (
+              <Skeleton className="h-4 w-12" />
+            ) : (
+              <span className={statsError ? 'text-red-400 font-semibold' : 'text-green-400 font-semibold'}>
+                {statsError ? 'Offline' : 'Online'}
+              </span>
+            )}
           </div>
           <div className="flex items-center justify-between text-sm">
             <span className="text-muted-foreground">Players:</span>
-            <span className="text-gold font-semibold">--</span>
+            {statsLoading ? (
+              <Skeleton className="h-4 w-20" />
+            ) : (
+              <span className="text-gold font-semibold">
+                {stats?.playersOnline ?? 0}
+                <span className="text-muted-foreground font-normal text-xs ml-1">
+                  (rec: {stats?.recordOnline ?? 0})
+                </span>
+              </span>
+            )}
           </div>
           <div className="flex items-center justify-between text-sm">
-            <span className="text-muted-foreground">Uptime:</span>
-            <span className="text-foreground">99.9%</span>
+            <span className="text-muted-foreground">Next SS:</span>
+            {statsLoading ? (
+              <Skeleton className="h-4 w-16" />
+            ) : (
+              <span className="text-foreground">em {getServerSaveCountdown()}</span>
+            )}
           </div>
         </div>
       </div>
@@ -107,24 +165,34 @@ const Sidebar = ({ position }: SidebarProps) => {
           <span className="font-heading text-sm font-semibold">Top 5 Players</span>
         </div>
         <div className="divide-y divide-border/30">
-          {[1, 2, 3, 4, 5].map((rank) => (
-            <div key={rank} className="px-3 py-2 flex items-center gap-2 text-sm">
-              <span className={`font-bold ${rank === 1 ? 'text-gold' : rank === 2 ? 'text-gray-400' : rank === 3 ? 'text-amber-600' : 'text-muted-foreground'}`}>
-                #{rank}
-              </span>
-              <span className="text-foreground">Player Name</span>
-              <span className="ml-auto text-muted-foreground text-xs">Lvl ???</span>
+          {topLoading ? (
+            [...Array(5)].map((_, i) => (
+              <div key={i} className="px-3 py-2">
+                <Skeleton className="h-4 w-full" />
+              </div>
+            ))
+          ) : topPlayersData?.highscores.length ? (
+            topPlayersData.highscores.map((player, index) => (
+              <div key={player.name} className="px-3 py-2 flex items-center gap-2 text-sm">
+                <span className={`font-bold ${getRankColor(index + 1)}`}>
+                  #{index + 1}
+                </span>
+                <span className="text-foreground truncate flex-1">{player.name}</span>
+                <span className="text-muted-foreground text-xs">Lvl {player.level}</span>
+              </div>
+            ))
+          ) : (
+            <div className="px-3 py-4 text-xs text-center text-muted-foreground">
+              Nenhum jogador encontrado
             </div>
-          ))}
+          )}
         </div>
-        <a 
-          href="https://tibiarelic.com" 
-          target="_blank" 
-          rel="noopener noreferrer"
+        <Link 
+          to="/highscores"
           className="block px-3 py-2 text-xs text-center gold-link border-t border-border/30"
         >
           Ver ranking completo →
-        </a>
+        </Link>
       </div>
 
       {/* Recent Activity */}
