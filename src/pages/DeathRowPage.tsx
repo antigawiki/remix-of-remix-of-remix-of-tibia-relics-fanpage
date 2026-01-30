@@ -23,7 +23,7 @@ const DeathRowPage = () => {
         <header className="news-box-header">
           <h2 className="font-semibold flex items-center gap-2">
             <Skull className="w-5 h-5" />
-            Death Row
+            Banidos
             {isFetching && <RefreshCw className="w-4 h-4 animate-spin text-muted-foreground" />}
           </h2>
         </header>
