@@ -1,17 +1,15 @@
-import { useEffect, useRef, useState, forwardRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import { ChevronUp, ChevronDown } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 
 // Tibia map coordinate system
-// The images are full floor exports, with coordinates mapping 1:1 to pixels
 // Origin offset - the top-left corner of the map in Tibia world coordinates
 const MAP_ORIGIN_X = 31744;
 const MAP_ORIGIN_Y = 30976;
 
-// Image dimensions (from the uploaded floor images - they appear to be 2048x2048 or similar)
-// These are the actual pixel dimensions of floor-XX-map.png files
+// Image dimensions (from the uploaded floor images)
 const IMAGE_WIDTH = 2048;
 const IMAGE_HEIGHT = 2048;
 
@@ -23,11 +21,10 @@ interface MapViewerProps {
   className?: string;
 }
 
-const MapViewer = forwardRef<HTMLDivElement, MapViewerProps>(({ x, y, z, zoom = 1, className = '' }, ref) => {
+const MapViewer = ({ x, y, z, zoom = 1, className = '' }: MapViewerProps) => {
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const leafletMap = useRef<L.Map | null>(null);
   const imageOverlay = useRef<L.ImageOverlay | null>(null);
-  const marker = useRef<L.CircleMarker | null>(null);
   const [currentFloor, setCurrentFloor] = useState(z);
 
   // Get floor image URL
@@ -37,8 +34,6 @@ const MapViewer = forwardRef<HTMLDivElement, MapViewerProps>(({ x, y, z, zoom = 
   };
 
   // Convert Tibia world coordinates to image pixel coordinates
-  // In Tibia, X increases to the right, Y increases downward
-  // In Leaflet CRS.Simple with our bounds, [0,0] is top-left
   const worldToPixel = (worldX: number, worldY: number): [number, number] => {
     const pixelX = worldX - MAP_ORIGIN_X;
     const pixelY = worldY - MAP_ORIGIN_Y;
@@ -50,7 +45,6 @@ const MapViewer = forwardRef<HTMLDivElement, MapViewerProps>(({ x, y, z, zoom = 
     if (!mapContainerRef.current || leafletMap.current) return;
 
     // Create map with CRS.Simple for image overlay
-    // In CRS.Simple, y-axis increases upward, so we need to flip Y
     const map = L.map(mapContainerRef.current, {
       crs: L.CRS.Simple,
       minZoom: -2,
@@ -64,8 +58,8 @@ const MapViewer = forwardRef<HTMLDivElement, MapViewerProps>(({ x, y, z, zoom = 
     // Define bounds: [[y_min, x_min], [y_max, x_max]]
     // Since Leaflet CRS.Simple has Y increasing upward, we use negative Y
     const bounds: L.LatLngBoundsExpression = [
-      [-IMAGE_HEIGHT, 0],  // bottom-left (max Y in image, min X)
-      [0, IMAGE_WIDTH]     // top-right (min Y in image, max X)
+      [-IMAGE_HEIGHT, 0],
+      [0, IMAGE_WIDTH]
     ];
 
     // Add initial floor image
@@ -82,11 +76,10 @@ const MapViewer = forwardRef<HTMLDivElement, MapViewerProps>(({ x, y, z, zoom = 
     // Convert target coordinates to pixel position
     const [pixelX, pixelY] = worldToPixel(x, y);
     
-    // In our coordinate system, marker should be at (-pixelY, pixelX)
-    // because Leaflet Y is inverted compared to Tibia
+    // Marker position: (-pixelY, pixelX) because Leaflet Y is inverted
     const markerPos: L.LatLngExpression = [-pixelY, pixelX];
 
-    console.log(`Map: World (${x}, ${y}, ${z}) -> Pixel (${pixelX}, ${pixelY}) -> Leaflet ${JSON.stringify(markerPos)}`);
+    console.log(`Map: World (${x}, ${y}, ${z}) -> Pixel (${pixelX}, ${pixelY}) -> Leaflet`, markerPos);
 
     // Add marker at target location
     const targetMarker = L.circleMarker(markerPos, {
@@ -97,18 +90,17 @@ const MapViewer = forwardRef<HTMLDivElement, MapViewerProps>(({ x, y, z, zoom = 
       weight: 3,
     });
     targetMarker.addTo(map);
-    marker.current = targetMarker;
 
-    // Add a pulsing effect to make marker more visible
+    // Add tooltip
     targetMarker.bindTooltip(`Posição: ${x}, ${y}`, {
       permanent: false,
       direction: 'top'
     });
 
-    // Center on target with provided zoom
+    // Center on target
     map.setView(markerPos, zoom);
 
-    // Fit bounds initially to show the area around the marker
+    // Fit bounds to show area around marker
     const viewBounds = L.latLngBounds(
       [-pixelY - 150, pixelX - 200],
       [-pixelY + 150, pixelX + 200]
@@ -142,7 +134,7 @@ const MapViewer = forwardRef<HTMLDivElement, MapViewerProps>(({ x, y, z, zoom = 
   };
 
   return (
-    <div className={`relative ${className}`} ref={ref}>
+    <div className={`relative ${className}`}>
       <div 
         ref={mapContainerRef} 
         className="w-full h-full rounded-sm"
@@ -186,8 +178,6 @@ const MapViewer = forwardRef<HTMLDivElement, MapViewerProps>(({ x, y, z, zoom = 
       </div>
     </div>
   );
-});
-
-MapViewer.displayName = 'MapViewer';
+};
 
 export default MapViewer;
