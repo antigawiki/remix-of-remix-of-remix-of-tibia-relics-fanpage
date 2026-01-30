@@ -1,37 +1,19 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, forwardRef } from 'react';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import { ChevronUp, ChevronDown } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 
-// Map configuration based on Tibia coordinates
-const MAP_CONFIG = {
-  // Image dimensions (each floor image is 1280x960)
-  imageWidth: 1280,
-  imageHeight: 960,
-  // Tibia world bounds (approximate)
-  worldMinX: 31744,
-  worldMinY: 30976,
-  worldMaxX: 33792,
-  worldMaxY: 32896,
-  // Zoom levels
-  minZoom: 0,
-  maxZoom: 4,
-  defaultZoom: 2,
-};
+// Tibia map coordinate system
+// The images are full floor exports, with coordinates mapping 1:1 to pixels
+// Origin offset - the top-left corner of the map in Tibia world coordinates
+const MAP_ORIGIN_X = 31744;
+const MAP_ORIGIN_Y = 30976;
 
-// Calculate the scale factor between world coordinates and image pixels
-const worldWidth = MAP_CONFIG.worldMaxX - MAP_CONFIG.worldMinX;
-const worldHeight = MAP_CONFIG.worldMaxY - MAP_CONFIG.worldMinY;
-const scaleX = MAP_CONFIG.imageWidth / worldWidth;
-const scaleY = MAP_CONFIG.imageHeight / worldHeight;
-
-// Convert Tibia world coordinates to image pixel coordinates
-function worldToPixel(x: number, y: number): [number, number] {
-  const pixelX = (x - MAP_CONFIG.worldMinX) * scaleX;
-  const pixelY = (y - MAP_CONFIG.worldMinY) * scaleY;
-  return [pixelX, pixelY];
-}
+// Image dimensions (from the uploaded floor images - they appear to be 2048x2048 or similar)
+// These are the actual pixel dimensions of floor-XX-map.png files
+const IMAGE_WIDTH = 2048;
+const IMAGE_HEIGHT = 2048;
 
 interface MapViewerProps {
   x: number;
@@ -41,8 +23,8 @@ interface MapViewerProps {
   className?: string;
 }
 
-const MapViewer = ({ x, y, z, zoom = MAP_CONFIG.defaultZoom, className = '' }: MapViewerProps) => {
-  const mapRef = useRef<HTMLDivElement>(null);
+const MapViewer = forwardRef<HTMLDivElement, MapViewerProps>(({ x, y, z, zoom = 1, className = '' }, ref) => {
+  const mapContainerRef = useRef<HTMLDivElement>(null);
   const leafletMap = useRef<L.Map | null>(null);
   const imageOverlay = useRef<L.ImageOverlay | null>(null);
   const marker = useRef<L.CircleMarker | null>(null);
@@ -54,25 +36,36 @@ const MapViewer = ({ x, y, z, zoom = MAP_CONFIG.defaultZoom, className = '' }: M
     return `/map/floor-${floorNum}-map.png`;
   };
 
+  // Convert Tibia world coordinates to image pixel coordinates
+  // In Tibia, X increases to the right, Y increases downward
+  // In Leaflet CRS.Simple with our bounds, [0,0] is top-left
+  const worldToPixel = (worldX: number, worldY: number): [number, number] => {
+    const pixelX = worldX - MAP_ORIGIN_X;
+    const pixelY = worldY - MAP_ORIGIN_Y;
+    return [pixelX, pixelY];
+  };
+
   // Initialize map
   useEffect(() => {
-    if (!mapRef.current || leafletMap.current) return;
+    if (!mapContainerRef.current || leafletMap.current) return;
 
     // Create map with CRS.Simple for image overlay
-    const map = L.map(mapRef.current, {
+    // In CRS.Simple, y-axis increases upward, so we need to flip Y
+    const map = L.map(mapContainerRef.current, {
       crs: L.CRS.Simple,
-      minZoom: MAP_CONFIG.minZoom,
-      maxZoom: MAP_CONFIG.maxZoom,
+      minZoom: -2,
+      maxZoom: 4,
       zoomControl: true,
       attributionControl: false,
     });
 
     leafletMap.current = map;
 
-    // Calculate bounds for the image overlay
+    // Define bounds: [[y_min, x_min], [y_max, x_max]]
+    // Since Leaflet CRS.Simple has Y increasing upward, we use negative Y
     const bounds: L.LatLngBoundsExpression = [
-      [0, 0],
-      [MAP_CONFIG.imageHeight, MAP_CONFIG.imageWidth]
+      [-IMAGE_HEIGHT, 0],  // bottom-left (max Y in image, min X)
+      [0, IMAGE_WIDTH]     // top-right (min Y in image, max X)
     ];
 
     // Add initial floor image
@@ -80,32 +73,53 @@ const MapViewer = ({ x, y, z, zoom = MAP_CONFIG.defaultZoom, className = '' }: M
     overlay.addTo(map);
     imageOverlay.current = overlay;
 
-    // Set map bounds
-    map.setMaxBounds(bounds);
-    map.fitBounds(bounds);
+    // Set map bounds for panning
+    map.setMaxBounds([
+      [-IMAGE_HEIGHT - 200, -200],
+      [200, IMAGE_WIDTH + 200]
+    ]);
 
     // Convert target coordinates to pixel position
     const [pixelX, pixelY] = worldToPixel(x, y);
+    
+    // In our coordinate system, marker should be at (-pixelY, pixelX)
+    // because Leaflet Y is inverted compared to Tibia
+    const markerPos: L.LatLngExpression = [-pixelY, pixelX];
+
+    console.log(`Map: World (${x}, ${y}, ${z}) -> Pixel (${pixelX}, ${pixelY}) -> Leaflet ${JSON.stringify(markerPos)}`);
 
     // Add marker at target location
-    const targetMarker = L.circleMarker([MAP_CONFIG.imageHeight - pixelY, pixelX], {
-      radius: 10,
+    const targetMarker = L.circleMarker(markerPos, {
+      radius: 12,
       color: '#8B0000',
-      fillColor: '#DC143C',
-      fillOpacity: 0.8,
+      fillColor: '#FF0000',
+      fillOpacity: 0.9,
       weight: 3,
     });
     targetMarker.addTo(map);
     marker.current = targetMarker;
 
+    // Add a pulsing effect to make marker more visible
+    targetMarker.bindTooltip(`Posição: ${x}, ${y}`, {
+      permanent: false,
+      direction: 'top'
+    });
+
     // Center on target with provided zoom
-    map.setView([MAP_CONFIG.imageHeight - pixelY, pixelX], zoom);
+    map.setView(markerPos, zoom);
+
+    // Fit bounds initially to show the area around the marker
+    const viewBounds = L.latLngBounds(
+      [-pixelY - 150, pixelX - 200],
+      [-pixelY + 150, pixelX + 200]
+    );
+    map.fitBounds(viewBounds);
 
     return () => {
       map.remove();
       leafletMap.current = null;
     };
-  }, []);
+  }, [x, y, z]);
 
   // Update floor when changed
   useEffect(() => {
@@ -128,9 +142,9 @@ const MapViewer = ({ x, y, z, zoom = MAP_CONFIG.defaultZoom, className = '' }: M
   };
 
   return (
-    <div className={`relative ${className}`}>
+    <div className={`relative ${className}`} ref={ref}>
       <div 
-        ref={mapRef} 
+        ref={mapContainerRef} 
         className="w-full h-full rounded-sm"
         style={{ minHeight: '400px', background: '#000' }}
       />
@@ -172,6 +186,8 @@ const MapViewer = ({ x, y, z, zoom = MAP_CONFIG.defaultZoom, className = '' }: M
       </div>
     </div>
   );
-};
+});
+
+MapViewer.displayName = 'MapViewer';
 
 export default MapViewer;
