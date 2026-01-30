@@ -1,11 +1,26 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Menu, X, Users, Skull, Map, Home, Shield, Sparkles, Bug, ScrollText, Calculator, Info } from 'lucide-react';
+import { Menu, X, Users, Skull, Map, Home, Shield, Sparkles, Bug, ScrollText, Calculator, Info, Search } from 'lucide-react';
 import headerBg from '@/assets/header-bg.jpg';
 import mainLogo from '@/assets/main-logo.webp';
+import GlobalSearch from '@/components/GlobalSearch';
 
 const Header = () => {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [searchOpen, setSearchOpen] = useState(false);
+
+  // Keyboard shortcut for search
+  useState(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
+        e.preventDefault();
+        setSearchOpen(true);
+      }
+    };
+
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  });
 
   return (
     <header className="relative">
@@ -40,6 +55,17 @@ const Header = () => {
 
           {/* Quick Links */}
           <div className="hidden md:flex items-center gap-4">
+            {/* Search Button */}
+            <button
+              onClick={() => setSearchOpen(true)}
+              className="retro-btn flex items-center gap-2"
+            >
+              <Search className="w-4 h-4" />
+              <span>Buscar</span>
+              <kbd className="hidden lg:inline-flex h-5 items-center gap-1 rounded border border-border/50 bg-muted/50 px-1.5 font-mono text-[10px] font-medium text-muted-foreground">
+                ⌘K
+              </kbd>
+            </button>
             <a 
               href="https://tibiarelic.com" 
               target="_blank" 
@@ -65,12 +91,20 @@ const Header = () => {
           </div>
 
           {/* Mobile Menu Button */}
-          <button 
-            className="md:hidden retro-btn p-2"
-            onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-          >
-            {mobileMenuOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
-          </button>
+          <div className="flex items-center gap-2 md:hidden">
+            <button
+              onClick={() => setSearchOpen(true)}
+              className="retro-btn p-2"
+            >
+              <Search className="w-5 h-5" />
+            </button>
+            <button 
+              className="retro-btn p-2"
+              onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+            >
+              {mobileMenuOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
+            </button>
+          </div>
         </div>
 
         {/* Mobile Menu */}
@@ -163,6 +197,9 @@ const Header = () => {
           </ul>
         </nav>
       </div>
+
+      {/* Global Search Dialog */}
+      <GlobalSearch isOpen={searchOpen} onClose={() => setSearchOpen(false)} />
     </header>
   );
 };
