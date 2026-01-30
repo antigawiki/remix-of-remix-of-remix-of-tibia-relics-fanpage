@@ -53,10 +53,15 @@ const Header = () => {
               <Skull className="w-4 h-4" />
               Banidos
             </Link>
-            <Link to="/map" className="retro-btn flex items-center gap-2">
+            <a 
+              href="https://opentibia.info/library/map" 
+              target="_blank" 
+              rel="noopener noreferrer"
+              className="retro-btn flex items-center gap-2"
+            >
               <Map className="w-4 h-4" />
               Mapa
-            </Link>
+            </a>
           </div>
 
           {/* Mobile Menu Button */}
@@ -118,10 +123,15 @@ const Header = () => {
                 <Skull className="w-4 h-4" />
                 Banidos
               </Link>
-              <Link to="/map" className="sidebar-menu-item flex items-center gap-2" onClick={() => setMobileMenuOpen(false)}>
+              <a 
+                href="https://opentibia.info/library/map" 
+                target="_blank" 
+                rel="noopener noreferrer"
+                className="sidebar-menu-item flex items-center gap-2"
+              >
                 <Map className="w-4 h-4" />
                 Mapa
-              </Link>
+              </a>
             </div>
           </nav>
         )}
