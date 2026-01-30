@@ -2,6 +2,7 @@ import { ReactNode } from 'react';
 import Header from '@/components/Header';
 import Footer from '@/components/Footer';
 import Sidebar from '@/components/Sidebar';
+import Breadcrumb from '@/components/Breadcrumb';
 
 interface MainLayoutProps {
   children: ReactNode;
@@ -23,6 +24,7 @@ const MainLayout = ({ children, showSidebars = true }: MainLayoutProps) => {
 
             {/* Main Content */}
             <div className="min-w-0">
+              <Breadcrumb />
               {children}
             </div>
 
@@ -32,7 +34,10 @@ const MainLayout = ({ children, showSidebars = true }: MainLayoutProps) => {
             </div>
           </div>
         ) : (
-          children
+          <>
+            <Breadcrumb />
+            {children}
+          </>
         )}
       </main>
 
