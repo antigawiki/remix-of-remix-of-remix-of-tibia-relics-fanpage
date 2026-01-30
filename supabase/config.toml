@@ -1,1 +1,4 @@
 project_id = "adagjmvhlmghhmadtpwv"
+
+[functions.tibia-relic-proxy]
+verify_jwt = false
