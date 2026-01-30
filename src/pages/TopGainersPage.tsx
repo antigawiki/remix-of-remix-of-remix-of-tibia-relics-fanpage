@@ -1,46 +1,17 @@
-import { Trophy, TrendingUp, Calendar, AlertCircle, RefreshCw } from 'lucide-react';
+import { Trophy, TrendingUp, Calendar, AlertCircle } from 'lucide-react';
 import MainLayout from '@/layouts/MainLayout';
-import { useTopGainers, formatExperience, triggerSnapshotSave } from '@/hooks/useTopGainers';
+import { useTopGainers, formatExperience } from '@/hooks/useTopGainers';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Button } from '@/components/ui/button';
 import PlayerLink from '@/components/PlayerLink';
-import { useState } from 'react';
-import { useToast } from '@/hooks/use-toast';
 
 const TopGainersPage = () => {
-  const { data, isLoading, isError, refetch } = useTopGainers(50);
-  const [isSaving, setIsSaving] = useState(false);
-  const { toast } = useToast();
+  const { data, isLoading, isError } = useTopGainers(50);
 
   const getRankIcon = (rank: number) => {
     if (rank === 1) return <Trophy className="w-5 h-5 text-gold" />;
     if (rank === 2) return <Trophy className="w-5 h-5 text-gray-400" />;
     if (rank === 3) return <Trophy className="w-5 h-5 text-amber-600" />;
     return <span className="text-muted-foreground font-mono">{rank}</span>;
-  };
-
-  const handleManualSave = async () => {
-    setIsSaving(true);
-    try {
-      const result = await triggerSnapshotSave();
-      if (result.success) {
-        toast({
-          title: "Snapshot salvo!",
-          description: "Os dados foram salvos. Aguarde até amanhã para ver as diferenças.",
-        });
-        refetch();
-      } else {
-        throw new Error(result.message || 'Falha ao salvar');
-      }
-    } catch (error) {
-      toast({
-        title: "Erro ao salvar",
-        description: error instanceof Error ? error.message : 'Erro desconhecido',
-        variant: "destructive",
-      });
-    } finally {
-      setIsSaving(false);
-    }
   };
 
   const formatDate = (dateStr: string | null) => {
@@ -75,18 +46,8 @@ const TopGainersPage = () => {
 
         {/* Content */}
         <div className="wood-panel rounded-sm overflow-hidden">
-          <div className="maroon-header px-4 py-2 flex items-center justify-between">
+          <div className="maroon-header px-4 py-2">
             <span className="font-heading text-sm font-semibold">Ranking de XP</span>
-            <Button 
-              variant="ghost" 
-              size="sm" 
-              onClick={handleManualSave}
-              disabled={isSaving}
-              className="h-7 text-xs"
-            >
-              <RefreshCw className={`w-3 h-3 mr-1 ${isSaving ? 'animate-spin' : ''}`} />
-              Salvar Snapshot
-            </Button>
           </div>
 
           {isLoading ? (
@@ -105,7 +66,7 @@ const TopGainersPage = () => {
               <AlertCircle className="w-8 h-8 mx-auto mb-2 text-gold" />
               <p className="text-muted-foreground">{data.message}</p>
               <p className="text-sm text-muted-foreground mt-2">
-                Clique em "Salvar Snapshot" para iniciar a coleta de dados.
+                Os dados são coletados automaticamente todos os dias às 09:00 UTC.
               </p>
             </div>
           ) : data?.gainers.length === 0 ? (
