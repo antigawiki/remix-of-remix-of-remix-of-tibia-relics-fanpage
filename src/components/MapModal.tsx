@@ -62,7 +62,6 @@ const MapModal = ({ open, onOpenChange, coordinates, title = 'Localização no M
             x={coordinates.x}
             y={coordinates.y}
             z={coordinates.z}
-            zoom={coordinates.zoom}
             className="h-[500px] rounded-sm border border-border"
           />
         </div>
