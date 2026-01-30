@@ -49,7 +49,7 @@ const Header = () => {
               <Users className="w-4 h-4" />
               Site Oficial
             </a>
-            <Link to="/banned" className="retro-btn flex items-center gap-2">
+            <Link to="/death-row" className="retro-btn flex items-center gap-2">
               <Skull className="w-4 h-4" />
               Banidos
             </Link>
@@ -114,7 +114,7 @@ const Header = () => {
                 <Users className="w-4 h-4" />
                 Site Oficial
               </a>
-              <Link to="/banned" className="sidebar-menu-item flex items-center gap-2" onClick={() => setMobileMenuOpen(false)}>
+              <Link to="/death-row" className="sidebar-menu-item flex items-center gap-2" onClick={() => setMobileMenuOpen(false)}>
                 <Skull className="w-4 h-4" />
                 Banidos
               </Link>
