@@ -1,178 +1,90 @@
 
-# Plano: Modal de Detalhes de Itens com Scraping do Tibiara
+# Plano: Remover Referências ao Tibiara e Integrar Mapa Próprio
 
 ## Objetivo
-Implementar funcionalidade de abrir um modal ao clicar em qualquer item da tabela de equipamentos, exibindo informações detalhadas obtidas dinamicamente do site tibiara.netlify.app, incluindo:
-- Onde comprar/vender o item
-- NPCs e precos
-- Links para mapa de localizacao dos NPCs
-- Monstros que dropam o item e chance de drop
+1. Remover todas as menções ao "Tibiara" da interface do usuário
+2. Integrar o visualizador de mapa do jogo diretamente no projeto
+3. Usar as coordenadas já presentes nos links (ex: `#32270,32329,7:2`) para exibir o mapa internamente
 
 ---
 
-## Arquitetura da Solucao
+## Etapa 1: Remover Referências ao Tibiara
 
-```text
-+----------------+     +----------------------+     +------------------------+
-|  EquipmentTable|     | Edge Function        |     | tibiara.netlify.app    |
-|  (Click Item)  | --> | scrape-item-details  | --> | /en/pages/items/{item} |
-+----------------+     +----------------------+     +------------------------+
-        |                       |
-        v                       v
-+------------------+    +------------------+
-| ItemDetailsModal |<-- | Parsed HTML Data |
-| (UI Component)   |    | (JSON Response)  |
-+------------------+    +------------------+
-```
-
----
-
-## Etapas de Implementacao
-
-### 1. Criar Edge Function para Scraping
-**Arquivo:** `supabase/functions/scrape-item-details/index.ts`
-
-Responsabilidades:
-- Receber nome do item como parametro
-- Converter para formato URL (ex: "Viking Helmet" -> "viking_helmet")
-- Fazer fetch da pagina do tibiara
-- Fazer parsing do HTML para extrair:
-  - Dados basicos (nome, imagem, stats)
-  - Lista de NPCs que compram (cidade, npc, preco, coordenadas mapa)
-  - Lista de NPCs que vendem (cidade, npc, preco, coordenadas mapa)
-  - Lista de monstros que dropam (nome, imagem, quantidade, chance)
-- Retornar dados estruturados em JSON
-
-### 2. Criar Hook de Fetching
-**Arquivo:** `src/hooks/useItemDetails.ts`
-
-- Hook personalizado usando React Query
-- Faz chamada para Edge Function
-- Gerencia loading state e cache
-- Tratamento de erros
-
-### 3. Criar Componente Modal
 **Arquivo:** `src/components/ItemDetailsModal.tsx`
 
-Layout do modal:
-```text
-+------------------------------------------------+
-| [Imagem] Nome do Item           [X]            |
-|------------------------------------------------|
-| Arm: 4 | Peso: 39 oz.                          |
-|================================================|
-| VENDER PARA                | COMPRAR DE        |
-|---------------------------|-------------------|
-| Cidade | NPC | Preco | Map| Cidade | NPC |Preco|
-| Thais  |Hardek| 66gp | [M]| Darash |Azil| 265gp|
-| ...    | ...  | ...  |    | ...    | ...| ...  |
-|================================================|
-| DROPADO POR                                    |
-|------------------------------------------------|
-| Monstro    | [img] | Qtd | Chance              |
-| Ghoul      | [gif] | 1   | 5%                  |
-| Skeleton   | [gif] | 1   | 8%                  |
-+------------------------------------------------+
-```
-
-Caracteristicas:
-- Estilo visual seguindo o tema retro/parchment do site
-- Icone de mapa abrindo em nova aba para localizacao do NPC
-- Indicador de loading enquanto busca dados
-- Fallback para itens sem dados
-
-### 4. Integrar no EquipmentTable
-**Arquivo:** `src/components/EquipmentTable.tsx`
-
-- Adicionar estado para item selecionado
-- Tornar linhas da tabela clicaveis (cursor pointer, hover effect)
-- Abrir modal ao clicar em qualquer linha
-- Passar nome do item para o modal
+Alterações:
+- Remover o bloco "Fonte: Tibiara" (linhas 223-233)
+- Remover o link "Buscar no Tibiara" do estado de erro (linhas 172-179)
 
 ---
 
-## Detalhes Tecnicos
+## Etapa 2: Aguardar Upload dos Arquivos do Mapa
 
-### Conversao de Nome para URL
-```typescript
-function itemNameToUrl(name: string): string {
-  return name
-    .toLowerCase()
-    .replace(/'/g, '')  // Remove apostrofos (Ab'dendriel -> abdendriel)
-    .replace(/\s+/g, '_');  // Espacos para underscore
-}
-// "Viking Helmet" -> "viking_helmet"
-// "Hat of the Mad" -> "hat_of_the_mad"
-```
+Você mencionou que vai me enviar:
+- **Imagens dos tiles** do mapa (PNGs)
+- **Código do visualizador** (HTML + JS)
 
-### Parsing do HTML
-O HTML do tibiara segue estrutura consistente:
-- `table#oneitems` - dados basicos
-- `table#sbileft` - NPCs que compram (Sell)
-- `table#sbiright` - NPCs que vendem (Buy)
-- `table#looted` - monstros que dropam
-- Links de mapa contem coordenadas: `map/index.html#32270,32329,7:2`
+Após receber os arquivos, irei:
 
-### Estrutura de Dados Retornada
-```typescript
-interface ItemDetails {
-  name: string;
-  image: string;
-  stats: {
-    armor?: number;
-    attack?: number;
-    defense?: number;
-    weight: string;
-  };
-  sellTo: Array<{
-    city: string;
-    npc: string;
-    price: string;
-    mapUrl?: string;
-  }>;
-  buyFrom: Array<{
-    city: string;
-    npc: string;
-    price: string;
-    mapUrl?: string;
-  }>;
-  lootedFrom: Array<{
-    monster: string;
-    image: string;
-    amount: string;
-    chance: string;
-  }>;
-}
+1. **Analisar a estrutura do visualizador** para entender:
+   - Como as coordenadas `X,Y,Z:ZOOM` funcionam
+   - Como os tiles são carregados
+   - Dependências necessárias (se houver)
+
+2. **Converter para React**:
+   - Criar componente `src/components/MapViewer.tsx`
+   - Adaptar a lógica JavaScript para React/TypeScript
+   - Manter a mesma funcionalidade de navegação
+
+3. **Organizar os assets**:
+   - Imagens do mapa em `public/map/` ou similar
+   - Estrutura de pastas conforme o visualizador original
+
+---
+
+## Etapa 3: Integrar Mapa no Modal
+
+**Nova funcionalidade:**
+
+Quando o usuário clicar no ícone de mapa (MapPin) em um NPC:
+- Em vez de abrir link externo, abre um modal/drawer com o mapa interno
+- As coordenadas após o `#` (ex: `32270,32329,7:2`) serão parseadas:
+  - `32270` = coordenada X
+  - `32329` = coordenada Y  
+  - `7` = andar/floor (Z)
+  - `2` = zoom
+
+```text
++-----------------------------------------+
+|  Mapa - Localização do NPC              |
+|-----------------------------------------|
+|                                         |
+|    [Visualizador de Mapa Interativo]    |
+|    Mostrando coordenadas X,Y no floor Z |
+|                                         |
+|    [Marcador indicando posição do NPC]  |
+|                                         |
++-----------------------------------------+
 ```
 
 ---
 
 ## Arquivos a Criar/Modificar
 
-| Acao | Arquivo | Descricao |
+| Ação | Arquivo | Descrição |
 |------|---------|-----------|
-| Criar | `supabase/functions/scrape-item-details/index.ts` | Edge function para scraping |
-| Atualizar | `supabase/config.toml` | Registrar nova edge function |
-| Criar | `src/hooks/useItemDetails.ts` | Hook para buscar detalhes |
-| Criar | `src/components/ItemDetailsModal.tsx` | Modal com detalhes do item |
-| Modificar | `src/components/EquipmentTable.tsx` | Tornar linhas clicaveis |
+| Modificar | `src/components/ItemDetailsModal.tsx` | Remover refs ao Tibiara |
+| Criar | `src/components/MapViewer.tsx` | Visualizador de mapa React |
+| Criar | `src/components/MapModal.tsx` | Modal para exibir o mapa |
+| Criar | `public/map/` | Pasta para tiles do mapa |
+| Modificar | Edge Function | Extrair apenas coordenadas (sem URL completa) |
 
 ---
 
-## Consideracoes
+## Próximos Passos
 
-### Performance
-- Cache via React Query (staleTime de 5 minutos)
-- Lazy loading - so busca quando usuario clica
-- Loading skeleton enquanto carrega
+1. **Imediato**: Remover referências ao Tibiara do código atual
+2. **Aguardando você**: Envie os arquivos do mapa (imagens + código)
+3. **Após receber**: Analisar e converter para React
 
-### Tratamento de Erros
-- Alguns itens podem nao existir no tibiara (retorna 404)
-- Modal exibe mensagem amigavel: "Detalhes nao disponiveis para este item"
-- Fallback mostra apenas dados locais (armor, peso, etc)
-
-### UX
-- Feedback visual de hover na linha da tabela
-- Loading spinner durante fetch
-- Transicao suave de abertura do modal
-- Icones de mapa abrem em nova aba
+Por favor, faça o upload dos arquivos do mapa para eu analisar a estrutura e implementar a integração completa.
