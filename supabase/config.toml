@@ -2,3 +2,9 @@ project_id = "adagjmvhlmghhmadtpwv"
 
 [functions.tibia-relic-proxy]
 verify_jwt = false
+
+[functions.save-highscores]
+verify_jwt = false
+
+[functions.get-top-gainers]
+verify_jwt = false

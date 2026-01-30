@@ -116,6 +116,36 @@ export type Database = {
         }
         Relationships: []
       }
+      highscore_snapshots: {
+        Row: {
+          created_at: string | null
+          experience: number | null
+          id: string
+          level: number | null
+          player_name: string
+          profession: string | null
+          snapshot_date: string
+        }
+        Insert: {
+          created_at?: string | null
+          experience?: number | null
+          id?: string
+          level?: number | null
+          player_name: string
+          profession?: string | null
+          snapshot_date: string
+        }
+        Update: {
+          created_at?: string | null
+          experience?: number | null
+          id?: string
+          level?: number | null
+          player_name?: string
+          profession?: string | null
+          snapshot_date?: string
+        }
+        Relationships: []
+      }
       items: {
         Row: {
           attributes: string | null

@@ -1,7 +1,7 @@
 import { Link } from 'react-router-dom';
 import { 
   Shield, Wand2, Bug, Scroll, Calculator, 
-  Info, Trophy, Clock, Package, Users, Skull
+  Info, Trophy, Clock, Package, Users, Skull, TrendingUp
 } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
@@ -52,6 +52,10 @@ const Sidebar = ({ position }: SidebarProps) => {
             <Link to="/highscores" className="sidebar-menu-item flex items-center gap-2">
               <Trophy className="w-4 h-4 text-gold" />
               Ranking
+            </Link>
+            <Link to="/top-gainers" className="sidebar-menu-item flex items-center gap-2">
+              <TrendingUp className="w-4 h-4 text-gold" />
+              Top Gainers
             </Link>
             <Link to="/online" className="sidebar-menu-item flex items-center gap-2">
               <Users className="w-4 h-4 text-gold" />
