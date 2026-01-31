@@ -46,17 +46,17 @@ const Index = () => {
           
           <div className="space-y-4">
             <NewsBox 
-              title="Wiki em Construção"
+              title={t('news.wikiConstructionTitle')}
               date="02/01/2024"
               author="Admin"
-              content="<p>Estamos trabalhando para trazer todas as informações do servidor Tibia Relic para você! Em breve teremos guias completos de equipamentos, magias, quests e muito mais.</p><p class='mt-2'>Fique ligado nas atualizações!</p>"
+              content={`<p>${t('news.wikiConstructionContent')}</p><p class='mt-2'>${t('news.wikiConstructionContent2')}</p>`}
             />
             
             <NewsBox 
-              title="Tibia Relic - O Servidor"
+              title={t('news.tibiaRelicServerTitle')}
               date="01/01/2024"
               author="Admin"
-              content="<p>Tibia Relic é um servidor OT que traz a nostalgia do Tibia clássico com algumas melhorias. Visite o site oficial em <a href='https://tibiarelic.com' target='_blank' class='text-maroon hover:underline'>tibiarelic.com</a> para criar sua conta e começar a jogar!</p>"
+              content={`<p>${t('news.tibiaRelicServerContent')} <a href='https://tibiarelic.com' target='_blank' class='text-maroon dark:text-gold hover:underline'>tibiarelic.com</a></p>`}
             />
           </div>
         </section>

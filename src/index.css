@@ -64,32 +64,42 @@
   }
 
   .dark {
-    --background: 24 30% 8%;
-    --foreground: 35 30% 90%;
-    --card: 24 25% 12%;
-    --card-foreground: 35 30% 90%;
-    --popover: 24 25% 10%;
-    --popover-foreground: 35 30% 90%;
-    --primary: 0 60% 28%;
+    --background: 24 30% 6%;
+    --foreground: 35 30% 88%;
+    --card: 24 25% 10%;
+    --card-foreground: 35 30% 88%;
+    --popover: 24 25% 8%;
+    --popover-foreground: 35 30% 88%;
+    --primary: 0 60% 30%;
     --primary-foreground: 35 50% 95%;
-    --secondary: 35 35% 82%;
-    --secondary-foreground: 24 40% 15%;
-    --muted: 24 20% 18%;
-    --muted-foreground: 35 20% 60%;
+    --secondary: 24 25% 16%;
+    --secondary-foreground: 35 30% 85%;
+    --muted: 24 20% 14%;
+    --muted-foreground: 35 20% 55%;
     --accent: 43 70% 55%;
     --accent-foreground: 24 40% 10%;
     --destructive: 0 70% 40%;
     --destructive-foreground: 35 50% 95%;
-    --border: 24 30% 22%;
-    --input: 24 25% 15%;
+    --border: 24 30% 18%;
+    --input: 24 25% 12%;
     --ring: 43 70% 55%;
-    --sidebar-background: 24 30% 10%;
-    --sidebar-foreground: 35 30% 90%;
-    --sidebar-primary: 0 60% 28%;
+    
+    /* Dark mode custom tokens */
+    --parchment: 24 25% 14%;
+    --parchment-dark: 24 30% 10%;
+    --wood-dark: 24 40% 6%;
+    --wood-medium: 24 35% 10%;
+    --maroon: 0 55% 22%;
+    --maroon-dark: 0 60% 16%;
+    --text-dark: 35 30% 85%;
+    
+    --sidebar-background: 24 30% 8%;
+    --sidebar-foreground: 35 30% 88%;
+    --sidebar-primary: 0 60% 30%;
     --sidebar-primary-foreground: 35 50% 95%;
-    --sidebar-accent: 24 25% 15%;
-    --sidebar-accent-foreground: 35 30% 90%;
-    --sidebar-border: 24 30% 18%;
+    --sidebar-accent: 24 25% 12%;
+    --sidebar-accent-foreground: 35 30% 88%;
+    --sidebar-border: 24 30% 15%;
     --sidebar-ring: 43 70% 55%;
   }
 }
