@@ -3,6 +3,8 @@ import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
+import { ThemeProvider } from "@/contexts/ThemeContext";
+import { LanguageProvider } from "@/i18n";
 import Index from "./pages/Index";
 import AdminPage from "./pages/AdminPage";
 import EquipmentPage from "./pages/EquipmentPage";
@@ -25,44 +27,49 @@ import OnlinePlayersPage from "./pages/OnlinePlayersPage";
 import DeathRowPage from "./pages/DeathRowPage";
 import TopGainersPage from "./pages/TopGainersPage";
 import NotFound from "./pages/NotFound";
+
 const queryClient = new QueryClient();
 
 const App = () => (
   <QueryClientProvider client={queryClient}>
-    <TooltipProvider>
-      <Toaster />
-      <Sonner />
-      <BrowserRouter>
-        <Routes>
-          <Route path="/" element={<Index />} />
-          <Route path="/admin" element={<AdminPage />} />
-          <Route path="/equipment" element={<EquipmentPage />} />
-          <Route path="/equipment/:category" element={<EquipmentPage />} />
-          <Route path="/items" element={<ItemsPage />} />
-          <Route path="/items/:category" element={<ItemsPage />} />
-          <Route path="/spells" element={<SpellsPage />} />
-          <Route path="/spells/:vocation" element={<SpellsPage />} />
-          <Route path="/creatures" element={<CreaturesPage />} />
-          <Route path="/info" element={<InfoPage />} />
-          <Route path="/calculators" element={<CalculatorsPage />} />
-          <Route path="/calculators/heal-damage" element={<HealDamageCalculator />} />
-          <Route path="/calculators/physical-damage" element={<PhysicalDamageCalculator />} />
-          <Route path="/calculators/death-experience" element={<DeathExperienceCalculator />} />
-          <Route path="/calculators/experience-level" element={<ExperienceLevelCalculator />} />
-          <Route path="/calculators/magic-level" element={<MagicLevelCalculator />} />
-          <Route path="/calculators/skills" element={<SkillsCalculator />} />
-          <Route path="/calculators/stats" element={<StatsCalculator />} />
-          <Route path="/calculators/loot" element={<LootCalculator />} />
-          <Route path="/quests" element={<QuestsPage />} />
-          <Route path="/highscores" element={<HighscoresPage />} />
-          <Route path="/online" element={<OnlinePlayersPage />} />
-          <Route path="/death-row" element={<DeathRowPage />} />
-          <Route path="/top-gainers" element={<TopGainersPage />} />
-          {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
-          <Route path="*" element={<NotFound />} />
-        </Routes>
-      </BrowserRouter>
-    </TooltipProvider>
+    <ThemeProvider>
+      <LanguageProvider>
+        <TooltipProvider>
+          <Toaster />
+          <Sonner />
+          <BrowserRouter>
+            <Routes>
+              <Route path="/" element={<Index />} />
+              <Route path="/admin" element={<AdminPage />} />
+              <Route path="/equipment" element={<EquipmentPage />} />
+              <Route path="/equipment/:category" element={<EquipmentPage />} />
+              <Route path="/items" element={<ItemsPage />} />
+              <Route path="/items/:category" element={<ItemsPage />} />
+              <Route path="/spells" element={<SpellsPage />} />
+              <Route path="/spells/:vocation" element={<SpellsPage />} />
+              <Route path="/creatures" element={<CreaturesPage />} />
+              <Route path="/info" element={<InfoPage />} />
+              <Route path="/calculators" element={<CalculatorsPage />} />
+              <Route path="/calculators/heal-damage" element={<HealDamageCalculator />} />
+              <Route path="/calculators/physical-damage" element={<PhysicalDamageCalculator />} />
+              <Route path="/calculators/death-experience" element={<DeathExperienceCalculator />} />
+              <Route path="/calculators/experience-level" element={<ExperienceLevelCalculator />} />
+              <Route path="/calculators/magic-level" element={<MagicLevelCalculator />} />
+              <Route path="/calculators/skills" element={<SkillsCalculator />} />
+              <Route path="/calculators/stats" element={<StatsCalculator />} />
+              <Route path="/calculators/loot" element={<LootCalculator />} />
+              <Route path="/quests" element={<QuestsPage />} />
+              <Route path="/highscores" element={<HighscoresPage />} />
+              <Route path="/online" element={<OnlinePlayersPage />} />
+              <Route path="/death-row" element={<DeathRowPage />} />
+              <Route path="/top-gainers" element={<TopGainersPage />} />
+              {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
+              <Route path="*" element={<NotFound />} />
+            </Routes>
+          </BrowserRouter>
+        </TooltipProvider>
+      </LanguageProvider>
+    </ThemeProvider>
   </QueryClientProvider>
 );
 
