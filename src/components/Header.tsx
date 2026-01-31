@@ -5,6 +5,8 @@ import headerBg from '@/assets/header-bg.jpg';
 import mainLogo from '@/assets/main-logo.webp';
 import GlobalSearch from '@/components/GlobalSearch';
 import { useTranslation } from '@/i18n';
+import { LanguageSelector } from './LanguageSelector';
+import { ThemeToggle } from './ThemeToggle';
 
 const Header = () => {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
@@ -195,6 +197,10 @@ const Header = () => {
             </li>
             <li>
               <Link to="/info" className="sidebar-menu-item px-6">{t('navigation.info')}</Link>
+            </li>
+            <li className="flex items-center gap-1 px-3">
+              <LanguageSelector />
+              <ThemeToggle />
             </li>
           </ul>
         </nav>

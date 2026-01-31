@@ -96,6 +96,37 @@ export interface TranslationKeys {
     latestNews: string;
     serverInfo: string;
   };
+  serverInfo: {
+    title: string;
+    rates: string;
+    experience: string;
+    magic: string;
+    skills: string;
+    loot: string;
+    skullSystem: string;
+    pzTime: string;
+    pzTimeValue: string;
+    whiteSkull: string;
+    redSkull: string;
+    fragsBan: string;
+    kills: string;
+    hours: string;
+    days: string;
+    upTo: string;
+    from: string;
+    banDescription: string;
+    general: string;
+    updatesComingSoon: string;
+    visitOfficialSite: string;
+    accessOfficialSite: string;
+  };
+  news: {
+    wikiConstructionTitle: string;
+    wikiConstructionContent: string;
+    wikiConstructionContent2: string;
+    tibiaRelicServerTitle: string;
+    tibiaRelicServerContent: string;
+  };
   footer: {
     developedBy: string;
     fanPage: string;

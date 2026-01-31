@@ -1,6 +1,4 @@
 import { useTranslation } from '@/i18n';
-import { LanguageSelector } from './LanguageSelector';
-import { ThemeToggle } from './ThemeToggle';
 
 const Footer = () => {
   const { t } = useTranslation();
@@ -14,11 +12,6 @@ const Footer = () => {
           <div className="flex items-center gap-1">
             <span>{t('footer.developedBy')}</span>
             <span> por Josuba</span>
-          </div>
-
-          <div className="flex items-center gap-3">
-            <LanguageSelector />
-            <ThemeToggle />
           </div>
 
           <div className="text-center">
