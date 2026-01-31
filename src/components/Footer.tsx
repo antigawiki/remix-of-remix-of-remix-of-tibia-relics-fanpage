@@ -1,6 +1,10 @@
-
+import { useTranslation } from '@/i18n';
+import { LanguageSelector } from './LanguageSelector';
+import { ThemeToggle } from './ThemeToggle';
 
 const Footer = () => {
+  const { t } = useTranslation();
+
   return (
     <footer className="wood-panel mt-8 py-6">
       <div className="container">
@@ -8,13 +12,18 @@ const Footer = () => {
 
         <div className="flex flex-col md:flex-row items-center justify-between gap-4 text-sm text-muted-foreground">
           <div className="flex items-center gap-1">
-            <span>Desenvolvido</span>
+            <span>{t('footer.developedBy')}</span>
             <span> por Josuba</span>
           </div>
 
+          <div className="flex items-center gap-3">
+            <LanguageSelector />
+            <ThemeToggle />
+          </div>
+
           <div className="text-center">
-            <p>Tibia Relic Fan Page © 2026</p>
-            <p className="text-xs mt-1">Tibia® é uma marca registrada da CipSoft GmbH.</p>
+            <p>{t('footer.fanPage')} © 2026</p>
+            <p className="text-xs mt-1">{t('footer.trademark')}</p>
           </div>
 
           <div>

@@ -4,70 +4,80 @@ import {
   Info, Trophy, Clock, Package, Users, Skull, TrendingUp
 } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
-import { ptBR } from 'date-fns/locale';
+import { ptBR, enUS, es, pl } from 'date-fns/locale';
 import { useServerStats } from '@/hooks/useServerStats';
 import { useTopPlayers } from '@/hooks/useHighscores';
 import { useBans } from '@/hooks/useBans';
 import { Skeleton } from '@/components/ui/skeleton';
 import PlayerLink from '@/components/PlayerLink';
+import { useTranslation } from '@/i18n';
+
+const localeMap = {
+  pt: ptBR,
+  en: enUS,
+  es: es,
+  pl: pl,
+};
 
 interface SidebarProps {
   position: 'left' | 'right';
 }
 
 const Sidebar = ({ position }: SidebarProps) => {
+  const { t, language } = useTranslation();
+
   if (position === 'left') {
     return (
       <aside className="space-y-4">
         {/* Navigation Menu */}
         <div className="wood-panel rounded-sm overflow-hidden">
           <div className="maroon-header px-4 py-2">
-            <span className="font-heading text-sm font-semibold">Navegação</span>
+            <span className="font-heading text-sm font-semibold">{t('sidebar.navigation')}</span>
           </div>
           <nav className="divide-y divide-border/30">
             <Link to="/equipment" className="sidebar-menu-item flex items-center gap-2">
               <Shield className="w-4 h-4 text-gold" />
-              Equipamentos
+              {t('navigation.equipment')}
             </Link>
             <Link to="/items" className="sidebar-menu-item flex items-center gap-2">
               <Package className="w-4 h-4 text-gold" />
-              Itens
+              {t('navigation.items')}
             </Link>
             <Link to="/spells" className="sidebar-menu-item flex items-center gap-2">
               <Wand2 className="w-4 h-4 text-gold" />
-              Magias
+              {t('navigation.spells')}
             </Link>
             <Link to="/creatures" className="sidebar-menu-item flex items-center gap-2">
               <Bug className="w-4 h-4 text-gold" />
-              Criaturas
+              {t('navigation.creatures')}
             </Link>
             <Link to="/quests" className="sidebar-menu-item flex items-center gap-2">
               <Scroll className="w-4 h-4 text-gold" />
-              Quests
+              {t('navigation.quests')}
             </Link>
             <Link to="/calculators" className="sidebar-menu-item flex items-center gap-2">
               <Calculator className="w-4 h-4 text-gold" />
-              Calculadoras
+              {t('navigation.calculators')}
             </Link>
             <Link to="/highscores" className="sidebar-menu-item flex items-center gap-2">
               <Trophy className="w-4 h-4 text-gold" />
-              Ranking
+              {t('navigation.ranking')}
             </Link>
             <Link to="/top-gainers" className="sidebar-menu-item flex items-center gap-2">
               <TrendingUp className="w-4 h-4 text-gold" />
-              Top Gainers
+              {t('navigation.topGainers')}
             </Link>
             <Link to="/online" className="sidebar-menu-item flex items-center gap-2">
               <Users className="w-4 h-4 text-gold" />
-              Players Online
+              {t('navigation.online')}
             </Link>
             <Link to="/death-row" className="sidebar-menu-item flex items-center gap-2">
               <Skull className="w-4 h-4 text-gold" />
-              Banidos
+              {t('navigation.banned')}
             </Link>
             <Link to="/info" className="sidebar-menu-item flex items-center gap-2">
               <Info className="w-4 h-4 text-gold" />
-              Informações
+              {t('navigation.info')}
             </Link>
           </nav>
         </div>
@@ -75,23 +85,23 @@ const Sidebar = ({ position }: SidebarProps) => {
         {/* Quick Links */}
         <div className="wood-panel rounded-sm overflow-hidden">
           <div className="maroon-header px-4 py-2">
-            <span className="font-heading text-sm font-semibold">Links Rápidos</span>
+            <span className="font-heading text-sm font-semibold">{t('sidebar.quickLinks')}</span>
           </div>
           <nav className="divide-y divide-border/30">
             <Link to="/equipment/helmets" className="sidebar-menu-item text-xs">
-              → Capacetes
+              → {t('equipment.helmets')}
             </Link>
             <Link to="/equipment/armors" className="sidebar-menu-item text-xs">
-              → Armaduras
+              → {t('equipment.armors')}
             </Link>
             <Link to="/equipment/swords" className="sidebar-menu-item text-xs">
-              → Espadas
+              → {t('equipment.swords')}
             </Link>
             <Link to="/spells/sorcerer" className="sidebar-menu-item text-xs">
-              → Magias Sorcerer
+              → {t('spells.sorcerer')}
             </Link>
             <Link to="/spells/druid" className="sidebar-menu-item text-xs">
-              → Magias Druid
+              → {t('spells.druid')}
             </Link>
           </nav>
         </div>
@@ -103,6 +113,7 @@ const Sidebar = ({ position }: SidebarProps) => {
 };
 
 const RightSidebar = () => {
+  const { t, language } = useTranslation();
   const { data: stats, isLoading: statsLoading, isError: statsError } = useServerStats();
   const { data: topPlayersData, isLoading: topLoading } = useTopPlayers(5);
   const { data: bans } = useBans();
@@ -111,7 +122,7 @@ const RightSidebar = () => {
     if (!stats?.nextServerSave) return '--';
     try {
       return formatDistanceToNow(new Date(stats.nextServerSave), { 
-        locale: ptBR,
+        locale: localeMap[language],
         addSuffix: false 
       });
     } catch {
@@ -132,42 +143,42 @@ const RightSidebar = () => {
       <div className="wood-panel rounded-sm overflow-hidden">
         <div className="maroon-header px-4 py-2 flex items-center gap-2">
           <div className={`w-2 h-2 rounded-full ${statsError ? 'bg-red-500' : 'bg-green-500'} animate-pulse`} />
-          <span className="font-heading text-sm font-semibold">Server Status</span>
+          <span className="font-heading text-sm font-semibold">{t('sidebar.serverStatus')}</span>
         </div>
         <div className="p-3 space-y-2">
           <div className="flex items-center justify-between text-sm">
-            <span className="text-muted-foreground">Status:</span>
+            <span className="text-muted-foreground">{t('sidebar.status')}:</span>
             {statsLoading ? (
               <Skeleton className="h-4 w-12" />
             ) : (
               <span className={statsError ? 'text-red-400 font-semibold' : 'text-green-400 font-semibold'}>
-                {statsError ? 'Offline' : 'Online'}
+                {statsError ? t('sidebar.offline') : t('sidebar.online')}
               </span>
             )}
           </div>
           <div className="flex items-center justify-between text-sm">
-            <span className="text-muted-foreground">Players:</span>
+            <span className="text-muted-foreground">{t('sidebar.players')}:</span>
             {statsLoading ? (
               <Skeleton className="h-4 w-20" />
             ) : (
               <span className="text-gold font-semibold">
                 {stats?.playersOnline ?? 0}
                 <span className="text-muted-foreground font-normal text-xs ml-1">
-                  (rec: {stats?.recordOnline ?? 0})
+                  ({t('sidebar.record')}: {stats?.recordOnline ?? 0})
                 </span>
               </span>
             )}
           </div>
           <div className="flex items-center justify-between text-sm">
-            <span className="text-muted-foreground">Next SS:</span>
+            <span className="text-muted-foreground">{t('sidebar.nextSS')}:</span>
             {statsLoading ? (
               <Skeleton className="h-4 w-16" />
             ) : (
-              <span className="text-foreground">em {getServerSaveCountdown()}</span>
+              <span className="text-foreground">{t('sidebar.in')} {getServerSaveCountdown()}</span>
             )}
           </div>
           <div className="flex items-center justify-between text-sm">
-            <span className="text-muted-foreground">Banidos:</span>
+            <span className="text-muted-foreground">{t('sidebar.bannedCount')}:</span>
             <Link to="/death-row" className="text-destructive font-semibold hover:underline">
               {bans?.length ?? 0}
             </Link>
@@ -179,7 +190,7 @@ const RightSidebar = () => {
       <div className="wood-panel rounded-sm overflow-hidden">
         <div className="maroon-header px-4 py-2 flex items-center gap-2">
           <Trophy className="w-4 h-4" />
-          <span className="font-heading text-sm font-semibold">Top 5 Players</span>
+          <span className="font-heading text-sm font-semibold">{t('sidebar.topPlayers')}</span>
         </div>
         <div className="divide-y divide-border/30">
           {topLoading ? (
@@ -200,7 +211,7 @@ const RightSidebar = () => {
             ))
           ) : (
             <div className="px-3 py-4 text-xs text-center text-muted-foreground">
-              Nenhum jogador encontrado
+              {t('sidebar.noPlayersFound')}
             </div>
           )}
         </div>
@@ -208,7 +219,7 @@ const RightSidebar = () => {
           to="/highscores"
           className="block px-3 py-2 text-xs text-center gold-link border-t border-border/30"
         >
-          Ver ranking completo →
+          {t('sidebar.viewFullRanking')} →
         </Link>
       </div>
 
@@ -216,7 +227,7 @@ const RightSidebar = () => {
       <div className="wood-panel rounded-sm overflow-hidden">
         <div className="maroon-header px-4 py-2 flex items-center gap-2">
           <Clock className="w-4 h-4" />
-          <span className="font-heading text-sm font-semibold">Atualizações</span>
+          <span className="font-heading text-sm font-semibold">{t('sidebar.updates')}</span>
         </div>
         <div className="p-3 space-y-2 text-xs text-muted-foreground">
           <p>• Wiki sendo construída...</p>

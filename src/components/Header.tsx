@@ -4,10 +4,12 @@ import { Menu, X, Users, Skull, Map, Home, Shield, Sparkles, Bug, ScrollText, Ca
 import headerBg from '@/assets/header-bg.jpg';
 import mainLogo from '@/assets/main-logo.webp';
 import GlobalSearch from '@/components/GlobalSearch';
+import { useTranslation } from '@/i18n';
 
 const Header = () => {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
+  const { t } = useTranslation();
 
   // Keyboard shortcut for search
   useState(() => {
@@ -61,7 +63,7 @@ const Header = () => {
               className="retro-btn flex items-center gap-2"
             >
               <Search className="w-4 h-4" />
-              <span>Buscar</span>
+              <span>{t('common.search')}</span>
               <kbd className="hidden lg:inline-flex h-5 items-center gap-1 rounded border border-border/50 bg-muted/50 px-1.5 font-mono text-[10px] font-medium text-muted-foreground">
                 ⌘K
               </kbd>
@@ -73,11 +75,11 @@ const Header = () => {
               className="retro-btn flex items-center gap-2"
             >
               <Users className="w-4 h-4" />
-              Site Oficial
+              {t('navigation.officialSite')}
             </a>
             <Link to="/death-row" className="retro-btn flex items-center gap-2">
               <Skull className="w-4 h-4" />
-              Banidos
+              {t('navigation.banned')}
             </Link>
             <a 
               href="https://opentibia.info/library/map" 
@@ -86,7 +88,7 @@ const Header = () => {
               className="retro-btn flex items-center gap-2"
             >
               <Map className="w-4 h-4" />
-              Mapa
+              {t('navigation.map')}
             </a>
           </div>
 
@@ -114,31 +116,31 @@ const Header = () => {
               {/* Main Navigation */}
               <Link to="/" className="sidebar-menu-item flex items-center gap-2" onClick={() => setMobileMenuOpen(false)}>
                 <Home className="w-4 h-4" />
-                Início
+                {t('navigation.home')}
               </Link>
               <Link to="/equipment" className="sidebar-menu-item flex items-center gap-2" onClick={() => setMobileMenuOpen(false)}>
                 <Shield className="w-4 h-4" />
-                Equipamentos
+                {t('navigation.equipment')}
               </Link>
               <Link to="/spells" className="sidebar-menu-item flex items-center gap-2" onClick={() => setMobileMenuOpen(false)}>
                 <Sparkles className="w-4 h-4" />
-                Magias
+                {t('navigation.spells')}
               </Link>
               <Link to="/creatures" className="sidebar-menu-item flex items-center gap-2" onClick={() => setMobileMenuOpen(false)}>
                 <Bug className="w-4 h-4" />
-                Criaturas
+                {t('navigation.creatures')}
               </Link>
               <Link to="/quests" className="sidebar-menu-item flex items-center gap-2" onClick={() => setMobileMenuOpen(false)}>
                 <ScrollText className="w-4 h-4" />
-                Quests
+                {t('navigation.quests')}
               </Link>
               <Link to="/calculators" className="sidebar-menu-item flex items-center gap-2" onClick={() => setMobileMenuOpen(false)}>
                 <Calculator className="w-4 h-4" />
-                Calculadoras
+                {t('navigation.calculators')}
               </Link>
               <Link to="/info" className="sidebar-menu-item flex items-center gap-2" onClick={() => setMobileMenuOpen(false)}>
                 <Info className="w-4 h-4" />
-                Informações
+                {t('navigation.info')}
               </Link>
               
               <div className="border-t border-border/30 my-2" />
@@ -151,11 +153,11 @@ const Header = () => {
                 className="sidebar-menu-item flex items-center gap-2"
               >
                 <Users className="w-4 h-4" />
-                Site Oficial
+                {t('navigation.officialSite')}
               </a>
               <Link to="/death-row" className="sidebar-menu-item flex items-center gap-2" onClick={() => setMobileMenuOpen(false)}>
                 <Skull className="w-4 h-4" />
-                Banidos
+                {t('navigation.banned')}
               </Link>
               <a 
                 href="https://opentibia.info/library/map" 
@@ -164,7 +166,7 @@ const Header = () => {
                 className="sidebar-menu-item flex items-center gap-2"
               >
                 <Map className="w-4 h-4" />
-                Mapa
+                {t('navigation.map')}
               </a>
             </div>
           </nav>
@@ -174,25 +176,25 @@ const Header = () => {
         <nav className="hidden md:block wood-panel rounded-sm">
           <ul className="flex items-center justify-center divide-x divide-border/30">
             <li>
-              <Link to="/" className="sidebar-menu-item px-6">Início</Link>
+              <Link to="/" className="sidebar-menu-item px-6">{t('navigation.home')}</Link>
             </li>
             <li>
-              <Link to="/equipment" className="sidebar-menu-item px-6">Equipamentos</Link>
+              <Link to="/equipment" className="sidebar-menu-item px-6">{t('navigation.equipment')}</Link>
             </li>
             <li>
-              <Link to="/spells" className="sidebar-menu-item px-6">Magias</Link>
+              <Link to="/spells" className="sidebar-menu-item px-6">{t('navigation.spells')}</Link>
             </li>
             <li>
-              <Link to="/creatures" className="sidebar-menu-item px-6">Criaturas</Link>
+              <Link to="/creatures" className="sidebar-menu-item px-6">{t('navigation.creatures')}</Link>
             </li>
             <li>
-              <Link to="/quests" className="sidebar-menu-item px-6">Quests</Link>
+              <Link to="/quests" className="sidebar-menu-item px-6">{t('navigation.quests')}</Link>
             </li>
             <li>
-              <Link to="/calculators" className="sidebar-menu-item px-6">Calculadoras</Link>
+              <Link to="/calculators" className="sidebar-menu-item px-6">{t('navigation.calculators')}</Link>
             </li>
             <li>
-              <Link to="/info" className="sidebar-menu-item px-6">Informações</Link>
+              <Link to="/info" className="sidebar-menu-item px-6">{t('navigation.info')}</Link>
             </li>
           </ul>
         </nav>
