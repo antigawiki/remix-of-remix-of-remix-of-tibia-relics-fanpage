@@ -1,287 +1,199 @@
 
-# Plano: Sistema de Idiomas e Tema (Claro/Escuro)
+# Plano: Melhorias no Sistema de Idioma e Dark Mode
 
-## Resumo
+## Resumo das Mudanças
 
-Implementar duas funcionalidades no site:
-1. **Seletor de Idioma**: Português, Inglês, Espanhol e Polonês
-2. **Seletor de Tema**: Modo atual (claro) e Dark Mode
-
-## Localização dos Controles
-
-Os controles serão adicionados no **Footer** do site, em uma área discreta mas acessível em todas as páginas. Alternativamente, podem ficar no Header se preferir.
-
-```text
-┌─────────────────────────────────────────────────────────────┐
-│                         FOOTER                               │
-├─────────────────────────────────────────────────────────────┤
-│  Desenvolvido por Josuba    │  [🌐 PT ▼] [🌙/☀️]  │  tibiarelic.com │
-└─────────────────────────────────────────────────────────────┘
-```
+O usuário identificou 3 problemas:
+1. Os controles de idioma/tema estão no footer e ninguém vai ver
+2. O dark mode só muda o fundo, precisa ser mais completo
+3. A tradução precisa funcionar em TUDO (incluindo notícias e ServerInfo)
 
 ---
 
-## Parte 1: Sistema de Tema (Dark Mode)
+## Parte 1: Mover Controles para o Header
 
-### 1.1 O que será feito
+### Localização Proposta
+Os seletores de idioma e tema serão adicionados na barra de navegação principal, após o link "Informações":
 
-- Usar a biblioteca `next-themes` que já está instalada
-- Criar um `ThemeProvider` no App
-- Adicionar botão toggle no Footer para alternar entre temas
-- O CSS já tem classes `.dark` definidas no `index.css`
+```text
+┌────────────────────────────────────────────────────────────────────────────┐
+│ Início │ Equipamentos │ Magias │ Criaturas │ Quests │ Calc │ Info │ 🌐 🌙 │
+└────────────────────────────────────────────────────────────────────────────┘
+```
 
-### 1.2 Comportamento
-
-- O tema será salvo no `localStorage` para persistir entre sessões
-- Ícone de lua (🌙) para ativar dark mode
-- Ícone de sol (☀️) para ativar light mode
+### Arquivos Afetados
+| Arquivo | Mudança |
+|---------|---------|
+| `src/components/Header.tsx` | Adicionar LanguageSelector e ThemeToggle na nav bar |
+| `src/components/Footer.tsx` | Remover os seletores de lá |
 
 ---
 
-## Parte 2: Sistema de Idiomas (i18n)
+## Parte 2: Dark Mode Completo
 
-### 2.1 Estrutura de Arquivos
+### Problema Atual
+O `.dark` no CSS só altera variáveis básicas. Os componentes estilizados com gradientes hardcoded (parchment, wood-panel, news-box) não respondem ao tema.
 
-```text
-src/
-├── i18n/
-│   ├── index.ts              # Context e hooks
-│   ├── translations/
-│   │   ├── pt.ts             # Português (padrão)
-│   │   ├── en.ts             # Inglês
-│   │   ├── es.ts             # Espanhol
-│   │   └── pl.ts             # Polonês
-│   └── types.ts              # Tipagem das traduções
-```
+### Solução
+Criar variantes `.dark` para cada classe personalizada:
 
-### 2.2 Idiomas Suportados
+| Componente | Tema Claro | Tema Escuro |
+|------------|------------|-------------|
+| `.parchment` | Bege claro (pergaminho) | Marrom escuro |
+| `.news-box` | Pergaminho claro | Fundo escuro com bordas |
+| `.news-box-content` | Texto escuro | Texto claro |
+| `.wood-panel` | Madeira média | Madeira muito escura |
+| `.retro-btn` | Maroon | Maroon mais escuro |
+| `.text-text-dark` | Texto escuro | Texto claro |
 
-| Código | Idioma    | Bandeira |
-|--------|-----------|----------|
-| pt     | Português | 🇧🇷      |
-| en     | English   | 🇺🇸      |
-| es     | Español   | 🇪🇸      |
-| pl     | Polski    | 🇵🇱      |
+### Cores do Dark Mode
+- Parchment escuro: `hsl(24 25% 18%)` ao invés de `hsl(35 45% 92%)`
+- Texto: claro `hsl(35 30% 85%)` ao invés de escuro
+- Bordas: mais visíveis com dourado sutil
 
-### 2.3 Categorias de Texto a Traduzir
+---
 
-1. **Navegação**
-   - Menu principal (Início, Equipamentos, Magias, Criaturas, etc.)
-   - Sidebar (Links rápidos, Navegação)
-   - Breadcrumbs
+## Parte 3: Traduções Completas
 
-2. **Páginas Principais**
-   - Títulos de seções
-   - Descrições
-   - Mensagens de erro/sucesso
+### Componentes que Faltam Traduzir
 
-3. **Componentes**
-   - Tabelas (cabeçalhos, placeholders de busca)
-   - Calculadoras (labels, botões, resultados)
-   - Modais (títulos, botões)
+| Componente | Textos Hardcoded |
+|------------|------------------|
+| `ServerInfo.tsx` | "Informações do Servidor", "Rates", "Experiência", "Magic", "Skills", "Loot", "Sistema de Skull", etc. |
+| `NewsBox.tsx` | Textos dinâmicos (vêm do banco de dados) |
+| `Index.tsx` | Notícias estáticas hardcoded |
 
-4. **Dados Dinâmicos**
-   - Nomes de vocações
-   - Categorias de equipamentos
-   - Atributos de itens
-
-### 2.4 Hook de Tradução
+### Novas Chaves de Tradução
 
 ```typescript
-// Exemplo de uso
-const { t, language, setLanguage } = useTranslation();
-
-return (
-  <h1>{t('navigation.home')}</h1>  // "Início" ou "Home"
-);
+serverInfo: {
+  title: 'Informações do Servidor',
+  rates: 'Rates',
+  experience: 'Experiência',
+  magic: 'Magic',
+  skills: 'Skills',
+  loot: 'Loot',
+  skullSystem: 'Sistema de Skull',
+  pzTime: 'Tempo PZ',
+  pzTimeValue: '1 min sem Kill / 15 min com Kill',
+  whiteSkull: 'White Skull',
+  redSkull: 'Red Skull',
+  fragsBan: 'Frags/Ban',
+  kills: 'Kills',
+  hours: 'horas',
+  days: 'dias',
+  inHours: 'em {n} horas',
+  inDays: 'em {n} dias',
+  upTo: 'Até',
+  from: 'A partir de',
+  banDescription: 'Quando exceder 2x o necessário para Red Skull',
+  general: 'Geral',
+  updatesComingSoon: 'Informações serão atualizadas em breve',
+  visitOfficialSite: 'Visite o site oficial para mais detalhes',
+  accessOfficialSite: 'Acessar Site Oficial',
+},
+news: {
+  wikiConstruction: 'Wiki em Construção',
+  tibiaRelicServer: 'Tibia Relic - O Servidor',
+  // conteúdos das notícias...
+}
 ```
 
----
-
-## Componentes a Criar
-
-| Componente | Descrição |
-|------------|-----------|
-| `src/contexts/ThemeContext.tsx` | Provider do tema usando next-themes |
-| `src/i18n/index.ts` | Context e hook de tradução |
-| `src/i18n/translations/*.ts` | Arquivos de tradução por idioma |
-| `src/components/LanguageSelector.tsx` | Dropdown de seleção de idioma |
-| `src/components/ThemeToggle.tsx` | Botão toggle de tema |
+### Notícias do Banco de Dados
+As notícias vindas do banco (via `useNews`) precisarão ter campos de idioma ou usar um sistema de tradução no admin. Por enquanto, as notícias estáticas do Index.tsx serão traduzidas.
 
 ---
 
 ## Arquivos a Modificar
 
-| Arquivo | Modificação |
-|---------|-------------|
-| `src/App.tsx` | Adicionar ThemeProvider e LanguageProvider |
-| `src/components/Footer.tsx` | Adicionar seletores de idioma e tema |
-| `src/components/Header.tsx` | Substituir textos por `t('chave')` |
-| `src/components/Sidebar.tsx` | Substituir textos por `t('chave')` |
-| `src/components/Breadcrumb.tsx` | Usar traduções dinâmicas |
-| `src/pages/*.tsx` | Substituir textos hardcoded |
-| `src/components/*.tsx` | Substituir textos hardcoded |
-
----
-
-## Exemplo de Arquivo de Tradução
-
-```typescript
-// src/i18n/translations/pt.ts
-export const pt = {
-  navigation: {
-    home: 'Início',
-    equipment: 'Equipamentos',
-    spells: 'Magias',
-    creatures: 'Criaturas',
-    quests: 'Quests',
-    calculators: 'Calculadoras',
-    info: 'Informações',
-    ranking: 'Ranking',
-    online: 'Players Online',
-    banned: 'Banidos',
-    topGainers: 'Top Gainers',
-  },
-  common: {
-    search: 'Buscar',
-    loading: 'Carregando...',
-    error: 'Erro',
-    notFound: 'Não encontrado',
-    back: 'Voltar',
-  },
-  // ... mais categorias
-};
-```
-
----
-
-## Persistência
-
-- **Tema**: Salvo automaticamente pelo `next-themes` no `localStorage`
-- **Idioma**: Salvo no `localStorage` com chave `preferred-language`
-
----
-
-## Ordem de Implementação
-
-1. Configurar ThemeProvider com next-themes
-2. Criar ThemeToggle e adicionar ao Footer
-3. Criar estrutura de i18n (context, types, hook)
-4. Criar arquivo de tradução base (pt.ts)
-5. Criar arquivos de tradução (en.ts, es.ts, pl.ts)
-6. Criar LanguageSelector
-7. Adicionar LanguageSelector ao Footer
-8. Migrar textos dos componentes principais
-9. Migrar textos das páginas
-10. Testar funcionamento completo
+| Arquivo | Tipo de Mudança |
+|---------|-----------------|
+| `src/components/Header.tsx` | Adicionar controles de idioma/tema |
+| `src/components/Footer.tsx` | Remover controles |
+| `src/index.css` | Adicionar estilos dark para parchment, news-box, etc. |
+| `src/components/ServerInfo.tsx` | Usar hook de tradução |
+| `src/pages/Index.tsx` | Traduzir notícias estáticas |
+| `src/i18n/translations/pt.ts` | Adicionar chaves serverInfo e news |
+| `src/i18n/translations/en.ts` | Adicionar chaves serverInfo e news |
+| `src/i18n/translations/es.ts` | Adicionar chaves serverInfo e news |
+| `src/i18n/translations/pl.ts` | Adicionar chaves serverInfo e news |
+| `src/i18n/types.ts` | Atualizar tipagem com novas chaves |
 
 ---
 
 ## Seção Técnica
 
-### Implementação do Context de Idioma
+### Estilos Dark Mode (CSS)
 
-```typescript
-// src/i18n/index.ts
-import { createContext, useContext, useState, useEffect, ReactNode } from 'react';
-import { pt } from './translations/pt';
-import { en } from './translations/en';
-import { es } from './translations/es';
-import { pl } from './translations/pl';
-
-type Language = 'pt' | 'en' | 'es' | 'pl';
-type Translations = typeof pt;
-
-const translations: Record<Language, Translations> = { pt, en, es, pl };
-
-interface LanguageContextType {
-  language: Language;
-  setLanguage: (lang: Language) => void;
-  t: (key: string) => string;
-}
-
-const LanguageContext = createContext<LanguageContextType | undefined>(undefined);
-
-export function LanguageProvider({ children }: { children: ReactNode }) {
-  const [language, setLanguageState] = useState<Language>(() => {
-    const saved = localStorage.getItem('preferred-language');
-    return (saved as Language) || 'pt';
-  });
-
-  useEffect(() => {
-    localStorage.setItem('preferred-language', language);
-  }, [language]);
-
-  const t = (key: string): string => {
-    const keys = key.split('.');
-    let value: any = translations[language];
-    for (const k of keys) {
-      value = value?.[k];
-    }
-    return value ?? key;
-  };
-
-  return (
-    <LanguageContext.Provider value={{ language, setLanguage: setLanguageState, t }}>
-      {children}
-    </LanguageContext.Provider>
+```css
+/* Dark mode para parchment */
+.dark .parchment {
+  background: linear-gradient(
+    135deg,
+    hsl(24 25% 16%) 0%,
+    hsl(24 30% 12%) 50%,
+    hsl(24 25% 16%) 100%
   );
+  box-shadow: 
+    inset 0 1px 0 hsl(35 20% 25% / 0.3),
+    inset 0 -1px 0 hsl(24 30% 8% / 0.5),
+    0 4px 12px hsl(0 0% 0% / 0.5);
 }
 
-export const useTranslation = () => {
-  const context = useContext(LanguageContext);
-  if (!context) throw new Error('useTranslation must be used within LanguageProvider');
-  return context;
-};
-```
+/* Dark mode para news-box-content */
+.dark .news-box-content {
+  @apply text-foreground;
+}
 
-### Implementação do ThemeProvider
+.dark .text-text-dark {
+  color: hsl(35 30% 85%);
+}
 
-```typescript
-// src/contexts/ThemeContext.tsx
-import { ThemeProvider as NextThemeProvider } from 'next-themes';
-import { ReactNode } from 'react';
-
-export function ThemeProvider({ children }: { children: ReactNode }) {
-  return (
-    <NextThemeProvider attribute="class" defaultTheme="light" enableSystem={false}>
-      {children}
-    </NextThemeProvider>
+/* Dark mode wood-panel mais escuro */
+.dark .wood-panel {
+  background: linear-gradient(
+    180deg,
+    hsl(24 35% 12%) 0%,
+    hsl(24 40% 6%) 100%
   );
 }
 ```
 
-### Componente ThemeToggle
+### Header com Controles
 
-```typescript
-// src/components/ThemeToggle.tsx
-import { Moon, Sun } from 'lucide-react';
-import { useTheme } from 'next-themes';
-
-export function ThemeToggle() {
-  const { theme, setTheme } = useTheme();
-  
-  return (
-    <button
-      onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
-      className="p-2 rounded hover:bg-muted/50 transition-colors"
-      aria-label="Toggle theme"
-    >
-      {theme === 'dark' ? (
-        <Sun className="w-4 h-4 text-gold" />
-      ) : (
-        <Moon className="w-4 h-4 text-muted-foreground" />
-      )}
-    </button>
-  );
-}
+```tsx
+{/* Navigation Bar */}
+<nav className="hidden md:block wood-panel rounded-sm">
+  <ul className="flex items-center justify-center divide-x divide-border/30">
+    {/* ... links existentes ... */}
+    <li>
+      <Link to="/info" className="sidebar-menu-item px-6">{t('navigation.info')}</Link>
+    </li>
+    {/* Novos controles */}
+    <li className="flex items-center gap-1 px-4">
+      <LanguageSelector />
+      <ThemeToggle />
+    </li>
+  </ul>
+</nav>
 ```
 
 ---
 
-## Considerações
+## Ordem de Implementação
 
-- O sistema é totalmente client-side, sem necessidade de backend
-- As traduções serão bundladas no JavaScript final
-- A mudança de idioma é instantânea sem reload da página
-- O tema segue as variáveis CSS já definidas no projeto
+1. Atualizar CSS com estilos dark mode completos
+2. Mover controles do Footer para Header
+3. Adicionar novas chaves de tradução nos 4 arquivos de idioma
+4. Atualizar tipos de tradução
+5. Aplicar traduções no ServerInfo
+6. Aplicar traduções nas notícias do Index
+7. Testar tema dark e troca de idiomas
+
+---
+
+## Resultado Esperado
+
+- Controles visíveis e acessíveis no topo da página
+- Dark mode que transforma visualmente TODO o site (não só o fundo)
+- Todas as seções traduzidas ao mudar o idioma
