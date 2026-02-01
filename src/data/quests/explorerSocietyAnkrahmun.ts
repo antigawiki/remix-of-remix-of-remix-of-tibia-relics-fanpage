@@ -162,8 +162,8 @@ export const explorerSocietyAnkrahmun: Quest = {
         pl: "Teraz czas znaleźć Caleba. Idziemy do Venore. Użyj łopaty tuż nad drzewem, jak pokazano na obrazku. Gdy zejdziesz do dziury, która się pojawi, zobaczysz ciało Caleba. Kliknij na nie, aby otrzymać \"sheet of tracing\".",
       },
       images: [
-        "/quests/explorer-society/deliver-necklace.jpg"
         "/quests/explorer-society/caleb-location.jpg",
+        "/quests/explorer-society/deliver-necklace.jpg",
       ],
     },
     // Seção 7: Falando com Kazzan
@@ -181,7 +181,6 @@ export const explorerSocietyAnkrahmun: Quest = {
         es: "Es hora de ir a hablar con el Califa en Darashia. Su nombre es Kazzan.",
         pl: "Czas porozmawiać z Kalifem w Darashia. Jego imię to Kazzan.",
       },
-      
       mapCoordinates: { x: 32500, y: 31626, z: 7, zoom: 3 },
       images: ["/quests/explorer-society/caleb-body.jpg"],
     },
