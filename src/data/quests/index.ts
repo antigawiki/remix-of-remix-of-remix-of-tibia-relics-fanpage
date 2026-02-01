@@ -9,7 +9,7 @@ export interface DialogueLine {
 }
 
 export interface QuestSection {
-  type: 'text' | 'dialogue' | 'images' | 'map';
+  type: 'text' | 'dialogue' | 'images' | 'map' | 'parchment' | 'credits';
   title?: TranslatedText;
   content?: TranslatedText;
   dialogue?: DialogueLine[];

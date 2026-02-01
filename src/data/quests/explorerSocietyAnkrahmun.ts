@@ -243,21 +243,12 @@ export const explorerSocietyAnkrahmun: Quest = {
     },
     // Seção 9: Mensagem do Parchment
     {
-      type: "text",
+      type: "parchment",
       content: {
-        pt: "Você receberá um pergaminho:",
-        en: "You will receive a parchment:",
-        es: "Recibirás un pergamino:",
-        pl: "Otrzymasz pergamin:",
-      },
-    },
-    {
-      type: "text",
-      content: {
-        pt: "<span class=\"text-emerald-400\">You see a parchment.<br/>It contains a detailed report of the Explorer Society's activities in Darama.</span>",
-        en: "<span class=\"text-emerald-400\">You see a parchment.<br/>It contains a detailed report of the Explorer Society's activities in Darama.</span>",
-        es: "<span class=\"text-emerald-400\">You see a parchment.<br/>It contains a detailed report of the Explorer Society's activities in Darama.</span>",
-        pl: "<span class=\"text-emerald-400\">You see a parchment.<br/>It contains a detailed report of the Explorer Society's activities in Darama.</span>",
+        pt: "You see a parchment.\nIt contains a detailed report of the Explorer Society's activities in Darama.",
+        en: "You see a parchment.\nIt contains a detailed report of the Explorer Society's activities in Darama.",
+        es: "You see a parchment.\nIt contains a detailed report of the Explorer Society's activities in Darama.",
+        pl: "You see a parchment.\nIt contains a detailed report of the Explorer Society's activities in Darama.",
       },
     },
     // Seção 10: Falando com Kazzan
@@ -354,6 +345,17 @@ export const explorerSocietyAnkrahmun: Quest = {
         pl: "Po tym twoje przejście do Ankrahmun jest odblokowane, wystarczy kliknąć na drzwi i przejść.",
       },
       images: ["/quests/explorer-society/passage-unlocked.jpg"],
+    },
+    // Seção 12: Créditos
+    {
+      type: "credits",
+      content: {
+        pt: "Spoiler cedido pela guild Avatarhood, Chill Zone e Amigos.",
+        en: "Spoiler provided by guild Avatarhood, Chill Zone and Friends.",
+        es: "Spoiler proporcionado por la guild Avatarhood, Chill Zone y Amigos.",
+        pl: "Spoiler dostarczony przez gildię Avatarhood, Chill Zone i Przyjaciele.",
+      },
+      images: ["/quests/explorer-society/ankrahmun-celebration.jpg"],
     },
   ],
 };

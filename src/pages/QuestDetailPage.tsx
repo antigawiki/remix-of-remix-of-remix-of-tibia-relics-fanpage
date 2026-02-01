@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import QuestDialogue from "@/components/QuestDialogue";
 import ImageGallery from "@/components/ImageGallery";
-import { ArrowLeft, Crown, Scroll, MapPin, MessageSquare, Image, FileText, CheckCircle, Gift } from "lucide-react";
+import { ArrowLeft, Crown, Scroll, MapPin, MessageSquare, Image, FileText, CheckCircle, Gift, Users } from "lucide-react";
 import { useState, useMemo } from "react";
 import MapModal from "@/components/MapModal";
 
@@ -155,6 +155,7 @@ const QuestDetailPage = () => {
                       {section.type === 'images' && <Image className="w-4 h-4" />}
                       {section.type === 'text' && <FileText className="w-4 h-4" />}
                       {section.type === 'map' && <MapPin className="w-4 h-4" />}
+                      {section.type === 'credits' && <Users className="w-4 h-4" />}
                       {section.title[language]}
                     </h3>
                   )}
@@ -215,6 +216,30 @@ const QuestDetailPage = () => {
                       <MapPin className="w-4 h-4 mr-2" />
                       {t('navigation.map')}
                     </Button>
+                  )}
+
+                  {/* Parchment (green text block) */}
+                  {section.type === 'parchment' && section.content && (
+                    <div className="bg-background/50 border border-emerald-500/30 rounded-lg p-4">
+                      <p className="text-emerald-400 font-medium whitespace-pre-line">
+                        {section.content[language]}
+                      </p>
+                    </div>
+                  )}
+
+                  {/* Credits */}
+                  {section.type === 'credits' && section.content && (
+                    <div className="space-y-4">
+                      <div className="bg-gold/10 border border-gold/30 rounded-lg p-4 text-center">
+                        <p className="text-gold font-medium flex items-center justify-center gap-2">
+                          <Users className="w-4 h-4" />
+                          {section.content[language]}
+                        </p>
+                      </div>
+                      {section.images && section.images.length > 0 && (
+                        <ImageGallery images={section.images} alt="Credits" />
+                      )}
+                    </div>
                   )}
                 </section>
               </div>
