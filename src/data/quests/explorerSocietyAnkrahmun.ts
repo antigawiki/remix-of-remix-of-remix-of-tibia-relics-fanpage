@@ -212,6 +212,16 @@ export const explorerSocietyAnkrahmun: Quest = {
     {
       type: "dialogue",
       dialogue: [
+        { speaker: "player", text: "hi" },
+        {
+          speaker: "Kazzan",
+          text: "Feel welcome in the lands of the children of the enlightened Daraman",
+        },
+        { speaker: "player", text: "permission" },
+        {
+          speaker: "Kazzan",
+          text: "What reason do I have to let you through the southern passage?",
+        },
         { speaker: "player", text: "report" },
         {
           speaker: "Kazzan",
