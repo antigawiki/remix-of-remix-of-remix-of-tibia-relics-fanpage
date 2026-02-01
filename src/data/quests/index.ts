@@ -17,6 +17,8 @@ export interface QuestSection {
   mapCoordinates?: { x: number; y: number; z: number; zoom?: number };
 }
 
+// Allow text sections to also have images inline
+
 export interface Quest {
   id: string;
   slug: string;
