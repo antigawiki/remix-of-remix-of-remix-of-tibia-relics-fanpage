@@ -72,7 +72,7 @@ const QuestDetailPage = () => {
           {/* Content */}
           <div className="news-box-content space-y-6">
             {/* Description */}
-            <p className="text-foreground leading-relaxed">
+            <p className="text-text-dark leading-relaxed">
               {quest.description[language]}
             </p>
 
@@ -86,10 +86,10 @@ const QuestDetailPage = () => {
               </h2>
               <ul className="list-disc list-inside space-y-1 ml-2">
                 {quest.requirements.items.map((item, i) => (
-                  <li key={i} className="text-foreground">{item[language]}</li>
+                  <li key={i} className="text-text-dark">{item[language]}</li>
                 ))}
                 {quest.requirements.other?.map((item, i) => (
-                  <li key={`other-${i}`} className="text-foreground">{item[language]}</li>
+                  <li key={`other-${i}`} className="text-text-dark">{item[language]}</li>
                 ))}
               </ul>
             </section>
@@ -105,7 +105,7 @@ const QuestDetailPage = () => {
                   </h2>
                   <ul className="list-disc list-inside space-y-1 ml-2">
                     {quest.rewards.map((reward, i) => (
-                      <li key={i} className="text-foreground">{reward[language]}</li>
+                      <li key={i} className="text-text-dark">{reward[language]}</li>
                     ))}
                   </ul>
                 </section>
@@ -131,7 +131,7 @@ const QuestDetailPage = () => {
                   {/* Text content */}
                   {section.type === 'text' && section.content && (
                     <div className="space-y-4">
-                      <p className="text-foreground leading-relaxed">
+                      <p className="text-text-dark leading-relaxed">
                         {section.content[language]}
                       </p>
                       
