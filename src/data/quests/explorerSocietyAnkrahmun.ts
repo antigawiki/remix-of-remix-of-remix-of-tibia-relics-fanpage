@@ -190,7 +190,77 @@ export const explorerSocietyAnkrahmun: Quest = {
       },
       images: ["/quests/explorer-society/deliver-necklace.jpg", "/quests/explorer-society/caleb-location.jpg"],
     },
-    // Seção 7: Falando com Kazzan
+    // Seção 7: Retornando ao Mortimer com o Sheet of Tracing
+    {
+      type: "text",
+      title: {
+        pt: "Retornando ao Mortimer",
+        en: "Returning to Mortimer",
+        es: "Regresando a Mortimer",
+        pl: "Powrót do Mortimera",
+      },
+      content: {
+        pt: "Agora você precisa voltar ao Mortimer para entregar o sheet of tracing e informá-lo sobre a morte do Caleb.",
+        en: "Now you need to return to Mortimer to deliver the sheet of tracing and inform him about Caleb's death.",
+        es: "Ahora necesitas volver a Mortimer para entregar el sheet of tracing e informarle sobre la muerte de Caleb.",
+        pl: "Teraz musisz wrócić do Mortimera, aby dostarczyć sheet of tracing i poinformować go o śmierci Caleba.",
+      },
+    },
+    // Seção 8: Diálogo com Mortimer sobre Caleb
+    {
+      type: "dialogue",
+      dialogue: [
+        { speaker: "player", text: "hi" },
+        { speaker: "Mortimer", text: "Greetings, what can I do for you?" },
+        { speaker: "player", text: "mission" },
+        { speaker: "Mortimer", text: "Did you find Caleb and brought his report?" },
+        { speaker: "player", text: "yes" },
+        {
+          speaker: "Mortimer",
+          text: "Ohh I see, this is indeed Caleb's handwriting. If you are here and he is not, does this mean that he is... dead?",
+        },
+        { speaker: "player", text: "yes" },
+        { speaker: "Mortimer", text: "Poor Caleb! He will be missed among our society ..." },
+        {
+          speaker: "Mortimer",
+          text: "As I promised, I grant you now a membership status on our select group. Ask me for another mission when you are ready to hear about it.",
+        },
+        { speaker: "player", text: "mission" },
+        {
+          speaker: "Mortimer",
+          text: "Even though my heart is taken by sorrow over learning about Caleb's death, I am afraid that we won't have much time to mourn him right now, as we need to hurry to save another valuable member of ours. ...",
+        },
+        { speaker: "player", text: "yes" },
+        {
+          speaker: "Mortimer",
+          text: "I knew I could count on you! I wrote this report to the Caliph explaining the situation. I am sure he will consider letting you through the southern gate after he reads this. ...",
+        },
+        {
+          speaker: "Mortimer",
+          text: "Report back to me if you find Angus, and let me know what are his plans for the Tiquanda region. Go now and watch your back in the desert!",
+        },
+      ],
+    },
+    // Seção 9: Mensagem do Parchment
+    {
+      type: "text",
+      content: {
+        pt: "Você receberá um pergaminho:",
+        en: "You will receive a parchment:",
+        es: "Recibirás un pergamino:",
+        pl: "Otrzymasz pergamin:",
+      },
+    },
+    {
+      type: "text",
+      content: {
+        pt: "<span class=\"text-emerald-400\">You see a parchment.<br/>It contains a detailed report of the Explorer Society's activities in Darama.</span>",
+        en: "<span class=\"text-emerald-400\">You see a parchment.<br/>It contains a detailed report of the Explorer Society's activities in Darama.</span>",
+        es: "<span class=\"text-emerald-400\">You see a parchment.<br/>It contains a detailed report of the Explorer Society's activities in Darama.</span>",
+        pl: "<span class=\"text-emerald-400\">You see a parchment.<br/>It contains a detailed report of the Explorer Society's activities in Darama.</span>",
+      },
+    },
+    // Seção 10: Falando com Kazzan
     {
       type: "text",
       title: {
