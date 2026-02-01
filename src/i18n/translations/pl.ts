@@ -148,6 +148,7 @@ export const pl: TranslationKeys = {
   },
   quests: {
     title: 'Zadania',
+    pageDescription: 'Kompletne poradniki zadań ze szczegółowymi przejściami, mapami i dialogami.',
     requirements: 'Wymagania',
     startLocation: 'Początek Zadania',
     conversation: 'Rozmowa',

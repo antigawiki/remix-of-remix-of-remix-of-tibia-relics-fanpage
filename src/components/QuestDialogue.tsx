@@ -14,12 +14,12 @@ const QuestDialogue = ({ lines }: QuestDialogueProps) => {
   const { t } = useTranslation();
 
   return (
-    <div className="space-y-2 bg-secondary/30 rounded-sm p-4 border border-border">
+    <div className="space-y-2 bg-wood-dark/80 dark:bg-background/50 rounded-sm p-4 border border-border">
       {lines.map((line, index) => (
         <div key={index} className="flex gap-2">
           <span className={cn(
             "font-semibold min-w-[80px] shrink-0",
-            line.speaker === 'player' ? "text-maroon" : "text-gold"
+            line.speaker === 'player' ? "text-amber-200" : "text-gold"
           )}>
             {line.speaker === 'player' ? t('quests.player') : line.speaker}:
           </span>
