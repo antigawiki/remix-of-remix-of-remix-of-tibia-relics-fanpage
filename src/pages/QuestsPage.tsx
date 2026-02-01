@@ -1,7 +1,10 @@
 import MainLayout from "@/layouts/MainLayout";
 import { Construction, Scroll } from "lucide-react";
+import { useTranslation } from "@/i18n";
 
 const QuestsPage = () => {
+  const { t } = useTranslation();
+
   return (
     <MainLayout>
       <div className="min-h-[60vh] flex flex-col items-center justify-center text-center px-4">
@@ -12,25 +15,24 @@ const QuestsPage = () => {
           </div>
           
           <h1 className="text-2xl md:text-3xl font-bold text-maroon mb-4">
-            Quests
+            {t('quests.title')}
           </h1>
           
           <div className="space-y-4 text-muted-foreground">
             <p className="text-lg">
-              🚧 <span className="text-gold font-semibold">Em Construção</span> 🚧
+              🚧 <span className="text-gold font-semibold">{t('quests.comingSoon')}</span> 🚧
             </p>
             
             <p>
-              Esta seção está sendo desenvolvida com a ajuda da comunidade.
+              {t('quests.underConstruction')}
             </p>
             
             <p>
-              Conforme as quests forem sendo descobertas pelos jogadores, 
-              elas serão documentadas e divulgadas aqui.
+              {t('quests.communityHelp')}
             </p>
             
             <p className="text-sm italic mt-6">
-              Descobriu uma quest? Entre em contato e ajude a comunidade!
+              {t('quests.contactUs')}
             </p>
           </div>
         </div>
