@@ -1,299 +1,218 @@
 
-# Plano: Sistema de Quests com Internacionalização
 
-## Resumo
+# Plano: Corrigir Quest Explorer Society Conforme Documento
 
-Criar um sistema completo de quests incluindo:
-1. **Página de Lista de Quests** (`/quests`) - Grid com cards de quests disponíveis
-2. **Página de Quest Individual** (`/quests/:questSlug`) - Detalhes completos da quest
-3. **Primeira Quest**: "Explorer Society / Acesso a Ankrahmun"
-4. **Traduções** em todos os 4 idiomas (PT, EN, ES, PL)
+## Problema Identificado
 
----
+O arquivo `src/data/quests/explorerSocietyAnkrahmun.ts` foi criado com informações **inventadas** que não correspondem ao documento original:
 
-## Estrutura Visual (Baseada na Referência)
+**Erros no arquivo atual:**
+- Menciona "barco de Darashia" como acesso a Ankrahmun (incorreto)
+- Diálogos inventados que não correspondem ao documento
+- Sequência de passos errada
+- Não inclui as imagens do documento
+- Layout separado em muitos cards (usuário quer mais fluido/junto)
 
-A página de quest individual terá seções semelhantes ao estilo TibiaWiki:
+## Correções a Implementar
+
+### 1. Copiar Imagens do Documento
+
+Imagens a copiar para `public/quests/explorer-society/`:
+
+| Arquivo Original | Uso |
+|-----------------|-----|
+| img_p0_1.jpg | Localização do Mortimer |
+| img_p2_1.jpg | Dragon Necklace quest - passo 1 |
+| img_p3_1.jpg | Dragon Necklace quest - passo 2 |
+| img_p4_1.jpg | Dragon Necklace quest - passo 3 |
+| img_p4_2.jpg | Dragon Necklace quest - passo 4 |
+| img_p5_1.jpg | Entrega ao Mortimer |
+| img_p6_1.jpg | Localização do Caleb (Venore) |
+| img_p6_2.jpg | Corpo do Caleb |
+| img_p8_1.jpg | Passagem liberada para Ankrahmun |
+
+### 2. Reescrever Dados da Quest (Conforme Documento)
+
+**Requerimentos (do documento):**
+- 1 Pick
+- Itens/Suprimentos para matar alguns beholders
+
+**Fluxo correto da quest:**
+
+1. **Início**: Falar com Mortimer (mostrar imagem img_p0_1.jpg)
+2. **Primeira conversa**: 
+   - hi → priorities → help → yes
+   - Mortimer pede um Dragon Necklace
+3. **Dragon Necklace**: Fazer a quest em Thais (galeria: img_p2_1, img_p3_1, img_p4_1, img_p4_2)
+4. **Entregar Dragon Necklace**: Voltar ao Mortimer (img_p5_1)
+   - hi → mission → yes
+   - Mortimer pede para encontrar Caleb
+5. **Encontrar Caleb em Venore**: Usar shovel acima da árvore (img_p6_1, img_p6_2)
+   - Clicar no corpo para pegar "sheet of tracing"
+6. **Falar com Kazzan em Darashia** (não no barco!):
+   - report
+   - Kazzan libera passagem para o sul (Ankrahmun)
+7. **Passagem liberada**: Clicar na porta e passar (img_p8_1)
+
+**Recompensa correta:**
+- Acesso a Ankrahmun (passagem pela porta ao sul de Darashia, NÃO via barco)
+
+### 3. Novo Layout (Mais Fluido/Junto)
+
+Ao invés de múltiplos Cards separados, usar um único container `news-box` com seções internas:
 
 ```text
 ┌─────────────────────────────────────────────────────────────────┐
-│  Explorer Society / Acesso a Ankrahmun                          │
+│  🗺️ Explorer Society / Acesso a Ankrahmun           👑 Premium │
 ├─────────────────────────────────────────────────────────────────┤
-│  REQUERIMENTOS                                                   │
+│                                                                 │
+│  REQUERIMENTOS                                                  │
 │  • 1 Pick                                                       │
 │  • Itens/Suprimentos para matar alguns beholders                │
-├─────────────────────────────────────────────────────────────────┤
-│  INÍCIO DA QUEST                                                 │
-│  Texto explicativo + Link para mapa modal                       │
-│  [Imagem do NPC Mortimer]                                       │
-├─────────────────────────────────────────────────────────────────┤
-│  CONVERSA                                                        │
+│                                                                 │
+│  ─────────────────────────────────────────────────────────────  │
+│                                                                 │
+│  INÍCIO DA QUEST                                                │
+│  Tudo começa com o NPC Mortimer... [📍 Ver no Mapa]             │
+│  [Imagem do Mortimer]                                           │
+│                                                                 │
+│  CONVERSA                                                       │
 │  ┌────────────────────────────────────────────┐                 │
-│  │ [Avatar] Jogador: hi                        │                 │
-│  │ [Avatar] Mortimer: Greetings, what can...   │                 │
+│  │ Jogador: hi                                 │                 │
+│  │ Mortimer: Greetings, what can I do for you? │                 │
+│  │ ...                                         │                 │
 │  └────────────────────────────────────────────┘                 │
-├─────────────────────────────────────────────────────────────────┤
-│  PRÓXIMO PASSO                                                   │
-│  Texto + Galeria de imagens clicáveis (thumbnails)              │
+│                                                                 │
+│  ─────────────────────────────────────────────────────────────  │
+│                                                                 │
+│  DRAGON NECKLACE                                                │
+│  Agora é hora de conseguir um dragon necklace...                │
+│  [Galeria de 4 imagens clicáveis]                               │
+│                                                                 │
+│  ... continua com as próximas seções ...                        │
+│                                                                 │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
----
+### 4. Arquivos a Modificar
 
-## Estrutura de Arquivos
-
-```text
-src/
-├── data/
-│   └── quests/
-│       ├── index.ts                    # Lista de todas as quests
-│       └── explorerSocietyAnkrahmun.ts # Dados da primeira quest
-├── pages/
-│   ├── QuestsPage.tsx                  # Lista de quests (atualizar)
-│   └── QuestDetailPage.tsx             # Página de quest individual (criar)
-├── components/
-│   ├── QuestCard.tsx                   # Card de quest para lista
-│   ├── QuestDialogue.tsx               # Componente de diálogo NPC/Player
-│   └── ImageGallery.tsx                # Galeria de imagens com modal
-├── i18n/
-│   └── translations/
-│       ├── pt.ts                       # Adicionar seção 'quests'
-│       ├── en.ts
-│       ├── es.ts
-│       └── pl.ts
-└── public/
-    └── quests/
-        └── explorer-society/           # Imagens da quest
-            ├── mortimer-location.jpg
-            ├── dragon-necklace-1.jpg
-            ├── dragon-necklace-2.jpg
-            ├── dragon-necklace-3.jpg
-            ├── dragon-necklace-4.jpg
-            ├── caleb-location.jpg
-            ├── caleb-body.jpg
-            ├── kazzan-location.jpg
-            └── passage-door.jpg
-```
-
----
-
-## Componentes a Criar
-
-### 1. QuestCard.tsx
-Card visual para exibir quest na lista, mostrando:
-- Título da quest
-- Nível recomendado (se houver)
-- Breve descrição
-- Status (Disponível, Em Breve, etc.)
-
-### 2. QuestDialogue.tsx
-Componente para exibir diálogos NPC/Jogador no estilo wiki:
-- Avatar do NPC (ícone genérico ou específico)
-- Nome destacado (NPC em cor diferente do jogador)
-- Texto do diálogo
-
-### 3. ImageGallery.tsx
-Galeria de imagens com:
-- Thumbnails em tamanho reduzido
-- Modal para visualização em tamanho real ao clicar
-- Navegação entre imagens
-
----
-
-## Dados da Quest
-
-### Estrutura de Dados
-
-```typescript
-interface Quest {
-  id: string;
-  slug: string;
-  title: TranslatedText;
-  description: TranslatedText;
-  level?: number;
-  premium?: boolean;
-  requirements: {
-    items: TranslatedText[];
-    quests?: string[];
-    other?: TranslatedText[];
-  };
-  rewards?: TranslatedText[];
-  sections: QuestSection[];
-}
-
-interface QuestSection {
-  type: 'text' | 'dialogue' | 'images' | 'map';
-  title?: TranslatedText;
-  content: TranslatedText | DialogueLine[] | string[];
-  mapCoordinates?: { x: number; y: number; z: number; zoom?: number };
-}
-
-interface DialogueLine {
-  speaker: 'player' | string; // 'player' ou nome do NPC
-  text: string;
-}
-```
-
----
-
-## Rotas
-
-| Rota | Página | Descrição |
-|------|--------|-----------|
-| `/quests` | QuestsPage | Lista de todas as quests |
-| `/quests/:slug` | QuestDetailPage | Detalhes de uma quest específica |
-
----
-
-## Traduções a Adicionar
-
-```typescript
-quests: {
-  title: 'Quests',
-  requirements: 'Requerimentos',
-  startLocation: 'Início da Quest',
-  conversation: 'Conversa',
-  nextStep: 'Próximo Passo',
-  rewards: 'Recompensas',
-  player: 'Jogador',
-  clickToEnlarge: 'Clique para ampliar',
-  backToList: 'Voltar para lista',
-  recommended: 'Recomendado',
-  premium: 'Premium',
-  available: 'Disponível',
-  comingSoon: 'Em Breve',
-  // Textos específicos da quest Explorer Society
-  explorerSociety: {
-    title: 'Explorer Society / Acesso a Ankrahmun',
-    description: 'Ajude a Explorer Society e ganhe acesso à cidade de Ankrahmun',
-    // ... textos da quest
-  }
-}
-```
-
----
-
-## Fluxo de Implementação
-
-1. **Preparar imagens**
-   - Copiar imagens do documento para `public/quests/explorer-society/`
-
-2. **Criar estrutura de dados**
-   - `src/data/quests/index.ts`
-   - `src/data/quests/explorerSocietyAnkrahmun.ts`
-
-3. **Criar componentes auxiliares**
-   - `src/components/QuestDialogue.tsx`
-   - `src/components/ImageGallery.tsx`
-   - `src/components/QuestCard.tsx`
-
-4. **Atualizar traduções**
-   - Adicionar namespace `quests` em todos os 4 arquivos de idioma
-   - Atualizar `src/i18n/types.ts`
-
-5. **Criar página de detalhes**
-   - `src/pages/QuestDetailPage.tsx`
-
-6. **Atualizar página de lista**
-   - Modificar `src/pages/QuestsPage.tsx` para mostrar grid de quests
-
-7. **Adicionar rota**
-   - Atualizar `src/App.tsx` com rota `/quests/:slug`
+| Arquivo | Ação |
+|---------|------|
+| `src/data/quests/explorerSocietyAnkrahmun.ts` | **Reescrever completamente** com dados do documento |
+| `src/pages/QuestDetailPage.tsx` | **Refatorar layout** para ser mais fluido (um único container) |
+| `public/quests/explorer-society/` | **Criar pasta e copiar 9 imagens** |
 
 ---
 
 ## Seção Técnica
 
-### Componente QuestDialogue
+### Nova Estrutura de Dados
 
-```tsx
-interface DialogueLine {
-  speaker: 'player' | string;
-  text: string;
-}
-
-const QuestDialogue = ({ lines }: { lines: DialogueLine[] }) => {
-  return (
-    <div className="space-y-2 bg-secondary/30 rounded-sm p-4 border border-border">
-      {lines.map((line, index) => (
-        <div key={index} className="flex gap-2">
-          <span className={cn(
-            "font-semibold min-w-[80px]",
-            line.speaker === 'player' ? "text-maroon" : "text-gold"
-          )}>
-            {line.speaker === 'player' ? t('quests.player') : line.speaker}:
-          </span>
-          <span className="text-text-dark">{line.text}</span>
-        </div>
-      ))}
-    </div>
-  );
+```typescript
+// explorerSocietyAnkrahmun.ts - Corrigido conforme documento
+export const explorerSocietyAnkrahmun: Quest = {
+  id: "explorer-society-ankrahmun",
+  slug: "explorer-society-ankrahmun",
+  title: { pt: "Explorer Society / Acesso a Ankrahmun", ... },
+  description: { 
+    pt: "Ajude a Explorer Society e ganhe acesso à cidade de Ankrahmun", 
+    ... // SEM mencionar barco
+  },
+  premium: true,
+  available: true,
+  requirements: {
+    items: [
+      { pt: "1 Pick", ... },
+      { pt: "Itens/Suprimentos para matar alguns beholders", ... },
+    ],
+  },
+  rewards: [
+    { pt: "Acesso a Ankrahmun", ... }, // SEM mencionar barco
+  ],
+  sections: [
+    // Seção 1: Início com Mortimer + imagem
+    // Seção 2: Primeira conversa (priorities → help → yes)
+    // Seção 3: Dragon Necklace quest + galeria 4 imagens
+    // Seção 4: Entrega Dragon Necklace + imagem
+    // Seção 5: Missão Caleb (Venore) + 2 imagens
+    // Seção 6: Falar com Kazzan em Darashia
+    // Seção 7: Passagem liberada + imagem final
+  ],
 };
 ```
 
-### Componente ImageGallery
+### Novo Layout QuestDetailPage
 
 ```tsx
-const ImageGallery = ({ images, alt }: { images: string[]; alt: string }) => {
-  const [selectedImage, setSelectedImage] = useState<string | null>(null);
-  
-  return (
-    <>
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
-        {images.map((src, i) => (
-          <button 
-            key={i}
-            onClick={() => setSelectedImage(src)}
-            className="aspect-video overflow-hidden rounded-sm border border-border hover:border-gold transition-colors"
-          >
-            <img src={src} alt={`${alt} ${i + 1}`} className="w-full h-full object-cover" />
-          </button>
+// Layout fluido com seções separadas por dividers
+return (
+  <MainLayout>
+    <div className="news-box">
+      <header className="news-box-header">
+        <h2>Explorer Society / Acesso a Ankrahmun</h2>
+      </header>
+      <div className="news-box-content space-y-6">
+        {/* Requerimentos */}
+        <section>
+          <h3 className="font-semibold mb-2">Requerimentos</h3>
+          <ul>...</ul>
+        </section>
+        
+        <Separator />
+        
+        {/* Cada seção da quest sem cards separados */}
+        {quest.sections.map((section) => (
+          <section key={...}>
+            <h3>{section.title}</h3>
+            {/* conteúdo inline */}
+          </section>
         ))}
       </div>
-      
-      <Dialog open={!!selectedImage} onOpenChange={() => setSelectedImage(null)}>
-        <DialogContent className="max-w-4xl">
-          <img src={selectedImage!} alt={alt} className="w-full h-auto" />
-        </DialogContent>
-      </Dialog>
-    </>
-  );
-};
+    </div>
+  </MainLayout>
+);
 ```
 
-### Link para Mapa com Modal
+### Diálogos Corretos (do documento)
 
-Reutilizar o componente `MapModal` existente para abrir coordenadas:
-- Mortimer: `#32500,31626,7:3`
-- Kazzan em Darashia: usar coordenadas apropriadas
+**Primeira conversa com Mortimer:**
+```
+Jogador: hi
+Mortimer: Greetings, what can I do for you?
+Jogador: priorities
+Mortimer: Our members are constantly exposed to many dangers...
+Jogador: help
+Mortimer: Do you want to help the explorer society on acquiring some essential equipment?
+Jogador: yes
+Mortimer: Your help is much appreciated...
+Mortimer: Since our explorers are constantly venturing inside deep and dangerous caves...
+Mortimer: It is said that there is some kind of amulet called 'dragon necklace'...
+Mortimer: For your first mission, I want you to bring me one of these necklaces...
+Mortimer: Simple enough? Are you interested in this task?
+Jogador: yes
+Mortimer: Good! Find a dragon necklace and bring it to me.
+Jogador: bye
+Mortimer: Good bye.
+```
 
----
-
-## Imagens do Documento
-
-As seguintes imagens serão extraídas e usadas:
-
-| Imagem | Uso |
-|--------|-----|
-| img_p0_1.jpg | Localização do Mortimer |
-| img_p2_1.jpg | Dragon Necklace quest passo 1 |
-| img_p3_1.jpg | Dragon Necklace quest passo 2 |
-| img_p4_1.jpg | Dragon Necklace quest passo 3 |
-| img_p4_2.jpg | Dragon Necklace quest passo 4 |
-| img_p5_1.jpg | Entrega do Dragon Necklace |
-| img_p6_1.jpg | Localização do Caleb (Venore) |
-| img_p6_2.jpg | Corpo do Caleb |
-| img_p8_1.jpg | Passagem liberada para Ankrahmun |
+**Conversa com Kazzan:**
+```
+Jogador: report
+Kazzan: By Daraman's tear! The Explorer Society should have shared this information sooner!...
+Kazzan: Those people might be still alive, struggling in the wild. They need our support...
+Kazzan: I will make it known to the guards that you have my permission to head south...
+... (texto completo do documento)
+Jogador: bye
+Kazzan: May your soul flourish.
+```
 
 ---
 
 ## Resultado Esperado
 
-1. **Página `/quests`**: Grid com card da quest "Explorer Society / Acesso a Ankrahmun"
-2. **Página `/quests/explorer-society-ankrahmun`**: Guia completo com:
-   - Requerimentos listados
-   - Texto explicativo com links para mapa
-   - Diálogos formatados (NPC/Jogador)
-   - Galeria de imagens clicáveis
-   - Todas as etapas da quest documentadas
-3. **Multi-idioma**: Todo o conteúdo traduzido em PT, EN, ES e PL
+1. **Dados corretos**: Quest seguindo exatamente o fluxo do documento
+2. **Layout fluido**: Uma única caixa com seções internas separadas por dividers
+3. **Imagens incluídas**: Todas as 9 imagens do documento em galerias clicáveis
+4. **Sem informações inventadas**: Nenhuma menção a "barco de Darashia"
+5. **Multi-idioma**: Todas as traduções mantidas
+
