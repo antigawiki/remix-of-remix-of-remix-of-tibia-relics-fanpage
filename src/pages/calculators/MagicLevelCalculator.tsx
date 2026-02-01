@@ -4,8 +4,9 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Button } from "@/components/ui/button";
-import { BookOpen, Clock, Droplets, Fish, Coins, Sparkles } from "lucide-react";
+import { BookOpen, Clock, Droplets, Coins, Sparkles } from "lucide-react";
 import { vocations, calculateMagicLevel, VocationData, MagicLevelResult } from "@/data/calculators/magicLevel";
+import { useTranslation } from "@/i18n";
 
 interface VocationCardProps {
   vocation: VocationData;
@@ -48,6 +49,7 @@ const ResultCard = ({ icon, title, value, description, imageUrl }: ResultCardPro
 );
 
 const MagicLevelCalculator = () => {
+  const { t } = useTranslation();
   const [selectedVocation, setSelectedVocation] = useState<VocationData | null>(null);
   const [hasPromotion, setHasPromotion] = useState(false);
   const [currentML, setCurrentML] = useState("");
@@ -87,11 +89,11 @@ const MagicLevelCalculator = () => {
 
   const formatTime = (time: MagicLevelResult["trainingTime"]) => {
     const parts = [];
-    if (time.days > 0) parts.push(`${time.days.toLocaleString("pt-BR")} dias`);
-    if (time.hours > 0) parts.push(`${time.hours} horas`);
-    if (time.minutes > 0) parts.push(`${time.minutes} minutos`);
-    if (time.seconds > 0) parts.push(`${time.seconds} segundos`);
-    return parts.join(", ") || "0 segundos";
+    if (time.days > 0) parts.push(`${time.days.toLocaleString("pt-BR")} ${t('calculatorPages.magicLevel.days')}`);
+    if (time.hours > 0) parts.push(`${time.hours} ${t('calculatorPages.magicLevel.hours')}`);
+    if (time.minutes > 0) parts.push(`${time.minutes} ${t('calculatorPages.magicLevel.minutes')}`);
+    if (time.seconds > 0) parts.push(`${time.seconds} ${t('calculatorPages.magicLevel.seconds')}`);
+    return parts.join(", ") || `0 ${t('calculatorPages.magicLevel.seconds')}`;
   };
 
   const isFormValid = selectedVocation && currentML && percentageToNext && desiredML && result;
@@ -103,18 +105,17 @@ const MagicLevelCalculator = () => {
           <header className="news-box-header">
             <h2 className="font-semibold flex items-center gap-2">
               <BookOpen className="w-5 h-5" />
-              Calculadora de Magic Level
+              {t('calculatorPages.magicLevel.title')}
             </h2>
           </header>
           <div className="news-box-content space-y-6">
             <p className="text-sm mb-4">
-              Calcule quanto de mana você precisa gastar para atingir o Magic Level desejado, tempo de treino e
-              quantidade de magias/runas necessárias.
+              {t('calculatorPages.magicLevel.description')}
             </p>
 
             {/* Seleção de Vocação */}
             <div className="space-y-3">
-              <Label className="text-sm font-medium">Escolha sua Vocação:</Label>
+              <Label className="text-sm font-medium">{t('calculatorPages.magicLevel.chooseVocation')}:</Label>
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                 {vocations.map((vocation) => (
                   <VocationCard
@@ -135,7 +136,7 @@ const MagicLevelCalculator = () => {
                 onCheckedChange={(checked) => setHasPromotion(checked === true)}
               />
               <Label htmlFor="promotion" className="text-sm cursor-pointer">
-                Se você tem <strong>Promoção</strong>, marque esta caixa
+                {t('calculatorPages.magicLevel.hasPromotion')}
               </Label>
             </div>
 
@@ -143,7 +144,7 @@ const MagicLevelCalculator = () => {
             <div className="grid sm:grid-cols-3 gap-4">
               <div className="space-y-2">
                 <Label htmlFor="currentML" className="text-sm">
-                  Magic Level Atual:
+                  {t('calculatorPages.magicLevel.currentML')}:
                 </Label>
                 <Input
                   id="currentML"
@@ -160,7 +161,7 @@ const MagicLevelCalculator = () => {
               </div>
               <div className="space-y-2">
                 <Label htmlFor="percentage" className="text-sm">
-                  % para o Próximo ML:
+                  {t('calculatorPages.magicLevel.percentToNext')}:
                 </Label>
                 <Input
                   id="percentage"
@@ -178,7 +179,7 @@ const MagicLevelCalculator = () => {
               </div>
               <div className="space-y-2">
                 <Label htmlFor="desiredML" className="text-sm">
-                  Magic Level Desejado:
+                  {t('calculatorPages.magicLevel.desiredML')}:
                 </Label>
                 <Input
                   id="desiredML"
@@ -202,7 +203,7 @@ const MagicLevelCalculator = () => {
                 disabled={!isFormValid}
                 className="bg-maroon hover:bg-maroon/90 text-white px-8"
               >
-                Calcular
+                {t('calculatorPages.magicLevel.calculate')}
               </Button>
             </div>
 
@@ -211,52 +212,52 @@ const MagicLevelCalculator = () => {
               <div className="space-y-4 pt-4 border-t border-border-light">
                 <h3 className="font-semibold text-maroon flex items-center gap-2">
                   <Sparkles className="w-4 h-4" />
-                  Resultados
+                  {t('calculatorPages.magicLevel.results')}
                 </h3>
 
                 <div className="grid sm:grid-cols-2 gap-3">
                   <ResultCard
                     icon={<Droplets className="w-6 h-6" />}
-                    title="Mana Necessária"
-                    value={`${formatNumber(result.manaNeeded)} de mana`}
-                    description={`Para atingir Magic Level ${desiredML}`}
+                    title={t('calculatorPages.magicLevel.manaNeeded')}
+                    value={`${formatNumber(result.manaNeeded)} ${t('calculatorPages.magicLevel.ofMana')}`}
+                    description={t('calculatorPages.magicLevel.toReachML').replace('{ml}', desiredML)}
                   />
 
                   <ResultCard
                     icon={<Clock className="w-6 h-6" />}
-                    title="Tempo de Treino"
+                    title={t('calculatorPages.magicLevel.trainingTime')}
                     value={formatTime(result.trainingTime)}
-                    description={hasPromotion ? "Com promoção" : "Sem promoção"}
+                    description={hasPromotion ? t('calculatorPages.magicLevel.withPromotion') : t('calculatorPages.magicLevel.withoutPromotion')}
                   />
 
                   <ResultCard
                     imageUrl={selectedVocation.spellImage}
-                    title={`Magias de ${selectedVocation.spellName}`}
-                    value={`${formatNumber(result.spellCasts)} magias`}
-                    description={`Custo: ${selectedVocation.spellManaCost} mana cada`}
+                    title={t('calculatorPages.magicLevel.spellsOf').replace('{spell}', selectedVocation.spellName)}
+                    value={`${formatNumber(result.spellCasts)} ${t('calculatorPages.magicLevel.spells')}`}
+                    description={t('calculatorPages.magicLevel.costEach').replace('{cost}', String(selectedVocation.spellManaCost))}
                   />
 
                   <ResultCard
                     imageUrl="https://tibiara.netlify.app/en/img/food/194.gif"
-                    title="Peixes Necessários"
-                    value={`${formatNumber(result.fishesNeeded)} peixes`}
-                    description="Para sustentar sua mana durante o treino"
+                    title={t('calculatorPages.magicLevel.fishesNeeded')}
+                    value={`${formatNumber(result.fishesNeeded)} ${t('calculatorPages.magicLevel.fishes')}`}
+                    description={t('calculatorPages.magicLevel.fishesDescription')}
                   />
 
                   <ResultCard
                     icon={<Coins className="w-6 h-6" />}
-                    title="Alternativa: Mana Fluids"
+                    title={t('calculatorPages.magicLevel.manaFluidsAlt')}
                     value={`${formatNumber(result.manaFluids)} mana fluids`}
-                    description={`Custo total: ${formatNumber(result.manaFluidsCost)} gps`}
+                    description={t('calculatorPages.magicLevel.totalCost').replace('{cost}', formatNumber(result.manaFluidsCost))}
                   />
                 </div>
 
                 <div className="bg-maroon/5 border border-maroon/20 rounded p-4 text-sm">
                   <p>
-                    <strong>Resumo:</strong> Você precisará gastar aproximadamente{" "}
-                    <strong className="text-maroon">{formatNumber(result.manaNeeded)}</strong> de mana para atingir
-                    Magic Level <strong className="text-maroon">{desiredML}</strong>. Isso levará aproximadamente{" "}
-                    <strong className="text-maroon">{formatTime(result.trainingTime)}</strong>.
+                    <strong>{t('calculatorPages.magicLevel.summary')}:</strong> {t('calculatorPages.magicLevel.summaryText')
+                      .replace('{mana}', formatNumber(result.manaNeeded))
+                      .replace('{ml}', desiredML)
+                      .replace('{time}', formatTime(result.trainingTime))}
                   </p>
                 </div>
               </div>

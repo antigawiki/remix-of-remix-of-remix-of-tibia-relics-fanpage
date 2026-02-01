@@ -3,6 +3,7 @@ import { Creature } from '@/data/creatures';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { ArrowUpDown, Search } from 'lucide-react';
 import { Input } from '@/components/ui/input';
+import { useTranslation } from '@/i18n';
 
 interface CreaturesTableProps {
   creatures: Creature[];
@@ -12,6 +13,7 @@ type SortKey = 'name' | 'exp' | 'hp' | 'summon' | 'convince';
 type SortDirection = 'asc' | 'desc';
 
 const CreaturesTable = ({ creatures }: CreaturesTableProps) => {
+  const { t } = useTranslation();
   const [search, setSearch] = useState('');
   const [sortKey, setSortKey] = useState<SortKey>('name');
   const [sortDirection, setSortDirection] = useState<SortDirection>('asc');
@@ -52,7 +54,7 @@ const CreaturesTable = ({ creatures }: CreaturesTableProps) => {
       <div className="relative">
         <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
         <Input
-          placeholder="Buscar criatura..."
+          placeholder={t('tables.searchCreature')}
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           className="pl-10 bg-parchment border-border"
@@ -63,13 +65,13 @@ const CreaturesTable = ({ creatures }: CreaturesTableProps) => {
         <Table>
           <TableHeader className="bg-maroon">
             <TableRow>
-              <TableHead className="text-parchment w-16">Img</TableHead>
+              <TableHead className="text-parchment w-16">{t('tables.columns.img')}</TableHead>
               <TableHead 
                 className="text-parchment cursor-pointer hover:bg-maroon/80"
                 onClick={() => handleSort('name')}
               >
                 <div className="flex items-center gap-1">
-                  Nome
+                  {t('tables.columns.name')}
                   <ArrowUpDown className="h-3 w-3" />
                 </div>
               </TableHead>
@@ -78,7 +80,7 @@ const CreaturesTable = ({ creatures }: CreaturesTableProps) => {
                 onClick={() => handleSort('exp')}
               >
                 <div className="flex items-center gap-1">
-                  Exp
+                  {t('tables.columns.exp')}
                   <ArrowUpDown className="h-3 w-3" />
                 </div>
               </TableHead>
@@ -87,7 +89,7 @@ const CreaturesTable = ({ creatures }: CreaturesTableProps) => {
                 onClick={() => handleSort('hp')}
               >
                 <div className="flex items-center gap-1">
-                  HP
+                  {t('tables.columns.hp')}
                   <ArrowUpDown className="h-3 w-3" />
                 </div>
               </TableHead>
@@ -96,7 +98,7 @@ const CreaturesTable = ({ creatures }: CreaturesTableProps) => {
                 onClick={() => handleSort('summon')}
               >
                 <div className="flex items-center gap-1">
-                  Summon
+                  {t('tables.columns.summon')}
                   <ArrowUpDown className="h-3 w-3" />
                 </div>
               </TableHead>
@@ -105,7 +107,7 @@ const CreaturesTable = ({ creatures }: CreaturesTableProps) => {
                 onClick={() => handleSort('convince')}
               >
                 <div className="flex items-center gap-1">
-                  Convince
+                  {t('tables.columns.convince')}
                   <ArrowUpDown className="h-3 w-3" />
                 </div>
               </TableHead>
@@ -137,7 +139,7 @@ const CreaturesTable = ({ creatures }: CreaturesTableProps) => {
       </div>
 
       <p className="text-xs text-muted-foreground text-center">
-        Exibindo {sortedCreatures.length} de {creatures.length} criaturas
+        {t('tables.showingCreatures').replace('{shown}', String(sortedCreatures.length)).replace('{total}', String(creatures.length))}
       </p>
     </div>
   );

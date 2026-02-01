@@ -219,9 +219,20 @@ export interface TranslationKeys {
     highscores: {
       title: string;
       category: string;
+      vocation: string;
       errorLoading: string;
       noPlayers: string;
       lastUpdated: string;
+      columns: {
+        name: string;
+        vocation: string;
+        level: string;
+      };
+      scoreLabels: {
+        experience: string;
+        magicLevel: string;
+        skill: string;
+      };
     };
     online: {
       title: string;
@@ -244,8 +255,13 @@ export interface TranslationKeys {
       description: string;
       period: string;
       xpRanking: string;
-      xpGained: string;
-      xpTotal: string;
+      columns: {
+        name: string;
+        vocation: string;
+        level: string;
+        xpGained: string;
+        xpTotal: string;
+      };
       new: string;
       noVocation: string;
       noData: string;
@@ -322,11 +338,12 @@ export interface TranslationKeys {
       skill: string;
       ammo: string;
       weaponAttack: string;
-      result: string;
-      maxDamageInfo: string;
-      vsPve: string;
-      vsPvp: string;
-      atkWeapon: string;
+      results: string;
+      maxDamageText: string;
+      vsMonsters: string;
+      vsPlayers: string;
+      weaponAtkShort: string;
+      vocationLabel: string;
     };
     deathExperience: {
       title: string;
@@ -336,31 +353,38 @@ export interface TranslationKeys {
       promotionAndBlessings: string;
       markBlessings: string;
       totalRetention: string;
-      loss: string;
+      lossOf: string;
       beforeDeath: string;
       afterDeath: string;
       totalLoss: string;
       ofLevel: string;
-      levelLossWarning: string;
+      experience: string;
+      levelLabel: string;
+      warning: string;
+      willLoseLevels: string;
     };
     experienceLevel: {
       title: string;
       description: string;
       currentExperience: string;
       desiredLevel: string;
-      yourStatus: string;
+      currentStatus: string;
       goal: string;
-      progressToLevel: string;
+      progressTo: string;
       congratulations: string;
       alreadyReached: string;
       neededExperience: string;
-      missing: string;
+      remaining: string;
       toReachLevel: string;
       monstersNeeded: string;
       canReachBy: string;
       monsters: string;
-      xpEach: string;
-      suggestionsNote: string;
+      each: string;
+      illustrative: string;
+      exampleExp: string;
+      exampleLevel: string;
+      levelLabel: string;
+      experience: string;
     };
     magicLevel: {
       title: string;
@@ -368,9 +392,13 @@ export interface TranslationKeys {
       chooseVocation: string;
       hasPromotion: string;
       currentML: string;
-      percentageToNext: string;
+      percentToNext: string;
       desiredML: string;
+      calculate: string;
+      results: string;
       manaNeeded: string;
+      ofMana: string;
+      toReachML: string;
       trainingTime: string;
       withPromotion: string;
       withoutPromotion: string;
@@ -378,31 +406,32 @@ export interface TranslationKeys {
       spells: string;
       costEach: string;
       fishesNeeded: string;
+      fishes: string;
       fishesDescription: string;
-      manaFluids: string;
+      manaFluidsAlt: string;
       totalCost: string;
       summary: string;
-      toReach: string;
-      willTake: string;
+      summaryText: string;
+      days: string;
+      hours: string;
+      minutes: string;
+      seconds: string;
     };
     skills: {
       title: string;
       description: string;
       chooseVocation: string;
       selectSkills: string;
-      melee: string;
-      distance: string;
-      shield: string;
       currentSkill: string;
       desiredSkill: string;
+      calculate: string;
       resultsFor: string;
       estimatedTime: string;
-      toAdvanceFrom: string;
       to: string;
       selectAtLeastOne: string;
       selectVocation: string;
       fillFieldsCorrectly: string;
-      valuesLessThan10: string;
+      minValueError: string;
       desiredMustBeGreater: string;
     };
     stats: {
@@ -411,21 +440,22 @@ export interface TranslationKeys {
       chooseVocation: string;
       characterLevel: string;
       enterLevel: string;
+      calculate: string;
+      results: string;
       hp: string;
       mp: string;
       cap: string;
       totalLife: string;
       totalMana: string;
       carryWeight: string;
-      summaryText: string;
-      atLevel: string;
-      hasStats: string;
+      summary: string;
     };
     loot: {
       title: string;
       description: string;
       item: string;
       price: string;
+      img: string;
       qty: string;
       selectItem: string;
       addItem: string;

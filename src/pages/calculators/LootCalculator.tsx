@@ -10,11 +10,13 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { lootItems, LootEntry, LootItem, calculateLoot } from "@/data/calculators/loot";
+import { lootItems, LootEntry, calculateLoot } from "@/data/calculators/loot";
+import { useTranslation } from "@/i18n";
 
 const generateId = () => Math.random().toString(36).substring(2, 9);
 
 const LootCalculator = () => {
+  const { t } = useTranslation();
   const [entries, setEntries] = useState<LootEntry[]>([
     { id: generateId(), item: null, quantity: 0 },
   ]);
@@ -69,20 +71,20 @@ const LootCalculator = () => {
         <header className="news-box-header">
           <h2 className="font-semibold flex items-center gap-2">
             <Coins className="w-5 h-5" />
-            Calculadora de Loot
+            {t('calculatorPages.loot.title')}
           </h2>
         </header>
         <div className="news-box-content">
           <p className="text-sm mb-4">
-            Adicione os itens do seu loot e calcule o valor total de venda no NPC.
+            {t('calculatorPages.loot.description')}
           </p>
 
           {/* Header da tabela */}
           <div className="hidden md:grid md:grid-cols-[1fr_80px_60px_80px_40px] gap-2 mb-2 px-2 text-sm font-medium text-muted-foreground">
-            <span>Item</span>
-            <span className="text-center">Preço</span>
-            <span className="text-center">Img</span>
-            <span className="text-center">Qtd</span>
+            <span>{t('calculatorPages.loot.item')}</span>
+            <span className="text-center">{t('calculatorPages.loot.price')}</span>
+            <span className="text-center">{t('calculatorPages.loot.img')}</span>
+            <span className="text-center">{t('calculatorPages.loot.qty')}</span>
             <span></span>
           </div>
 
@@ -99,7 +101,7 @@ const LootCalculator = () => {
                   onValueChange={(value) => handleItemChange(entry.id, value)}
                 >
                   <SelectTrigger className="bg-secondary text-text-dark border-border">
-                    <SelectValue placeholder="Selecione um item" />
+                    <SelectValue placeholder={t('calculatorPages.loot.selectItem')} />
                   </SelectTrigger>
                   <SelectContent>
                     {lootItems.map((item) => (
@@ -112,7 +114,7 @@ const LootCalculator = () => {
 
                 {/* Preço */}
                 <div className="text-center font-medium">
-                  <span className="md:hidden text-muted-foreground text-sm">Preço: </span>
+                  <span className="md:hidden text-muted-foreground text-sm">{t('calculatorPages.loot.price')}: </span>
                   {entry.item ? `${entry.item.price}` : "-"}
                 </div>
 
@@ -161,7 +163,7 @@ const LootCalculator = () => {
               className="bg-maroon hover:bg-maroon/90 text-white"
             >
               <Plus className="w-4 h-4 mr-2" />
-              Adicionar Item
+              {t('calculatorPages.loot.addItem')}
             </Button>
             <Button
               variant="outline"
@@ -169,14 +171,14 @@ const LootCalculator = () => {
               className="border-maroon/50 bg-maroon/10 hover:bg-maroon/20"
             >
               <RotateCcw className="w-4 h-4 mr-2" />
-              Limpar Tudo
+              {t('calculatorPages.loot.clearAll')}
             </Button>
           </div>
 
           {/* Total */}
           <div className="mt-6 p-4 bg-maroon/10 border-2 border-maroon rounded-lg">
             <div className="flex items-center justify-between">
-              <span className="text-lg font-medium">Total:</span>
+              <span className="text-lg font-medium">{t('calculatorPages.loot.total')}:</span>
               <span className="text-2xl font-bold text-maroon">
                 {formatNumber(result.total)} gps
               </span>
@@ -186,7 +188,7 @@ const LootCalculator = () => {
           {/* Resumo dos itens */}
           {result.items.length > 0 && (
             <div className="mt-4 p-4 bg-secondary/50 rounded border border-border">
-              <h4 className="font-medium mb-2">Resumo:</h4>
+              <h4 className="font-medium mb-2">{t('calculatorPages.loot.summary')}:</h4>
               <div className="space-y-1 text-sm">
                 {result.items.map((item, index) => (
                   <div key={index} className="flex justify-between">

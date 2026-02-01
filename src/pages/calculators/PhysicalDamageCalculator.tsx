@@ -12,8 +12,10 @@ import {
   vocationLabels,
   type Vocation,
 } from "@/data/calculators/physicalDamage";
+import { useTranslation } from "@/i18n";
 
 const PhysicalDamageCalculator = () => {
+  const { t } = useTranslation();
   const [vocation, setVocation] = useState<Vocation>("knight");
   const [skill, setSkill] = useState<number>(10);
   const [weaponAttack, setWeaponAttack] = useState<number>(5);
@@ -49,17 +51,17 @@ const PhysicalDamageCalculator = () => {
           <header className="news-box-header">
             <h2 className="font-semibold flex items-center gap-2">
               <Swords className="w-5 h-5" />
-              Calculadora de Dano Físico
+              {t('calculatorPages.physicalDamage.title')}
             </h2>
           </header>
           <div className="news-box-content">
             <p className="text-sm mb-4">
-              Calcule o dano físico baseado na sua vocação, skill e ataque da arma/munição.
+              {t('calculatorPages.physicalDamage.description')}
             </p>
             
             {/* Vocation Selection */}
             <div className="parchment p-4 rounded-sm mb-4">
-              <Label className="text-text-dark font-semibold block mb-3">Escolha sua Vocação:</Label>
+              <Label className="text-text-dark font-semibold block mb-3">{t('calculatorPages.physicalDamage.chooseVocation')}:</Label>
               <RadioGroup
                 value={vocation}
                 onValueChange={(v) => setVocation(v as Vocation)}
@@ -80,7 +82,7 @@ const PhysicalDamageCalculator = () => {
             <div className="flex flex-wrap gap-4">
               <div className="flex items-center gap-2">
                 <Label htmlFor="skill" className="text-text-dark font-semibold whitespace-nowrap">
-                  Skill:
+                  {t('calculatorPages.physicalDamage.skill')}:
                 </Label>
                 <Input
                   id="skill"
@@ -95,7 +97,7 @@ const PhysicalDamageCalculator = () => {
               {vocation === "paladin" && (
                 <div className="flex items-center gap-2">
                   <Label htmlFor="ammo" className="text-text-dark font-semibold whitespace-nowrap">
-                    Munição:
+                    {t('calculatorPages.physicalDamage.ammo')}:
                   </Label>
                   <Select value={selectedAmmo} onValueChange={setSelectedAmmo}>
                     <SelectTrigger className="w-44 bg-secondary text-text-dark border-border">
@@ -119,7 +121,7 @@ const PhysicalDamageCalculator = () => {
               {vocation !== "paladin" && (
                 <div className="flex items-center gap-2">
                   <Label htmlFor="weaponAttack" className="text-text-dark font-semibold whitespace-nowrap">
-                    Ataque da Arma:
+                    {t('calculatorPages.physicalDamage.weaponAttack')}:
                   </Label>
                   <Input
                     id="weaponAttack"
@@ -137,21 +139,21 @@ const PhysicalDamageCalculator = () => {
         {/* Results */}
         <section className="news-box">
           <header className="news-box-header">
-            <h2 className="font-semibold">Resultado do Cálculo</h2>
+            <h2 className="font-semibold">{t('calculatorPages.physicalDamage.results')}</h2>
           </header>
           <div className="news-box-content">
             <div className="flex flex-col md:flex-row items-center gap-6">
               {/* Results Cards */}
               <div className="flex-1 w-full">
                 <p className="text-sm text-text-dark mb-4">
-                  O dano máximo que você alcançará é aproximadamente:
+                  {t('calculatorPages.physicalDamage.maxDamageText')}
                 </p>
                 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-4">
                   {/* PvE Damage */}
                   <div className="parchment p-4 rounded-sm text-center">
                     <div className="text-xs text-muted-foreground uppercase tracking-wide mb-2">
-                      vs Monstros (PvE)
+                      {t('calculatorPages.physicalDamage.vsMonsters')}
                     </div>
                     <div className="text-4xl font-heading font-bold text-maroon">
                       {result.maxDamage}
@@ -161,7 +163,7 @@ const PhysicalDamageCalculator = () => {
                   {/* PvP Damage */}
                   <div className="parchment p-4 rounded-sm text-center">
                     <div className="text-xs text-muted-foreground uppercase tracking-wide mb-2">
-                      vs Jogadores (PvP)
+                      {t('calculatorPages.physicalDamage.vsPlayers')}
                     </div>
                     <div className="text-4xl font-heading font-bold text-red-700">
                       {result.pvpDamage}
@@ -173,20 +175,20 @@ const PhysicalDamageCalculator = () => {
                 <div className="parchment p-3 rounded-sm">
                   <div className="grid grid-cols-3 gap-2 text-xs text-center">
                     <div>
-                      <div className="text-muted-foreground mb-1">Vocação</div>
+                      <div className="text-muted-foreground mb-1">{t('calculatorPages.physicalDamage.vocationLabel')}</div>
                       <div className="bg-secondary/50 rounded px-2 py-1 text-text-dark font-medium">
                         {vocationLabels[vocation]}
                       </div>
                     </div>
                     <div>
-                      <div className="text-muted-foreground mb-1">Skill</div>
+                      <div className="text-muted-foreground mb-1">{t('calculatorPages.physicalDamage.skill')}</div>
                       <div className="bg-secondary/50 rounded px-2 py-1 text-text-dark font-medium">
                         {skill}
                       </div>
                     </div>
                     <div>
                       <div className="text-muted-foreground mb-1">
-                        {vocation === "paladin" ? "Munição" : "Atk Arma"}
+                        {vocation === "paladin" ? t('calculatorPages.physicalDamage.ammo') : t('calculatorPages.physicalDamage.weaponAtkShort')}
                       </div>
                       <div className="bg-secondary/50 rounded px-2 py-1 text-text-dark font-medium flex items-center justify-center gap-1">
                         {vocation === "paladin" && selectedAmmoData ? (
