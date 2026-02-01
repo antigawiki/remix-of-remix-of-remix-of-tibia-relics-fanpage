@@ -53,11 +53,12 @@ export const explorerSocietyAnkrahmun: Quest = {
         pl: "Początek Questa",
       },
       content: {
-        pt: "Tudo começa com o NPC Mortimer, o representante da Explorer Society que fica localizado aqui:",
-        en: "Everything starts with NPC Mortimer, the Explorer Society representative located here:",
-        es: "Todo comienza con el NPC Mortimer, el representante de la Explorer Society ubicado aquí:",
-        pl: "Wszystko zaczyna się od NPC Mortimer, przedstawiciela Explorer Society, który znajduje się tutaj:",
+        pt: "Tudo começa com o NPC Mortimer, o representante da Explorer Society que fica localizado {aqui}.",
+        en: "Everything starts with NPC Mortimer, the Explorer Society representative located {here}.",
+        es: "Todo comienza con el NPC Mortimer, el representante de la Explorer Society ubicado {aquí}.",
+        pl: "Wszystko zaczyna się od NPC Mortimer, przedstawiciela Explorer Society, który znajduje się {tutaj}.",
       },
+      mapCoordinates: { x: 32500, y: 31626, z: 7, zoom: 3 },
       images: ["/quests/explorer-society/mortimer-location.jpg"],
     },
     // Seção 2: Primeira Conversa com Mortimer
@@ -125,7 +126,6 @@ export const explorerSocietyAnkrahmun: Quest = {
         es: "Es hora de volver a Mortimer y entregar el Dragon Necklace.",
         pl: "Czas wrócić do Mortimera i dostarczyć Dragon Necklace.",
       },
-      images: ["/quests/explorer-society/deliver-necklace.jpg"],
     },
     // Seção 5: Segunda Conversa com Mortimer
     {
@@ -162,8 +162,8 @@ export const explorerSocietyAnkrahmun: Quest = {
         pl: "Teraz czas znaleźć Caleba. Idziemy do Venore. Użyj łopaty tuż nad drzewem, jak pokazano na obrazku. Gdy zejdziesz do dziury, która się pojawi, zobaczysz ciało Caleba. Kliknij na nie, aby otrzymać \"sheet of tracing\".",
       },
       images: [
+        "/quests/explorer-society/deliver-necklace.jpg"
         "/quests/explorer-society/caleb-location.jpg",
-        "/quests/explorer-society/caleb-body.jpg",
       ],
     },
     // Seção 7: Falando com Kazzan
@@ -181,6 +181,9 @@ export const explorerSocietyAnkrahmun: Quest = {
         es: "Es hora de ir a hablar con el Califa en Darashia. Su nombre es Kazzan.",
         pl: "Czas porozmawiać z Kalifem w Darashia. Jego imię to Kazzan.",
       },
+      
+      mapCoordinates: { x: 32500, y: 31626, z: 7, zoom: 3 },
+      images: ["/quests/explorer-society/caleb-body.jpg"],
     },
     // Seção 8: Conversa com Kazzan
     {
