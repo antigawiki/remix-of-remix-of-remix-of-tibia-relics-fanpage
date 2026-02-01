@@ -8,8 +8,30 @@ import { Separator } from "@/components/ui/separator";
 import QuestDialogue from "@/components/QuestDialogue";
 import ImageGallery from "@/components/ImageGallery";
 import { ArrowLeft, Crown, Scroll, MapPin, MessageSquare, Image, FileText, CheckCircle, Gift } from "lucide-react";
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import MapModal from "@/components/MapModal";
+
+// Helper to render text with {aqui} as clickable map link
+const renderTextWithMapLink = (
+  text: string,
+  onMapClick: () => void
+): React.ReactNode => {
+  const parts = text.split(/(\{aqui\})/gi);
+  return parts.map((part, index) => {
+    if (part.toLowerCase() === '{aqui}') {
+      return (
+        <button
+          key={index}
+          onClick={onMapClick}
+          className="text-gold hover:text-gold/80 underline underline-offset-2 font-medium transition-colors"
+        >
+          aqui
+        </button>
+      );
+    }
+    return part;
+  });
+};
 
 const QuestDetailPage = () => {
   const { slug } = useParams<{ slug: string }>();
@@ -45,7 +67,7 @@ const QuestDetailPage = () => {
       <div className="space-y-4">
         {/* Back Button */}
         <Link to="/quests">
-          <Button variant="ghost" size="sm" className="mb-2 text-foreground hover:text-gold">
+          <Button variant="ghost" size="sm" className="mb-2 text-foreground hover:bg-muted hover:text-foreground">
             <ArrowLeft className="w-4 h-4 mr-2" />
             {t('quests.backToList')}
           </Button>
@@ -141,7 +163,10 @@ const QuestDetailPage = () => {
                   {section.type === 'text' && section.content && (
                     <div className="space-y-4">
                       <p className="text-text-dark leading-relaxed">
-                        {section.content[language]}
+                        {section.mapCoordinates 
+                          ? renderTextWithMapLink(section.content[language], () => openMap(section.mapCoordinates!))
+                          : section.content[language]
+                        }
                       </p>
                       
                       {/* Images inline with text */}
@@ -193,7 +218,7 @@ const QuestDetailPage = () => {
 
         {/* Bottom Back Button */}
         <Link to="/quests">
-          <Button variant="outline" size="sm" className="border-border text-foreground hover:text-gold hover:border-gold/50">
+          <Button variant="outline" size="sm" className="border-border text-foreground hover:bg-muted hover:text-foreground hover:border-border">
             <ArrowLeft className="w-4 h-4 mr-2" />
             {t('quests.backToList')}
           </Button>
