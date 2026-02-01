@@ -6,6 +6,7 @@ import {
   spellVocations, Spell 
 } from '@/data/spells';
 import { Wand2, Sword, Crosshair, ChevronLeft } from 'lucide-react';
+import { useTranslation } from '@/i18n';
 
 const vocationData: Record<string, Spell[]> = {
   sorcerer: sorcererSpells,
@@ -21,15 +22,16 @@ const vocationIcons: Record<string, React.ReactNode> = {
   knight: <Sword className="w-10 h-10 text-maroon" />,
 };
 
-const vocationDescriptions: Record<string, string> = {
-  sorcerer: 'Magias ofensivas e de suporte',
-  druid: 'Magias de cura e natureza',
-  paladin: 'Magias de distância e suporte',
-  knight: 'Magias de combate corpo-a-corpo',
-};
-
 const SpellsPage = () => {
   const { vocation } = useParams<{ vocation?: string }>();
+  const { t } = useTranslation();
+
+  const vocationDescriptions: Record<string, string> = {
+    sorcerer: t('pages.spells.descriptions.sorcerer'),
+    druid: t('pages.spells.descriptions.druid'),
+    paladin: t('pages.spells.descriptions.paladin'),
+    knight: t('pages.spells.descriptions.knight'),
+  };
 
   // Show vocation grid if no vocation selected
   if (!vocation) {
@@ -38,11 +40,11 @@ const SpellsPage = () => {
         <div className="space-y-6">
           <section className="news-box">
             <header className="news-box-header">
-              <h1 className="font-semibold">Magias</h1>
+              <h1 className="font-semibold">{t('pages.spells.title')}</h1>
             </header>
             <div className="news-box-content">
               <p className="text-sm leading-relaxed mb-4">
-                Consulte as magias disponíveis para cada vocação no Tibia Relic.
+                {t('pages.spells.description')}
               </p>
 
               <div className="grid grid-cols-2 gap-4">
@@ -57,7 +59,7 @@ const SpellsPage = () => {
                       <h3 className="font-heading font-semibold text-text-dark">{voc.name}</h3>
                       <p className="text-xs text-muted-foreground">{vocationDescriptions[key]}</p>
                       <p className="text-xs text-maroon mt-1">
-                        {vocationData[key]?.length || 0} magias
+                        {t('pages.spells.spellCount').replace('{count}', String(vocationData[key]?.length || 0))}
                       </p>
                     </div>
                   </Link>
@@ -80,12 +82,12 @@ const SpellsPage = () => {
         <div className="space-y-6">
           <section className="news-box">
             <header className="news-box-header">
-              <h1 className="font-semibold">Vocação não encontrada</h1>
+              <h1 className="font-semibold">{t('pages.spells.vocationNotFound')}</h1>
             </header>
             <div className="news-box-content">
-              <p>A vocação "{vocation}" não existe.</p>
+              <p>{t('pages.spells.doesNotExist').replace('{vocation}', vocation)}</p>
               <Link to="/spells" className="text-maroon hover:underline">
-                Voltar para magias
+                {t('pages.spells.backTo')}
               </Link>
             </div>
           </section>
@@ -103,7 +105,7 @@ const SpellsPage = () => {
               <Link to="/spells" className="hover:text-gold transition-colors">
                 <ChevronLeft className="w-5 h-5" />
               </Link>
-              <h1 className="font-semibold">Magias - {vocationInfo.name}</h1>
+              <h1 className="font-semibold">{t('pages.spells.title')} - {vocationInfo.name}</h1>
             </div>
           </header>
           <div className="news-box-content">

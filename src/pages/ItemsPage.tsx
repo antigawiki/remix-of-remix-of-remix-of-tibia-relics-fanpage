@@ -6,6 +6,7 @@ import {
   itemCategories, Item 
 } from '@/data/items';
 import { Cookie, Diamond, Backpack, ChevronLeft } from 'lucide-react';
+import { useTranslation } from '@/i18n';
 
 const categoryData: Record<string, Item[]> = {
   foods,
@@ -41,6 +42,7 @@ const categoryIcons: Record<string, React.ReactNode> = {
 
 const ItemsPage = () => {
   const { category } = useParams<{ category?: string }>();
+  const { t } = useTranslation();
 
   // Show category grid if no category selected
   if (!category) {
@@ -49,12 +51,11 @@ const ItemsPage = () => {
         <div className="space-y-6">
           <section className="news-box">
             <header className="news-box-header">
-              <h1 className="font-semibold">Itens</h1>
+              <h1 className="font-semibold">{t('pages.items.title')}</h1>
             </header>
             <div className="news-box-content">
               <p className="text-sm leading-relaxed mb-4">
-                Explore todos os itens disponíveis no Tibia Relic. 
-                Clique em uma categoria para ver os itens disponíveis.
+                {t('pages.items.description')}
               </p>
 
               <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
@@ -69,7 +70,7 @@ const ItemsPage = () => {
                     </div>
                     <span className="font-heading font-semibold text-text-dark">{cat.name}</span>
                     <span className="text-xs text-muted-foreground">
-                      {categoryData[key]?.length || 0} itens
+                      {t('pages.items.itemCount').replace('{count}', String(categoryData[key]?.length || 0))}
                     </span>
                   </Link>
                 ))}
@@ -91,12 +92,12 @@ const ItemsPage = () => {
         <div className="space-y-6">
           <section className="news-box">
             <header className="news-box-header">
-              <h1 className="font-semibold">Categoria não encontrada</h1>
+              <h1 className="font-semibold">{t('pages.items.categoryNotFound')}</h1>
             </header>
             <div className="news-box-content">
-              <p>A categoria "{category}" não existe.</p>
+              <p>{t('pages.items.doesNotExist').replace('{category}', category)}</p>
               <Link to="/items" className="text-maroon hover:underline">
-                Voltar para itens
+                {t('pages.items.backTo')}
               </Link>
             </div>
           </section>
