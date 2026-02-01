@@ -148,6 +148,7 @@ export const en: TranslationKeys = {
   },
   quests: {
     title: 'Quests',
+    pageDescription: 'Complete quest guides with detailed walkthroughs, maps and dialogues.',
     requirements: 'Requirements',
     startLocation: 'Quest Start',
     conversation: 'Conversation',

@@ -13,15 +13,15 @@ const QuestsPage = () => {
     <MainLayout>
       <div className="space-y-4">
         {/* Header */}
-        <div className="news-box">
-          <div className="news-box-header">
+        <div className="wood-panel rounded-sm overflow-hidden">
+          <div className="maroon-header px-4 py-2">
             <div className="flex items-center gap-2">
               <Scroll className="w-5 h-5" />
-              <h1 className="font-semibold">{t('quests.title')}</h1>
+              <h2 className="font-semibold">{t('quests.title')}</h2>
             </div>
           </div>
-          <div className="news-box-content">
-            <p>{t('quests.pageDescription') || 'Guias completos de quests com walkthroughs detalhados, mapas e diálogos.'}</p>
+          <div className="p-4 text-foreground">
+            <p>{t('quests.pageDescription')}</p>
           </div>
         </div>
 
@@ -36,7 +36,7 @@ const QuestsPage = () => {
                 !quest.available && "opacity-60 pointer-events-none"
               )}
             >
-              <div className="news-box transition-all duration-200 hover:ring-2 hover:ring-gold/50">
+              <div className="wood-panel rounded-sm overflow-hidden transition-all duration-200 hover:ring-2 hover:ring-gold/50">
                 <div className="flex items-center justify-between p-4">
                   {/* Left side - Icon, Title and Description */}
                   <div className="flex items-start gap-4 flex-1 min-w-0">
@@ -45,14 +45,14 @@ const QuestsPage = () => {
                     </div>
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 flex-wrap">
-                        <h2 className="font-heading font-semibold text-maroon dark:text-gold group-hover:text-gold transition-colors">
+                        <h2 className="font-heading font-semibold text-gold group-hover:text-gold-light transition-colors">
                           {quest.title[language]}
                         </h2>
                         {quest.premium && (
                           <Crown className="w-4 h-4 text-gold shrink-0" />
                         )}
                       </div>
-                      <p className="text-sm text-text-dark/80 dark:text-foreground/70 mt-1 line-clamp-2">
+                      <p className="text-sm text-foreground/80 mt-1 line-clamp-2">
                         {quest.description[language]}
                       </p>
                     </div>
@@ -61,7 +61,7 @@ const QuestsPage = () => {
                   {/* Right side - Level, Status and Arrow */}
                   <div className="flex items-center gap-3 shrink-0 ml-4">
                     {quest.level && (
-                      <Badge variant="secondary" className="text-xs bg-secondary/80 text-text-dark dark:text-foreground">
+                      <Badge variant="secondary" className="text-xs bg-muted text-foreground">
                         Lvl {quest.level}+
                       </Badge>
                     )}
@@ -86,10 +86,10 @@ const QuestsPage = () => {
 
         {/* Info about more quests coming */}
         {quests.length < 5 && (
-          <div className="news-box">
-            <div className="news-box-content text-center py-6">
-              <p className="text-text-dark">{t('quests.communityHelp')}</p>
-              <p className="text-sm text-text-dark/70 dark:text-foreground/60 italic mt-2">{t('quests.contactUs')}</p>
+          <div className="wood-panel rounded-sm overflow-hidden">
+            <div className="p-6 text-center">
+              <p className="text-foreground">{t('quests.communityHelp')}</p>
+              <p className="text-sm text-foreground/70 italic mt-2">{t('quests.contactUs')}</p>
             </div>
           </div>
         )}

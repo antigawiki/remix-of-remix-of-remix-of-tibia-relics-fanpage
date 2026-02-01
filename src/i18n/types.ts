@@ -148,6 +148,7 @@ export interface TranslationKeys {
   };
   quests: {
     title: string;
+    pageDescription: string;
     requirements: string;
     startLocation: string;
     conversation: string;

@@ -148,6 +148,7 @@ export const es: TranslationKeys = {
   },
   quests: {
     title: 'Misiones',
+    pageDescription: 'Guías completas de misiones con recorridos detallados, mapas y diálogos.',
     requirements: 'Requisitos',
     startLocation: 'Inicio de la Misión',
     conversation: 'Conversación',
