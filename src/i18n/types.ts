@@ -146,4 +146,22 @@ export interface TranslationKeys {
     spanish: string;
     polish: string;
   };
+  quests: {
+    title: string;
+    requirements: string;
+    startLocation: string;
+    conversation: string;
+    nextStep: string;
+    rewards: string;
+    player: string;
+    clickToEnlarge: string;
+    backToList: string;
+    recommended: string;
+    premium: string;
+    available: string;
+    comingSoon: string;
+    underConstruction: string;
+    communityHelp: string;
+    contactUs: string;
+  };
 }
