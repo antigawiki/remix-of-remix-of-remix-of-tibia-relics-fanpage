@@ -12,9 +12,11 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { Skeleton } from '@/components/ui/skeleton';
+import { useTranslation } from '@/i18n';
 
 const OnlinePlayersPage = () => {
   const { data: players, isLoading, isError, isFetching } = useOnlinePlayers();
+  const { t } = useTranslation();
 
   return (
     <MainLayout>
@@ -22,7 +24,7 @@ const OnlinePlayersPage = () => {
         <header className="news-box-header">
           <h2 className="font-semibold flex items-center gap-2">
             <Users className="w-5 h-5" />
-            Jogadores Online
+            {t('pages.online.title')}
             {isFetching && <RefreshCw className="w-4 h-4 animate-spin text-muted-foreground" />}
           </h2>
         </header>
@@ -33,7 +35,7 @@ const OnlinePlayersPage = () => {
             <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
             <span className="text-sm">
               <span className="font-semibold text-gold">{players?.length ?? 0}</span>
-              {' '}jogador{(players?.length ?? 0) !== 1 ? 'es' : ''} online
+              {' '}{t('pages.online.playerCount').replace('{count}', '').trim()}
             </span>
           </div>
 
@@ -46,15 +48,15 @@ const OnlinePlayersPage = () => {
             </div>
           ) : isError ? (
             <div className="text-center py-8 text-destructive">
-              Erro ao carregar jogadores online. Tente novamente mais tarde.
+              {t('common.error')}
             </div>
           ) : players && players.length > 0 ? (
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Nome</TableHead>
-                  <TableHead>Vocação</TableHead>
-                  <TableHead className="text-right">Level</TableHead>
+                  <TableHead>{t('common.name')}</TableHead>
+                  <TableHead>{t('common.vocation')}</TableHead>
+                  <TableHead className="text-right">{t('common.level')}</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -75,16 +77,16 @@ const OnlinePlayersPage = () => {
             <div className="text-center py-8">
               <Users className="w-12 h-12 mx-auto text-muted-foreground/50 mb-3" />
               <p className="text-muted-foreground">
-                Nenhum jogador online no momento
+                {t('pages.online.noPlayers')}
               </p>
               <p className="text-xs text-muted-foreground/70 mt-1">
-                Os dados são atualizados automaticamente a cada 30 segundos
+                {t('pages.online.autoUpdate')}
               </p>
             </div>
           )}
 
           <p className="text-xs text-muted-foreground text-right">
-            Atualização automática a cada 30 segundos
+            {t('pages.online.autoUpdate')}
           </p>
         </div>
       </div>

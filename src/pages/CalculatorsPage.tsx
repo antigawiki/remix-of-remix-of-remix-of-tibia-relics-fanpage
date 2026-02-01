@@ -11,6 +11,7 @@ import {
   Heart 
 } from 'lucide-react';
 import { ReactNode } from 'react';
+import { useTranslation } from '@/i18n';
 
 interface CalculatorCardProps {
   to: string;
@@ -33,53 +34,55 @@ const CalculatorCard = ({ to, title, description, icon }: CalculatorCardProps) =
 );
 
 const CalculatorsPage = () => {
+  const { t } = useTranslation();
+
   const calculators = [
     {
       to: '/calculators/heal-damage',
-      title: 'Heal / Dano com Magias',
-      description: 'Calcule heal e dano de magias',
+      title: t('pages.calculatorsPage.cards.healDamage.title'),
+      description: t('pages.calculatorsPage.cards.healDamage.description'),
       icon: <Sparkles className="w-10 h-10" />
     },
     {
       to: '/calculators/physical-damage',
-      title: 'Dano Físico (Skill/Arma)',
-      description: 'Calcule dano baseado em skill e arma',
+      title: t('pages.calculatorsPage.cards.physicalDamage.title'),
+      description: t('pages.calculatorsPage.cards.physicalDamage.description'),
       icon: <Swords className="w-10 h-10" />
     },
     {
       to: '/calculators/death-experience',
-      title: 'Experiência na Morte',
-      description: 'Calcule XP perdida ao morrer',
+      title: t('pages.calculatorsPage.cards.deathExperience.title'),
+      description: t('pages.calculatorsPage.cards.deathExperience.description'),
       icon: <Skull className="w-10 h-10" />
     },
     {
       to: '/calculators/experience-level',
-      title: 'Experiência / Level',
-      description: 'Calcule XP necessária para upar',
+      title: t('pages.calculatorsPage.cards.experienceLevel.title'),
+      description: t('pages.calculatorsPage.cards.experienceLevel.description'),
       icon: <TrendingUp className="w-10 h-10" />
     },
     {
       to: '/calculators/magic-level',
-      title: 'Magic Level',
-      description: 'Calcule mana necessária para ML',
+      title: t('pages.calculatorsPage.cards.magicLevel.title'),
+      description: t('pages.calculatorsPage.cards.magicLevel.description'),
       icon: <BookOpen className="w-10 h-10" />
     },
     {
       to: '/calculators/loot',
-      title: 'Calculadora de Loot',
-      description: 'Calcule valor do seu loot',
+      title: t('pages.calculatorsPage.cards.loot.title'),
+      description: t('pages.calculatorsPage.cards.loot.description'),
       icon: <Coins className="w-10 h-10" />
     },
     {
       to: '/calculators/skills',
-      title: 'Skills',
-      description: 'Calcule treino de skills',
+      title: t('pages.calculatorsPage.cards.skills.title'),
+      description: t('pages.calculatorsPage.cards.skills.description'),
       icon: <Target className="w-10 h-10" />
     },
     {
       to: '/calculators/stats',
-      title: 'Stats (HP, MP, CAP)',
-      description: 'Calcule HP, Mana e Capacidade',
+      title: t('pages.calculatorsPage.cards.stats.title'),
+      description: t('pages.calculatorsPage.cards.stats.description'),
       icon: <Heart className="w-10 h-10" />
     }
   ];
@@ -89,11 +92,11 @@ const CalculatorsPage = () => {
       <div className="space-y-6">
         <section className="news-box">
           <header className="news-box-header">
-            <h2 className="font-semibold">Calculadoras</h2>
+            <h2 className="font-semibold">{t('pages.calculatorsPage.title')}</h2>
           </header>
           <div className="news-box-content">
             <p className="text-sm mb-6">
-              Utilize nossas calculadoras para planejar seu personagem e otimizar sua gameplay.
+              {t('pages.calculatorsPage.description')}
             </p>
             
             <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
