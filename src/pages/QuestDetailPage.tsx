@@ -2,12 +2,12 @@ import { useParams, Link } from "react-router-dom";
 import MainLayout from "@/layouts/MainLayout";
 import { useTranslation } from "@/i18n";
 import { getQuestBySlug } from "@/data/quests";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Separator } from "@/components/ui/separator";
 import QuestDialogue from "@/components/QuestDialogue";
 import ImageGallery from "@/components/ImageGallery";
-import { ArrowLeft, Crown, Scroll, MapPin, MessageSquare, Image, FileText, CheckCircle } from "lucide-react";
+import { ArrowLeft, Crown, Scroll, MapPin, MessageSquare, Image, FileText, CheckCircle, Gift } from "lucide-react";
 import { useState } from "react";
 import MapModal from "@/components/MapModal";
 
@@ -42,141 +42,151 @@ const QuestDetailPage = () => {
 
   return (
     <MainLayout>
-      <div className="space-y-6">
-        {/* Header */}
-        <div className="flex items-center gap-4">
-          <Link to="/quests">
-            <Button variant="ghost" size="icon">
-              <ArrowLeft className="w-5 h-5" />
-            </Button>
-          </Link>
-          <div className="flex-1">
-            <div className="flex items-center gap-3">
-              <Scroll className="w-6 h-6 text-gold" />
-              <h1 className="text-2xl md:text-3xl font-bold text-maroon">
-                {quest.title[language]}
-              </h1>
-              {quest.premium && <Crown className="w-5 h-5 text-gold" />}
+      <div className="space-y-4">
+        {/* Back Button */}
+        <Link to="/quests">
+          <Button variant="ghost" size="sm" className="mb-2">
+            <ArrowLeft className="w-4 h-4 mr-2" />
+            {t('quests.backToList')}
+          </Button>
+        </Link>
+
+        {/* Main Quest Container */}
+        <article className="news-box">
+          {/* Header */}
+          <header className="news-box-header">
+            <div className="flex items-center justify-between w-full">
+              <div className="flex items-center gap-2">
+                <Scroll className="w-5 h-5" />
+                <h1 className="font-semibold text-lg">{quest.title[language]}</h1>
+              </div>
+              {quest.premium && (
+                <Badge className="bg-gold text-background text-xs">
+                  <Crown className="w-3 h-3 mr-1" />
+                  {t('quests.premium')}
+                </Badge>
+              )}
             </div>
-            <p className="text-muted-foreground mt-1">
+          </header>
+
+          {/* Content */}
+          <div className="news-box-content space-y-6">
+            {/* Description */}
+            <p className="text-foreground leading-relaxed">
               {quest.description[language]}
             </p>
-          </div>
-        </div>
 
-        {/* Requirements */}
-        <Card>
-          <CardHeader className="news-box-header">
-            <CardTitle className="flex items-center gap-2 text-lg">
-              <CheckCircle className="w-5 h-5" />
-              {t('quests.requirements')}
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="pt-4">
-            <ul className="list-disc list-inside space-y-1">
-              {quest.requirements.items.map((item, i) => (
-                <li key={i} className="text-foreground">{item[language]}</li>
-              ))}
-              {quest.requirements.other?.map((item, i) => (
-                <li key={`other-${i}`} className="text-foreground">{item[language]}</li>
-              ))}
-            </ul>
-            {quest.premium && (
-              <Badge className="mt-3 bg-gold text-background">
-                <Crown className="w-3 h-3 mr-1" />
-                {t('quests.premium')}
-              </Badge>
-            )}
-          </CardContent>
-        </Card>
+            <Separator />
 
-        {/* Rewards */}
-        {quest.rewards && quest.rewards.length > 0 && (
-          <Card>
-            <CardHeader className="news-box-header">
-              <CardTitle className="flex items-center gap-2 text-lg">
-                <Scroll className="w-5 h-5" />
-                {t('quests.rewards')}
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="pt-4">
-              <ul className="list-disc list-inside space-y-1">
-                {quest.rewards.map((reward, i) => (
-                  <li key={i} className="text-foreground">{reward[language]}</li>
+            {/* Requirements */}
+            <section>
+              <h2 className="flex items-center gap-2 font-semibold text-maroon mb-3">
+                <CheckCircle className="w-4 h-4" />
+                {t('quests.requirements')}
+              </h2>
+              <ul className="list-disc list-inside space-y-1 ml-2">
+                {quest.requirements.items.map((item, i) => (
+                  <li key={i} className="text-foreground">{item[language]}</li>
+                ))}
+                {quest.requirements.other?.map((item, i) => (
+                  <li key={`other-${i}`} className="text-foreground">{item[language]}</li>
                 ))}
               </ul>
-            </CardContent>
-          </Card>
-        )}
+            </section>
 
-        {/* Quest Sections */}
-        {quest.sections.map((section, index) => (
-          <Card key={index}>
-            {section.title && (
-              <CardHeader className="news-box-header">
-                <CardTitle className="flex items-center gap-2 text-lg">
-                  {section.type === 'dialogue' && <MessageSquare className="w-5 h-5" />}
-                  {section.type === 'images' && <Image className="w-5 h-5" />}
-                  {section.type === 'text' && <FileText className="w-5 h-5" />}
-                  {section.type === 'map' && <MapPin className="w-5 h-5" />}
-                  {section.title[language]}
-                </CardTitle>
-              </CardHeader>
+            {/* Rewards */}
+            {quest.rewards && quest.rewards.length > 0 && (
+              <>
+                <Separator />
+                <section>
+                  <h2 className="flex items-center gap-2 font-semibold text-maroon mb-3">
+                    <Gift className="w-4 h-4" />
+                    {t('quests.rewards')}
+                  </h2>
+                  <ul className="list-disc list-inside space-y-1 ml-2">
+                    {quest.rewards.map((reward, i) => (
+                      <li key={i} className="text-foreground">{reward[language]}</li>
+                    ))}
+                  </ul>
+                </section>
+              </>
             )}
-            <CardContent className={section.title ? "pt-4" : "pt-6"}>
-              {/* Text content */}
-              {section.type === 'text' && section.content && (
-                <div className="space-y-3">
-                  <p className="text-foreground leading-relaxed">
-                    {section.content[language]}
-                  </p>
-                  {section.mapCoordinates && (
+
+            {/* Quest Sections */}
+            {quest.sections.map((section, index) => (
+              <div key={index}>
+                <Separator />
+                <section className="pt-4">
+                  {/* Section Title */}
+                  {section.title && (
+                    <h3 className="flex items-center gap-2 font-semibold text-maroon mb-3">
+                      {section.type === 'dialogue' && <MessageSquare className="w-4 h-4" />}
+                      {section.type === 'images' && <Image className="w-4 h-4" />}
+                      {section.type === 'text' && <FileText className="w-4 h-4" />}
+                      {section.type === 'map' && <MapPin className="w-4 h-4" />}
+                      {section.title[language]}
+                    </h3>
+                  )}
+
+                  {/* Text content */}
+                  {section.type === 'text' && section.content && (
+                    <div className="space-y-4">
+                      <p className="text-foreground leading-relaxed">
+                        {section.content[language]}
+                      </p>
+                      
+                      {/* Images inline with text */}
+                      {section.images && section.images.length > 0 && (
+                        <ImageGallery images={section.images} alt={section.title?.[language] || quest.title[language]} />
+                      )}
+                      
+                      {/* Map button */}
+                      {section.mapCoordinates && (
+                        <Button 
+                          variant="outline" 
+                          size="sm"
+                          onClick={() => openMap(section.mapCoordinates!)}
+                        >
+                          <MapPin className="w-4 h-4 mr-2" />
+                          {t('navigation.map')}
+                        </Button>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Dialogue */}
+                  {section.type === 'dialogue' && section.dialogue && (
+                    <QuestDialogue lines={section.dialogue} />
+                  )}
+
+                  {/* Images only */}
+                  {section.type === 'images' && section.images && (
+                    <ImageGallery images={section.images} alt={section.title?.[language] || quest.title[language]} />
+                  )}
+
+                  {/* Map only */}
+                  {section.type === 'map' && section.mapCoordinates && (
                     <Button 
                       variant="outline" 
-                      size="sm"
                       onClick={() => openMap(section.mapCoordinates!)}
-                      className="mt-2"
                     >
                       <MapPin className="w-4 h-4 mr-2" />
                       {t('navigation.map')}
                     </Button>
                   )}
-                </div>
-              )}
+                </section>
+              </div>
+            ))}
+          </div>
+        </article>
 
-              {/* Dialogue */}
-              {section.type === 'dialogue' && section.dialogue && (
-                <QuestDialogue lines={section.dialogue} />
-              )}
-
-              {/* Images */}
-              {section.type === 'images' && section.images && (
-                <ImageGallery images={section.images} alt={quest.title[language]} />
-              )}
-
-              {/* Map */}
-              {section.type === 'map' && section.mapCoordinates && (
-                <Button 
-                  variant="outline" 
-                  onClick={() => openMap(section.mapCoordinates!)}
-                >
-                  <MapPin className="w-4 h-4 mr-2" />
-                  {t('navigation.map')}
-                </Button>
-              )}
-            </CardContent>
-          </Card>
-        ))}
-
-        {/* Back button */}
-        <div className="pt-4">
-          <Link to="/quests">
-            <Button variant="outline">
-              <ArrowLeft className="w-4 h-4 mr-2" />
-              {t('quests.backToList')}
-            </Button>
-          </Link>
-        </div>
+        {/* Bottom Back Button */}
+        <Link to="/quests">
+          <Button variant="outline" size="sm">
+            <ArrowLeft className="w-4 h-4 mr-2" />
+            {t('quests.backToList')}
+          </Button>
+        </Link>
       </div>
 
       {/* Map Modal */}

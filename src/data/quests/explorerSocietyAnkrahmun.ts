@@ -10,10 +10,10 @@ export const explorerSocietyAnkrahmun: Quest = {
     pl: "Explorer Society / Dostęp do Ankrahmun",
   },
   description: {
-    pt: "Ajude a Explorer Society e ganhe acesso à cidade de Ankrahmun através do barco de Darashia.",
-    en: "Help the Explorer Society and gain access to the city of Ankrahmun via the Darashia boat.",
-    es: "Ayuda a la Explorer Society y obtén acceso a la ciudad de Ankrahmun a través del barco de Darashia.",
-    pl: "Pomóż Explorer Society i uzyskaj dostęp do miasta Ankrahmun przez łódź z Darashia.",
+    pt: "Ajude a Explorer Society e ganhe acesso à cidade de Ankrahmun.",
+    en: "Help the Explorer Society and gain access to the city of Ankrahmun.",
+    es: "Ayuda a la Explorer Society y obtén acceso a la ciudad de Ankrahmun.",
+    pl: "Pomóż Explorer Society i uzyskaj dostęp do miasta Ankrahmun.",
   },
   level: 0,
   premium: true,
@@ -36,14 +36,14 @@ export const explorerSocietyAnkrahmun: Quest = {
   },
   rewards: [
     {
-      pt: "Acesso a Ankrahmun via barco de Darashia",
-      en: "Access to Ankrahmun via Darashia boat",
-      es: "Acceso a Ankrahmun vía barco de Darashia",
-      pl: "Dostęp do Ankrahmun przez łódź z Darashia",
+      pt: "Acesso a Ankrahmun",
+      en: "Access to Ankrahmun",
+      es: "Acceso a Ankrahmun",
+      pl: "Dostęp do Ankrahmun",
     },
   ],
   sections: [
-    // Section 1: Início da Quest
+    // Seção 1: Início da Quest
     {
       type: "text",
       title: {
@@ -53,14 +53,14 @@ export const explorerSocietyAnkrahmun: Quest = {
         pl: "Początek Questa",
       },
       content: {
-        pt: "Vá até o NPC Mortimer em Port Hope, no segundo andar do Explorer Society Hall.",
-        en: "Go to NPC Mortimer in Port Hope, on the second floor of the Explorer Society Hall.",
-        es: "Ve al NPC Mortimer en Port Hope, en el segundo piso del Explorer Society Hall.",
-        pl: "Idź do NPC Mortimer w Port Hope, na drugim piętrze Explorer Society Hall.",
+        pt: "Tudo começa com o NPC Mortimer, o representante da Explorer Society que fica localizado aqui:",
+        en: "Everything starts with NPC Mortimer, the Explorer Society representative located here:",
+        es: "Todo comienza con el NPC Mortimer, el representante de la Explorer Society ubicado aquí:",
+        pl: "Wszystko zaczyna się od NPC Mortimer, przedstawiciela Explorer Society, który znajduje się tutaj:",
       },
-      mapCoordinates: { x: 32500, y: 31626, z: 7, zoom: 3 },
+      images: ["/quests/explorer-society/mortimer-location.jpg"],
     },
-    // Section 2: Conversa com Mortimer
+    // Seção 2: Primeira Conversa com Mortimer
     {
       type: "dialogue",
       title: {
@@ -71,51 +71,82 @@ export const explorerSocietyAnkrahmun: Quest = {
       },
       dialogue: [
         { speaker: "player", text: "hi" },
-        { speaker: "Mortimer", text: "Greetings, what can I do for you today?" },
-        { speaker: "player", text: "join" },
-        { speaker: "Mortimer", text: "Do you want to join the Explorer Society?" },
+        { speaker: "Mortimer", text: "Greetings, what can I do for you?" },
+        { speaker: "player", text: "priorities" },
+        { speaker: "Mortimer", text: "Our members are constantly exposed to many dangers and we are currently struggling to provide proper equipment to our explorers. We might need some external help to keep our operations running." },
+        { speaker: "player", text: "help" },
+        { speaker: "Mortimer", text: "Do you want to help the explorer society on acquiring some essential equipment?" },
         { speaker: "player", text: "yes" },
-        { speaker: "Mortimer", text: "Welcome to the Explorer Society! To prove your worth, I need you to complete a mission." },
-        { speaker: "player", text: "mission" },
-        { speaker: "Mortimer", text: "I need you to retrieve a Dragon Necklace from the ancient ruins. Are you interested?" },
+        { speaker: "Mortimer", text: "Your help is much appreciated. Considering you seem eager to assist our society, I will ask you to do a few things for us..." },
+        { speaker: "Mortimer", text: "Since our explorers are constantly venturing inside deep and dangerous caves around the world, it is not uncommon for them to run into strong creatures such as dragons..." },
+        { speaker: "Mortimer", text: "It is said that there is some kind of amulet called 'dragon necklace' that can protect one from their deadly firebreath..." },
+        { speaker: "Mortimer", text: "For your first mission, I want you to bring me one of these necklaces, so our members can conduct their future explorations in a safer manner..." },
+        { speaker: "Mortimer", text: "Simple enough? Are you interested in this task?" },
         { speaker: "player", text: "yes" },
+        { speaker: "Mortimer", text: "Good! Find a dragon necklace and bring it to me." },
+        { speaker: "player", text: "bye" },
+        { speaker: "Mortimer", text: "Good bye." },
       ],
     },
-    // Section 3: Obtendo o Dragon Necklace
+    // Seção 3: Dragon Necklace Quest
     {
       type: "text",
       title: {
-        pt: "Obtendo o Dragon Necklace",
+        pt: "Conseguindo o Dragon Necklace",
         en: "Getting the Dragon Necklace",
         es: "Obteniendo el Dragon Necklace",
         pl: "Zdobywanie Dragon Necklace",
       },
       content: {
-        pt: "Desça as escadas no hall e siga o caminho das ruínas. Você enfrentará alguns beholders no caminho. Use a Pick para quebrar pedras que bloqueiam o caminho. Ao final, você encontrará um baú com o Dragon Necklace.",
-        en: "Go down the stairs in the hall and follow the path to the ruins. You will face some beholders on the way. Use the Pick to break rocks blocking the path. At the end, you will find a chest with the Dragon Necklace.",
-        es: "Baja las escaleras en el hall y sigue el camino a las ruinas. Enfrentarás algunos beholders en el camino. Usa el Pick para romper las rocas que bloquean el camino. Al final, encontrarás un cofre con el Dragon Necklace.",
-        pl: "Zejdź po schodach w holu i podążaj ścieżką do ruin. Po drodze napotkasz kilka beholderów. Użyj Pick, aby rozbić kamienie blokujące drogę. Na końcu znajdziesz skrzynię z Dragon Necklace.",
+        pt: "Agora é hora de conseguir um Dragon Necklace para o Mortimer. A melhor maneira de fazer isso é concluindo a quest do Dragon Necklace em Thais.",
+        en: "Now it's time to get a Dragon Necklace for Mortimer. The best way to do this is by completing the Dragon Necklace quest in Thais.",
+        es: "Ahora es hora de conseguir un Dragon Necklace para Mortimer. La mejor manera de hacerlo es completando la quest del Dragon Necklace en Thais.",
+        pl: "Teraz czas zdobyć Dragon Necklace dla Mortimera. Najlepszym sposobem jest ukończenie questa Dragon Necklace w Thais.",
       },
+      images: [
+        "/quests/explorer-society/dragon-necklace-1.jpg",
+        "/quests/explorer-society/dragon-necklace-2.jpg",
+        "/quests/explorer-society/dragon-necklace-3.jpg",
+        "/quests/explorer-society/dragon-necklace-4.jpg",
+      ],
     },
-    // Section 4: Entregando o Dragon Necklace
+    // Seção 4: Entregando o Dragon Necklace
     {
-      type: "dialogue",
+      type: "text",
       title: {
         pt: "Entregando o Dragon Necklace",
         en: "Delivering the Dragon Necklace",
         es: "Entregando el Dragon Necklace",
         pl: "Dostarczanie Dragon Necklace",
       },
+      content: {
+        pt: "Hora de voltar ao Mortimer e entregar o Dragon Necklace.",
+        en: "Time to go back to Mortimer and deliver the Dragon Necklace.",
+        es: "Es hora de volver a Mortimer y entregar el Dragon Necklace.",
+        pl: "Czas wrócić do Mortimera i dostarczyć Dragon Necklace.",
+      },
+      images: ["/quests/explorer-society/deliver-necklace.jpg"],
+    },
+    // Seção 5: Segunda Conversa com Mortimer
+    {
+      type: "dialogue",
       dialogue: [
         { speaker: "player", text: "hi" },
-        { speaker: "Mortimer", text: "Welcome back! Did you find the Dragon Necklace?" },
+        { speaker: "Mortimer", text: "Greetings, what can I do for you?" },
         { speaker: "player", text: "mission" },
-        { speaker: "Mortimer", text: "Excellent! You have proven yourself worthy. Now I have another task for you." },
-        { speaker: "player", text: "task" },
-        { speaker: "Mortimer", text: "Go to Venore and find Caleb. He has important information about Ankrahmun." },
+        { speaker: "Mortimer", text: "Did you get the requested dragon necklace?" },
+        { speaker: "player", text: "yes" },
+        { speaker: "Mortimer", text: "Thanks, this will help us a lot! I'm even considering admitting you into our ranks if you are willing to keep cooperating with our organization ..." },
+        { speaker: "Mortimer", text: "But first, I need to ask you to do one more thing for us. Talk to me again once you are ready for another assignment." },
+        { speaker: "player", text: "mission" },
+        { speaker: "Mortimer", text: "This mission will require some tracking skills to be accomplished, but if you manage to do it, I shall admit you into our very exclusive society ..." },
+        { speaker: "player", text: "yes" },
+        { speaker: "Mortimer", text: "Good! Now go and find Caleb." },
+        { speaker: "player", text: "bye" },
+        { speaker: "Mortimer", text: "Good bye." },
       ],
     },
-    // Section 5: Encontrando Caleb em Venore
+    // Seção 6: Encontrando Caleb
     {
       type: "text",
       title: {
@@ -125,63 +156,68 @@ export const explorerSocietyAnkrahmun: Quest = {
         pl: "Znajdowanie Caleba w Venore",
       },
       content: {
-        pt: "Vá até Venore e procure por Caleb. Ele está localizado próximo ao depot da cidade. Fale com ele sobre a missão.",
-        en: "Go to Venore and look for Caleb. He is located near the city depot. Talk to him about the mission.",
-        es: "Ve a Venore y busca a Caleb. Está ubicado cerca del depot de la ciudad. Habla con él sobre la misión.",
-        pl: "Idź do Venore i poszukaj Caleba. Znajduje się w pobliżu depot miasta. Porozmawiaj z nim o misji.",
+        pt: "Agora é hora de achar o Caleb. Vamos para Venore. Use uma shovel logo acima da árvore conforme a imagem. Ao descer no buraco que aparecerá, você verá o corpo do Caleb. Clique nele para receber uma espécie de \"jornal\" (sheet of tracing).",
+        en: "Now it's time to find Caleb. Let's go to Venore. Use a shovel just above the tree as shown in the image. When you go down the hole that appears, you will see Caleb's body. Click on it to receive a \"sheet of tracing\".",
+        es: "Ahora es hora de encontrar a Caleb. Vamos a Venore. Usa una shovel justo encima del árbol como se muestra en la imagen. Al bajar por el agujero que aparece, verás el cuerpo de Caleb. Haz clic en él para recibir un \"sheet of tracing\".",
+        pl: "Teraz czas znaleźć Caleba. Idziemy do Venore. Użyj łopaty tuż nad drzewem, jak pokazano na obrazku. Gdy zejdziesz do dziury, która się pojawi, zobaczysz ciało Caleba. Kliknij na nie, aby otrzymać \"sheet of tracing\".",
       },
-    },
-    // Section 6: Conversa com Caleb
-    {
-      type: "dialogue",
-      title: {
-        pt: "Conversa com Caleb",
-        en: "Conversation with Caleb",
-        es: "Conversación con Caleb",
-        pl: "Rozmowa z Calebem",
-      },
-      dialogue: [
-        { speaker: "player", text: "hi" },
-        { speaker: "Caleb", text: "Hello adventurer! What brings you here?" },
-        { speaker: "player", text: "ankrahmun" },
-        { speaker: "Caleb", text: "Ah, you want to access Ankrahmun? You need to speak with Kazzan in Darashia." },
-        { speaker: "player", text: "kazzan" },
-        { speaker: "Caleb", text: "He is the captain that can take you to Ankrahmun. Tell him I sent you." },
+      images: [
+        "/quests/explorer-society/caleb-location.jpg",
+        "/quests/explorer-society/caleb-body.jpg",
       ],
     },
-    // Section 7: Finalizando em Darashia
+    // Seção 7: Falando com Kazzan
     {
       type: "text",
       title: {
-        pt: "Finalizando em Darashia",
-        en: "Finishing in Darashia",
-        es: "Finalizando en Darashia",
-        pl: "Kończenie w Darashia",
+        pt: "Falando com Kazzan em Darashia",
+        en: "Talking to Kazzan in Darashia",
+        es: "Hablando con Kazzan en Darashia",
+        pl: "Rozmowa z Kazzan w Darashia",
       },
       content: {
-        pt: "Vá até Darashia e fale com o NPC Kazzan no porto. Mencione que Caleb te enviou e ele liberará a passagem para Ankrahmun. Parabéns, você agora tem acesso a Ankrahmun!",
-        en: "Go to Darashia and talk to NPC Kazzan at the port. Mention that Caleb sent you and he will grant you passage to Ankrahmun. Congratulations, you now have access to Ankrahmun!",
-        es: "Ve a Darashia y habla con el NPC Kazzan en el puerto. Menciona que Caleb te envió y él te dará acceso a Ankrahmun. ¡Felicidades, ahora tienes acceso a Ankrahmun!",
-        pl: "Idź do Darashia i porozmawiaj z NPC Kazzan w porcie. Wspomnij, że Caleb cię wysłał, a on da ci dostęp do Ankrahmun. Gratulacje, masz teraz dostęp do Ankrahmun!",
+        pt: "Hora de ir falar com o Caliph em Darashia. Seu nome é Kazzan.",
+        en: "Time to go talk to the Caliph in Darashia. His name is Kazzan.",
+        es: "Es hora de ir a hablar con el Califa en Darashia. Su nombre es Kazzan.",
+        pl: "Czas porozmawiać z Kalifem w Darashia. Jego imię to Kazzan.",
       },
     },
-    // Section 8: Conversa final com Kazzan
+    // Seção 8: Conversa com Kazzan
     {
       type: "dialogue",
-      title: {
-        pt: "Conversa com Kazzan",
-        en: "Conversation with Kazzan",
-        es: "Conversación con Kazzan",
-        pl: "Rozmowa z Kazzan",
-      },
       dialogue: [
-        { speaker: "player", text: "hi" },
-        { speaker: "Kazzan", text: "Welcome to Darashia port. How can I help you?" },
-        { speaker: "player", text: "ankrahmun" },
-        { speaker: "Kazzan", text: "I can take you to Ankrahmun, but first tell me who sent you." },
-        { speaker: "player", text: "caleb" },
-        { speaker: "Kazzan", text: "Ah, Caleb! A good friend. I will gladly take you to Ankrahmun. The passage is now open to you!" },
+        { speaker: "player", text: "report" },
+        { speaker: "Kazzan", text: "By Daraman's tear! The Explorer Society should have shared this information sooner!..." },
+        { speaker: "Kazzan", text: "Those people might be still alive, struggling in the wild. They need our support..." },
+        { speaker: "Kazzan", text: "I will make it known to the guards that you have my permission to head south..." },
+        { speaker: "Kazzan", text: "But I cannot risk sending any of my men on this enterprise at this moment, so you will have to investigate the matter on your own..." },
+        { speaker: "Kazzan", text: "Once you find yourself to the south of the passage, be careful of what's around you as there are many dangers in the area..." },
+        { speaker: "Kazzan", text: "We now know that the necromancers and their minions are once again a threat to all the living beings that reach their sight..." },
+        { speaker: "Kazzan", text: "Also, a fisherman has reported some major outlaw activity in the last couple of months. Seems like they arrived in ships and are now building a stronghold by the east coast..." },
+        { speaker: "Kazzan", text: "And last but not least, it might be worth trying to contact our old allies, the Marid. Their clan lives in the Ashta'daramai fortress..." },
+        { speaker: "Kazzan", text: "We haven't heard from them in the last few years, after our victory in the last coalition war, but they might have some valuable information about what happened to the city of Ankrahmun..." },
+        { speaker: "Kazzan", text: "I hope you manage to avoid all danger and find the survivors. If you succeed, let them know that they shall have all the support they need from Darashia..." },
+        { speaker: "Kazzan", text: "After finding them, you must return to me immediately to give us directions on their whereabouts. Go now and may Daraman guide your footsteps! I will be waiting for you to return with good news, explorer." },
+        { speaker: "player", text: "bye" },
+        { speaker: "Kazzan", text: "May your soul flourish." },
       ],
+    },
+    // Seção 9: Passagem Liberada
+    {
+      type: "text",
+      title: {
+        pt: "Passagem Liberada",
+        en: "Passage Unlocked",
+        es: "Pasaje Liberado",
+        pl: "Przejście Odblokowane",
+      },
+      content: {
+        pt: "Após isso sua passagem para Ankrahmun está liberada, basta clicar na porta e passar.",
+        en: "After that your passage to Ankrahmun is unlocked, just click on the door and go through.",
+        es: "Después de eso tu pasaje a Ankrahmun está liberado, solo haz clic en la puerta y pasa.",
+        pl: "Po tym twoje przejście do Ankrahmun jest odblokowane, wystarczy kliknąć na drzwi i przejść.",
+      },
+      images: ["/quests/explorer-society/passage-unlocked.jpg"],
     },
   ],
 };
