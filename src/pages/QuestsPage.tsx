@@ -1,41 +1,45 @@
 import MainLayout from "@/layouts/MainLayout";
-import { Construction, Scroll } from "lucide-react";
+import { Scroll } from "lucide-react";
 import { useTranslation } from "@/i18n";
+import { quests } from "@/data/quests";
+import QuestCard from "@/components/QuestCard";
 
 const QuestsPage = () => {
-  const { t } = useTranslation();
+  const { t, language } = useTranslation();
 
   return (
     <MainLayout>
-      <div className="min-h-[60vh] flex flex-col items-center justify-center text-center px-4">
-        <div className="bg-card/80 backdrop-blur-sm border-2 border-border rounded-lg p-8 md:p-12 max-w-lg">
-          <div className="flex justify-center gap-4 mb-6">
-            <Scroll className="w-12 h-12 text-gold" />
-            <Construction className="w-12 h-12 text-maroon" />
-          </div>
-          
-          <h1 className="text-2xl md:text-3xl font-bold text-maroon mb-4">
+      <div className="space-y-6">
+        {/* Header */}
+        <div className="flex items-center gap-3">
+          <Scroll className="w-8 h-8 text-gold" />
+          <h1 className="text-2xl md:text-3xl font-bold text-maroon">
             {t('quests.title')}
           </h1>
-          
-          <div className="space-y-4 text-muted-foreground">
-            <p className="text-lg">
-              🚧 <span className="text-gold font-semibold">{t('quests.comingSoon')}</span> 🚧
-            </p>
-            
-            <p>
-              {t('quests.underConstruction')}
-            </p>
-            
-            <p>
-              {t('quests.communityHelp')}
-            </p>
-            
-            <p className="text-sm italic mt-6">
-              {t('quests.contactUs')}
-            </p>
-          </div>
         </div>
+
+        {/* Quest Grid */}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          {quests.map((quest) => (
+            <QuestCard
+              key={quest.id}
+              slug={quest.slug}
+              title={quest.title[language]}
+              description={quest.description[language]}
+              level={quest.level}
+              premium={quest.premium}
+              available={quest.available}
+            />
+          ))}
+        </div>
+
+        {/* Info about more quests coming */}
+        {quests.length < 5 && (
+          <div className="text-center py-8 text-muted-foreground">
+            <p>{t('quests.communityHelp')}</p>
+            <p className="text-sm italic mt-2">{t('quests.contactUs')}</p>
+          </div>
+        )}
       </div>
     </MainLayout>
   );
