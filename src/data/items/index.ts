@@ -6,9 +6,9 @@ export { valuables } from './valuables';
 export { backpacks } from './backpacks';
 
 export const itemCategories = {
-  foods: { name: 'Comidas', path: '/items/foods' },
-  amulets: { name: 'Amuletos', path: '/items/amulets' },
-  rings: { name: 'Anéis', path: '/items/rings' },
-  valuables: { name: 'Valiosos', path: '/items/valuables' },
-  backpacks: { name: 'Mochilas', path: '/items/backpacks' },
+  foods: { nameKey: 'items.foods', path: '/items/foods' },
+  amulets: { nameKey: 'items.amulets', path: '/items/amulets' },
+  rings: { nameKey: 'items.rings', path: '/items/rings' },
+  valuables: { nameKey: 'items.valuables', path: '/items/valuables' },
+  backpacks: { nameKey: 'items.backpacks', path: '/items/backpacks' },
 } as const;

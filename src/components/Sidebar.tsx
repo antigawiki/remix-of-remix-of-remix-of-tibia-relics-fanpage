@@ -230,8 +230,8 @@ const RightSidebar = () => {
           <span className="font-heading text-sm font-semibold">{t('sidebar.updates')}</span>
         </div>
         <div className="p-3 space-y-2 text-xs text-muted-foreground">
-          <p>• Wiki sendo construída...</p>
-          <p>• Novas informações em breve!</p>
+          <p>• {t('news.wikiConstructionTitle')}...</p>
+          <p>• {t('news.wikiConstructionContent2')}</p>
         </div>
       </div>
     </aside>

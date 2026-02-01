@@ -68,7 +68,7 @@ const ItemsPage = () => {
                     <div className="text-maroon">
                       {categoryIcons[key]}
                     </div>
-                    <span className="font-heading font-semibold text-text-dark">{cat.name}</span>
+                    <span className="font-heading font-semibold text-text-dark">{t(cat.nameKey)}</span>
                     <span className="text-xs text-muted-foreground">
                       {t('pages.items.itemCount').replace('{count}', String(categoryData[key]?.length || 0))}
                     </span>
@@ -115,7 +115,7 @@ const ItemsPage = () => {
               <Link to="/items" className="hover:text-gold transition-colors">
                 <ChevronLeft className="w-5 h-5" />
               </Link>
-              <h1 className="font-semibold">{categoryInfo.name}</h1>
+              <h1 className="font-semibold">{t(categoryInfo.nameKey)}</h1>
             </div>
           </header>
           <div className="news-box-content">
