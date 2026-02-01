@@ -159,15 +159,21 @@ const QuestDetailPage = () => {
                     </h3>
                   )}
 
-                  {/* Text content */}
                   {section.type === 'text' && section.content && (
                     <div className="space-y-4">
-                      <p className="text-text-dark leading-relaxed">
-                        {section.mapCoordinates 
-                          ? renderTextWithMapLink(section.content[language], () => openMap(section.mapCoordinates!))
-                          : section.content[language]
-                        }
-                      </p>
+                      {section.content[language].includes('<span') ? (
+                        <p 
+                          className="text-text-dark leading-relaxed"
+                          dangerouslySetInnerHTML={{ __html: section.content[language] }}
+                        />
+                      ) : (
+                        <p className="text-text-dark leading-relaxed">
+                          {section.mapCoordinates 
+                            ? renderTextWithMapLink(section.content[language], () => openMap(section.mapCoordinates!))
+                            : section.content[language]
+                          }
+                        </p>
+                      )}
                       
                       {/* Images inline with text */}
                       {section.images && section.images.length > 0 && (
