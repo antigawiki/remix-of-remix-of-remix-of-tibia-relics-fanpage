@@ -74,14 +74,32 @@ export const explorerSocietyAnkrahmun: Quest = {
         { speaker: "player", text: "hi" },
         { speaker: "Mortimer", text: "Greetings, what can I do for you?" },
         { speaker: "player", text: "priorities" },
-        { speaker: "Mortimer", text: "Our members are constantly exposed to many dangers and we are currently struggling to provide proper equipment to our explorers. We might need some external help to keep our operations running." },
+        {
+          speaker: "Mortimer",
+          text: "Our members are constantly exposed to many dangers and we are currently struggling to provide proper equipment to our explorers. We might need some external help to keep our operations running.",
+        },
         { speaker: "player", text: "help" },
-        { speaker: "Mortimer", text: "Do you want to help the explorer society on acquiring some essential equipment?" },
+        {
+          speaker: "Mortimer",
+          text: "Do you want to help the explorer society on acquiring some essential equipment?",
+        },
         { speaker: "player", text: "yes" },
-        { speaker: "Mortimer", text: "Your help is much appreciated. Considering you seem eager to assist our society, I will ask you to do a few things for us..." },
-        { speaker: "Mortimer", text: "Since our explorers are constantly venturing inside deep and dangerous caves around the world, it is not uncommon for them to run into strong creatures such as dragons..." },
-        { speaker: "Mortimer", text: "It is said that there is some kind of amulet called 'dragon necklace' that can protect one from their deadly firebreath..." },
-        { speaker: "Mortimer", text: "For your first mission, I want you to bring me one of these necklaces, so our members can conduct their future explorations in a safer manner..." },
+        {
+          speaker: "Mortimer",
+          text: "Your help is much appreciated. Considering you seem eager to assist our society, I will ask you to do a few things for us...",
+        },
+        {
+          speaker: "Mortimer",
+          text: "Since our explorers are constantly venturing inside deep and dangerous caves around the world, it is not uncommon for them to run into strong creatures such as dragons...",
+        },
+        {
+          speaker: "Mortimer",
+          text: "It is said that there is some kind of amulet called 'dragon necklace' that can protect one from their deadly firebreath...",
+        },
+        {
+          speaker: "Mortimer",
+          text: "For your first mission, I want you to bring me one of these necklaces, so our members can conduct their future explorations in a safer manner...",
+        },
         { speaker: "Mortimer", text: "Simple enough? Are you interested in this task?" },
         { speaker: "player", text: "yes" },
         { speaker: "Mortimer", text: "Good! Find a dragon necklace and bring it to me." },
@@ -136,10 +154,19 @@ export const explorerSocietyAnkrahmun: Quest = {
         { speaker: "player", text: "mission" },
         { speaker: "Mortimer", text: "Did you get the requested dragon necklace?" },
         { speaker: "player", text: "yes" },
-        { speaker: "Mortimer", text: "Thanks, this will help us a lot! I'm even considering admitting you into our ranks if you are willing to keep cooperating with our organization ..." },
-        { speaker: "Mortimer", text: "But first, I need to ask you to do one more thing for us. Talk to me again once you are ready for another assignment." },
+        {
+          speaker: "Mortimer",
+          text: "Thanks, this will help us a lot! I'm even considering admitting you into our ranks if you are willing to keep cooperating with our organization ...",
+        },
+        {
+          speaker: "Mortimer",
+          text: "But first, I need to ask you to do one more thing for us. Talk to me again once you are ready for another assignment.",
+        },
         { speaker: "player", text: "mission" },
-        { speaker: "Mortimer", text: "This mission will require some tracking skills to be accomplished, but if you manage to do it, I shall admit you into our very exclusive society ..." },
+        {
+          speaker: "Mortimer",
+          text: "This mission will require some tracking skills to be accomplished, but if you manage to do it, I shall admit you into our very exclusive society ...",
+        },
         { speaker: "player", text: "yes" },
         { speaker: "Mortimer", text: "Good! Now go and find Caleb." },
         { speaker: "player", text: "bye" },
@@ -156,15 +183,12 @@ export const explorerSocietyAnkrahmun: Quest = {
         pl: "Znajdowanie Caleba w Venore",
       },
       content: {
-        pt: "Agora é hora de achar o Caleb. Vamos para Venore. Use uma shovel logo acima da árvore conforme a imagem. Ao descer no buraco que aparecerá, você verá o corpo do Caleb. Clique nele para receber uma espécie de \"jornal\" (sheet of tracing).",
+        pt: 'Agora é hora de achar o Caleb. Vamos para Venore. Use uma shovel logo acima da árvore conforme a imagem. Ao descer no buraco que aparecerá, você verá o corpo do Caleb. Clique nele para receber uma espécie de "jornal" (sheet of tracing).',
         en: "Now it's time to find Caleb. Let's go to Venore. Use a shovel just above the tree as shown in the image. When you go down the hole that appears, you will see Caleb's body. Click on it to receive a \"sheet of tracing\".",
-        es: "Ahora es hora de encontrar a Caleb. Vamos a Venore. Usa una shovel justo encima del árbol como se muestra en la imagen. Al bajar por el agujero que aparece, verás el cuerpo de Caleb. Haz clic en él para recibir un \"sheet of tracing\".",
-        pl: "Teraz czas znaleźć Caleba. Idziemy do Venore. Użyj łopaty tuż nad drzewem, jak pokazano na obrazku. Gdy zejdziesz do dziury, która się pojawi, zobaczysz ciało Caleba. Kliknij na nie, aby otrzymać \"sheet of tracing\".",
+        es: 'Ahora es hora de encontrar a Caleb. Vamos a Venore. Usa una shovel justo encima del árbol como se muestra en la imagen. Al bajar por el agujero que aparece, verás el cuerpo de Caleb. Haz clic en él para recibir un "sheet of tracing".',
+        pl: 'Teraz czas znaleźć Caleba. Idziemy do Venore. Użyj łopaty tuż nad drzewem, jak pokazano na obrazku. Gdy zejdziesz do dziury, która się pojawi, zobaczysz ciało Caleba. Kliknij na nie, aby otrzymać "sheet of tracing".',
       },
-      images: [
-        "/quests/explorer-society/caleb-location.jpg",
-        "/quests/explorer-society/deliver-necklace.jpg",
-      ],
+      images: ["/quests/explorer-society/deliver-necklace.jpg", "/quests/explorer-society/caleb-location.jpg"],
     },
     // Seção 7: Falando com Kazzan
     {
@@ -181,7 +205,7 @@ export const explorerSocietyAnkrahmun: Quest = {
         es: "Es hora de ir a hablar con el Califa en Darashia. Su nombre es Kazzan.",
         pl: "Czas porozmawiać z Kalifem w Darashia. Jego imię to Kazzan.",
       },
-      mapCoordinates: { x: 32500, y: 31626, z: 7, zoom: 3 },
+      mapCoordinates: { x: 33234, y: 32391, z: 6, zoom: 3 },
       images: ["/quests/explorer-society/caleb-body.jpg"],
     },
     // Seção 8: Conversa com Kazzan
@@ -189,17 +213,47 @@ export const explorerSocietyAnkrahmun: Quest = {
       type: "dialogue",
       dialogue: [
         { speaker: "player", text: "report" },
-        { speaker: "Kazzan", text: "By Daraman's tear! The Explorer Society should have shared this information sooner!..." },
-        { speaker: "Kazzan", text: "Those people might be still alive, struggling in the wild. They need our support..." },
+        {
+          speaker: "Kazzan",
+          text: "By Daraman's tear! The Explorer Society should have shared this information sooner!...",
+        },
+        {
+          speaker: "Kazzan",
+          text: "Those people might be still alive, struggling in the wild. They need our support...",
+        },
         { speaker: "Kazzan", text: "I will make it known to the guards that you have my permission to head south..." },
-        { speaker: "Kazzan", text: "But I cannot risk sending any of my men on this enterprise at this moment, so you will have to investigate the matter on your own..." },
-        { speaker: "Kazzan", text: "Once you find yourself to the south of the passage, be careful of what's around you as there are many dangers in the area..." },
-        { speaker: "Kazzan", text: "We now know that the necromancers and their minions are once again a threat to all the living beings that reach their sight..." },
-        { speaker: "Kazzan", text: "Also, a fisherman has reported some major outlaw activity in the last couple of months. Seems like they arrived in ships and are now building a stronghold by the east coast..." },
-        { speaker: "Kazzan", text: "And last but not least, it might be worth trying to contact our old allies, the Marid. Their clan lives in the Ashta'daramai fortress..." },
-        { speaker: "Kazzan", text: "We haven't heard from them in the last few years, after our victory in the last coalition war, but they might have some valuable information about what happened to the city of Ankrahmun..." },
-        { speaker: "Kazzan", text: "I hope you manage to avoid all danger and find the survivors. If you succeed, let them know that they shall have all the support they need from Darashia..." },
-        { speaker: "Kazzan", text: "After finding them, you must return to me immediately to give us directions on their whereabouts. Go now and may Daraman guide your footsteps! I will be waiting for you to return with good news, explorer." },
+        {
+          speaker: "Kazzan",
+          text: "But I cannot risk sending any of my men on this enterprise at this moment, so you will have to investigate the matter on your own...",
+        },
+        {
+          speaker: "Kazzan",
+          text: "Once you find yourself to the south of the passage, be careful of what's around you as there are many dangers in the area...",
+        },
+        {
+          speaker: "Kazzan",
+          text: "We now know that the necromancers and their minions are once again a threat to all the living beings that reach their sight...",
+        },
+        {
+          speaker: "Kazzan",
+          text: "Also, a fisherman has reported some major outlaw activity in the last couple of months. Seems like they arrived in ships and are now building a stronghold by the east coast...",
+        },
+        {
+          speaker: "Kazzan",
+          text: "And last but not least, it might be worth trying to contact our old allies, the Marid. Their clan lives in the Ashta'daramai fortress...",
+        },
+        {
+          speaker: "Kazzan",
+          text: "We haven't heard from them in the last few years, after our victory in the last coalition war, but they might have some valuable information about what happened to the city of Ankrahmun...",
+        },
+        {
+          speaker: "Kazzan",
+          text: "I hope you manage to avoid all danger and find the survivors. If you succeed, let them know that they shall have all the support they need from Darashia...",
+        },
+        {
+          speaker: "Kazzan",
+          text: "After finding them, you must return to me immediately to give us directions on their whereabouts. Go now and may Daraman guide your footsteps! I will be waiting for you to return with good news, explorer.",
+        },
         { speaker: "player", text: "bye" },
         { speaker: "Kazzan", text: "May your soul flourish." },
       ],
