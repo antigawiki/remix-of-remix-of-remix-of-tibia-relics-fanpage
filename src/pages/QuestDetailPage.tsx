@@ -45,7 +45,7 @@ const QuestDetailPage = () => {
       <div className="space-y-4">
         {/* Back Button */}
         <Link to="/quests">
-          <Button variant="ghost" size="sm" className="mb-2">
+          <Button variant="ghost" size="sm" className="mb-2 text-foreground hover:text-gold">
             <ArrowLeft className="w-4 h-4 mr-2" />
             {t('quests.backToList')}
           </Button>
@@ -70,26 +70,32 @@ const QuestDetailPage = () => {
           </header>
 
           {/* Content */}
-          <div className="news-box-content space-y-6">
+          <div className="p-4 md:p-6 space-y-6">
             {/* Description */}
-            <p className="text-text-dark leading-relaxed">
+            <p className="text-text-dark leading-relaxed text-base">
               {quest.description[language]}
             </p>
 
-            <Separator />
+            <Separator className="bg-border/50" />
 
             {/* Requirements */}
-            <section>
-              <h2 className="flex items-center gap-2 font-semibold text-maroon mb-3">
+            <section className="space-y-3">
+              <h2 className="flex items-center gap-2 font-heading font-semibold text-maroon dark:text-gold">
                 <CheckCircle className="w-4 h-4" />
                 {t('quests.requirements')}
               </h2>
-              <ul className="list-disc list-inside space-y-1 ml-2">
+              <ul className="space-y-1.5 ml-6">
                 {quest.requirements.items.map((item, i) => (
-                  <li key={i} className="text-text-dark">{item[language]}</li>
+                  <li key={i} className="text-text-dark flex items-start gap-2">
+                    <span className="text-gold mt-1.5">•</span>
+                    <span>{item[language]}</span>
+                  </li>
                 ))}
                 {quest.requirements.other?.map((item, i) => (
-                  <li key={`other-${i}`} className="text-text-dark">{item[language]}</li>
+                  <li key={`other-${i}`} className="text-text-dark flex items-start gap-2">
+                    <span className="text-gold mt-1.5">•</span>
+                    <span>{item[language]}</span>
+                  </li>
                 ))}
               </ul>
             </section>
@@ -97,15 +103,18 @@ const QuestDetailPage = () => {
             {/* Rewards */}
             {quest.rewards && quest.rewards.length > 0 && (
               <>
-                <Separator />
-                <section>
-                  <h2 className="flex items-center gap-2 font-semibold text-maroon mb-3">
+                <Separator className="bg-border/50" />
+                <section className="space-y-3">
+                  <h2 className="flex items-center gap-2 font-heading font-semibold text-maroon dark:text-gold">
                     <Gift className="w-4 h-4" />
                     {t('quests.rewards')}
                   </h2>
-                  <ul className="list-disc list-inside space-y-1 ml-2">
+                  <ul className="space-y-1.5 ml-6">
                     {quest.rewards.map((reward, i) => (
-                      <li key={i} className="text-text-dark">{reward[language]}</li>
+                      <li key={i} className="text-text-dark flex items-start gap-2">
+                        <span className="text-gold mt-1.5">•</span>
+                        <span>{reward[language]}</span>
+                      </li>
                     ))}
                   </ul>
                 </section>
@@ -115,11 +124,11 @@ const QuestDetailPage = () => {
             {/* Quest Sections */}
             {quest.sections.map((section, index) => (
               <div key={index}>
-                <Separator />
-                <section className="pt-4">
+                <Separator className="bg-border/50" />
+                <section className="pt-6 space-y-4">
                   {/* Section Title */}
                   {section.title && (
-                    <h3 className="flex items-center gap-2 font-semibold text-maroon mb-3">
+                    <h3 className="flex items-center gap-2 font-heading font-semibold text-maroon dark:text-gold">
                       {section.type === 'dialogue' && <MessageSquare className="w-4 h-4" />}
                       {section.type === 'images' && <Image className="w-4 h-4" />}
                       {section.type === 'text' && <FileText className="w-4 h-4" />}
@@ -146,6 +155,7 @@ const QuestDetailPage = () => {
                           variant="outline" 
                           size="sm"
                           onClick={() => openMap(section.mapCoordinates!)}
+                          className="border-gold/50 text-foreground hover:bg-gold/10 hover:text-gold"
                         >
                           <MapPin className="w-4 h-4 mr-2" />
                           {t('navigation.map')}
@@ -169,6 +179,7 @@ const QuestDetailPage = () => {
                     <Button 
                       variant="outline" 
                       onClick={() => openMap(section.mapCoordinates!)}
+                      className="border-gold/50 text-foreground hover:bg-gold/10 hover:text-gold"
                     >
                       <MapPin className="w-4 h-4 mr-2" />
                       {t('navigation.map')}
@@ -182,7 +193,7 @@ const QuestDetailPage = () => {
 
         {/* Bottom Back Button */}
         <Link to="/quests">
-          <Button variant="outline" size="sm">
+          <Button variant="outline" size="sm" className="border-border text-foreground hover:text-gold hover:border-gold/50">
             <ArrowLeft className="w-4 h-4 mr-2" />
             {t('quests.backToList')}
           </Button>
