@@ -1,8 +1,9 @@
 import { useState } from 'react';
 import { Trophy, RefreshCw } from 'lucide-react';
 import { format } from 'date-fns';
+import { ptBR, enUS, es, pl } from 'date-fns/locale';
 import PlayerLink from '@/components/PlayerLink';
-import { ptBR } from 'date-fns/locale';
+import { useTranslation } from '@/i18n';
 import MainLayout from '@/layouts/MainLayout';
 import { 
   useHighscores, 
@@ -51,10 +52,20 @@ const vocations: HighscoreVocation[] = [
 ];
 
 const HighscoresPage = () => {
+  const { t, language } = useTranslation();
   const [category, setCategory] = useState<HighscoreCategory>('Experience');
   const [vocation, setVocation] = useState<HighscoreVocation>('All');
   
   const { data, isLoading, isError, isFetching } = useHighscores(category, vocation);
+
+  const getDateLocale = () => {
+    switch (language) {
+      case 'en': return enUS;
+      case 'es': return es;
+      case 'pl': return pl;
+      default: return ptBR;
+    }
+  };
 
   const getRankColor = (rank: number) => {
     if (rank === 1) return 'text-gold font-bold';
@@ -64,9 +75,9 @@ const HighscoresPage = () => {
   };
 
   const getScoreLabel = () => {
-    if (category === 'Experience') return 'Experiência';
-    if (category === 'MagicLevel') return 'Magic Level';
-    return 'Skill';
+    if (category === 'Experience') return t('pages.highscores.scoreLabels.experience');
+    if (category === 'MagicLevel') return t('pages.highscores.scoreLabels.magicLevel');
+    return t('pages.highscores.scoreLabels.skill');
   };
 
   return (
@@ -75,7 +86,7 @@ const HighscoresPage = () => {
         <header className="news-box-header">
           <h2 className="font-semibold flex items-center gap-2">
             <Trophy className="w-5 h-5" />
-            Ranking
+            {t('pages.highscores.title')}
             {isFetching && <RefreshCw className="w-4 h-4 animate-spin text-muted-foreground" />}
           </h2>
         </header>
@@ -84,7 +95,7 @@ const HighscoresPage = () => {
           {/* Filters */}
           <div className="flex flex-wrap gap-4">
             <div className="flex flex-col gap-1">
-              <label className="text-xs text-muted-foreground">Categoria</label>
+              <label className="text-xs text-muted-foreground">{t('pages.highscores.category')}</label>
               <Select value={category} onValueChange={(v) => setCategory(v as HighscoreCategory)}>
                 <SelectTrigger className="w-[180px]">
                   <SelectValue />
@@ -100,7 +111,7 @@ const HighscoresPage = () => {
             </div>
 
             <div className="flex flex-col gap-1">
-              <label className="text-xs text-muted-foreground">Vocação</label>
+              <label className="text-xs text-muted-foreground">{t('pages.highscores.vocation')}</label>
               <Select value={vocation} onValueChange={(v) => setVocation(v as HighscoreVocation)}>
                 <SelectTrigger className="w-[180px]">
                   <SelectValue />
@@ -125,7 +136,7 @@ const HighscoresPage = () => {
             </div>
           ) : isError ? (
             <div className="text-center py-8 text-destructive">
-              Erro ao carregar ranking. Tente novamente mais tarde.
+              {t('pages.highscores.errorLoading')}
             </div>
           ) : (
             <>
@@ -133,9 +144,9 @@ const HighscoresPage = () => {
                 <TableHeader>
                   <TableRow>
                     <TableHead className="w-12">#</TableHead>
-                    <TableHead>Nome</TableHead>
-                    <TableHead>Vocação</TableHead>
-                    <TableHead className="text-right">Level</TableHead>
+                    <TableHead>{t('pages.highscores.columns.name')}</TableHead>
+                    <TableHead>{t('pages.highscores.columns.vocation')}</TableHead>
+                    <TableHead className="text-right">{t('pages.highscores.columns.level')}</TableHead>
                     <TableHead className="text-right">{getScoreLabel()}</TableHead>
                   </TableRow>
                 </TableHeader>
@@ -162,7 +173,7 @@ const HighscoresPage = () => {
 
               {data?.highscores.length === 0 && (
                 <div className="text-center py-8 text-muted-foreground">
-                  Nenhum jogador encontrado para esta categoria/vocação.
+                  {t('pages.highscores.noPlayers')}
                 </div>
               )}
             </>
@@ -171,7 +182,7 @@ const HighscoresPage = () => {
           {/* Last updated */}
           {data?.lastUpdatedUtc && (
             <p className="text-xs text-muted-foreground text-right">
-              Última atualização: {format(new Date(data.lastUpdatedUtc), "dd/MM/yyyy 'às' HH:mm", { locale: ptBR })}
+              {t('pages.highscores.lastUpdated')}: {format(new Date(data.lastUpdatedUtc), "dd/MM/yyyy HH:mm", { locale: getDateLocale() })}
             </p>
           )}
         </div>

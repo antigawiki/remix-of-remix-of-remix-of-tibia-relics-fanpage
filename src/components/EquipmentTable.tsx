@@ -4,6 +4,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { ArrowUpDown, Search } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import ItemDetailsModal from '@/components/ItemDetailsModal';
+import { useTranslation } from '@/i18n';
 
 interface EquipmentTableProps {
   items: Equipment[];
@@ -14,6 +15,7 @@ type SortKey = 'name' | 'armor' | 'attack' | 'defense' | 'weight';
 type SortDirection = 'asc' | 'desc';
 
 const EquipmentTable = ({ items, category }: EquipmentTableProps) => {
+  const { t } = useTranslation();
   const [search, setSearch] = useState('');
   const [sortKey, setSortKey] = useState<SortKey>('name');
   const [sortDirection, setSortDirection] = useState<SortDirection>('asc');
@@ -70,7 +72,7 @@ const EquipmentTable = ({ items, category }: EquipmentTableProps) => {
       <div className="relative">
         <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
         <Input
-          placeholder="Buscar equipamento..."
+          placeholder={t('tables.searchEquipment')}
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           className="pl-10 bg-parchment border-border"
@@ -81,13 +83,13 @@ const EquipmentTable = ({ items, category }: EquipmentTableProps) => {
         <Table>
           <TableHeader className="bg-maroon">
             <TableRow>
-              <TableHead className="text-parchment w-16">Img</TableHead>
+              <TableHead className="text-parchment w-16">{t('tables.columns.img')}</TableHead>
               <TableHead 
                 className="text-parchment cursor-pointer hover:bg-maroon/80"
                 onClick={() => handleSort('name')}
               >
                 <div className="flex items-center gap-1">
-                  Nome
+                  {t('tables.columns.name')}
                   <ArrowUpDown className="h-3 w-3" />
                 </div>
               </TableHead>
@@ -97,7 +99,7 @@ const EquipmentTable = ({ items, category }: EquipmentTableProps) => {
                   onClick={() => handleSort('armor')}
                 >
                   <div className="flex items-center gap-1">
-                    Arm
+                    {t('tables.columns.armor')}
                     <ArrowUpDown className="h-3 w-3" />
                   </div>
                 </TableHead>
@@ -108,7 +110,7 @@ const EquipmentTable = ({ items, category }: EquipmentTableProps) => {
                   onClick={() => handleSort('attack')}
                 >
                   <div className="flex items-center gap-1">
-                    Atk
+                    {t('tables.columns.attack')}
                     <ArrowUpDown className="h-3 w-3" />
                   </div>
                 </TableHead>
@@ -119,7 +121,7 @@ const EquipmentTable = ({ items, category }: EquipmentTableProps) => {
                   onClick={() => handleSort('defense')}
                 >
                   <div className="flex items-center gap-1">
-                    Def
+                    {t('tables.columns.defense')}
                     <ArrowUpDown className="h-3 w-3" />
                   </div>
                 </TableHead>
@@ -129,11 +131,11 @@ const EquipmentTable = ({ items, category }: EquipmentTableProps) => {
                 onClick={() => handleSort('weight')}
               >
                 <div className="flex items-center gap-1">
-                  Peso
+                  {t('tables.columns.weight')}
                   <ArrowUpDown className="h-3 w-3" />
                 </div>
               </TableHead>
-              <TableHead className="text-parchment">Atributos</TableHead>
+              <TableHead className="text-parchment">{t('tables.columns.attributes')}</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -166,7 +168,7 @@ const EquipmentTable = ({ items, category }: EquipmentTableProps) => {
       </div>
 
       <p className="text-xs text-muted-foreground text-center">
-        Exibindo {sortedItems.length} de {items.length} itens • Clique em um item para mais detalhes
+        {t('tables.showingItems').replace('{shown}', String(sortedItems.length)).replace('{total}', String(items.length))} • {t('tables.clickForDetails')}
       </p>
 
       <ItemDetailsModal 

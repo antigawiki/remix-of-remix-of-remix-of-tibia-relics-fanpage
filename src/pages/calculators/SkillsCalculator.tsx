@@ -11,8 +11,10 @@ import {
   calculateSkills,
   formatTime,
 } from '@/data/calculators/skills';
+import { useTranslation } from '@/i18n';
 
 const SkillsCalculator = () => {
+  const { t } = useTranslation();
   const [selectedVocation, setSelectedVocation] = useState<SkillVocationData | null>(null);
   
   // Checkboxes
@@ -52,22 +54,22 @@ const SkillsCalculator = () => {
 
   const validateSkill = (current: number, desired: number, skillName: string): string | null => {
     if (current < 10 || desired < 10) {
-      return `Valores menores que 10 não são aceitos para ${skillName}.`;
+      return t('calculatorPages.skills.minValueError').replace('{skill}', skillName);
     }
     if (current >= desired) {
-      return `A skill ${skillName} desejada deve ser maior que a atual.`;
+      return t('calculatorPages.skills.desiredMustBeGreater').replace('{skill}', skillName);
     }
     return null;
   };
 
   const handleCalculate = () => {
     if (!selectedVocation) {
-      setError('Selecione uma vocação.');
+      setError(t('calculatorPages.skills.selectVocation'));
       return;
     }
 
     if (!meleeEnabled && !distanceEnabled && !shieldEnabled) {
-      setError('Selecione pelo menos uma skill para calcular.');
+      setError(t('calculatorPages.skills.selectAtLeastOne'));
       return;
     }
 
@@ -82,7 +84,7 @@ const SkillsCalculator = () => {
       const desired = parseInt(meleeDesiredSkill);
       
       if (isNaN(current) || isNaN(desired)) {
-        setError('Preencha os campos de Melee corretamente.');
+        setError(t('calculatorPages.skills.fillFieldsCorrectly').replace('{skill}', 'Melee'));
         return;
       }
       
@@ -100,7 +102,7 @@ const SkillsCalculator = () => {
       const desired = parseInt(distanceDesiredSkill);
       
       if (isNaN(current) || isNaN(desired)) {
-        setError('Preencha os campos de Distance corretamente.');
+        setError(t('calculatorPages.skills.fillFieldsCorrectly').replace('{skill}', 'Distance'));
         return;
       }
       
@@ -118,7 +120,7 @@ const SkillsCalculator = () => {
       const desired = parseInt(shieldDesiredSkill);
       
       if (isNaN(current) || isNaN(desired)) {
-        setError('Preencha os campos de Shield corretamente.');
+        setError(t('calculatorPages.skills.fillFieldsCorrectly').replace('{skill}', 'Shield'));
         return;
       }
       
@@ -165,17 +167,17 @@ const SkillsCalculator = () => {
           <header className="news-box-header">
             <h2 className="font-semibold flex items-center gap-2">
               <Target className="w-5 h-5" />
-              Calculadora de Skills
+              {t('calculatorPages.skills.title')}
             </h2>
           </header>
           <div className="news-box-content space-y-6">
             <p className="text-sm mb-4">
-              Calcule quanto tempo você precisa treinar para atingir as skills desejadas.
+              {t('calculatorPages.skills.description')}
             </p>
 
             {/* Seleção de Vocação */}
             <div className="space-y-3">
-              <h3 className="text-sm font-medium">Escolha sua Vocação:</h3>
+              <h3 className="text-sm font-medium">{t('calculatorPages.skills.chooseVocation')}:</h3>
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                 {skillVocations.map((vocation) => (
                   <button
@@ -196,7 +198,7 @@ const SkillsCalculator = () => {
             {/* Skills */}
             {selectedVocation && (
               <div className="space-y-4">
-                <h3 className="text-sm font-medium">Selecione as Skills:</h3>
+                <h3 className="text-sm font-medium">{t('calculatorPages.skills.selectSkills')}:</h3>
                 
                 {/* Melee */}
                 <div className="space-y-3">
@@ -220,7 +222,7 @@ const SkillsCalculator = () => {
                   {meleeEnabled && (
                     <div className="grid grid-cols-2 gap-3 ml-6">
                       <div className="space-y-1">
-                        <label className="text-xs">Skill Atual:</label>
+                        <label className="text-xs">{t('calculatorPages.skills.currentSkill')}:</label>
                         <Input
                           type="number"
                           value={meleeCurrentSkill}
@@ -234,7 +236,7 @@ const SkillsCalculator = () => {
                         />
                       </div>
                       <div className="space-y-1">
-                        <label className="text-xs">Skill Desejada:</label>
+                        <label className="text-xs">{t('calculatorPages.skills.desiredSkill')}:</label>
                         <Input
                           type="number"
                           value={meleeDesiredSkill}
@@ -273,7 +275,7 @@ const SkillsCalculator = () => {
                   {distanceEnabled && (
                     <div className="grid grid-cols-2 gap-3 ml-6">
                       <div className="space-y-1">
-                        <label className="text-xs">Skill Atual:</label>
+                        <label className="text-xs">{t('calculatorPages.skills.currentSkill')}:</label>
                         <Input
                           type="number"
                           value={distanceCurrentSkill}
@@ -287,7 +289,7 @@ const SkillsCalculator = () => {
                         />
                       </div>
                       <div className="space-y-1">
-                        <label className="text-xs">Skill Desejada:</label>
+                        <label className="text-xs">{t('calculatorPages.skills.desiredSkill')}:</label>
                         <Input
                           type="number"
                           value={distanceDesiredSkill}
@@ -326,7 +328,7 @@ const SkillsCalculator = () => {
                   {shieldEnabled && (
                     <div className="grid grid-cols-2 gap-3 ml-6">
                       <div className="space-y-1">
-                        <label className="text-xs">Skill Atual:</label>
+                        <label className="text-xs">{t('calculatorPages.skills.currentSkill')}:</label>
                         <Input
                           type="number"
                           value={shieldCurrentSkill}
@@ -340,7 +342,7 @@ const SkillsCalculator = () => {
                         />
                       </div>
                       <div className="space-y-1">
-                        <label className="text-xs">Skill Desejada:</label>
+                        <label className="text-xs">{t('calculatorPages.skills.desiredSkill')}:</label>
                         <Input
                           type="number"
                           value={shieldDesiredSkill}
@@ -369,7 +371,7 @@ const SkillsCalculator = () => {
             {/* Botão Calcular */}
             {selectedVocation && (
               <Button onClick={handleCalculate} className="w-full">
-                Calcular
+                {t('calculatorPages.skills.calculate')}
               </Button>
             )}
 
@@ -377,7 +379,7 @@ const SkillsCalculator = () => {
             {result && result.results.length > 0 && (
               <div className="space-y-4">
                 <h3 className="text-sm font-medium border-b border-border-light pb-2">
-                  Resultados para {result.vocation.name}
+                  {t('calculatorPages.skills.resultsFor')} {result.vocation.name}
                 </h3>
                 <div className="space-y-3">
                   {result.results.map((skillResult) => (
@@ -392,8 +394,8 @@ const SkillsCalculator = () => {
                         </span>
                       </div>
                       <p className="text-sm">
-                        Tempo estimado para avançar de{' '}
-                        <strong>{skillResult.currentSkill}</strong> para{' '}
+                        {t('calculatorPages.skills.estimatedTime')}{' '}
+                        <strong>{skillResult.currentSkill}</strong> {t('calculatorPages.skills.to')}{' '}
                         <strong>{skillResult.desiredSkill}</strong>:
                       </p>
                       <p className="text-maroon font-semibold mt-1">

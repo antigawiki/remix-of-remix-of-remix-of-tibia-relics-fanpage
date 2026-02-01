@@ -5,6 +5,7 @@ import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Heart, Droplets, Package, Sparkles } from "lucide-react";
 import { statsVocations, calculateStats, StatsVocationData, StatsResult } from "@/data/calculators/stats";
+import { useTranslation } from "@/i18n";
 
 interface VocationCardProps {
   vocation: StatsVocationData;
@@ -43,6 +44,7 @@ const ResultCard = ({ icon, title, value, description, iconColor = "text-maroon"
 );
 
 const StatsCalculator = () => {
+  const { t } = useTranslation();
   const [selectedVocation, setSelectedVocation] = useState<StatsVocationData | null>(null);
   const [level, setLevel] = useState("");
   const [showResults, setShowResults] = useState(false);
@@ -80,17 +82,17 @@ const StatsCalculator = () => {
           <header className="news-box-header">
             <h2 className="font-semibold flex items-center gap-2">
               <Heart className="w-5 h-5" />
-              Calculadora de Stats
+              {t('calculatorPages.stats.title')}
             </h2>
           </header>
           <div className="news-box-content space-y-6">
             <p className="text-sm mb-4">
-              Calcule o HP, Mana e Capacidade do seu personagem baseado na vocação e nível.
+              {t('calculatorPages.stats.description')}
             </p>
 
             {/* Seleção de Vocação */}
             <div className="space-y-3">
-              <Label className="text-sm font-medium">Escolha sua Vocação:</Label>
+              <Label className="text-sm font-medium">{t('calculatorPages.stats.chooseVocation')}:</Label>
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                 {statsVocations.map((vocation) => (
                   <VocationCard
@@ -109,12 +111,12 @@ const StatsCalculator = () => {
             {/* Input Level */}
             <div className="max-w-xs space-y-2">
               <Label htmlFor="level" className="text-sm">
-                Level do Personagem:
+                {t('calculatorPages.stats.characterLevel')}:
               </Label>
               <Input
                 id="level"
                 type="number"
-                placeholder="Digite seu level"
+                placeholder={t('calculatorPages.stats.enterLevel')}
                 value={level}
                 onChange={(e) => {
                   setLevel(e.target.value);
@@ -132,7 +134,7 @@ const StatsCalculator = () => {
                 disabled={!isFormValid}
                 className="bg-maroon hover:bg-maroon/90 text-white px-8"
               >
-                Calcular
+                {t('calculatorPages.stats.calculate')}
               </Button>
             </div>
 
@@ -141,42 +143,43 @@ const StatsCalculator = () => {
               <div className="space-y-4 pt-4 border-t border-border-light">
                 <h3 className="font-semibold text-maroon flex items-center gap-2">
                   <Sparkles className="w-4 h-4" />
-                  Resultados
+                  {t('calculatorPages.stats.results')}
                 </h3>
 
                 <div className="grid sm:grid-cols-3 gap-3">
                   <ResultCard
                     icon={<Heart className="w-6 h-6" />}
                     iconColor="text-red-600"
-                    title="Hit Points (HP)"
+                    title={t('calculatorPages.stats.hp')}
                     value={formatNumber(result.hp)}
-                    description="Vida total do personagem"
+                    description={t('calculatorPages.stats.totalLife')}
                   />
 
                   <ResultCard
                     icon={<Droplets className="w-6 h-6" />}
                     iconColor="text-blue-600"
-                    title="Mana Points (MP)"
+                    title={t('calculatorPages.stats.mp')}
                     value={formatNumber(result.mp)}
-                    description="Mana total do personagem"
+                    description={t('calculatorPages.stats.totalMana')}
                   />
 
                   <ResultCard
                     icon={<Package className="w-6 h-6" />}
                     iconColor="text-amber-700"
-                    title="Capacidade (CAP)"
+                    title={t('calculatorPages.stats.cap')}
                     value={formatNumber(result.cap)}
-                    description="Peso que pode carregar"
+                    description={t('calculatorPages.stats.carryWeight')}
                   />
                 </div>
 
                 <div className="bg-maroon/5 border border-maroon/20 rounded p-4 text-sm">
                   <p>
-                    Um <strong className="text-maroon">{result.vocationName}</strong> no level{" "}
-                    <strong className="text-maroon">{result.level}</strong> possui{" "}
-                    <strong className="text-maroon">{formatNumber(result.hp)}</strong> de HP,{" "}
-                    <strong className="text-maroon">{formatNumber(result.mp)}</strong> de Mana e{" "}
-                    <strong className="text-maroon">{formatNumber(result.cap)}</strong> de capacidade.
+                    {t('calculatorPages.stats.summary')
+                      .replace('{vocation}', result.vocationName)
+                      .replace('{level}', String(result.level))
+                      .replace('{hp}', formatNumber(result.hp))
+                      .replace('{mp}', formatNumber(result.mp))
+                      .replace('{cap}', formatNumber(result.cap))}
                   </p>
                 </div>
               </div>

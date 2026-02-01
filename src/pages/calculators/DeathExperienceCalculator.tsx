@@ -10,6 +10,7 @@ import {
   getLevelProgress, 
   calculateDeathExperience 
 } from '@/data/calculators/deathExperience';
+import { useTranslation } from '@/i18n';
 
 const formatNumber = (num: number): string => {
   return num.toLocaleString('pt-BR');
@@ -39,9 +40,10 @@ interface StatBoxProps {
   progress: number;
   variant: 'before' | 'after';
   loss?: number;
+  t: (key: string) => string;
 }
 
-const StatBox = ({ title, icon, experience, level, progress, variant, loss }: StatBoxProps) => (
+const StatBox = ({ title, icon, experience, level, progress, variant, loss, t }: StatBoxProps) => (
   <div className="bg-cream border border-border-light rounded p-4">
     <div className="flex items-center gap-2 mb-4 pb-2 border-b border-border">
       {icon}
@@ -50,26 +52,26 @@ const StatBox = ({ title, icon, experience, level, progress, variant, loss }: St
     
     <div className="space-y-3">
       <div className="flex justify-between items-center">
-        <span className="text-sm text-muted-foreground">Experiência</span>
+        <span className="text-sm text-muted-foreground">{t('calculatorPages.deathExperience.experience')}</span>
         <span className="font-semibold text-text-dark">{formatNumber(experience)}</span>
       </div>
       
       <div className="flex justify-between items-center">
-        <span className="text-sm text-muted-foreground">Level</span>
+        <span className="text-sm text-muted-foreground">{t('calculatorPages.deathExperience.levelLabel')}</span>
         <span className="font-bold text-lg text-maroon">{level}</span>
       </div>
       
       <div className="space-y-1">
         <ProgressBar percentage={progress} variant={variant} />
         <p className="text-xs text-center text-muted-foreground">
-          {progress.toFixed(0)}% do level
+          {progress.toFixed(0)}% {t('calculatorPages.deathExperience.ofLevel')}
         </p>
       </div>
       
       {loss !== undefined && (
         <div className="mt-4 pt-3 border-t border-border">
           <div className="flex justify-between items-center">
-            <span className="text-sm font-semibold text-red-600">Perda Total</span>
+            <span className="text-sm font-semibold text-red-600">{t('calculatorPages.deathExperience.totalLoss')}</span>
             <span className="font-bold text-red-600">-{formatNumber(loss)} exp</span>
           </div>
         </div>
@@ -79,6 +81,7 @@ const StatBox = ({ title, icon, experience, level, progress, variant, loss }: St
 );
 
 const DeathExperienceCalculator = () => {
+  const { t } = useTranslation();
   const [experience, setExperience] = useState<number>(15694800);
   const [activeBlessings, setActiveBlessings] = useState<string[]>([]);
 
@@ -118,18 +121,18 @@ const DeathExperienceCalculator = () => {
           <header className="news-box-header">
             <h2 className="font-semibold flex items-center gap-2">
               <Skull className="w-5 h-5" />
-              Calculadora de XP na Morte
+              {t('calculatorPages.deathExperience.title')}
             </h2>
           </header>
           <div className="news-box-content space-y-6">
             <p className="text-sm mb-4">
-              Calcule quanto de experiência você perderá ao morrer. Marque suas blessings e promoção para ver a redução na perda.
+              {t('calculatorPages.deathExperience.description')}
             </p>
 
             {/* Input de Experiência */}
             <div className="flex flex-col sm:flex-row items-start sm:items-center gap-2">
               <Label htmlFor="experience" className="text-text-dark font-semibold whitespace-nowrap">
-                Experiência Atual:
+                {t('calculatorPages.deathExperience.currentExperience')}:
               </Label>
               <Input
                 id="experience"
@@ -137,17 +140,17 @@ const DeathExperienceCalculator = () => {
                 value={experience}
                 onChange={handleExperienceChange}
                 className="w-full sm:w-48 bg-secondary text-text-dark border-border"
-                placeholder="Digite sua experiência"
+                placeholder={t('calculatorPages.deathExperience.enterExperience')}
               />
             </div>
 
             {/* Blessings */}
             <div className="bg-cream border border-border-light rounded p-4">
               <h3 className="font-semibold text-maroon mb-3 text-sm uppercase">
-                Promoção e Blessings
+                {t('calculatorPages.deathExperience.promotionAndBlessings')}
               </h3>
               <p className="text-xs text-muted-foreground mb-4">
-                Marque as blessings e promoção que você possui:
+                {t('calculatorPages.deathExperience.markBlessings')}
               </p>
               <div className="space-y-2">
                 {blessings.map((blessing) => (
@@ -175,37 +178,39 @@ const DeathExperienceCalculator = () => {
                 ))}
               </div>
               <p className="text-xs text-muted-foreground mt-4">
-                Retenção total: <span className="font-semibold text-maroon">
+                {t('calculatorPages.deathExperience.totalRetention')}: <span className="font-semibold text-maroon">
                   {(results.retentionPercentage * 100).toFixed(0)}%
-                </span> (perda de {((1 - results.retentionPercentage) * 100).toFixed(0)}%)
+                </span> ({t('calculatorPages.deathExperience.lossOf')} {((1 - results.retentionPercentage) * 100).toFixed(0)}%)
               </p>
             </div>
 
             {/* Resultados */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <StatBox
-                title="Antes da Morte"
+                title={t('calculatorPages.deathExperience.beforeDeath')}
                 icon={<Heart className="w-5 h-5 text-emerald-500" />}
                 experience={experience}
                 level={results.levelBefore}
                 progress={results.progressBefore}
                 variant="before"
+                t={t}
               />
               <StatBox
-                title="Após a Morte"
+                title={t('calculatorPages.deathExperience.afterDeath')}
                 icon={<Skull className="w-5 h-5 text-red-500" />}
                 experience={results.afterDeath}
                 level={results.levelAfter}
                 progress={results.progressAfter}
                 variant="after"
                 loss={results.loss}
+                t={t}
               />
             </div>
 
             {results.levelBefore !== results.levelAfter && (
               <div className="bg-red-50 border border-red-200 rounded p-3 text-center">
                 <p className="text-sm text-red-700 font-semibold">
-                  ⚠️ Atenção: Você perderá {results.levelBefore - results.levelAfter} level(s) ao morrer!
+                  ⚠️ {t('calculatorPages.deathExperience.warning')}: {t('calculatorPages.deathExperience.willLoseLevels').replace('{count}', String(results.levelBefore - results.levelAfter))}
                 </p>
               </div>
             )}

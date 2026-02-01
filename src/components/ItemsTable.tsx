@@ -3,6 +3,7 @@ import { Input } from '@/components/ui/input';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Item } from '@/data/items';
 import { Search, ArrowUpDown } from 'lucide-react';
+import { useTranslation } from '@/i18n';
 
 interface ItemsTableProps {
   items: Item[];
@@ -10,6 +11,7 @@ interface ItemsTableProps {
 }
 
 const ItemsTable = ({ items, category }: ItemsTableProps) => {
+  const { t } = useTranslation();
   const [search, setSearch] = useState('');
   const [sortKey, setSortKey] = useState<'name' | 'weight'>('name');
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
@@ -43,17 +45,34 @@ const ItemsTable = ({ items, category }: ItemsTableProps) => {
   const getColumns = () => {
     switch (category) {
       case 'foods':
-        return ['img', 'nome', 'peso', 'duração'];
+        return ['img', 'name', 'weight', 'duration'];
       case 'backpacks':
-        return ['img', 'nome', 'peso', 'slots', 'cidade'];
+        return ['img', 'name', 'weight', 'slots', 'city'];
       case 'amulets':
-        return ['img', 'nome', 'peso', 'proteção', 'cargas'];
+        return ['img', 'name', 'weight', 'protection', 'charges'];
       case 'rings':
-        return ['img', 'nome', 'peso', 'efeito', 'duração'];
+        return ['img', 'name', 'weight', 'effect', 'duration'];
       case 'valuables':
-        return ['img', 'nome', 'peso'];
+        return ['img', 'name', 'weight'];
       default:
-        return ['img', 'nome', 'peso', 'descrição', 'atributos'];
+        return ['img', 'name', 'weight', 'description', 'attributes'];
+    }
+  };
+
+  const getColumnLabel = (column: string) => {
+    switch (column) {
+      case 'img': return t('tables.columns.img');
+      case 'name': return t('tables.columns.name');
+      case 'weight': return t('tables.columns.weight');
+      case 'duration': return t('tables.columns.duration');
+      case 'slots': return t('tables.columns.slots');
+      case 'city': return t('tables.columns.city');
+      case 'protection': return t('tables.columns.protection');
+      case 'effect': return t('tables.columns.effect');
+      case 'charges': return t('tables.columns.charges');
+      case 'attributes': return t('tables.columns.attributes');
+      case 'description': return t('tables.columns.description');
+      default: return column;
     }
   };
 
@@ -61,23 +80,23 @@ const ItemsTable = ({ items, category }: ItemsTableProps) => {
 
   const getCellValue = (item: Item, column: string) => {
     switch (column) {
-      case 'nome':
+      case 'name':
         return item.name;
-      case 'peso':
+      case 'weight':
         return item.weight || '-';
-      case 'duração':
+      case 'duration':
         return item.duration || '-';
       case 'slots':
         return item.slots ? `${item.slots} slots` : '-';
-      case 'cidade':
+      case 'city':
         return item.city || '-';
-      case 'proteção':
-      case 'efeito':
-      case 'atributos':
+      case 'protection':
+      case 'effect':
+      case 'attributes':
         return item.attributes || '-';
-      case 'cargas':
-        return item.charges !== undefined ? (item.charges === 0 ? 'Permanente' : item.charges) : '-';
-      case 'descrição':
+      case 'charges':
+        return item.charges !== undefined ? (item.charges === 0 ? t('tables.itemValues.permanent') : item.charges) : '-';
+      case 'description':
         return item.description || '-';
       default:
         return '-';
@@ -89,7 +108,7 @@ const ItemsTable = ({ items, category }: ItemsTableProps) => {
       <div className="relative">
         <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
         <Input
-          placeholder="Buscar item..."
+          placeholder={t('tables.searchItem')}
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           className="pl-10 bg-parchment border-border"
@@ -106,18 +125,18 @@ const ItemsTable = ({ items, category }: ItemsTableProps) => {
                   className={`text-parchment font-semibold ${
                     column === 'img' ? 'w-[60px] text-center' : ''
                   } ${
-                    (column === 'nome' || column === 'peso') 
+                    (column === 'name' || column === 'weight') 
                       ? 'cursor-pointer hover:text-gold transition-colors' 
                       : ''
                   }`}
                   onClick={() => {
-                    if (column === 'nome') handleSort('name');
-                    if (column === 'peso') handleSort('weight');
+                    if (column === 'name') handleSort('name');
+                    if (column === 'weight') handleSort('weight');
                   }}
                 >
                   <div className="flex items-center gap-1 capitalize">
-                    {column}
-                    {(column === 'nome' || column === 'peso') && (
+                    {getColumnLabel(column)}
+                    {(column === 'name' || column === 'weight') && (
                       <ArrowUpDown className="w-3 h-3" />
                     )}
                   </div>
@@ -137,7 +156,7 @@ const ItemsTable = ({ items, category }: ItemsTableProps) => {
                     className={`${
                       column === 'img' ? 'text-center' : ''
                     } ${
-                      column === 'nome' ? 'font-medium text-maroon' : 'text-text-dark'
+                      column === 'name' ? 'font-medium text-maroon' : 'text-text-dark'
                     }`}
                   >
                     {column === 'img' ? (
@@ -159,7 +178,7 @@ const ItemsTable = ({ items, category }: ItemsTableProps) => {
       </div>
 
       <div className="text-xs text-muted-foreground text-center">
-        Exibindo {sortedItems.length} de {items.length} itens
+        {t('tables.showingItems').replace('{shown}', String(sortedItems.length)).replace('{total}', String(items.length))}
       </div>
     </div>
   );

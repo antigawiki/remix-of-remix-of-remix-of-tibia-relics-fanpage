@@ -219,9 +219,20 @@ export const en: TranslationKeys = {
     highscores: {
       title: 'Ranking',
       category: 'Category',
+      vocation: 'Vocation',
       errorLoading: 'Error loading ranking. Please try again later.',
       noPlayers: 'No players found for this category/vocation.',
       lastUpdated: 'Last updated',
+      columns: {
+        name: 'Name',
+        vocation: 'Vocation',
+        level: 'Level',
+      },
+      scoreLabels: {
+        experience: 'Experience',
+        magicLevel: 'Magic Level',
+        skill: 'Skill',
+      },
     },
     online: {
       title: 'Online Players',
@@ -244,8 +255,13 @@ export const en: TranslationKeys = {
       description: 'Players who gained the most experience in the last 24 hours.',
       period: 'Period',
       xpRanking: 'XP Ranking',
-      xpGained: 'XP Gained',
-      xpTotal: 'Total XP',
+      columns: {
+        name: 'Name',
+        vocation: 'Vocation',
+        level: 'Level',
+        xpGained: 'XP Gained',
+        xpTotal: 'Total XP',
+      },
       new: 'NEW',
       noVocation: 'No vocation',
       noData: 'No players gained XP in this period.',

@@ -1,8 +1,9 @@
 import { useState } from 'react';
 import { Spell } from '@/data/spells';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { ArrowUpDown, Search, Star } from 'lucide-react';
+import { ArrowUpDown, Search } from 'lucide-react';
 import { Input } from '@/components/ui/input';
+import { useTranslation } from '@/i18n';
 
 interface SpellsTableProps {
   spells: Spell[];
@@ -13,6 +14,7 @@ type SortKey = 'name' | 'mlvl' | 'mana' | 'price';
 type SortDirection = 'asc' | 'desc';
 
 const SpellsTable = ({ spells, vocation }: SpellsTableProps) => {
+  const { t } = useTranslation();
   const [search, setSearch] = useState('');
   const [sortKey, setSortKey] = useState<SortKey>('mlvl');
   const [sortDirection, setSortDirection] = useState<SortDirection>('asc');
@@ -60,11 +62,11 @@ const SpellsTable = ({ spells, vocation }: SpellsTableProps) => {
 
   const getTypeTranslation = (type: string | undefined) => {
     switch (type) {
-      case 'Attack': return 'Ataque';
-      case 'Healing': return 'Cura';
-      case 'Support': return 'Suporte';
-      case 'Summon': return 'Invocação';
-      default: return type || 'Outro';
+      case 'Attack': return t('tables.spellTypes.attack');
+      case 'Healing': return t('tables.spellTypes.healing');
+      case 'Support': return t('tables.spellTypes.support');
+      case 'Summon': return t('tables.spellTypes.summon');
+      default: return t('tables.spellTypes.other');
     }
   };
 
@@ -73,7 +75,7 @@ const SpellsTable = ({ spells, vocation }: SpellsTableProps) => {
       <div className="relative">
         <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
         <Input
-          placeholder="Buscar magia ou palavras..."
+          placeholder={t('tables.searchSpell')}
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           className="pl-10 bg-parchment border-border"
@@ -84,23 +86,23 @@ const SpellsTable = ({ spells, vocation }: SpellsTableProps) => {
         <Table>
           <TableHeader className="bg-maroon">
             <TableRow>
-              <TableHead className="text-parchment w-12">Img</TableHead>
+              <TableHead className="text-parchment w-12">{t('tables.columns.img')}</TableHead>
               <TableHead 
                 className="text-parchment cursor-pointer hover:bg-maroon/80"
                 onClick={() => handleSort('name')}
               >
                 <div className="flex items-center gap-1">
-                  Nome
+                  {t('tables.columns.name')}
                   <ArrowUpDown className="h-3 w-3" />
                 </div>
               </TableHead>
-              <TableHead className="text-parchment">Palavras</TableHead>
+              <TableHead className="text-parchment">{t('tables.columns.words')}</TableHead>
               <TableHead 
                 className="text-parchment cursor-pointer hover:bg-maroon/80"
                 onClick={() => handleSort('mlvl')}
               >
                 <div className="flex items-center gap-1">
-                  Magic Lvl
+                  {t('tables.columns.magicLevel')}
                   <ArrowUpDown className="h-3 w-3" />
                 </div>
               </TableHead>
@@ -109,7 +111,7 @@ const SpellsTable = ({ spells, vocation }: SpellsTableProps) => {
                 onClick={() => handleSort('mana')}
               >
                 <div className="flex items-center gap-1">
-                  Mana
+                  {t('tables.columns.mana')}
                   <ArrowUpDown className="h-3 w-3" />
                 </div>
               </TableHead>
@@ -118,11 +120,11 @@ const SpellsTable = ({ spells, vocation }: SpellsTableProps) => {
                 onClick={() => handleSort('price')}
               >
                 <div className="flex items-center gap-1">
-                  Preço
+                  {t('tables.columns.price')}
                   <ArrowUpDown className="h-3 w-3" />
                 </div>
               </TableHead>
-              <TableHead className="text-parchment">Tipo</TableHead>
+              <TableHead className="text-parchment">{t('tables.columns.type')}</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -162,7 +164,7 @@ const SpellsTable = ({ spells, vocation }: SpellsTableProps) => {
       </div>
 
       <p className="text-xs text-muted-foreground text-center">
-        Exibindo {sortedSpells.length} de {spells.length} magias
+        {t('tables.showingSpells').replace('{shown}', String(sortedSpells.length)).replace('{total}', String(spells.length))}
       </p>
     </div>
   );
