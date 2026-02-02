@@ -60,7 +60,7 @@ const QuestsPage = () => {
 
                   {/* Right side - Level, Status and Arrow */}
                   <div className="flex items-center gap-3 shrink-0 ml-4">
-                    {quest.level && (
+                    {quest.level && quest.level > 0 && (
                       <Badge variant="secondary" className="text-xs bg-muted text-foreground">
                         Lvl {quest.level}+
                       </Badge>
@@ -86,10 +86,10 @@ const QuestsPage = () => {
 
         {/* Info about more quests coming */}
         {quests.length < 5 && (
-          <div className="wood-panel rounded-sm overflow-hidden">
+          <div className="bg-muted/50 border border-border/50 rounded-sm overflow-hidden">
             <div className="p-6 text-center">
-              <p className="text-foreground">{t('quests.communityHelp')}</p>
-              <p className="text-sm text-foreground/70 italic mt-2">{t('quests.contactUs')}</p>
+              <p className="text-muted-foreground">{t('quests.communityHelp')}</p>
+              <p className="text-sm text-gold/80 italic mt-2">{t('quests.contactUs')}</p>
             </div>
           </div>
         )}
