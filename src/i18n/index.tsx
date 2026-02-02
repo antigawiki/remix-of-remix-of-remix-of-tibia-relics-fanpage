@@ -6,6 +6,27 @@ import { es } from './translations/es';
 import { pl } from './translations/pl';
 
 const translations: Record<Language, TranslationKeys> = { pt, en, es, pl };
+const supportedLanguages: Language[] = ['pt', 'en', 'es', 'pl'];
+
+// Detecta o idioma do navegador
+const detectBrowserLanguage = (): Language => {
+  if (typeof window === 'undefined') return 'pt';
+  
+  // navigator.languages retorna array de preferências, navigator.language retorna o principal
+  const browserLanguages = navigator.languages || [navigator.language];
+  
+  for (const browserLang of browserLanguages) {
+    // Extrai o código do idioma (ex: "pt-BR" -> "pt", "en-US" -> "en")
+    const langCode = browserLang.split('-')[0].toLowerCase();
+    
+    if (supportedLanguages.includes(langCode as Language)) {
+      return langCode as Language;
+    }
+  }
+  
+  // Fallback para português se nenhum idioma suportado for encontrado
+  return 'pt';
+};
 
 interface LanguageContextType {
   language: Language;
@@ -18,10 +39,14 @@ const LanguageContext = createContext<LanguageContextType | undefined>(undefined
 export function LanguageProvider({ children }: { children: ReactNode }) {
   const [language, setLanguageState] = useState<Language>(() => {
     if (typeof window !== 'undefined') {
+      // 1. Primeiro verifica se o usuário já escolheu um idioma manualmente
       const saved = localStorage.getItem('preferred-language');
-      if (saved && ['pt', 'en', 'es', 'pl'].includes(saved)) {
+      if (saved && supportedLanguages.includes(saved as Language)) {
         return saved as Language;
       }
+      
+      // 2. Se não, detecta o idioma do navegador
+      return detectBrowserLanguage();
     }
     return 'pt';
   });
