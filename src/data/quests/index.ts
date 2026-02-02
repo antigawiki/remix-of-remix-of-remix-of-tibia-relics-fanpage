@@ -1,5 +1,6 @@
 import { Language } from "@/i18n/types";
 import { explorerSocietyAnkrahmun } from "./explorerSocietyAnkrahmun";
+import { sawsankAccess } from "./sawsankAccess";
 
 export type TranslatedText = Record<Language, string>;
 
@@ -38,6 +39,7 @@ export interface Quest {
 
 export const quests: Quest[] = [
   explorerSocietyAnkrahmun,
+  sawsankAccess,
 ];
 
 export const getQuestBySlug = (slug: string): Quest | undefined => {
