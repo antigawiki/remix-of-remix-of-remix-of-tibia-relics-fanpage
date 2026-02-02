@@ -79,10 +79,19 @@ export const sawsankAccess: Quest = {
         { speaker: "player", text: "hi" },
         { speaker: "Bambi Bonecrusher", text: "LONG LIVE THE QUEEN!" },
         { speaker: "player", text: "sawsank" },
-        { speaker: "Bambi Bonecrusher", text: "That's our main prison. We send our worst troublemakers there to rot in the cold Sawsank island." },
+        {
+          speaker: "Bambi Bonecrusher",
+          text: "That's our main prison. We send our worst troublemakers there to rot in the cold Sawsank island.",
+        },
         { speaker: "player", text: "troublemakers" },
-        { speaker: "Bambi Bonecrusher", text: "The biggest troublemakers we have in this city right now are the members of the so-called 'rebellion'. But they are mostly a bunch of males who keep drinking in the sewers ..." },
-        { speaker: "Bambi Bonecrusher", text: "As long as they stay in the sewers while doing their thing, it doesn't bother me much." },
+        {
+          speaker: "Bambi Bonecrusher",
+          text: "The biggest troublemakers we have in this city right now are the members of the so-called 'rebellion'. But they are mostly a bunch of males who keep drinking in the sewers ...",
+        },
+        {
+          speaker: "Bambi Bonecrusher",
+          text: "As long as they stay in the sewers while doing their thing, it doesn't bother me much.",
+        },
       ],
     },
     // Seção 3: Comprando a Beer
@@ -112,10 +121,10 @@ export const sawsankAccess: Quest = {
         pl: "Prowokowanie Strażnika",
       },
       content: {
-        pt: "Após comprar sua cerveja, vá até qualquer Bonecrusher e converse com ela. Após falar \"crime\" e \"beer\", use a cerveja em você. Ela ficará indignada. Após isso, fale \"sawsank\" 2x e ela te mandará para a \"cidade prisão\" de Sawsank.",
-        en: "After buying your beer, go to any Bonecrusher and talk to her. After saying \"crime\" and \"beer\", use the beer on yourself. She will be outraged. After that, say \"sawsank\" 2x and she will send you to the \"prison city\" of Sawsank.",
-        es: "Después de comprar tu cerveza, ve a cualquier Bonecrusher y habla con ella. Después de decir \"crime\" y \"beer\", usa la cerveza en ti mismo. Ella se indignará. Después de eso, di \"sawsank\" 2 veces y ella te enviará a la \"ciudad prisión\" de Sawsank.",
-        pl: "Po zakupie piwa idź do dowolnego Bonecrushera i porozmawiaj z nią. Po powiedzeniu \"crime\" i \"beer\", użyj piwa na sobie. Ona będzie oburzona. Następnie powiedz \"sawsank\" 2 razy, a ona wyśle cię do \"miasta więzienia\" Sawsank.",
+        pt: 'Após comprar sua cerveja, vá até qualquer Bonecrusher e converse com ela. Após falar "crime" e "beer", use a cerveja em você. Ela ficará indignada. Após isso, fale "sawsank" 2x e ela te mandará para a "cidade prisão" de Sawsank.',
+        en: 'After buying your beer, go to any Bonecrusher and talk to her. After saying "crime" and "beer", use the beer on yourself. She will be outraged. After that, say "sawsank" 2x and she will send you to the "prison city" of Sawsank.',
+        es: 'Después de comprar tu cerveza, ve a cualquier Bonecrusher y habla con ella. Después de decir "crime" y "beer", usa la cerveza en ti mismo. Ella se indignará. Después de eso, di "sawsank" 2 veces y ella te enviará a la "ciudad prisión" de Sawsank.',
+        pl: 'Po zakupie piwa idź do dowolnego Bonecrushera i porozmawiaj z nią. Po powiedzeniu "crime" i "beer", użyj piwa na sobie. Ona będzie oburzona. Następnie powiedz "sawsank" 2 razy, a ona wyśle cię do "miasta więzienia" Sawsank.',
       },
     },
     // Seção 5: Diálogo de Provocação
@@ -127,9 +136,15 @@ export const sawsankAccess: Quest = {
         { speaker: "player", text: "crime" },
         { speaker: "player", text: "beer" },
         { speaker: "player", text: "Aah..." },
-        { speaker: "Busty Bonecrusher", text: "Hey, you shouldn't be drinking alcohol in this city. It is against the law!" },
+        {
+          speaker: "Busty Bonecrusher",
+          text: "Hey, you shouldn't be drinking alcohol in this city. It is against the law!",
+        },
         { speaker: "player", text: "sawsank" },
-        { speaker: "Busty Bonecrusher", text: "I'm warning you, this is your last chance... Drop the bottle SLOWLY, or you are going to spend some time in Sawsank prison!" },
+        {
+          speaker: "Busty Bonecrusher",
+          text: "I'm warning you, this is your last chance... Drop the bottle SLOWLY, or you are going to spend some time in Sawsank prison!",
+        },
         { speaker: "player", text: "sawsank" },
       ],
     },
@@ -163,9 +178,18 @@ export const sawsankAccess: Quest = {
         { speaker: "Lana Bonecrusher", text: "What do you want, Player?" },
         { speaker: "player", text: "undead" },
         { speaker: "Lana Bonecrusher", text: "Have you been listening to those drunkards? ..." },
-        { speaker: "Lana Bonecrusher", text: "There have never been undeads on this island. Those men are probably hallucinating from the booze ..." },
-        { speaker: "Lana Bonecrusher", text: "But on the other hand... If this happens to be true, it might be worth an investigation ..." },
-        { speaker: "Lana Bonecrusher", text: "I'll tell you this: if you manage to find any compelling evidence of undead presence in this island, I'll personally bring you to Northport so you can warn our general about it ..." },
+        {
+          speaker: "Lana Bonecrusher",
+          text: "There have never been undeads on this island. Those men are probably hallucinating from the booze ...",
+        },
+        {
+          speaker: "Lana Bonecrusher",
+          text: "But on the other hand... If this happens to be true, it might be worth an investigation ...",
+        },
+        {
+          speaker: "Lana Bonecrusher",
+          text: "I'll tell you this: if you manage to find any compelling evidence of undead presence in this island, I'll personally bring you to Northport so you can warn our general about it ...",
+        },
         { speaker: "Lana Bonecrusher", text: "Come back to me if you find any evidence of undead activity." },
       ],
     },
@@ -184,6 +208,7 @@ export const sawsankAccess: Quest = {
         es: "Camina hasta la montaña dominada por ghouls y skeletons al noroeste de la isla. Mata a los skeletons y ghouls que encuentres en el camino.",
         pl: "Idź do góry zdominowanej przez ghoule i szkielety na północnym zachodzie wyspy. Zabij szkielety i ghoule, które napotkasz po drodze.",
       },
+      images: ["/quests/sawsank/cave-entrance.png"],
     },
     // Seção 9: Descendo na Caverna
     {
@@ -200,7 +225,7 @@ export const sawsankAccess: Quest = {
         es: "Baja por el agujero mostrado en la siguiente imagen. Ten cuidado al bajar y no vayas a la izquierda por ahora.",
         pl: "Zejdź przez dziurę pokazaną na następnym obrazku. Bądź ostrożny schodząc i na razie nie idź w lewo.",
       },
-      images: ["/quests/sawsank/cave-entrance.png"],
+      images: ["/quests/sawsank/demon-skeleton.png"],
     },
     // Seção 10: Enfrentando o Demon Skeleton
     {
@@ -217,7 +242,7 @@ export const sawsankAccess: Quest = {
         es: "Después de matar a los ghouls y skeletons que encontraste justo al bajar, ve con calma hacia tu izquierda. 2 ghouls irán hacia ti. Después de eliminarlos, enfrentarás un Demon Skeleton.",
         pl: "Po zabiciu ghoulów i szkieletów napotkanych zaraz po zejściu, powoli idź w lewo. 2 ghoule przyjdą do ciebie. Po ich wyeliminowaniu zmierzysz się z Demon Skeletonem.",
       },
-      images: ["/quests/sawsank/demon-skeleton.png"],
+      images: ["/quests/sawsank/coffin-bones.jpg"],
     },
     // Seção 11: Pegando a Pilha de Ossos
     {
@@ -234,7 +259,7 @@ export const sawsankAccess: Quest = {
         es: "Con el Demon Skeleton muerto, haz clic en la parte superior del ataúd que estaba vigilando y recibirás una pila de huesos. NOTA: Necesitas tener al menos 100 oz de cap.",
         pl: "Po zabiciu Demon Skeletona kliknij na górę trumny, której pilnował, a otrzymasz stos kości. UWAGA: Musisz mieć co najmniej 100 oz pojemności.",
       },
-      images: ["/quests/sawsank/coffin-bones.jpg"],
+      images: ["/quests/sawsank/lana-freedom.jpg"],
     },
     // Seção 12: Parchment - Mensagem
     {
@@ -256,12 +281,11 @@ export const sawsankAccess: Quest = {
         pl: "Dostarczanie Dowodu",
       },
       content: {
-        pt: "Entregue a pilha de ossos para Lana e ela lhe dará liberdade da prisão. Então fale \"Northport\", \"yes\", que ela te levará de volta para Northport.",
-        en: "Deliver the pile of bones to Lana and she will grant you freedom from prison. Then say \"Northport\", \"yes\", and she will take you back to Northport.",
-        es: "Entrega la pila de huesos a Lana y ella te dará libertad de la prisión. Luego di \"Northport\", \"yes\", y ella te llevará de vuelta a Northport.",
-        pl: "Dostarcz stos kości Lanie, a ona uwolni cię z więzienia. Następnie powiedz \"Northport\", \"yes\", a ona zabierze cię z powrotem do Northport.",
+        pt: 'Entregue a pilha de ossos para Lana e ela lhe dará liberdade da prisão. Então fale "Northport", "yes", que ela te levará de volta para Northport.',
+        en: 'Deliver the pile of bones to Lana and she will grant you freedom from prison. Then say "Northport", "yes", and she will take you back to Northport.',
+        es: 'Entrega la pila de huesos a Lana y ella te dará libertad de la prisión. Luego di "Northport", "yes", y ella te llevará de vuelta a Northport.',
+        pl: 'Dostarcz stos kości Lanie, a ona uwolni cię z więzienia. Następnie powiedz "Northport", "yes", a ona zabierze cię z powrotem do Northport.',
       },
-      images: ["/quests/sawsank/lana-freedom.jpg"],
     },
     // Seção 14: Diálogo de Liberdade com Lana
     {
@@ -272,8 +296,14 @@ export const sawsankAccess: Quest = {
         { speaker: "player", text: "undead" },
         { speaker: "Lana Bonecrusher", text: "Have you found any evidence of undead presence?" },
         { speaker: "player", text: "yes" },
-        { speaker: "Lana Bonecrusher", text: "This is indeed worrisome! We have never seen anything like this in this island. We better take action before this becomes a new ghostland..." },
-        { speaker: "Lana Bonecrusher", text: "I will set you free, prisoner. The integrity of Carlin's territories is more important to me than your crimes..." },
+        {
+          speaker: "Lana Bonecrusher",
+          text: "This is indeed worrisome! We have never seen anything like this in this island. We better take action before this becomes a new ghostland...",
+        },
+        {
+          speaker: "Lana Bonecrusher",
+          text: "I will set you free, prisoner. The integrity of Carlin's territories is more important to me than your crimes...",
+        },
         { speaker: "Lana Bonecrusher", text: "Just ask me and I will bring you to Northport." },
       ],
     },
@@ -307,11 +337,23 @@ export const sawsankAccess: Quest = {
         { speaker: "player", text: "hail general" },
         { speaker: "Bunny Bonecrusher", text: "Salutations, commoner Player!" },
         { speaker: "player", text: "undead" },
-        { speaker: "Bunny Bonecrusher", text: "If Lana's judgement was to set you free so you can warn me about the undead activity in the island, I assume it is indeed a serious concern ..." },
-        { speaker: "Bunny Bonecrusher", text: "Let's not waste time. Go talk to our druid Padrea and see if she knows what might be behind the undead sightings in Sawsank. ..." },
+        {
+          speaker: "Bunny Bonecrusher",
+          text: "If Lana's judgement was to set you free so you can warn me about the undead activity in the island, I assume it is indeed a serious concern ...",
+        },
+        {
+          speaker: "Bunny Bonecrusher",
+          text: "Let's not waste time. Go talk to our druid Padrea and see if she knows what might be behind the undead sightings in Sawsank. ...",
+        },
         { speaker: "Bunny Bonecrusher", text: "Also, from now on, I authorise you to sail to Sawsank at will. ..." },
-        { speaker: "Bunny Bonecrusher", text: "I count on you to help maintaining the undead population under control. ..." },
-        { speaker: "Bunny Bonecrusher", text: "I will send a messenger to the fisherman Bruno in Northport. From now on, he shall bring you there if requested." },
+        {
+          speaker: "Bunny Bonecrusher",
+          text: "I count on you to help maintaining the undead population under control. ...",
+        },
+        {
+          speaker: "Bunny Bonecrusher",
+          text: "I will send a messenger to the fisherman Bruno in Northport. From now on, he shall bring you there if requested.",
+        },
       ],
     },
     // Seção 17: Acesso Liberado
@@ -324,10 +366,10 @@ export const sawsankAccess: Quest = {
         pl: "Dostęp Odblokowany",
       },
       content: {
-        pt: "Após isso, seu acesso para a ilha de Sawsank está liberado. Basta ir até o Pescador Bruno em Northport e falar \"passage\" que pelo preço de 100 golds ele te leva a Sawsank.",
-        en: "After that, your access to Sawsank island is unlocked. Just go to Fisherman Bruno in Northport and say \"passage\" and for the price of 100 gold he will take you to Sawsank.",
-        es: "Después de eso, tu acceso a la isla de Sawsank está liberado. Solo ve al Pescador Bruno en Northport y di \"passage\" y por el precio de 100 gold él te llevará a Sawsank.",
-        pl: "Po tym twój dostęp do wyspy Sawsank jest odblokowany. Wystarczy udać się do Rybaka Bruno w Northport i powiedzieć \"passage\", a za cenę 100 gold zabierze cię do Sawsank.",
+        pt: 'Após isso, seu acesso para a ilha de Sawsank está liberado. Basta ir até o Pescador Bruno em Northport e falar "passage" que pelo preço de 100 golds ele te leva a Sawsank.',
+        en: 'After that, your access to Sawsank island is unlocked. Just go to Fisherman Bruno in Northport and say "passage" and for the price of 100 gold he will take you to Sawsank.',
+        es: 'Después de eso, tu acceso a la isla de Sawsank está liberado. Solo ve al Pescador Bruno en Northport y di "passage" y por el precio de 100 gold él te llevará a Sawsank.',
+        pl: 'Po tym twój dostęp do wyspy Sawsank jest odblokowany. Wystarczy udać się do Rybaka Bruno w Northport i powiedzieć "passage", a za cenę 100 gold zabierze cię do Sawsank.',
       },
     },
     // Seção 18: Créditos
