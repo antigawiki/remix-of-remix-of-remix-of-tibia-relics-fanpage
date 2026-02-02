@@ -104,12 +104,13 @@ export const sawsankAccess: Quest = {
         pl: "Kupowanie Piwa",
       },
       content: {
-        pt: "Após essa conversa, vá até a taverna de Carlin que fica no subsolo da cidade e compre uma beer. A Taverna do Karl fica localizada no subsolo.",
-        en: "After this conversation, go to Carlin's tavern which is in the basement of the city and buy a beer. Karl's Tavern is located in the basement.",
-        es: "Después de esta conversación, ve a la taberna de Carlin que está en el sótano de la ciudad y compra una beer. La Taberna de Karl está ubicada en el sótano.",
-        pl: "Po tej rozmowie udaj się do tawerny Carlin, która znajduje się w podziemiach miasta, i kup piwo. Tawerna Karla znajduje się w podziemiach.",
+        pt: "Após essa conversa, vá até a taverna de Carlin que fica no subsolo da cidade e compre uma beer. A Taverna do Karl fica localizada {aqui}.",
+        en: "After this conversation, go to Carlin's tavern which is in the basement of the city and buy a beer. Karl's Tavern is located {here}.",
+        es: "Después de esta conversación, ve a la taberna de Carlin que está en el sótano de la ciudad y compra una beer. La Taberna de Karl está ubicada {aquí}.",
+        pl: "Po tej rozmowie udaj się do tawerny Carlin, która znajduje się w podziemiach miasta, i kup piwo. Tawerna Karla znajduje się {tutaj}.",
       },
       images: ["/quests/sawsank/karl-tavern.jpg"],
+      mapCoordinates: { x: 32318, y: 31799, z: 8, zoom: 2 },
     },
     // Seção 4: Provocando a Guarda
     {
@@ -208,7 +209,6 @@ export const sawsankAccess: Quest = {
         es: "Camina hasta la montaña dominada por ghouls y skeletons al noroeste de la isla. Mata a los skeletons y ghouls que encuentres en el camino.",
         pl: "Idź do góry zdominowanej przez ghoule i szkielety na północnym zachodzie wyspy. Zabij szkielety i ghoule, które napotkasz po drodze.",
       },
-      images: ["/quests/sawsank/cave-entrance.png"],
     },
     // Seção 9: Descendo na Caverna
     {
@@ -225,7 +225,7 @@ export const sawsankAccess: Quest = {
         es: "Baja por el agujero mostrado en la siguiente imagen. Ten cuidado al bajar y no vayas a la izquierda por ahora.",
         pl: "Zejdź przez dziurę pokazaną na następnym obrazku. Bądź ostrożny schodząc i na razie nie idź w lewo.",
       },
-      images: ["/quests/sawsank/demon-skeleton.png"],
+      images: ["/quests/sawsank/cave-entrance.png"],
     },
     // Seção 10: Enfrentando o Demon Skeleton
     {
@@ -242,7 +242,7 @@ export const sawsankAccess: Quest = {
         es: "Después de matar a los ghouls y skeletons que encontraste justo al bajar, ve con calma hacia tu izquierda. 2 ghouls irán hacia ti. Después de eliminarlos, enfrentarás un Demon Skeleton.",
         pl: "Po zabiciu ghoulów i szkieletów napotkanych zaraz po zejściu, powoli idź w lewo. 2 ghoule przyjdą do ciebie. Po ich wyeliminowaniu zmierzysz się z Demon Skeletonem.",
       },
-      images: ["/quests/sawsank/coffin-bones.jpg"],
+      images: ["/quests/sawsank/demon-skeleton.png"],
     },
     // Seção 11: Pegando a Pilha de Ossos
     {
@@ -259,7 +259,7 @@ export const sawsankAccess: Quest = {
         es: "Con el Demon Skeleton muerto, haz clic en la parte superior del ataúd que estaba vigilando y recibirás una pila de huesos. NOTA: Necesitas tener al menos 100 oz de cap.",
         pl: "Po zabiciu Demon Skeletona kliknij na górę trumny, której pilnował, a otrzymasz stos kości. UWAGA: Musisz mieć co najmniej 100 oz pojemności.",
       },
-      images: ["/quests/sawsank/lana-freedom.jpg"],
+      images: ["/quests/sawsank/coffin-bones.jpg"],
     },
     // Seção 12: Parchment - Mensagem
     {
@@ -286,6 +286,7 @@ export const sawsankAccess: Quest = {
         es: 'Entrega la pila de huesos a Lana y ella te dará libertad de la prisión. Luego di "Northport", "yes", y ella te llevará de vuelta a Northport.',
         pl: 'Dostarcz stos kości Lanie, a ona uwolni cię z więzienia. Następnie powiedz "Northport", "yes", a ona zabierze cię z powrotem do Northport.',
       },
+      images: ["/quests/sawsank/lana-freedom.jpg"],
     },
     // Seção 14: Diálogo de Liberdade com Lana
     {
@@ -317,12 +318,13 @@ export const sawsankAccess: Quest = {
         pl: "Raportowanie do Generał Straży",
       },
       content: {
-        pt: "Agora iremos reportar tudo para a General da guarda: Bunny Bonecrusher. Ela fica no andar de cima da Queen em Carlin.",
-        en: "Now we will report everything to the Guard General: Bunny Bonecrusher. She is on the upper floor of the Queen in Carlin.",
-        es: "Ahora reportaremos todo a la General de la guardia: Bunny Bonecrusher. Ella está en el piso de arriba de la Queen en Carlin.",
-        pl: "Teraz zaraportujemy wszystko Generał Straży: Bunny Bonecrusher. Znajduje się na górnym piętrze Queen w Carlin.",
+        pt: "Agora iremos reportar tudo para a General da guarda: Bunny Bonecrusher. Ela fica no andar de cima da Queen em Carlin {aqui}.",
+        en: "Now we will report everything to the Guard General: Bunny Bonecrusher. She is on the upper floor of the Queen in Carlin {here}.",
+        es: "Ahora reportaremos todo a la General de la guardia: Bunny Bonecrusher. Ella está en el piso de arriba de la Queen en Carlin {aquí}.",
+        pl: "Teraz zaraportujemy wszystko Generał Straży: Bunny Bonecrusher. Znajduje się na górnym piętrze Queen w Carlin {tutaj}.",
       },
       images: ["/quests/sawsank/bunny-general.jpg"],
+      mapCoordinates: { x: 32318, y: 31748, z: 6, zoom: 2 },
     },
     // Seção 16: Diálogo com Bunny
     {
