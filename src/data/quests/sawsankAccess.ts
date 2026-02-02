@@ -209,6 +209,7 @@ export const sawsankAccess: Quest = {
         es: "Camina hasta la montaña dominada por ghouls y skeletons al noroeste de la isla. Mata a los skeletons y ghouls que encuentres en el camino.",
         pl: "Idź do góry zdominowanej przez ghoule i szkielety na północnym zachodzie wyspy. Zabij szkielety i ghoule, które napotkasz po drodze.",
       },
+      images: ["/quests/sawsank/cave-entrance.png"],
     },
     // Seção 9: Descendo na Caverna
     {
@@ -225,7 +226,7 @@ export const sawsankAccess: Quest = {
         es: "Baja por el agujero mostrado en la siguiente imagen. Ten cuidado al bajar y no vayas a la izquierda por ahora.",
         pl: "Zejdź przez dziurę pokazaną na następnym obrazku. Bądź ostrożny schodząc i na razie nie idź w lewo.",
       },
-      images: ["/quests/sawsank/cave-entrance.png"],
+      images: ["/quests/sawsank/demon-skeleton.png"],
     },
     // Seção 10: Enfrentando o Demon Skeleton
     {
@@ -242,7 +243,7 @@ export const sawsankAccess: Quest = {
         es: "Después de matar a los ghouls y skeletons que encontraste justo al bajar, ve con calma hacia tu izquierda. 2 ghouls irán hacia ti. Después de eliminarlos, enfrentarás un Demon Skeleton.",
         pl: "Po zabiciu ghoulów i szkieletów napotkanych zaraz po zejściu, powoli idź w lewo. 2 ghoule przyjdą do ciebie. Po ich wyeliminowaniu zmierzysz się z Demon Skeletonem.",
       },
-      images: ["/quests/sawsank/demon-skeleton.png"],
+      images: ["/quests/sawsank/coffin-bones.jpg"],
     },
     // Seção 11: Pegando a Pilha de Ossos
     {
@@ -259,7 +260,7 @@ export const sawsankAccess: Quest = {
         es: "Con el Demon Skeleton muerto, haz clic en la parte superior del ataúd que estaba vigilando y recibirás una pila de huesos. NOTA: Necesitas tener al menos 100 oz de cap.",
         pl: "Po zabiciu Demon Skeletona kliknij na górę trumny, której pilnował, a otrzymasz stos kości. UWAGA: Musisz mieć co najmniej 100 oz pojemności.",
       },
-      images: ["/quests/sawsank/coffin-bones.jpg"],
+      images: ["/quests/sawsank/lana-freedom.jpg"],
     },
     // Seção 12: Parchment - Mensagem
     {
@@ -286,7 +287,6 @@ export const sawsankAccess: Quest = {
         es: 'Entrega la pila de huesos a Lana y ella te dará libertad de la prisión. Luego di "Northport", "yes", y ella te llevará de vuelta a Northport.',
         pl: 'Dostarcz stos kości Lanie, a ona uwolni cię z więzienia. Następnie powiedz "Northport", "yes", a ona zabierze cię z powrotem do Northport.',
       },
-      images: ["/quests/sawsank/lana-freedom.jpg"],
     },
     // Seção 14: Diálogo de Liberdade com Lana
     {
