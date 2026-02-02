@@ -1,106 +1,158 @@
 
-# Plano: Detecção Automática de Idioma do Navegador
+# Plano: Adicionar Quest de Acesso a Sawsank
 
 ## Resumo
 
-Sim, é totalmente possível! Vou implementar a detecção automática do idioma do navegador do usuário. O sistema vai:
-
-1. **Primeira visita**: Detectar o idioma do navegador e usar automaticamente
-2. **Visitas seguintes**: Respeitar a preferência salva do usuário
-3. **Troca manual**: Se o usuário trocar o idioma, essa escolha é preservada
+Adicionar a quest completa de Acesso a Sawsank seguindo o mesmo modelo da quest de Ankrahmun, com suporte a todos os 4 idiomas (PT, EN, ES, PL) e incluindo todas as imagens do documento.
 
 ---
 
-## Como Funciona
+## Estrutura da Quest
 
-O navegador disponibiliza o idioma através de `navigator.language` ou `navigator.languages`. Exemplos:
-- Brasileiro: `pt-BR` → detecta `pt`
-- Americano: `en-US` → detecta `en`
-- Espanhol: `es-ES` → detecta `es`
-- Polonês: `pl-PL` → detecta `pl`
+### Informações Gerais
+- **Título**: Acesso a Sawsank
+- **Level**: 0 (sem requerimento de level)
+- **Premium**: Não especificado (deixar como false)
+- **Disponível**: Sim
+
+### Requerimentos
+- 20 gold para comprar 1 beer
+- Itens/Suprimentos para matar alguns skeletons, ghouls e 1 Demon Skeleton
+
+### Recompensas
+- Acesso à ilha de Sawsank
+- Autorização para viajar para Sawsank via pescador Bruno (100 gold)
 
 ---
 
-## Alteração Necessária
+## Seções da Quest
 
-**Arquivo**: `src/i18n/index.tsx`
+| # | Tipo | Título | Descrição |
+|---|------|--------|-----------|
+| 1 | text | Início da Quest | Explicação sobre a Lei Seca em Carlin |
+| 2 | dialogue | Conversa com Bonecrusher | Diálogo sobre Sawsank e troublemakers |
+| 3 | text | Comprando a Beer | Ir à taverna do Karl e comprar beer |
+| 4 | dialogue | Provocando a Guarda | Diálogo de crime + usar beer |
+| 5 | text | Em Sawsank | Conversar com Lana Bonecrusher |
+| 6 | dialogue | Conversa com Lana | Sobre undead na ilha |
+| 7 | text | Explorando a Montanha | Ir à montanha noroeste |
+| 8 | text | Descendo na Caverna | Cuidados ao descer |
+| 9 | text | Enfrentando o Demon Skeleton | Combate com criaturas |
+| 10 | text | Pegando a Pilha de Ossos | Clicar no caixão |
+| 11 | parchment | Mensagem | "You have found a pile of bones." |
+| 12 | dialogue | Entregando a Prova | Diálogo de liberdade com Lana |
+| 13 | text | Reportando à General | Ir até Bunny Bonecrusher |
+| 14 | dialogue | Conversa com Bunny | Liberação do acesso |
+| 15 | text | Acesso Liberado | Instruções finais sobre Bruno |
+| 16 | credits | Créditos | Spoiler cedido por Ondeth Waters |
 
-### Código Atual (linhas 18-27):
+---
+
+## Arquivos a Criar/Modificar
+
+### Novos Arquivos
+| Arquivo | Descrição |
+|---------|-----------|
+| `src/data/quests/sawsankAccess.ts` | Dados completos da quest |
+| `public/quests/sawsank/` | Pasta com todas as imagens |
+
+### Arquivos a Modificar
+| Arquivo | Alteração |
+|---------|-----------|
+| `src/data/quests/index.ts` | Importar e adicionar a nova quest no array |
+
+---
+
+## Imagens a Copiar
+
+| Origem | Destino |
+|--------|---------|
+| `img_p0_1.jpg` | `public/quests/sawsank/bonecrusher-sawsank.jpg` |
+| `img_p1_1.jpg` | `public/quests/sawsank/karl-tavern.jpg` |
+| `img_p3_1.png` | `public/quests/sawsank/cave-entrance.png` |
+| `img_p4_1.png` | `public/quests/sawsank/demon-skeleton.png` |
+| `img_p5_1.jpg` | `public/quests/sawsank/coffin-bones.jpg` |
+| `img_p6_1.jpg` | `public/quests/sawsank/lana-freedom.jpg` |
+| `img_p7_1.jpg` | `public/quests/sawsank/bunny-general.jpg` |
+| `img_p8_1.jpg` | `public/quests/sawsank/credits-celebration.jpg` |
+
+---
+
+## Traduções
+
+Todas as seções terão tradução para os 4 idiomas:
+
+### Exemplo - Título
 ```typescript
-export function LanguageProvider({ children }: { children: ReactNode }) {
-  const [language, setLanguageState] = useState<Language>(() => {
-    if (typeof window !== 'undefined') {
-      const saved = localStorage.getItem('preferred-language');
-      if (saved && ['pt', 'en', 'es', 'pl'].includes(saved)) {
-        return saved as Language;
-      }
-    }
-    return 'pt'; // Sempre retorna português como padrão
-  });
+title: {
+  pt: "Acesso a Sawsank",
+  en: "Access to Sawsank",
+  es: "Acceso a Sawsank",
+  pl: "Dostęp do Sawsank",
+}
 ```
 
-### Código Novo:
+### Exemplo - Descrição
 ```typescript
-const supportedLanguages: Language[] = ['pt', 'en', 'es', 'pl'];
+description: {
+  pt: "Descubra a prisão secreta de Carlin quebrando a Lei Seca.",
+  en: "Discover Carlin's secret prison by breaking the Dry Law.",
+  es: "Descubre la prisión secreta de Carlin rompiendo la Ley Seca.",
+  pl: "Odkryj sekretne więzienie Carlin, łamiąc Prawo Suchej.",
+}
+```
 
-// Detecta o idioma do navegador
-const detectBrowserLanguage = (): Language => {
-  if (typeof window === 'undefined') return 'pt';
-  
-  // navigator.languages retorna array de preferências, navigator.language retorna o principal
-  const browserLanguages = navigator.languages || [navigator.language];
-  
-  for (const browserLang of browserLanguages) {
-    // Extrai o código do idioma (ex: "pt-BR" -> "pt", "en-US" -> "en")
-    const langCode = browserLang.split('-')[0].toLowerCase();
-    
-    if (supportedLanguages.includes(langCode as Language)) {
-      return langCode as Language;
-    }
-  }
-  
-  // Fallback para português se nenhum idioma suportado for encontrado
-  return 'pt';
+---
+
+## Detalhes Técnicos
+
+### Estrutura do Arquivo sawsankAccess.ts
+
+```typescript
+import { Quest } from "./index";
+
+export const sawsankAccess: Quest = {
+  id: "sawsank-access",
+  slug: "sawsank-access",
+  title: { ... },
+  description: { ... },
+  level: 0,
+  premium: false,
+  available: true,
+  requirements: {
+    items: [
+      { pt: "20 gold para comprar 1 beer", en: "20 gold to buy 1 beer", ... },
+      { pt: "Itens/Suprimentos para...", en: "Items/Supplies to...", ... },
+    ],
+  },
+  rewards: [
+    { pt: "Acesso à ilha de Sawsank", en: "Access to Sawsank island", ... },
+  ],
+  sections: [
+    // 16 seções conforme tabela acima
+  ],
 };
-
-export function LanguageProvider({ children }: { children: ReactNode }) {
-  const [language, setLanguageState] = useState<Language>(() => {
-    if (typeof window !== 'undefined') {
-      // 1. Primeiro verifica se o usuário já escolheu um idioma manualmente
-      const saved = localStorage.getItem('preferred-language');
-      if (saved && supportedLanguages.includes(saved as Language)) {
-        return saved as Language;
-      }
-      
-      // 2. Se não, detecta o idioma do navegador
-      return detectBrowserLanguage();
-    }
-    return 'pt';
-  });
 ```
 
----
+### Atualização do index.ts
 
-## Comportamento Final
+```typescript
+import { sawsankAccess } from "./sawsankAccess";
 
-| Situação | Resultado |
-|----------|-----------|
-| Usuário BR (primeira visita) | Site carrega em Português |
-| Usuário US (primeira visita) | Site carrega em Inglês |
-| Usuário ES (primeira visita) | Site carrega em Espanhol |
-| Usuário PL (primeira visita) | Site carrega em Polonês |
-| Usuário FR (primeira visita) | Site carrega em Português (fallback) |
-| Usuário que já trocou idioma | Mantém a escolha salva |
+export const quests: Quest[] = [
+  explorerSocietyAnkrahmun,
+  sawsankAccess,
+];
+```
 
 ---
 
 ## Resumo da Implementação
 
-| Item | Detalhes |
-|------|----------|
-| Arquivo modificado | 1 (`src/i18n/index.tsx`) |
-| Linhas alteradas | ~15 linhas |
-| Risco | Baixo (apenas lógica de inicialização) |
-| Dependências | Nenhuma (usa APIs nativas do navegador) |
-
-A detecção é instantânea e acontece antes do site renderizar, então o usuário já vê o conteúdo no idioma correto desde o primeiro carregamento.
+| Item | Quantidade |
+|------|------------|
+| Arquivos novos | 1 (sawsankAccess.ts) |
+| Arquivos modificados | 1 (index.ts) |
+| Imagens a copiar | 8 |
+| Seções da quest | 16 |
+| Idiomas suportados | 4 (PT, EN, ES, PL) |
