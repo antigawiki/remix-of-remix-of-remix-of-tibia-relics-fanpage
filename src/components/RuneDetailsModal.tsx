@@ -26,7 +26,7 @@ const RuneDetailsModal = ({ rune, open, onOpenChange }: RuneDetailsModalProps) =
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="parchment-bg max-w-2xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle className="flex items-center gap-3 text-text-dark">
+          <DialogTitle className="flex items-center gap-3 text-foreground">
             <img
               src={rune.image}
               alt={rune.name}
@@ -41,19 +41,19 @@ const RuneDetailsModal = ({ rune, open, onOpenChange }: RuneDetailsModalProps) =
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-sm">
             <div className="bg-muted/50 rounded p-2 text-center">
               <div className="text-muted-foreground text-xs">{t('pages.runes.spell')}</div>
-              <div className="font-mono text-text-dark">{rune.spell}</div>
+              <div className="font-mono text-foreground">{rune.spell}</div>
             </div>
             <div className="bg-muted/50 rounded p-2 text-center">
               <div className="text-muted-foreground text-xs">{t('tables.columns.mana')}</div>
-              <div className="font-semibold text-blue-600">{rune.mana}</div>
+              <div className="font-semibold text-primary">{rune.mana}</div>
             </div>
             <div className="bg-muted/50 rounded p-2 text-center">
               <div className="text-muted-foreground text-xs">{t('pages.runes.mlvlCast')}</div>
-              <div className="font-semibold text-text-dark">{rune.mlvlCast}</div>
+              <div className="font-semibold text-foreground">{rune.mlvlCast}</div>
             </div>
             <div className="bg-muted/50 rounded p-2 text-center">
               <div className="text-muted-foreground text-xs">{t('pages.runes.charges')}</div>
-              <div className="font-semibold text-text-dark">{rune.charges}</div>
+              <div className="font-semibold text-foreground">{rune.charges}</div>
             </div>
           </div>
 
@@ -78,7 +78,7 @@ const RuneDetailsModal = ({ rune, open, onOpenChange }: RuneDetailsModalProps) =
             </div>
           ) : details?.vocations && details.vocations.length > 0 ? (
             <div className="space-y-4">
-              <h3 className="font-heading text-lg text-text-dark flex items-center gap-2">
+              <h3 className="font-heading text-lg text-foreground flex items-center gap-2">
                 <Utensils className="w-5 h-5" />
                 {t('pages.runes.backpackProduction')}
               </h3>
@@ -87,10 +87,10 @@ const RuneDetailsModal = ({ rune, open, onOpenChange }: RuneDetailsModalProps) =
                   key={voc.vocation}
                   className="border border-border/50 rounded-lg p-4 bg-background/50"
                 >
-                  <h4 className="font-semibold text-text-dark mb-2">{voc.vocation}</h4>
+                  <h4 className="font-semibold text-foreground mb-2 uppercase tracking-wide">{voc.vocation}</h4>
                   <div className="flex items-center gap-2 text-sm text-muted-foreground mb-3">
                     <Clock className="w-4 h-4" />
-                    <span>{t('pages.runes.timeToMake')}: <span className="text-text-dark font-medium">{voc.time}</span></span>
+                    <span>{t('pages.runes.timeToMake')}: <span className="text-foreground font-medium">{voc.time}</span></span>
                   </div>
                   <div className="text-sm text-muted-foreground mb-2">{t('pages.runes.foodNeeded')}:</div>
                   <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
@@ -105,7 +105,7 @@ const RuneDetailsModal = ({ rune, open, onOpenChange }: RuneDetailsModalProps) =
                           className="w-8 h-8 object-contain flex-shrink-0"
                         />
                         <div className="flex flex-col min-w-0">
-                          <span className="text-xs text-text-dark leading-tight truncate" title={food.name}>
+                          <span className="text-xs text-foreground leading-tight truncate" title={food.name}>
                             {food.name}
                           </span>
                           <span className="text-gold font-bold text-sm">x{food.quantity}</span>
