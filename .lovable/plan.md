@@ -1,244 +1,156 @@
 
+# Plano: Corrigir Página de Runas
 
-# Plano: Criar Página de Runas com Modal de Detalhes
+## Problemas Identificados
 
-## Resumo
+### 1. Breadcrumbs Duplicados
+O `MainLayout.tsx` já inclui o `Breadcrumb` automaticamente (linha 27), mas o `RunesPage.tsx` adiciona outro manualmente (linha 11). Isso causa a duplicação visível na imagem.
 
-Vou criar uma nova página de Runas (`/runes`) com tabela contendo todas as 27 runas do jogo, ordenação por todas as colunas, e um modal de detalhes ao clicar que mostra tempo para fazer uma backpack e quantidade de comida necessária por vocação.
+### 2. Imagens Não Carregando
+Vários IDs no arquivo `runes.ts` estão incorretos. Os IDs precisam corresponder aos nomes dos arquivos `.gif` no servidor de referência. Comparando os arquivos HTML fornecidos com os IDs atuais:
+
+| Rune | ID Atual (errado) | ID Correto |
+|------|-------------------|------------|
+| Chameleon | chameleon | ca |
+| Convince Creature | convince | co |
+| Animate Dead | adead | dead |
+| Desintegrate | des | desintegrate |
+| Poisonbomb | pob | pb |
+| Firebomb | fib | fbo |
+| Poison Wall | pow | pw |
+| Fire Wall | fiw | fw |
+| Energy Bomb | enb | eb |
+| Energy Wall | enw | ew |
+| Explosion | exp | ex |
+| Paralyze | paralyze | paraliz |
+| Magic Wall | mw | mw (correto) |
+| Envenom | envenom | envenom (correto) |
+
+### 3. Modal Sem Dados de Produção
+A Edge Function `scrape-rune-details` está usando regex incorretos para o HTML real. O HTML do site tem uma estrutura diferente do que o parser espera:
+
+**Estrutura real do HTML:**
+```html
+<table id="monster">
+  <tr><td>
+    <table id="sbileft">
+      <tr>
+        <td>Backpack of:</td>
+        <td>VOC.</td>
+        <td>time to do</td>  <!-- Header -->
+      </tr>
+      <tr>
+        <td><img src="backpack+rune"></td>
+        <td>Druid</td>        <!-- Vocação -->
+        <td>1 h. 40 min. 0 sec.</td>  <!-- Tempo -->
+      </tr>
+    </table>
+  </td></tr>
+</table>
+<table id="runes">
+  <tr><th>needed food to be done:</th></tr>
+  <tr>
+    <td><img src="food.gif"><br> x 9</td>  <!-- Formato: imagem + quantidade -->
+    ...
+  </tr>
+</table>
+```
+
+O parser atual busca `Time</td>` e classes `title` que não existem.
 
 ---
 
-## Dados Extraídos do Site
+## Alterações Necessárias
 
-### Tabela Principal (27 runas)
+### Arquivo 1: `src/pages/RunesPage.tsx`
+**Problema**: Breadcrumb duplicado
 
-| Mlvl Cast | Nome | Vocações | Premium | Mana | Charges | Mlvl Use |
-|-----------|------|----------|---------|------|---------|----------|
-| 1 | Light Magic Missile | D, S, P | ❌ | 40 | 5 | 0 |
-| 2 | Poison Field | D, S | ❌ | 50 | 3 | 0 |
-| 3 | Heavy magic missile | D, S, P | ❌ | 70 | 5 | 1 |
-| 3 | Fire Field | D, S | ❌ | 60 | 3 | 1 |
-| 4 | Antidote Rune | D | ❌ | 50 | 1 | 0 |
-| 4 | Intense Healing Rune | D | ❌ | 60 | 1 | 1 |
-| 5 | Fireball | D, S, P | ❌ | 60 | 3 | 2 |
-| 5 | Energy Field | D, S | ❌ | 80 | 3 | 3 |
-| 6 | Destroy Field | D, S, P | ❌ | 60 | 3 | 3 |
-| 7 | Animate Dead | D, S | ✅ | 300 | 2 | 4 |
-| 7 | Envenom | D | ✅ | 100 | 3 | 4 |
-| 8 | Desintegrate | D, S, P | ✅ | 100 | 3 | 4 |
-| 8 | Poisonbomb | D | ✅ | 130 | 2 | 4 |
-| 9 | Great Fireball | D, S | ❌ | 120 | 2 | 4 |
-| 9 | Firebomb | D, S | ❌ | 150 | 2 | 5 |
-| 10 | Convince Creature | D | ❌ | 100 | 1 | 5 |
-| 11 | Poison Wall | D, S | ❌ | 160 | 4 | 5 |
-| 11 | Chameleon | D | ❌ | 150 | 1 | 4 |
-| 11 | Ultimate Healing Rune | D | ❌ | 100 | 1 | 4 |
-| 12 | Explosion | D, S | ❌ | 180 | 3 | 6 |
-| 13 | Soulfire | D, S | ✅ | 150 | 2 | 7 |
-| 13 | Fire Wall | D, S | ❌ | 200 | 4 | 13 |
-| 14 | Magic Wall | S | ✅ | 250 | 4 | 9 |
-| 18 | Energy Bomb | S | ✅ | 220 | 2 | 10 |
-| 18 | Energy Wall | D, S | ❌ | 250 | 4 | 9 |
-| 25 | Sudden Death | S | ❌ | 220 | 1 | 15 |
-| 35 | Paralyze | D | ✅ | 600 | 1 | 18 |
-
-### Modal de Detalhes (exemplo SD)
-
-Ao clicar na runa, mostra informações de produção por vocação:
-
-**Sorcerer:**
-- Tempo: 7h 20min 0sec
-- Comidas necessárias: Dragon Ham x37, Ham x74, Brown Mushroom x100, Meat x147, Fish x184, White Mushroom x245, Roast Pork x275
-
-**Master Sorcerer:**
-- Tempo: 4h 53min 20sec
-- Comidas necessárias: Dragon Ham x25, Ham x49, Brown Mushroom x67, Meat x98, Fish x123, White Mushroom x163, Roast Pork x184
+**Solução**: Remover a linha `<Breadcrumb />` (linha 11) pois o MainLayout já adiciona automaticamente.
 
 ---
 
-## Arquivos a Criar/Modificar
+### Arquivo 2: `src/data/runes.ts`
+**Problema**: IDs e URLs de imagem incorretos
 
-### 1. Criar Arquivo de Dados das Runas
-**Arquivo**: `src/data/runes.ts`
+**Solução**: Corrigir os IDs de 12 runas:
 
 ```typescript
-export interface Rune {
-  id: string;
-  name: string;
-  image: string;
-  spell: string;
-  mlvlCast: number;
-  mlvlUse: number;
-  mana: number;
-  charges: number;
-  vocations: string[];
-  isPremium: boolean;
-}
-
-// Array com as 27 runas
-export const runes: Rune[] = [
-  {
-    id: 'lmm',
-    name: 'Light Magic Missile',
-    image: 'https://tibiara.netlify.app/en/img/runes/lmm.gif',
-    spell: 'adori',
-    mlvlCast: 1,
-    mlvlUse: 0,
-    mana: 40,
-    charges: 5,
-    vocations: ['Druid', 'Sorcerer', 'Paladin'],
-    isPremium: false,
-  },
-  // ... mais 26 runas
-];
-```
-
-### 2. Criar Página de Runas
-**Arquivo**: `src/pages/RunesPage.tsx`
-
-- Tabela com colunas: Mlvl Cast, Imagem, Nome, Vocação, Premium, Mana, Cargas, Mlvl Use
-- Ordenação clicável em todas as colunas numéricas
-- Busca por nome
-- Linha clicável abre modal de detalhes
-
-### 3. Criar Tabela de Runas
-**Arquivo**: `src/components/RunesTable.tsx`
-
-- Componente de tabela específico para runas
-- Estado de ordenação (sortKey, sortDirection)
-- Estado do modal (selectedRune, modalOpen)
-- Exibe vocações formatadas com quebra de linha
-
-### 4. Criar Modal de Detalhes da Runa
-**Arquivo**: `src/components/RuneDetailsModal.tsx`
-
-- Modal com informações da runa selecionada
-- Carrega dados via Edge Function (scraping da página de detalhes)
-- Exibe por vocação: tempo para fazer backpack + comidas necessárias
-
-### 5. Criar Edge Function para Scraping
-**Arquivo**: `supabase/functions/scrape-rune-details/index.ts`
-
-- Recebe o ID da runa (ex: 'sd', 'uh')
-- Faz scraping de `https://tibiara.netlify.app/en/pages/items/{id}`
-- Extrai: nome, spell, mana, informações por vocação (tempo + comidas)
-- Retorna JSON estruturado
-
-### 6. Criar Hook para Detalhes da Runa
-**Arquivo**: `src/hooks/useRuneDetails.ts`
-
-```typescript
-export function useRuneDetails(runeId: string | null) {
-  return useQuery({
-    queryKey: ['runeDetails', runeId],
-    queryFn: () => fetchRuneDetails(runeId!),
-    enabled: !!runeId,
-    staleTime: 5 * 60 * 1000, // 5 min cache
-  });
-}
-```
-
-### 7. Adicionar Rota no App
-**Arquivo**: `src/App.tsx`
-
-```typescript
-import RunesPage from './pages/RunesPage';
-// ...
-<Route path="/runes" element={<RunesPage />} />
-```
-
-### 8. Adicionar Traduções
-**Arquivos**: `src/i18n/translations/*.ts`
-
-```typescript
-// Adicionar em cada idioma:
-runes: {
-  title: 'Runes',
-  description: 'All runes available in the game with...',
-  mlvlCast: 'Mlvl Cast',
-  mlvlUse: 'Mlvl Use',
-  mana: 'Mana',
-  charges: 'Charges',
-  vocations: 'Vocations',
-  premium: 'Premium',
-  timeToMake: 'Time to make backpack',
-  foodNeeded: 'Food needed',
-}
-```
-
-### 9. Adicionar Link no Menu/Sidebar
-**Arquivo**: `src/components/Sidebar.tsx`
-
-Adicionar link para `/runes` na seção "Others" ou criar nova categoria.
-
----
-
-## Estrutura do Modal de Detalhes
-
-```text
-┌──────────────────────────────────────────────────────┐
-│  🎯 Sudden Death                                 [X] │
-├──────────────────────────────────────────────────────┤
-│  Spell: Adori vita vis                               │
-│  Mana: 220                                           │
-├──────────────────────────────────────────────────────┤
-│  📦 Backpack de Runas - Sorcerer                     │
-│  ┌──────────────────────────────────────────────────┐│
-│  │ ⏱️ Tempo: 7h 20min 0sec                          ││
-│  │                                                  ││
-│  │ 🍗 Comidas necessárias:                          ││
-│  │ 🥩 Dragon Ham x37  |  🍖 Ham x74                 ││
-│  │ 🍄 Brown Mushroom x100  |  🍖 Meat x147          ││
-│  │ 🐟 Fish x184  |  🍄 White Mushroom x245          ││
-│  │ 🍖 Roast Pork x275                               ││
-│  └──────────────────────────────────────────────────┘│
-├──────────────────────────────────────────────────────┤
-│  📦 Backpack de Runas - Master Sorcerer              │
-│  ┌──────────────────────────────────────────────────┐│
-│  │ ⏱️ Tempo: 4h 53min 20sec                         ││
-│  │                                                  ││
-│  │ 🍗 Comidas necessárias:                          ││
-│  │ 🥩 Dragon Ham x25  |  🍖 Ham x49  |  ...         ││
-│  └──────────────────────────────────────────────────┘│
-└──────────────────────────────────────────────────────┘
+// Mudanças nos IDs:
+{ id: 'ca', name: 'Chameleon', image: '.../runes/ca.gif' }
+{ id: 'co', name: 'Convince Creature', image: '.../runes/co.gif' }
+{ id: 'dead', name: 'Animate Dead', image: '.../runes/dead.gif' }
+{ id: 'desintegrate', name: 'Desintegrate', image: '.../runes/desintegrate.gif' }
+{ id: 'pb', name: 'Poisonbomb', image: '.../runes/pb.gif' }
+{ id: 'fbo', name: 'Firebomb', image: '.../runes/fbo.gif' }
+{ id: 'pw', name: 'Poison Wall', image: '.../runes/pw.gif' }
+{ id: 'fw', name: 'Fire Wall', image: '.../runes/fw.gif' }
+{ id: 'eb', name: 'Energy Bomb', image: '.../runes/eb.gif' }
+{ id: 'ew', name: 'Energy Wall', image: '.../runes/ew.gif' }
+{ id: 'ex', name: 'Explosion', image: '.../runes/ex.gif' }
+{ id: 'paraliz', name: 'Paralyze', image: '.../runes/paraliz.gif' }
 ```
 
 ---
 
-## Resumo da Implementação
+### Arquivo 3: `supabase/functions/scrape-rune-details/index.ts`
+**Problema**: Parsing incorreto do HTML
 
-| Item | Quantidade |
-|------|------------|
-| Arquivos novos | 6 (RunesPage, RunesTable, RuneDetailsModal, runes.ts, useRuneDetails, edge function) |
-| Arquivos modificados | 5 (App.tsx, Sidebar.tsx, 4 traduções) |
-| Runas cadastradas | 27 |
-| Edge Function | 1 nova (scrape-rune-details) |
-| Idiomas | 4 (PT, EN, ES, PL) |
+**Solução**: Reescrever o parser para extrair dados corretamente:
+
+1. **Extrair vocações e tempo**: Procurar dentro de `<table id="sbileft">` a segunda `<tr>` que contém:
+   - `<td>` com vocação (ex: "Druid", "Sorcerer", "Druid</br>Sorcerer")
+   - `<td>` com tempo (ex: "1 h. 40 min. 0 sec.")
+
+2. **Extrair comidas**: Procurar em `<table id="runes">` os `<td>` com padrão:
+   - `<img src="img/food/xxx.gif"><br> x NN`
+
+3. **Nova estratégia de parsing**:
+```typescript
+// 1. Dividir HTML pelos blocos de vocation (table#monster seguido de table#runes)
+// 2. Para cada bloco:
+//    - Extrair vocação do <td> após "VOC."
+//    - Extrair tempo do <td> após "time to do"
+//    - Extrair foods do table#runes seguinte
+// 3. Mapear nomes das comidas pelos IDs de imagem
+```
+
+Atualizar o mapeamento de comidas:
+```typescript
+const foodNameMap = {
+  'dragon_meat.gif': 'Dragon Ham',
+  '199.gif': 'Ham',
+  '620.gif': 'Brown Mushroom',
+  '200.gif': 'Meat',
+  '194.gif': 'Fish',
+  '344.gif': 'White Mushroom',
+  '203.gif': 'Roast Pork',
+};
+```
 
 ---
 
-## Detalhes Técnicos
+## Resumo das Alterações
 
-### Edge Function - Parsing do HTML
+| Arquivo | Tipo | Descrição |
+|---------|------|-----------|
+| `src/pages/RunesPage.tsx` | Modificar | Remover Breadcrumb duplicado |
+| `src/data/runes.ts` | Modificar | Corrigir 12 IDs de runas e URLs de imagem |
+| `supabase/functions/scrape-rune-details/index.ts` | Reescrever | Novo parser para estrutura HTML correta |
 
-A página de detalhes tem estrutura:
-1. Tabela `#oneitems` - info básica (nome, imagem, spell, mana)
-2. Múltiplas tabelas `#monster` - uma por vocação com tempo
-3. Tabelas `#runes` - comidas necessárias após cada `#monster`
+---
 
-O scraper precisa:
-1. Extrair nome, spell, mana da tabela inicial
-2. Iterar pelas tabelas `#monster` e `#runes` alternadamente
-3. Associar cada vocação com suas comidas
+## Detalhes Técnicos do Novo Parser
 
-### Imagens das Comidas no Modal
+A lógica do novo parser será:
 
-Mapeamento de IDs para nomes:
-- `dragon_meat.gif` → Dragon Ham
-- `199.gif` → Ham
-- `620.gif` → Brown Mushroom
-- `200.gif` → Meat
-- `194.gif` → Fish
-- `344.gif` → White Mushroom
-- `203.gif` → Roast Pork
+1. **Dividir por tabelas `#monster`**: Cada tabela representa uma vocação
+2. **Para cada seção**:
+   - Extrair texto das `<td>` dentro de `#sbileft`
+   - Identificar vocação pelo conteúdo (pode ter múltiplas separadas por `</br>`)
+   - Identificar tempo pelo formato "X h. Y min. Z sec."
+3. **Após cada `#monster`**, encontrar o próximo `#runes`:
+   - Extrair todos os `<td>` com imagens
+   - Parsear quantidade do texto " x NN"
+4. **Mapear imagens para nomes** usando o dicionário foodNameMap
 
+Este novo parser vai funcionar com a estrutura real do HTML fornecido no arquivo `runes_all_pages.txt`.
