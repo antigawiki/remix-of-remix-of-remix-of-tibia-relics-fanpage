@@ -74,8 +74,9 @@ Deno.serve(async (req) => {
     }
 
     const html = await response.text();
+    console.log(`Fetched HTML length: ${html.length}`);
 
-    // Parse basic info from #oneitems table
+    // Parse basic info
     const runeDetails: RuneDetails = {
       name: '',
       image: '',
@@ -84,89 +85,152 @@ Deno.serve(async (req) => {
       vocations: [],
     };
 
-    // Extract name from title or first table
-    const nameMatch = html.match(/<td[^>]*class="[^"]*title[^"]*"[^>]*>([^<]+)<\/td>/i);
-    if (nameMatch) {
-      runeDetails.name = nameMatch[1].trim();
-    }
-
-    // Extract image
-    const imgMatch = html.match(/<img[^>]*src="([^"]*runes[^"]*)"[^>]*>/i);
-    if (imgMatch) {
-      runeDetails.image = imgMatch[1].startsWith('http') 
-        ? imgMatch[1] 
-        : `https://tibiara.netlify.app${imgMatch[1].startsWith('/') ? '' : '/en/'}${imgMatch[1]}`;
-    }
-
-    // Extract spell (words)
-    const spellMatch = html.match(/Spell<\/td>\s*<td[^>]*>([^<]+)<\/td>/i);
-    if (spellMatch) {
-      runeDetails.spell = spellMatch[1].trim();
-    }
-
-    // Extract mana
-    const manaMatch = html.match(/Mana<\/td>\s*<td[^>]*>(\d+)<\/td>/i);
-    if (manaMatch) {
-      runeDetails.mana = parseInt(manaMatch[1], 10);
-    }
-
-    // Find all vocation sections with time and foods
-    // Pattern: table with #monster has vocation name and time, followed by table with #runes for foods
-    
-    // First, split by vocation sections
-    const vocationSections = html.split(/<table[^>]*id="monster"[^>]*>/i);
-    
-    for (let i = 1; i < vocationSections.length; i++) {
-      const section = vocationSections[i];
+    // Extract from #oneitems table - structure:
+    // Row 1: headers (Name, Image, Spell, mana)
+    // Row 2: data cells
+    const oneitemsMatch = html.match(/<table[^>]*id="oneitems"[^>]*>([\s\S]*?)<\/table>/i);
+    if (oneitemsMatch) {
+      const oneitemsContent = oneitemsMatch[1];
       
-      // Extract vocation name (usually in title class)
-      const vocationMatch = section.match(/<td[^>]*class="[^"]*title[^"]*"[^>]*>([^<]+)<\/td>/i);
-      if (!vocationMatch) continue;
-      
-      const vocationName = vocationMatch[1].trim();
-      
-      // Extract time
-      const timeMatch = section.match(/Time<\/td>\s*<td[^>]*>([^<]+)<\/td>/i);
-      const time = timeMatch ? timeMatch[1].trim() : '';
-      
-      // Find the foods table (id="runes") that follows this section
-      const foodsTableMatch = section.match(/<table[^>]*id="runes"[^>]*>([\s\S]*?)<\/table>/i);
-      
-      const foods: VocationFood[] = [];
-      
-      if (foodsTableMatch) {
-        const foodsHtml = foodsTableMatch[1];
-        
-        // Extract all food rows (each has image and quantity)
-        const foodRows = foodsHtml.match(/<tr[^>]*>[\s\S]*?<\/tr>/gi) || [];
-        
-        for (const row of foodRows) {
-          // Skip header row
-          if (row.includes('<th')) continue;
-          
-          // Extract image
-          const foodImgMatch = row.match(/<img[^>]*src="([^"]+)"[^>]*>/i);
-          // Extract quantity (usually in a cell after image)
-          const quantityMatch = row.match(/<td[^>]*>\s*(\d+)\s*<\/td>/i);
-          
-          if (foodImgMatch && quantityMatch) {
-            const imageSrc = foodImgMatch[1];
-            const fullImageUrl = imageSrc.startsWith('http')
-              ? imageSrc
-              : `https://tibiara.netlify.app${imageSrc.startsWith('/') ? '' : '/en/'}${imageSrc}`;
-            
-            foods.push({
-              name: getFoodName(imageSrc),
-              image: fullImageUrl,
-              quantity: parseInt(quantityMatch[1], 10),
-            });
-          }
-        }
+      // Get all rows
+      const rows = oneitemsContent.matchAll(/<tr[^>]*>([\s\S]*?)<\/tr>/gi);
+      const rowsArray: string[] = [];
+      for (const row of rows) {
+        rowsArray.push(row[1]);
       }
       
-      if (vocationName && time) {
+      // Data row is the second row (index 1)
+      if (rowsArray.length >= 2) {
+        const dataRow = rowsArray[1];
+        
+        // Extract all cells
+        const cells = dataRow.matchAll(/<td[^>]*>([\s\S]*?)<\/td>/gi);
+        const cellsArray: string[] = [];
+        for (const cell of cells) {
+          cellsArray.push(cell[1]);
+        }
+        
+        // Cell 0: name, Cell 1: image, Cell 2: spell, Cell 3: mana
+        if (cellsArray.length >= 1) {
+          runeDetails.name = cellsArray[0].replace(/<[^>]+>/g, '').trim();
+        }
+        if (cellsArray.length >= 2) {
+          const imgMatch = cellsArray[1].match(/<img[^>]*src="([^"]+)"[^>]*>/i);
+          if (imgMatch) {
+            runeDetails.image = imgMatch[1].startsWith('http') 
+              ? imgMatch[1] 
+              : `https://tibiara.netlify.app${imgMatch[1].startsWith('/') ? '' : '/en/'}${imgMatch[1]}`;
+          }
+        }
+        if (cellsArray.length >= 3) {
+          runeDetails.spell = cellsArray[2].replace(/<[^>]+>/g, '').trim();
+        }
+        if (cellsArray.length >= 4) {
+          const manaValue = cellsArray[3].replace(/<[^>]+>/g, '').trim();
+          runeDetails.mana = parseInt(manaValue, 10) || 0;
+        }
+      }
+    }
+
+    console.log(`Basic info - Name: ${runeDetails.name}, Spell: ${runeDetails.spell}, Mana: ${runeDetails.mana}`);
+
+    // Find all sbileft tables (each contains vocation info)
+    const sbiLeftMatches = html.matchAll(/<table[^>]*id="sbileft"[^>]*>([\s\S]*?)<\/table>/gi);
+    const sbiLeftSections: string[] = [];
+    for (const match of sbiLeftMatches) {
+      sbiLeftSections.push(match[0]);
+    }
+
+    console.log(`Found ${sbiLeftSections.length} sbileft sections`);
+
+    // Find all runes tables (each contains food info)
+    const runesTables = html.matchAll(/<table[^>]*id="runes"[^>]*>([\s\S]*?)<\/table>/gi);
+    const runesSections: string[] = [];
+    for (const match of runesTables) {
+      runesSections.push(match[0]);
+    }
+
+    console.log(`Found ${runesSections.length} runes sections`);
+
+    // Process each sbileft section
+    for (let i = 0; i < sbiLeftSections.length; i++) {
+      const sbiSection = sbiLeftSections[i];
+      
+      // Extract all rows from sbileft
+      const rows = sbiSection.matchAll(/<tr[^>]*>([\s\S]*?)<\/tr>/gi);
+      const rowsArray: string[] = [];
+      for (const row of rows) {
+        rowsArray.push(row[1]);
+      }
+
+      // Skip if we don't have enough rows (header + data)
+      if (rowsArray.length < 2) continue;
+
+      // Data row is the second row (first is header with "Backpack of:", "VOC.", "time to do")
+      const dataRow = rowsArray[1];
+      
+      // Extract cells from data row
+      const cells = dataRow.matchAll(/<td[^>]*>([\s\S]*?)<\/td>/gi);
+      const cellsArray: string[] = [];
+      for (const cell of cells) {
+        cellsArray.push(cell[1]);
+      }
+
+      if (cellsArray.length < 3) continue;
+
+      // Cell 0: backpack image, Cell 1: vocation, Cell 2: time
+      let vocation = cellsArray[1]
+        .replace(/<br\s*\/?>/gi, ' / ')
+        .replace(/<[^>]+>/g, '')
+        .trim();
+      
+      const time = cellsArray[2]
+        .replace(/<[^>]+>/g, '')
+        .trim();
+
+      console.log(`Vocation: ${vocation}, Time: ${time}`);
+
+      // Get corresponding foods from runes table
+      const foods: VocationFood[] = [];
+      
+      if (i < runesSections.length) {
+        const runesSection = runesSections[i];
+        
+        // Find all food cells with images
+        const foodCells = runesSection.matchAll(/<td[^>]*>([\s\S]*?)<\/td>/gi);
+        
+        for (const foodCell of foodCells) {
+          const cellContent = foodCell[1];
+          
+          // Skip header cells
+          if (cellContent.includes('<th') || cellContent.includes('needed food')) continue;
+          
+          // Extract image
+          const foodImgMatch = cellContent.match(/<img[^>]*src="([^"]+)"[^>]*>/i);
+          if (!foodImgMatch) continue;
+          
+          // Extract quantity - pattern is "<br> x N" or just "x N"
+          const quantityMatch = cellContent.match(/x\s*(\d+)/i);
+          if (!quantityMatch) continue;
+          
+          const imageSrc = foodImgMatch[1];
+          const fullImageUrl = imageSrc.startsWith('http')
+            ? imageSrc
+            : `https://tibiara.netlify.app${imageSrc.startsWith('/') ? '' : '/en/'}${imageSrc}`;
+          
+          foods.push({
+            name: getFoodName(imageSrc),
+            image: fullImageUrl,
+            quantity: parseInt(quantityMatch[1], 10),
+          });
+        }
+      }
+
+      console.log(`Foods for ${vocation}: ${foods.length} items`);
+
+      if (vocation && time) {
         runeDetails.vocations.push({
-          vocation: vocationName,
+          vocation,
           time,
           foods,
         });
