@@ -180,8 +180,10 @@ Deno.serve(async (req) => {
 
       // Cell 0: backpack image, Cell 1: vocation, Cell 2: time
       let vocation = cellsArray[1]
-        .replace(/<br\s*\/?>/gi, ' / ')
+        .replace(/<\/?\s*br\s*\/?>/gi, ' / ')  // Handle <br>, </br>, <br/>, <br />
         .replace(/<[^>]+>/g, '')
+        .replace(/\s*\/\s*/g, ' / ')  // Normalize spacing around slashes
+        .replace(/\s+/g, ' ')  // Collapse multiple spaces
         .trim();
       
       const time = cellsArray[2]

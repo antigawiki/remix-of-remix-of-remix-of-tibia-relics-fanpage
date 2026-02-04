@@ -93,20 +93,23 @@ const RuneDetailsModal = ({ rune, open, onOpenChange }: RuneDetailsModalProps) =
                     <span>{t('pages.runes.timeToMake')}: <span className="text-text-dark font-medium">{voc.time}</span></span>
                   </div>
                   <div className="text-sm text-muted-foreground mb-2">{t('pages.runes.foodNeeded')}:</div>
-                  <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2">
+                  <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
                     {voc.foods.map((food, idx) => (
                       <div
                         key={idx}
-                        className="flex items-center gap-2 bg-muted/30 rounded px-2 py-1"
+                        className="flex items-center gap-2 bg-muted/40 rounded-md px-3 py-2"
                       >
                         <img
                           src={food.image}
                           alt={food.name}
-                          className="w-6 h-6 object-contain"
+                          className="w-8 h-8 object-contain flex-shrink-0"
                         />
-                        <span className="text-xs text-text-dark truncate">
-                          {food.name} <span className="text-gold font-semibold">x{food.quantity}</span>
-                        </span>
+                        <div className="flex flex-col min-w-0">
+                          <span className="text-xs text-text-dark leading-tight truncate" title={food.name}>
+                            {food.name}
+                          </span>
+                          <span className="text-gold font-bold text-sm">x{food.quantity}</span>
+                        </div>
                       </div>
                     ))}
                   </div>
