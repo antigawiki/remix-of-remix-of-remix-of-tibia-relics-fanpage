@@ -4,25 +4,45 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Item } from '@/data/items';
 import { Search, ArrowUpDown } from 'lucide-react';
 import { useTranslation } from '@/i18n';
+import ItemDetailsModal from './ItemDetailsModal';
 
 interface ItemsTableProps {
   items: Item[];
   category: string;
 }
 
+type SortKey = 'name' | 'weight' | 'duration';
+
+const parseDuration = (duration: string): number => {
+  if (!duration || duration === '-') return 0;
+  let totalSeconds = 0;
+  const minMatch = duration.match(/(\d+)\s*min/);
+  const secMatch = duration.match(/(\d+)\s*sec/);
+  if (minMatch) totalSeconds += parseInt(minMatch[1]) * 60;
+  if (secMatch) totalSeconds += parseInt(secMatch[1]);
+  return totalSeconds;
+};
+
 const ItemsTable = ({ items, category }: ItemsTableProps) => {
   const { t } = useTranslation();
   const [search, setSearch] = useState('');
-  const [sortKey, setSortKey] = useState<'name' | 'weight'>('name');
+  const [sortKey, setSortKey] = useState<SortKey>('name');
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
+  const [selectedItem, setSelectedItem] = useState<Item | null>(null);
+  const [modalOpen, setModalOpen] = useState(false);
 
-  const handleSort = (key: 'name' | 'weight') => {
+  const handleSort = (key: SortKey) => {
     if (sortKey === key) {
       setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc');
     } else {
       setSortKey(key);
       setSortDirection('asc');
     }
+  };
+
+  const handleRowClick = (item: Item) => {
+    setSelectedItem(item);
+    setModalOpen(true);
   };
 
   const filteredItems = items.filter(item =>
@@ -37,6 +57,8 @@ const ItemsTable = ({ items, category }: ItemsTableProps) => {
       const weightA = parseFloat(a.weight?.replace(' oz.', '') || '0');
       const weightB = parseFloat(b.weight?.replace(' oz.', '') || '0');
       comparison = weightA - weightB;
+    } else if (sortKey === 'duration') {
+      comparison = parseDuration(a.duration || '0') - parseDuration(b.duration || '0');
     }
     return sortDirection === 'asc' ? comparison : -comparison;
   });
@@ -77,6 +99,7 @@ const ItemsTable = ({ items, category }: ItemsTableProps) => {
   };
 
   const columns = getColumns();
+  const sortableColumns = ['name', 'weight', 'duration'];
 
   const getCellValue = (item: Item, column: string) => {
     switch (column) {
@@ -103,6 +126,8 @@ const ItemsTable = ({ items, category }: ItemsTableProps) => {
     }
   };
 
+  const isSortable = (column: string) => sortableColumns.includes(column) && columns.includes(column);
+
   return (
     <div className="space-y-4">
       <div className="relative">
@@ -125,18 +150,17 @@ const ItemsTable = ({ items, category }: ItemsTableProps) => {
                   className={`text-parchment font-semibold ${
                     column === 'img' ? 'w-[60px] text-center' : ''
                   } ${
-                    (column === 'name' || column === 'weight') 
+                    isSortable(column) 
                       ? 'cursor-pointer hover:text-gold transition-colors' 
                       : ''
                   }`}
                   onClick={() => {
-                    if (column === 'name') handleSort('name');
-                    if (column === 'weight') handleSort('weight');
+                    if (isSortable(column)) handleSort(column as SortKey);
                   }}
                 >
                   <div className="flex items-center gap-1 capitalize">
                     {getColumnLabel(column)}
-                    {(column === 'name' || column === 'weight') && (
+                    {isSortable(column) && (
                       <ArrowUpDown className="w-3 h-3" />
                     )}
                   </div>
@@ -148,7 +172,8 @@ const ItemsTable = ({ items, category }: ItemsTableProps) => {
             {sortedItems.map((item, index) => (
               <TableRow 
                 key={`${item.name}-${index}`}
-                className={`${index % 2 === 0 ? 'bg-parchment' : 'bg-parchment-dark'} hover:bg-gold/20 transition-colors`}
+                className={`${index % 2 === 0 ? 'bg-parchment' : 'bg-parchment-dark'} hover:bg-gold/20 transition-colors cursor-pointer`}
+                onClick={() => handleRowClick(item)}
               >
                 {columns.map((column) => (
                   <TableCell 
@@ -180,6 +205,12 @@ const ItemsTable = ({ items, category }: ItemsTableProps) => {
       <div className="text-xs text-muted-foreground text-center">
         {t('tables.showingItems').replace('{shown}', String(sortedItems.length)).replace('{total}', String(items.length))}
       </div>
+
+      <ItemDetailsModal
+        item={selectedItem}
+        open={modalOpen}
+        onOpenChange={setModalOpen}
+      />
     </div>
   );
 };

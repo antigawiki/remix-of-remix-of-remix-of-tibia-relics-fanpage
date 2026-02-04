@@ -43,4 +43,7 @@ export const foods: Item[] = [
   { name: "Strawberry", image: "https://tibiara.netlify.app/en/img/food/691.gif", weight: "0.2 oz.", duration: "24 sec" },
   { name: "Blueberry", image: "https://tibiara.netlify.app/en/img/food/729.gif", weight: "0.2 oz.", duration: "12 sec" },
   { name: "Cherry", image: "https://tibiara.netlify.app/en/img/food/186.gif", weight: "0.2 oz.", duration: "12 sec" },
+  { name: "Dough", image: "https://tibiara.netlify.app/en/img/food/207.gif", weight: "5 oz.", duration: "0 sec" },
+  { name: "Flour", image: "https://tibiara.netlify.app/en/img/food/206.gif", weight: "5 oz.", duration: "0 sec" },
+  { name: "Wheat", image: "https://tibiara.netlify.app/en/img/food/205.gif", weight: "12.5 oz.", duration: "0 sec" },
 ];
