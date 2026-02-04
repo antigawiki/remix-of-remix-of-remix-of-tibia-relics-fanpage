@@ -1,154 +1,207 @@
 
 
-# Plano: Melhorar a Tabela de Itens com Ordenação por Duração e Modal de Detalhes
+# Plano: Criar Página de Runas com Modal de Detalhes
 
 ## Resumo
 
-Vou adicionar duas funcionalidades à página de itens (foods):
-
-1. **Ordenação por Duração**: Permitir clicar na coluna "Duração" para ordenar
-2. **Modal de Detalhes**: Ao clicar em um item, abrir modal com informações de onde comprar/vender e quem dropa (igual ao EquipmentTable)
-
-Também vou adicionar os 3 itens faltantes: Dough, Flour e Wheat.
+Vou criar uma nova página de Runas (`/runes`) com tabela contendo todas as 27 runas do jogo, ordenação por todas as colunas, e um modal de detalhes ao clicar que mostra tempo para fazer uma backpack e quantidade de comida necessária por vocação.
 
 ---
 
-## Alterações Necessárias
+## Dados Extraídos do Site
 
-### 1. Adicionar Comidas Faltantes
+### Tabela Principal (27 runas)
 
-**Arquivo**: `src/data/items/foods.ts`
+| Mlvl Cast | Nome | Vocações | Premium | Mana | Charges | Mlvl Use |
+|-----------|------|----------|---------|------|---------|----------|
+| 1 | Light Magic Missile | D, S, P | ❌ | 40 | 5 | 0 |
+| 2 | Poison Field | D, S | ❌ | 50 | 3 | 0 |
+| 3 | Heavy magic missile | D, S, P | ❌ | 70 | 5 | 1 |
+| 3 | Fire Field | D, S | ❌ | 60 | 3 | 1 |
+| 4 | Antidote Rune | D | ❌ | 50 | 1 | 0 |
+| 4 | Intense Healing Rune | D | ❌ | 60 | 1 | 1 |
+| 5 | Fireball | D, S, P | ❌ | 60 | 3 | 2 |
+| 5 | Energy Field | D, S | ❌ | 80 | 3 | 3 |
+| 6 | Destroy Field | D, S, P | ❌ | 60 | 3 | 3 |
+| 7 | Animate Dead | D, S | ✅ | 300 | 2 | 4 |
+| 7 | Envenom | D | ✅ | 100 | 3 | 4 |
+| 8 | Desintegrate | D, S, P | ✅ | 100 | 3 | 4 |
+| 8 | Poisonbomb | D | ✅ | 130 | 2 | 4 |
+| 9 | Great Fireball | D, S | ❌ | 120 | 2 | 4 |
+| 9 | Firebomb | D, S | ❌ | 150 | 2 | 5 |
+| 10 | Convince Creature | D | ❌ | 100 | 1 | 5 |
+| 11 | Poison Wall | D, S | ❌ | 160 | 4 | 5 |
+| 11 | Chameleon | D | ❌ | 150 | 1 | 4 |
+| 11 | Ultimate Healing Rune | D | ❌ | 100 | 1 | 4 |
+| 12 | Explosion | D, S | ❌ | 180 | 3 | 6 |
+| 13 | Soulfire | D, S | ✅ | 150 | 2 | 7 |
+| 13 | Fire Wall | D, S | ❌ | 200 | 4 | 13 |
+| 14 | Magic Wall | S | ✅ | 250 | 4 | 9 |
+| 18 | Energy Bomb | S | ✅ | 220 | 2 | 10 |
+| 18 | Energy Wall | D, S | ❌ | 250 | 4 | 9 |
+| 25 | Sudden Death | S | ❌ | 220 | 1 | 15 |
+| 35 | Paralyze | D | ✅ | 600 | 1 | 18 |
 
-Adicionar 3 itens que estão no site de referência:
+### Modal de Detalhes (exemplo SD)
 
-| Nome | Peso | Duração |
-|------|------|---------|
-| Dough | 5 oz. | 0 sec |
-| Flour | 5 oz. | 0 sec |
-| Wheat | 12.5 oz. | 0 sec |
+Ao clicar na runa, mostra informações de produção por vocação:
+
+**Sorcerer:**
+- Tempo: 7h 20min 0sec
+- Comidas necessárias: Dragon Ham x37, Ham x74, Brown Mushroom x100, Meat x147, Fish x184, White Mushroom x245, Roast Pork x275
+
+**Master Sorcerer:**
+- Tempo: 4h 53min 20sec
+- Comidas necessárias: Dragon Ham x25, Ham x49, Brown Mushroom x67, Meat x98, Fish x123, White Mushroom x163, Roast Pork x184
 
 ---
 
-### 2. Atualizar ItemsTable com Ordenação por Duração e Modal
+## Arquivos a Criar/Modificar
 
-**Arquivo**: `src/components/ItemsTable.tsx`
-
-Alterações:
-- Expandir o tipo de `sortKey` para incluir `'duration'`
-- Adicionar função `parseDuration()` para converter "12 min 0 sec" em segundos
-- Adicionar cursor e ícone de seta na coluna Duração
-- Adicionar estado para o modal (`selectedItem`, `modalOpen`)
-- Tornar a linha clicável (cursor-pointer)
-- Importar e usar o `ItemDetailsModal`
+### 1. Criar Arquivo de Dados das Runas
+**Arquivo**: `src/data/runes.ts`
 
 ```typescript
-// Novo tipo de sortKey
-type SortKey = 'name' | 'weight' | 'duration';
+export interface Rune {
+  id: string;
+  name: string;
+  image: string;
+  spell: string;
+  mlvlCast: number;
+  mlvlUse: number;
+  mana: number;
+  charges: number;
+  vocations: string[];
+  isPremium: boolean;
+}
 
-// Nova função de parsing
-const parseDuration = (duration: string): number => {
-  if (!duration || duration === '-') return 0;
-  let totalSeconds = 0;
-  const minMatch = duration.match(/(\d+)\s*min/);
-  const secMatch = duration.match(/(\d+)\s*sec/);
-  if (minMatch) totalSeconds += parseInt(minMatch[1]) * 60;
-  if (secMatch) totalSeconds += parseInt(secMatch[1]);
-  return totalSeconds;
-};
-
-// Estados para o modal
-const [selectedItem, setSelectedItem] = useState<Item | null>(null);
-const [modalOpen, setModalOpen] = useState(false);
-
-// Handler de clique na linha
-const handleRowClick = (item: Item) => {
-  setSelectedItem(item);
-  setModalOpen(true);
-};
+// Array com as 27 runas
+export const runes: Rune[] = [
+  {
+    id: 'lmm',
+    name: 'Light Magic Missile',
+    image: 'https://tibiara.netlify.app/en/img/runes/lmm.gif',
+    spell: 'adori',
+    mlvlCast: 1,
+    mlvlUse: 0,
+    mana: 40,
+    charges: 5,
+    vocations: ['Druid', 'Sorcerer', 'Paladin'],
+    isPremium: false,
+  },
+  // ... mais 26 runas
+];
 ```
 
----
+### 2. Criar Página de Runas
+**Arquivo**: `src/pages/RunesPage.tsx`
 
-### 3. Adaptar ItemDetailsModal para Aceitar Item
+- Tabela com colunas: Mlvl Cast, Imagem, Nome, Vocação, Premium, Mana, Cargas, Mlvl Use
+- Ordenação clicável em todas as colunas numéricas
+- Busca por nome
+- Linha clicável abre modal de detalhes
 
-**Arquivo**: `src/components/ItemDetailsModal.tsx`
+### 3. Criar Tabela de Runas
+**Arquivo**: `src/components/RunesTable.tsx`
 
-O modal atual usa o tipo `Equipment`. Preciso fazer ele aceitar também `Item`:
+- Componente de tabela específico para runas
+- Estado de ordenação (sortKey, sortDirection)
+- Estado do modal (selectedRune, modalOpen)
+- Exibe vocações formatadas com quebra de linha
+
+### 4. Criar Modal de Detalhes da Runa
+**Arquivo**: `src/components/RuneDetailsModal.tsx`
+
+- Modal com informações da runa selecionada
+- Carrega dados via Edge Function (scraping da página de detalhes)
+- Exibe por vocação: tempo para fazer backpack + comidas necessárias
+
+### 5. Criar Edge Function para Scraping
+**Arquivo**: `supabase/functions/scrape-rune-details/index.ts`
+
+- Recebe o ID da runa (ex: 'sd', 'uh')
+- Faz scraping de `https://tibiara.netlify.app/en/pages/items/{id}`
+- Extrai: nome, spell, mana, informações por vocação (tempo + comidas)
+- Retorna JSON estruturado
+
+### 6. Criar Hook para Detalhes da Runa
+**Arquivo**: `src/hooks/useRuneDetails.ts`
 
 ```typescript
-// Alterar a interface para aceitar ambos os tipos
-interface ItemDetailsModalProps {
-  item: Equipment | Item | null;
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
+export function useRuneDetails(runeId: string | null) {
+  return useQuery({
+    queryKey: ['runeDetails', runeId],
+    queryFn: () => fetchRuneDetails(runeId!),
+    enabled: !!runeId,
+    staleTime: 5 * 60 * 1000, // 5 min cache
+  });
 }
 ```
 
-O hook `useItemDetails` já funciona com qualquer nome de item, então a edge function vai buscar os dados corretamente.
+### 7. Adicionar Rota no App
+**Arquivo**: `src/App.tsx`
 
----
-
-## Fluxo Visual
-
-```
-┌─────────────────────────────────────────────────┐
-│ Tabela de Comidas                               │
-├──────┬──────────┬─────────┬────────────────────┤
-│ Img  │ Nome ↕   │ Peso ↕  │ Duração ↕          │
-├──────┼──────────┼─────────┼────────────────────┤
-│ 🍖   │ Dragon   │ 30 oz.  │ 12 min             │ ← Clicável
-│      │ Ham      │         │                    │
-├──────┼──────────┼─────────┼────────────────────┤
-│ 🍞   │ Bread    │ 5 oz.   │ 2 min              │ ← Clicável
-└──────┴──────────┴─────────┴────────────────────┘
-                    │
-                    ▼ Clique
-┌─────────────────────────────────────────────────┐
-│ 🍖 Dragon Ham                              [X]  │
-├─────────────────────────────────────────────────┤
-│ Peso: 30 oz.  |  Duração: 12 min                │
-├─────────────────────────────────────────────────┤
-│ 💰 Vender Para        │ 🛒 Comprar De           │
-│ ┌─────────────────────┼───────────────────────┐ │
-│ │ Cidade  NPC  Preço  │ Cidade  NPC  Preço    │ │
-│ │ ...     ...  ...    │ ...     ...  ...      │ │
-│ └─────────────────────┴───────────────────────┘ │
-├─────────────────────────────────────────────────┤
-│ 💀 Dropado Por                                  │
-│ ┌─────────────────────────────────────────────┐ │
-│ │ Monstro       Img  Qtd  Chance              │ │
-│ │ Dragon        🐉   1    100%                │ │
-│ └─────────────────────────────────────────────┘ │
-└─────────────────────────────────────────────────┘
+```typescript
+import RunesPage from './pages/RunesPage';
+// ...
+<Route path="/runes" element={<RunesPage />} />
 ```
 
+### 8. Adicionar Traduções
+**Arquivos**: `src/i18n/translations/*.ts`
+
+```typescript
+// Adicionar em cada idioma:
+runes: {
+  title: 'Runes',
+  description: 'All runes available in the game with...',
+  mlvlCast: 'Mlvl Cast',
+  mlvlUse: 'Mlvl Use',
+  mana: 'Mana',
+  charges: 'Charges',
+  vocations: 'Vocations',
+  premium: 'Premium',
+  timeToMake: 'Time to make backpack',
+  foodNeeded: 'Food needed',
+}
+```
+
+### 9. Adicionar Link no Menu/Sidebar
+**Arquivo**: `src/components/Sidebar.tsx`
+
+Adicionar link para `/runes` na seção "Others" ou criar nova categoria.
+
 ---
 
-## Arquivos a Modificar
+## Estrutura do Modal de Detalhes
 
-| Arquivo | Alteração |
-|---------|-----------|
-| `src/data/items/foods.ts` | Adicionar 3 novos itens (Dough, Flour, Wheat) |
-| `src/components/ItemsTable.tsx` | Ordenação por duração + linha clicável + modal |
-| `src/components/ItemDetailsModal.tsx` | Aceitar tipo `Item` além de `Equipment` |
-
----
-
-## Detalhes Técnicos
-
-### Colunas Ordenáveis
-A coluna de duração será ordenável apenas quando a categoria tiver a coluna `duration` (foods e rings).
-
-### Compatibilidade de Tipos
-O `ItemDetailsModal` precisa ser compatível com ambos:
-- `Equipment`: tem `armor`, `attack`, `defense`
-- `Item`: tem `duration`, `slots`, `city`, `charges`
-
-O modal já lida com campos opcionais, então vai funcionar para ambos os tipos.
-
-### Edge Function
-A edge function `scrape-item-details` já funciona para qualquer item, buscando na URL:
-`https://tibiara.netlify.app/en/pages/items/{item_name}.html`
+```text
+┌──────────────────────────────────────────────────────┐
+│  🎯 Sudden Death                                 [X] │
+├──────────────────────────────────────────────────────┤
+│  Spell: Adori vita vis                               │
+│  Mana: 220                                           │
+├──────────────────────────────────────────────────────┤
+│  📦 Backpack de Runas - Sorcerer                     │
+│  ┌──────────────────────────────────────────────────┐│
+│  │ ⏱️ Tempo: 7h 20min 0sec                          ││
+│  │                                                  ││
+│  │ 🍗 Comidas necessárias:                          ││
+│  │ 🥩 Dragon Ham x37  |  🍖 Ham x74                 ││
+│  │ 🍄 Brown Mushroom x100  |  🍖 Meat x147          ││
+│  │ 🐟 Fish x184  |  🍄 White Mushroom x245          ││
+│  │ 🍖 Roast Pork x275                               ││
+│  └──────────────────────────────────────────────────┘│
+├──────────────────────────────────────────────────────┤
+│  📦 Backpack de Runas - Master Sorcerer              │
+│  ┌──────────────────────────────────────────────────┐│
+│  │ ⏱️ Tempo: 4h 53min 20sec                         ││
+│  │                                                  ││
+│  │ 🍗 Comidas necessárias:                          ││
+│  │ 🥩 Dragon Ham x25  |  🍖 Ham x49  |  ...         ││
+│  └──────────────────────────────────────────────────┘│
+└──────────────────────────────────────────────────────┘
+```
 
 ---
 
@@ -156,8 +209,36 @@ A edge function `scrape-item-details` já funciona para qualquer item, buscando 
 
 | Item | Quantidade |
 |------|------------|
-| Arquivos modificados | 3 |
-| Novos itens de comida | 3 |
-| Funcionalidades novas | 2 (ordenação + modal) |
-| Idiomas | Já suportados |
+| Arquivos novos | 6 (RunesPage, RunesTable, RuneDetailsModal, runes.ts, useRuneDetails, edge function) |
+| Arquivos modificados | 5 (App.tsx, Sidebar.tsx, 4 traduções) |
+| Runas cadastradas | 27 |
+| Edge Function | 1 nova (scrape-rune-details) |
+| Idiomas | 4 (PT, EN, ES, PL) |
+
+---
+
+## Detalhes Técnicos
+
+### Edge Function - Parsing do HTML
+
+A página de detalhes tem estrutura:
+1. Tabela `#oneitems` - info básica (nome, imagem, spell, mana)
+2. Múltiplas tabelas `#monster` - uma por vocação com tempo
+3. Tabelas `#runes` - comidas necessárias após cada `#monster`
+
+O scraper precisa:
+1. Extrair nome, spell, mana da tabela inicial
+2. Iterar pelas tabelas `#monster` e `#runes` alternadamente
+3. Associar cada vocação com suas comidas
+
+### Imagens das Comidas no Modal
+
+Mapeamento de IDs para nomes:
+- `dragon_meat.gif` → Dragon Ham
+- `199.gif` → Ham
+- `620.gif` → Brown Mushroom
+- `200.gif` → Meat
+- `194.gif` → Fish
+- `344.gif` → White Mushroom
+- `203.gif` → Roast Pork
 
