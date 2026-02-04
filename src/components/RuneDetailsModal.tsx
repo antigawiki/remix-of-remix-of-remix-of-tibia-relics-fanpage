@@ -45,7 +45,7 @@ const RuneDetailsModal = ({ rune, open, onOpenChange }: RuneDetailsModalProps) =
             </div>
             <div className="bg-muted/50 rounded p-2 text-center">
               <div className="text-muted-foreground text-xs">{t('tables.columns.mana')}</div>
-              <div className="font-semibold text-primary">{rune.mana}</div>
+              <div className="font-semibold text-gold">{rune.mana}</div>
             </div>
             <div className="bg-muted/50 rounded p-2 text-center">
               <div className="text-muted-foreground text-xs">{t('pages.runes.mlvlCast')}</div>
