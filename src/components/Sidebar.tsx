@@ -1,7 +1,7 @@
 import { Link } from 'react-router-dom';
 import { 
   Shield, Wand2, Bug, Scroll, Calculator, 
-  Info, Trophy, Clock, Package, Users, Skull, TrendingUp
+  Info, Trophy, Clock, Package, Users, Skull, TrendingUp, Sparkles
 } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
 import { ptBR, enUS, es, pl } from 'date-fns/locale';
@@ -50,6 +50,10 @@ const Sidebar = ({ position }: SidebarProps) => {
             <Link to="/creatures" className="sidebar-menu-item flex items-center gap-2">
               <Bug className="w-4 h-4 text-gold" />
               {t('navigation.creatures')}
+            </Link>
+            <Link to="/runes" className="sidebar-menu-item flex items-center gap-2">
+              <Sparkles className="w-4 h-4 text-gold" />
+              {t('pages.runes.title')}
             </Link>
             <Link to="/quests" className="sidebar-menu-item flex items-center gap-2">
               <Scroll className="w-4 h-4 text-gold" />

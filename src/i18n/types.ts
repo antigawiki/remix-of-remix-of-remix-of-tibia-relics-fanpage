@@ -202,6 +202,20 @@ export interface TranslationKeys {
       title: string;
       description: string;
     };
+    runes: {
+      title: string;
+      description: string;
+      mlvlCast: string;
+      mlvlUse: string;
+      charges: string;
+      vocations: string;
+      spell: string;
+      searchPlaceholder: string;
+      backpackProduction: string;
+      timeToMake: string;
+      foodNeeded: string;
+      noProductionData: string;
+    };
     calculatorsPage: {
       title: string;
       description: string;

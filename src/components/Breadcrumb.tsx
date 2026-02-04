@@ -26,6 +26,7 @@ const Breadcrumb = () => {
       '/online': t('navigation.online'),
       '/death-row': t('navigation.banned'),
       '/top-gainers': t('navigation.topGainers'),
+      '/runes': t('pages.runes.title'),
       '/admin': 'Admin',
     };
     return routeMap[path] || path;

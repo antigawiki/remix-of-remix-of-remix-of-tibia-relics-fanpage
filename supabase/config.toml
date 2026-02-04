@@ -11,3 +11,6 @@ verify_jwt = false
 
 [functions.scrape-item-details]
 verify_jwt = false
+
+[functions.scrape-rune-details]
+verify_jwt = false
