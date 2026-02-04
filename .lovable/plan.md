@@ -1,21 +1,15 @@
 
 
-# Plano: Melhorar a Página de Comidas
+# Plano: Melhorar a Tabela de Itens com Ordenação por Duração e Modal de Detalhes
 
 ## Resumo
 
-A página de comidas já existe em `/items/foods` e está funcionando! A estrutura atual já tem 32 comidas cadastradas e já suporta todos os 4 idiomas. Porém, comparando com o site de referência, faltam 3 itens e podemos melhorar a ordenação.
+Vou adicionar duas funcionalidades à página de itens (foods):
 
----
+1. **Ordenação por Duração**: Permitir clicar na coluna "Duração" para ordenar
+2. **Modal de Detalhes**: Ao clicar em um item, abrir modal com informações de onde comprar/vender e quem dropa (igual ao EquipmentTable)
 
-## O Que Já Existe
-
-| Item | Status |
-|------|--------|
-| Página de comidas | Existe em `/items/foods` |
-| Dados de comidas | `src/data/items/foods.ts` com 32 itens |
-| Componente de tabela | `ItemsTable.tsx` com busca e ordenação |
-| Traduções | Todas as 4 línguas têm "Comidas" traduzido |
+Também vou adicionar os 3 itens faltantes: Dough, Flour e Wheat.
 
 ---
 
@@ -25,37 +19,33 @@ A página de comidas já existe em `/items/foods` e está funcionando! A estrutu
 
 **Arquivo**: `src/data/items/foods.ts`
 
-Adicionar 3 itens que estão no site de referência mas não no nosso:
+Adicionar 3 itens que estão no site de referência:
 
-| Nome | Peso | Duração | Imagem |
-|------|------|---------|--------|
-| Dough | 5 oz. | 0 sec | 207.gif |
-| Flour | 5 oz. | 0 sec | 206.gif |
-| Wheat | 12.5 oz. | 0 sec | 205.gif |
+| Nome | Peso | Duração |
+|------|------|---------|
+| Dough | 5 oz. | 0 sec |
+| Flour | 5 oz. | 0 sec |
+| Wheat | 12.5 oz. | 0 sec |
 
-```typescript
-// Adicionar ao final do array foods:
-{ name: "Dough", image: "https://tibiara.netlify.app/en/img/food/207.gif", weight: "5 oz.", duration: "0 sec" },
-{ name: "Flour", image: "https://tibiara.netlify.app/en/img/food/206.gif", weight: "5 oz.", duration: "0 sec" },
-{ name: "Wheat", image: "https://tibiara.netlify.app/en/img/food/205.gif", weight: "12.5 oz.", duration: "0 sec" },
-```
+---
 
-### 2. Adicionar Ordenação por Duração
+### 2. Atualizar ItemsTable com Ordenação por Duração e Modal
 
 **Arquivo**: `src/components/ItemsTable.tsx`
 
-Atualmente a tabela permite ordenar por Nome e Peso. Vamos adicionar ordenação por Duração também.
-
-**Alterações**:
+Alterações:
 - Expandir o tipo de `sortKey` para incluir `'duration'`
-- Adicionar lógica de parsing para durações (converter "12 min 0 sec" para segundos)
-- Adicionar cursor pointer e ícone de seta na coluna Duração
+- Adicionar função `parseDuration()` para converter "12 min 0 sec" em segundos
+- Adicionar cursor e ícone de seta na coluna Duração
+- Adicionar estado para o modal (`selectedItem`, `modalOpen`)
+- Tornar a linha clicável (cursor-pointer)
+- Importar e usar o `ItemDetailsModal`
 
 ```typescript
-// Alterar tipo de sortKey
-const [sortKey, setSortKey] = useState<'name' | 'weight' | 'duration'>('name');
+// Novo tipo de sortKey
+type SortKey = 'name' | 'weight' | 'duration';
 
-// Adicionar função de parsing de duração
+// Nova função de parsing
 const parseDuration = (duration: string): number => {
   if (!duration || duration === '-') return 0;
   let totalSeconds = 0;
@@ -66,13 +56,70 @@ const parseDuration = (duration: string): number => {
   return totalSeconds;
 };
 
-// Atualizar handleSort
-const handleSort = (key: 'name' | 'weight' | 'duration') => { ... }
+// Estados para o modal
+const [selectedItem, setSelectedItem] = useState<Item | null>(null);
+const [modalOpen, setModalOpen] = useState(false);
 
-// Atualizar sortedItems para incluir duration
-if (sortKey === 'duration') {
-  comparison = parseDuration(a.duration || '0') - parseDuration(b.duration || '0');
+// Handler de clique na linha
+const handleRowClick = (item: Item) => {
+  setSelectedItem(item);
+  setModalOpen(true);
+};
+```
+
+---
+
+### 3. Adaptar ItemDetailsModal para Aceitar Item
+
+**Arquivo**: `src/components/ItemDetailsModal.tsx`
+
+O modal atual usa o tipo `Equipment`. Preciso fazer ele aceitar também `Item`:
+
+```typescript
+// Alterar a interface para aceitar ambos os tipos
+interface ItemDetailsModalProps {
+  item: Equipment | Item | null;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
 }
+```
+
+O hook `useItemDetails` já funciona com qualquer nome de item, então a edge function vai buscar os dados corretamente.
+
+---
+
+## Fluxo Visual
+
+```
+┌─────────────────────────────────────────────────┐
+│ Tabela de Comidas                               │
+├──────┬──────────┬─────────┬────────────────────┤
+│ Img  │ Nome ↕   │ Peso ↕  │ Duração ↕          │
+├──────┼──────────┼─────────┼────────────────────┤
+│ 🍖   │ Dragon   │ 30 oz.  │ 12 min             │ ← Clicável
+│      │ Ham      │         │                    │
+├──────┼──────────┼─────────┼────────────────────┤
+│ 🍞   │ Bread    │ 5 oz.   │ 2 min              │ ← Clicável
+└──────┴──────────┴─────────┴────────────────────┘
+                    │
+                    ▼ Clique
+┌─────────────────────────────────────────────────┐
+│ 🍖 Dragon Ham                              [X]  │
+├─────────────────────────────────────────────────┤
+│ Peso: 30 oz.  |  Duração: 12 min                │
+├─────────────────────────────────────────────────┤
+│ 💰 Vender Para        │ 🛒 Comprar De           │
+│ ┌─────────────────────┼───────────────────────┐ │
+│ │ Cidade  NPC  Preço  │ Cidade  NPC  Preço    │ │
+│ │ ...     ...  ...    │ ...     ...  ...      │ │
+│ └─────────────────────┴───────────────────────┘ │
+├─────────────────────────────────────────────────┤
+│ 💀 Dropado Por                                  │
+│ ┌─────────────────────────────────────────────┐ │
+│ │ Monstro       Img  Qtd  Chance              │ │
+│ │ Dragon        🐉   1    100%                │ │
+│ └─────────────────────────────────────────────┘ │
+└─────────────────────────────────────────────────┘
 ```
 
 ---
@@ -82,16 +129,26 @@ if (sortKey === 'duration') {
 | Arquivo | Alteração |
 |---------|-----------|
 | `src/data/items/foods.ts` | Adicionar 3 novos itens (Dough, Flour, Wheat) |
-| `src/components/ItemsTable.tsx` | Adicionar ordenação por duração |
+| `src/components/ItemsTable.tsx` | Ordenação por duração + linha clicável + modal |
+| `src/components/ItemDetailsModal.tsx` | Aceitar tipo `Item` além de `Equipment` |
 
 ---
 
-## Resultado Visual
+## Detalhes Técnicos
 
-A tabela de comidas terá:
-- 35 itens (32 atuais + 3 novos)
-- Ordenação clicável em 3 colunas: Nome, Peso, Duração
-- Mesmo estilo visual atual com fundo pergaminho
+### Colunas Ordenáveis
+A coluna de duração será ordenável apenas quando a categoria tiver a coluna `duration` (foods e rings).
+
+### Compatibilidade de Tipos
+O `ItemDetailsModal` precisa ser compatível com ambos:
+- `Equipment`: tem `armor`, `attack`, `defense`
+- `Item`: tem `duration`, `slots`, `city`, `charges`
+
+O modal já lida com campos opcionais, então vai funcionar para ambos os tipos.
+
+### Edge Function
+A edge function `scrape-item-details` já funciona para qualquer item, buscando na URL:
+`https://tibiara.netlify.app/en/pages/items/{item_name}.html`
 
 ---
 
@@ -99,8 +156,8 @@ A tabela de comidas terá:
 
 | Item | Quantidade |
 |------|------------|
-| Arquivos modificados | 2 |
-| Novos itens | 3 |
-| Linhas de código | ~30 linhas |
-| Idiomas | Já suportados (items em inglês, UI traduzida) |
+| Arquivos modificados | 3 |
+| Novos itens de comida | 3 |
+| Funcionalidades novas | 2 (ordenação + modal) |
+| Idiomas | Já suportados |
 
