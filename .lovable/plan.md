@@ -1,149 +1,97 @@
 
-# Plano: Adicionar Quest de Acesso a Sawsank
+
+# Plano: Melhorar a Página de Comidas
 
 ## Resumo
 
-Adicionar a quest completa de Acesso a Sawsank seguindo o mesmo modelo da quest de Ankrahmun, com suporte a todos os 4 idiomas (PT, EN, ES, PL) e incluindo todas as imagens do documento.
+A página de comidas já existe em `/items/foods` e está funcionando! A estrutura atual já tem 32 comidas cadastradas e já suporta todos os 4 idiomas. Porém, comparando com o site de referência, faltam 3 itens e podemos melhorar a ordenação.
 
 ---
 
-## Estrutura da Quest
+## O Que Já Existe
 
-### Informações Gerais
-- **Título**: Acesso a Sawsank
-- **Level**: 0 (sem requerimento de level)
-- **Premium**: Não especificado (deixar como false)
-- **Disponível**: Sim
-
-### Requerimentos
-- 20 gold para comprar 1 beer
-- Itens/Suprimentos para matar alguns skeletons, ghouls e 1 Demon Skeleton
-
-### Recompensas
-- Acesso à ilha de Sawsank
-- Autorização para viajar para Sawsank via pescador Bruno (100 gold)
+| Item | Status |
+|------|--------|
+| Página de comidas | Existe em `/items/foods` |
+| Dados de comidas | `src/data/items/foods.ts` com 32 itens |
+| Componente de tabela | `ItemsTable.tsx` com busca e ordenação |
+| Traduções | Todas as 4 línguas têm "Comidas" traduzido |
 
 ---
 
-## Seções da Quest
+## Alterações Necessárias
 
-| # | Tipo | Título | Descrição |
-|---|------|--------|-----------|
-| 1 | text | Início da Quest | Explicação sobre a Lei Seca em Carlin |
-| 2 | dialogue | Conversa com Bonecrusher | Diálogo sobre Sawsank e troublemakers |
-| 3 | text | Comprando a Beer | Ir à taverna do Karl e comprar beer |
-| 4 | dialogue | Provocando a Guarda | Diálogo de crime + usar beer |
-| 5 | text | Em Sawsank | Conversar com Lana Bonecrusher |
-| 6 | dialogue | Conversa com Lana | Sobre undead na ilha |
-| 7 | text | Explorando a Montanha | Ir à montanha noroeste |
-| 8 | text | Descendo na Caverna | Cuidados ao descer |
-| 9 | text | Enfrentando o Demon Skeleton | Combate com criaturas |
-| 10 | text | Pegando a Pilha de Ossos | Clicar no caixão |
-| 11 | parchment | Mensagem | "You have found a pile of bones." |
-| 12 | dialogue | Entregando a Prova | Diálogo de liberdade com Lana |
-| 13 | text | Reportando à General | Ir até Bunny Bonecrusher |
-| 14 | dialogue | Conversa com Bunny | Liberação do acesso |
-| 15 | text | Acesso Liberado | Instruções finais sobre Bruno |
-| 16 | credits | Créditos | Spoiler cedido por Ondeth Waters |
+### 1. Adicionar Comidas Faltantes
+
+**Arquivo**: `src/data/items/foods.ts`
+
+Adicionar 3 itens que estão no site de referência mas não no nosso:
+
+| Nome | Peso | Duração | Imagem |
+|------|------|---------|--------|
+| Dough | 5 oz. | 0 sec | 207.gif |
+| Flour | 5 oz. | 0 sec | 206.gif |
+| Wheat | 12.5 oz. | 0 sec | 205.gif |
+
+```typescript
+// Adicionar ao final do array foods:
+{ name: "Dough", image: "https://tibiara.netlify.app/en/img/food/207.gif", weight: "5 oz.", duration: "0 sec" },
+{ name: "Flour", image: "https://tibiara.netlify.app/en/img/food/206.gif", weight: "5 oz.", duration: "0 sec" },
+{ name: "Wheat", image: "https://tibiara.netlify.app/en/img/food/205.gif", weight: "12.5 oz.", duration: "0 sec" },
+```
+
+### 2. Adicionar Ordenação por Duração
+
+**Arquivo**: `src/components/ItemsTable.tsx`
+
+Atualmente a tabela permite ordenar por Nome e Peso. Vamos adicionar ordenação por Duração também.
+
+**Alterações**:
+- Expandir o tipo de `sortKey` para incluir `'duration'`
+- Adicionar lógica de parsing para durações (converter "12 min 0 sec" para segundos)
+- Adicionar cursor pointer e ícone de seta na coluna Duração
+
+```typescript
+// Alterar tipo de sortKey
+const [sortKey, setSortKey] = useState<'name' | 'weight' | 'duration'>('name');
+
+// Adicionar função de parsing de duração
+const parseDuration = (duration: string): number => {
+  if (!duration || duration === '-') return 0;
+  let totalSeconds = 0;
+  const minMatch = duration.match(/(\d+)\s*min/);
+  const secMatch = duration.match(/(\d+)\s*sec/);
+  if (minMatch) totalSeconds += parseInt(minMatch[1]) * 60;
+  if (secMatch) totalSeconds += parseInt(secMatch[1]);
+  return totalSeconds;
+};
+
+// Atualizar handleSort
+const handleSort = (key: 'name' | 'weight' | 'duration') => { ... }
+
+// Atualizar sortedItems para incluir duration
+if (sortKey === 'duration') {
+  comparison = parseDuration(a.duration || '0') - parseDuration(b.duration || '0');
+}
+```
 
 ---
 
-## Arquivos a Criar/Modificar
+## Arquivos a Modificar
 
-### Novos Arquivos
-| Arquivo | Descrição |
-|---------|-----------|
-| `src/data/quests/sawsankAccess.ts` | Dados completos da quest |
-| `public/quests/sawsank/` | Pasta com todas as imagens |
-
-### Arquivos a Modificar
 | Arquivo | Alteração |
 |---------|-----------|
-| `src/data/quests/index.ts` | Importar e adicionar a nova quest no array |
+| `src/data/items/foods.ts` | Adicionar 3 novos itens (Dough, Flour, Wheat) |
+| `src/components/ItemsTable.tsx` | Adicionar ordenação por duração |
 
 ---
 
-## Imagens a Copiar
+## Resultado Visual
 
-| Origem | Destino |
-|--------|---------|
-| `img_p0_1.jpg` | `public/quests/sawsank/bonecrusher-sawsank.jpg` |
-| `img_p1_1.jpg` | `public/quests/sawsank/karl-tavern.jpg` |
-| `img_p3_1.png` | `public/quests/sawsank/cave-entrance.png` |
-| `img_p4_1.png` | `public/quests/sawsank/demon-skeleton.png` |
-| `img_p5_1.jpg` | `public/quests/sawsank/coffin-bones.jpg` |
-| `img_p6_1.jpg` | `public/quests/sawsank/lana-freedom.jpg` |
-| `img_p7_1.jpg` | `public/quests/sawsank/bunny-general.jpg` |
-| `img_p8_1.jpg` | `public/quests/sawsank/credits-celebration.jpg` |
-
----
-
-## Traduções
-
-Todas as seções terão tradução para os 4 idiomas:
-
-### Exemplo - Título
-```typescript
-title: {
-  pt: "Acesso a Sawsank",
-  en: "Access to Sawsank",
-  es: "Acceso a Sawsank",
-  pl: "Dostęp do Sawsank",
-}
-```
-
-### Exemplo - Descrição
-```typescript
-description: {
-  pt: "Descubra a prisão secreta de Carlin quebrando a Lei Seca.",
-  en: "Discover Carlin's secret prison by breaking the Dry Law.",
-  es: "Descubre la prisión secreta de Carlin rompiendo la Ley Seca.",
-  pl: "Odkryj sekretne więzienie Carlin, łamiąc Prawo Suchej.",
-}
-```
-
----
-
-## Detalhes Técnicos
-
-### Estrutura do Arquivo sawsankAccess.ts
-
-```typescript
-import { Quest } from "./index";
-
-export const sawsankAccess: Quest = {
-  id: "sawsank-access",
-  slug: "sawsank-access",
-  title: { ... },
-  description: { ... },
-  level: 0,
-  premium: false,
-  available: true,
-  requirements: {
-    items: [
-      { pt: "20 gold para comprar 1 beer", en: "20 gold to buy 1 beer", ... },
-      { pt: "Itens/Suprimentos para...", en: "Items/Supplies to...", ... },
-    ],
-  },
-  rewards: [
-    { pt: "Acesso à ilha de Sawsank", en: "Access to Sawsank island", ... },
-  ],
-  sections: [
-    // 16 seções conforme tabela acima
-  ],
-};
-```
-
-### Atualização do index.ts
-
-```typescript
-import { sawsankAccess } from "./sawsankAccess";
-
-export const quests: Quest[] = [
-  explorerSocietyAnkrahmun,
-  sawsankAccess,
-];
-```
+A tabela de comidas terá:
+- 35 itens (32 atuais + 3 novos)
+- Ordenação clicável em 3 colunas: Nome, Peso, Duração
+- Mesmo estilo visual atual com fundo pergaminho
 
 ---
 
@@ -151,8 +99,8 @@ export const quests: Quest[] = [
 
 | Item | Quantidade |
 |------|------------|
-| Arquivos novos | 1 (sawsankAccess.ts) |
-| Arquivos modificados | 1 (index.ts) |
-| Imagens a copiar | 8 |
-| Seções da quest | 16 |
-| Idiomas suportados | 4 (PT, EN, ES, PL) |
+| Arquivos modificados | 2 |
+| Novos itens | 3 |
+| Linhas de código | ~30 linhas |
+| Idiomas | Já suportados (items em inglês, UI traduzida) |
+
