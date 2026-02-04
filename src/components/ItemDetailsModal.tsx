@@ -2,13 +2,14 @@ import { useState } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { useItemDetails, ItemDetails } from '@/hooks/useItemDetails';
 import { Equipment } from '@/data/equipment';
+import { Item } from '@/data/items';
 import { Skeleton } from '@/components/ui/skeleton';
 import { MapPin, Coins, ShoppingCart, Skull } from 'lucide-react';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import MapModal, { parseMapCoordinates } from './MapModal';
 
 interface ItemDetailsModalProps {
-  item: Equipment | null;
+  item: Equipment | Item | null;
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }
@@ -173,7 +174,8 @@ const ItemDetailsModal = ({ item, open, onOpenChange }: ItemDetailsModalProps) =
               {item && (
                 <div className="parchment-dark p-4 rounded-sm text-text-dark">
                   <p className="text-sm">
-                    <strong>Armadura:</strong> {item.armor ?? '-'} | 
+                    {'armor' in item && <><strong>Armadura:</strong> {item.armor ?? '-'} | </>}
+                    {'duration' in item && item.duration && <><strong>Duração:</strong> {item.duration} | </>}
                     <strong> Peso:</strong> {item.weight}
                   </p>
                   {item.attributes && (
