@@ -44,10 +44,10 @@ export const XpDashboard = ({
       {/* Session Time */}
       <div className="wood-panel p-4 rounded-sm">
         <div className="flex items-center gap-2 mb-2">
-          <Clock className="w-5 h-5 text-primary" />
+          <Clock className="w-5 h-5 text-blue-400" />
           <span className="text-sm text-muted-foreground">{t('xpTracker.sessionTime')}</span>
         </div>
-        <p className="text-2xl font-bold text-primary">
+        <p className="text-2xl font-bold text-blue-400">
           {formatDuration(state.sessionDuration)}
         </p>
       </div>
@@ -55,10 +55,10 @@ export const XpDashboard = ({
       {/* XP per Hour */}
       <div className="wood-panel p-4 rounded-sm">
         <div className="flex items-center gap-2 mb-2">
-          <Target className="w-5 h-5 text-secondary-foreground" />
+          <Target className="w-5 h-5 text-purple-400" />
           <span className="text-sm text-muted-foreground">{t('xpTracker.xpPerHour')}</span>
         </div>
-        <p className="text-2xl font-bold text-secondary-foreground">
+        <p className="text-2xl font-bold text-purple-400">
           {formatXp(state.xpPerHour)}/h
         </p>
       </div>
