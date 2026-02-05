@@ -291,6 +291,14 @@ export const creatures: Creature[] = [
     convince: 450,
   },
   {
+    name: "Giant",
+    image: "/creatures/giant.png",
+    exp: 900,
+    hp: 1300,
+    summon: null,
+    convince: null,
+  },
+  {
     name: "Giant Spider",
     image: "https://usa.michal.es/tibiantis/images/creatures/giant_spider.gif",
     exp: 900,
