@@ -480,4 +480,27 @@ export interface TranslationKeys {
       summary: string;
     };
   };
+  xpTracker: {
+    title: string;
+    description: string;
+    startButton: string;
+    stopButton: string;
+    floatingMode: string;
+    selectWindow: string;
+    currentXp: string;
+    xpGained: string;
+    sessionTime: string;
+    xpPerHour: string;
+    projection: string;
+    hour: string;
+    hours: string;
+    noPermission: string;
+    pipNotSupported: string;
+    processing: string;
+    waitingCapture: string;
+    capturing: string;
+    started: string;
+    stopped: string;
+    ocrHint: string;
+  };
 }
