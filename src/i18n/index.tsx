@@ -1,3 +1,4 @@
+// i18n configuration and context provider
 import { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { Language, TranslationKeys } from './types';
 import { pt } from './translations/pt';
