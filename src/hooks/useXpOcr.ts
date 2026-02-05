@@ -11,35 +11,46 @@ interface UseXpOcrReturn {
 
 // Parse XP value from OCR text
 // Looking for patterns like "Experience    156,507" or "Experience: 156507"
+// The Tibia Skills window shows: "Experience    156,507"
 const parseXpFromText = (text: string): number | null => {
-  // Normalize text - remove extra whitespace and newlines
-  const normalizedText = text.replace(/\s+/g, ' ').trim();
+  console.log('OCR Raw Text:', text);
   
-  // Try to find "Experience" followed by a number
-  const patterns = [
-    /experience[:\s]+([0-9,.\s]+)/i,
-    /exp[:\s]+([0-9,.\s]+)/i,
-    /xp[:\s]+([0-9,.\s]+)/i,
-    // Also try to match standalone large numbers that could be XP
-    /\b(\d{1,3}(?:[,.\s]\d{3})+)\b/,
-    /\b(\d{4,})\b/,
+  // Normalize text - keep only relevant characters
+  const normalizedText = text
+    .replace(/\n/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  
+  console.log('OCR Normalized:', normalizedText);
+  
+  // STRICT pattern: Must have "Experience" (or similar) followed by the number
+  // The number in Tibia uses comma as thousand separator: 156,507
+  const strictPatterns = [
+    // Match "Experience" followed by number with comma separators
+    /experience\s+(\d{1,3}(?:,\d{3})*)/i,
+    // Match "Experience" followed by number with dot separators (some locales)
+    /experience\s+(\d{1,3}(?:\.\d{3})*)/i,
+    // Match "Experience" followed by plain number
+    /experience\s+(\d+)/i,
   ];
 
-  for (const pattern of patterns) {
+  for (const pattern of strictPatterns) {
     const match = normalizedText.match(pattern);
     if (match && match[1]) {
-      // Clean the number - remove commas, dots used as thousand separators, and spaces
-      const cleanNumber = match[1]
-        .replace(/[,\s]/g, '')
-        .replace(/\.(?=\d{3})/g, ''); // Remove dots used as thousand separators
+      // Clean the number - remove commas and dots used as thousand separators
+      const cleanNumber = match[1].replace(/[,.]/g, '');
       
       const parsed = parseInt(cleanNumber, 10);
-      if (!isNaN(parsed) && parsed > 0) {
+      console.log('OCR Parsed XP:', parsed, 'from match:', match[1]);
+      
+      // Validate: XP should be reasonable (between 0 and 10 billion)
+      if (!isNaN(parsed) && parsed > 0 && parsed < 10_000_000_000) {
         return parsed;
       }
     }
   }
 
+  console.log('OCR: No valid Experience value found');
   return null;
 };
 
@@ -55,16 +66,15 @@ export const useXpOcr = (): UseXpOcrReturn => {
 
     try {
       const worker = await createWorker('eng', 1, {
-        logger: () => {}, // Disable logging
+        logger: (m) => console.log('Tesseract:', m),
       });
       
-      // Configure for better number recognition
-      await worker.setParameters({
-        tessedit_char_whitelist: '0123456789,. ExperienceXPxp:',
-      });
+      // No special parameters needed - default settings work well
+      // The key is in the preprocessing of the image
 
       workerRef.current = worker;
       setIsInitialized(true);
+      console.log('OCR Worker initialized successfully');
     } catch (error) {
       console.error('Failed to initialize Tesseract worker:', error);
       throw error;
