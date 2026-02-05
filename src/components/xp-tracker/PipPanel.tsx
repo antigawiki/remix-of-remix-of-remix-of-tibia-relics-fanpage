@@ -29,13 +29,7 @@ export const PipPanel = ({
   const containerRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
-    if (!isOpen) {
-      if (pipWindowRef.current) {
-        pipWindowRef.current.close();
-        pipWindowRef.current = null;
-      }
-      return;
-    }
+    let pipWindow: Window | null = null;
 
     const openPip = async () => {
       if (!window.documentPictureInPicture) {
@@ -45,7 +39,7 @@ export const PipPanel = ({
       }
 
       try {
-        const pipWindow = await window.documentPictureInPicture.requestWindow({
+        pipWindow = await window.documentPictureInPicture.requestWindow({
           width: 320,
           height: 140,
         });
@@ -119,15 +113,24 @@ export const PipPanel = ({
       }
     };
 
-    openPip();
+    if (isOpen) {
+      openPip();
+    } else {
+      if (pipWindowRef.current) {
+        pipWindowRef.current.close();
+        pipWindowRef.current = null;
+        containerRef.current = null;
+      }
+    }
 
     return () => {
       if (pipWindowRef.current) {
         pipWindowRef.current.close();
         pipWindowRef.current = null;
+        containerRef.current = null;
       }
     };
-  }, [isOpen, onClose]);
+  }, [isOpen]); // Remove onClose from dependencies to prevent re-running
 
   // Update PiP content when state changes
   useEffect(() => {
