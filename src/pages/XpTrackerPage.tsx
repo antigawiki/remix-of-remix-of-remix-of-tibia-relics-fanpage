@@ -1,7 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { Play, Square, PictureInPicture2, AlertCircle, Monitor, Loader2 } from 'lucide-react';
 import MainLayout from '@/layouts/MainLayout';
-import Breadcrumb from '@/components/Breadcrumb';
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/hooks/use-toast';
 import { useTranslation } from '@/i18n';
@@ -140,8 +139,6 @@ const XpTrackerPage = () => {
 
   return (
     <MainLayout showSidebars={false}>
-      <Breadcrumb />
-
       <div className="space-y-6">
         {/* Header */}
         <div className="wood-panel rounded-sm overflow-hidden">
