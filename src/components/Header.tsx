@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Menu, X, Users, Skull, Map, Home, Shield, Sparkles, Bug, ScrollText, Calculator, Info, Search } from 'lucide-react';
+import { Menu, X, Users, Skull, Map, Home, Shield, Sparkles, Bug, ScrollText, Calculator, Info, Search, Package, Trophy, TrendingUp } from 'lucide-react';
 import headerBg from '@/assets/header-bg.jpg';
 import mainLogo from '@/assets/main-logo.webp';
 import GlobalSearch from '@/components/GlobalSearch';
@@ -124,6 +124,10 @@ const Header = () => {
                 <Shield className="w-4 h-4" />
                 {t('navigation.equipment')}
               </Link>
+              <Link to="/items" className="sidebar-menu-item flex items-center gap-2" onClick={() => setMobileMenuOpen(false)}>
+                <Package className="w-4 h-4" />
+                {t('navigation.items')}
+              </Link>
               <Link to="/spells" className="sidebar-menu-item flex items-center gap-2" onClick={() => setMobileMenuOpen(false)}>
                 <Sparkles className="w-4 h-4" />
                 {t('navigation.spells')}
@@ -131,6 +135,10 @@ const Header = () => {
               <Link to="/creatures" className="sidebar-menu-item flex items-center gap-2" onClick={() => setMobileMenuOpen(false)}>
                 <Bug className="w-4 h-4" />
                 {t('navigation.creatures')}
+              </Link>
+              <Link to="/runes" className="sidebar-menu-item flex items-center gap-2" onClick={() => setMobileMenuOpen(false)}>
+                <Sparkles className="w-4 h-4" />
+                {t('pages.runes.title')}
               </Link>
               <Link to="/quests" className="sidebar-menu-item flex items-center gap-2" onClick={() => setMobileMenuOpen(false)}>
                 <ScrollText className="w-4 h-4" />
@@ -143,6 +151,22 @@ const Header = () => {
               <Link to="/info" className="sidebar-menu-item flex items-center gap-2" onClick={() => setMobileMenuOpen(false)}>
                 <Info className="w-4 h-4" />
                 {t('navigation.info')}
+              </Link>
+              
+              <div className="border-t border-border/30 my-2" />
+              
+              {/* Player Stats Links */}
+              <Link to="/highscores" className="sidebar-menu-item flex items-center gap-2" onClick={() => setMobileMenuOpen(false)}>
+                <Trophy className="w-4 h-4" />
+                {t('navigation.ranking')}
+              </Link>
+              <Link to="/top-gainers" className="sidebar-menu-item flex items-center gap-2" onClick={() => setMobileMenuOpen(false)}>
+                <TrendingUp className="w-4 h-4" />
+                {t('navigation.topGainers')}
+              </Link>
+              <Link to="/online" className="sidebar-menu-item flex items-center gap-2" onClick={() => setMobileMenuOpen(false)}>
+                <Users className="w-4 h-4" />
+                {t('navigation.online')}
               </Link>
               
               <div className="border-t border-border/30 my-2" />
