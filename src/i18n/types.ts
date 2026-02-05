@@ -128,6 +128,8 @@ export interface TranslationKeys {
     wikiConstructionContent2: string;
     tibiaRelicServerTitle: string;
     tibiaRelicServerContent: string;
+    premiumPurchasesTitle: string;
+    premiumPurchasesContent: string;
   };
   footer: {
     developedBy: string;
