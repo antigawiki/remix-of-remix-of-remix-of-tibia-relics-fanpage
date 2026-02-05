@@ -128,6 +128,8 @@ export const en: TranslationKeys = {
     wikiConstructionContent2: 'Stay tuned for updates!',
     tibiaRelicServerTitle: 'Tibia Relic - The Server',
     tibiaRelicServerContent: 'Tibia Relic is an OT server that brings back the nostalgia of classic Tibia with some improvements. Visit the official site to create your account and start playing!',
+    premiumPurchasesTitle: 'Premium Purchases Are Now Available!',
+    premiumPurchasesContent: '<p>You can now purchase <strong>Relic Tokens</strong> directly on the website using <strong>Stripe</strong>! The process is fast, secure, and you receive your tokens instantly.</p><p class="mt-2"><strong>Available packages:</strong></p><ul class="list-disc list-inside mt-1"><li>1 Relic Token</li><li>3 Relic Tokens</li><li>6 Relic Tokens</li></ul><p class="mt-2">Each token can be exchanged in-game for <strong>30 days of Premium</strong>. Enjoy!</p><p class="mt-2"><em>🎁 Promotion: Players who purchase tokens this month get 1 extra token!</em></p>',
   },
   footer: {
     developedBy: 'Developed by',
