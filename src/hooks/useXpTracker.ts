@@ -36,11 +36,34 @@ export const useXpTracker = (): UseXpTrackerReturn => {
   const [state, setState] = useState<XpTrackerState>(initialState);
   const [isTracking, setIsTracking] = useState(false);
   const timerRef = useRef<number | null>(null);
+  const isTrackingRef = useRef(isTracking);
+
+  // Keep ref in sync with state
+  useEffect(() => {
+    isTrackingRef.current = isTracking;
+  }, [isTracking]);
+
+  // Clear any existing timer
+  const clearTimer = useCallback(() => {
+    if (timerRef.current !== null) {
+      window.clearInterval(timerRef.current);
+      timerRef.current = null;
+    }
+  }, []);
 
   // Update session duration every second
   useEffect(() => {
+    // Clear any existing timer first
+    clearTimer();
+
     if (isTracking && state.startTime) {
       timerRef.current = window.setInterval(() => {
+        // Check if still tracking using ref (avoids stale closure)
+        if (!isTrackingRef.current) {
+          clearTimer();
+          return;
+        }
+
         setState(prev => {
           if (!prev.startTime) return prev;
           
@@ -61,14 +84,12 @@ export const useXpTracker = (): UseXpTrackerReturn => {
           };
         });
       }, 1000);
-
-      return () => {
-        if (timerRef.current) {
-          clearInterval(timerRef.current);
-        }
-      };
     }
-  }, [isTracking, state.startTime]);
+
+    return () => {
+      clearTimer();
+    };
+  }, [isTracking, state.startTime, clearTimer]);
 
   const startTracking = useCallback((initialXp?: number) => {
     const now = new Date();
@@ -83,12 +104,11 @@ export const useXpTracker = (): UseXpTrackerReturn => {
   }, []);
 
   const stopTracking = useCallback(() => {
+    // Clear timer first
+    clearTimer();
+    // Then update state
     setIsTracking(false);
-    if (timerRef.current) {
-      clearInterval(timerRef.current);
-      timerRef.current = null;
-    }
-  }, []);
+  }, [clearTimer]);
 
   const updateXp = useCallback((newXp: number) => {
     if (!isTracking) return;
