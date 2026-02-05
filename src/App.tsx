@@ -29,6 +29,7 @@ import OnlinePlayersPage from "./pages/OnlinePlayersPage";
 import DeathRowPage from "./pages/DeathRowPage";
 import TopGainersPage from "./pages/TopGainersPage";
 import RunesPage from "./pages/RunesPage";
+import XpTrackerPage from "./pages/XpTrackerPage";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -68,6 +69,7 @@ const App = () => (
               <Route path="/death-row" element={<DeathRowPage />} />
               <Route path="/top-gainers" element={<TopGainersPage />} />
               <Route path="/runes" element={<RunesPage />} />
+              <Route path="/xp-tracker" element={<XpTrackerPage />} />
               {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
               <Route path="*" element={<NotFound />} />
             </Routes>

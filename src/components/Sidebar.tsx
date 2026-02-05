@@ -1,7 +1,7 @@
 import { Link } from 'react-router-dom';
 import { 
   Shield, Wand2, Bug, Scroll, Calculator, 
-  Info, Trophy, Clock, Package, Users, Skull, TrendingUp, Sparkles
+  Info, Trophy, Clock, Package, Users, Skull, TrendingUp, Sparkles, Monitor
 } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
 import { ptBR, enUS, es, pl } from 'date-fns/locale';
@@ -62,6 +62,10 @@ const Sidebar = ({ position }: SidebarProps) => {
             <Link to="/calculators" className="sidebar-menu-item flex items-center gap-2">
               <Calculator className="w-4 h-4 text-gold" />
               {t('navigation.calculators')}
+            </Link>
+            <Link to="/xp-tracker" className="sidebar-menu-item flex items-center gap-2">
+              <Monitor className="w-4 h-4 text-gold" />
+              {t('xpTracker.title')}
             </Link>
             <Link to="/highscores" className="sidebar-menu-item flex items-center gap-2">
               <Trophy className="w-4 h-4 text-gold" />

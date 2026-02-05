@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Menu, X, Users, Skull, Map, Home, Shield, Sparkles, Bug, ScrollText, Calculator, Info, Search, Package, Trophy, TrendingUp } from 'lucide-react';
+import { Menu, X, Users, Skull, Map, Home, Shield, Sparkles, Bug, ScrollText, Calculator, Info, Search, Package, Trophy, TrendingUp, Monitor } from 'lucide-react';
 import headerBg from '@/assets/header-bg.jpg';
 import mainLogo from '@/assets/main-logo.webp';
 import GlobalSearch from '@/components/GlobalSearch';
@@ -147,6 +147,10 @@ const Header = () => {
               <Link to="/calculators" className="sidebar-menu-item flex items-center gap-2" onClick={() => setMobileMenuOpen(false)}>
                 <Calculator className="w-4 h-4" />
                 {t('navigation.calculators')}
+              </Link>
+              <Link to="/xp-tracker" className="sidebar-menu-item flex items-center gap-2" onClick={() => setMobileMenuOpen(false)}>
+                <Monitor className="w-4 h-4" />
+                {t('xpTracker.title')}
               </Link>
               <Link to="/info" className="sidebar-menu-item flex items-center gap-2" onClick={() => setMobileMenuOpen(false)}>
                 <Info className="w-4 h-4" />
