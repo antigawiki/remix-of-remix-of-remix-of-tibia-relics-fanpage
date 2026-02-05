@@ -49,21 +49,21 @@ const Index = () => {
             <NewsBox 
               title={t('news.premiumPurchasesTitle')}
               date="03/02/2026"
-              author="Admin"
+              author="Josuba"
               content={t('news.premiumPurchasesContent')}
             />
             
             <NewsBox 
               title={t('news.wikiConstructionTitle')}
-              date="02/01/2024"
-              author="Admin"
+              date="02/01/2026"
+              author="Josuba"
               content={`<p>${t('news.wikiConstructionContent')}</p><p class='mt-2'>${t('news.wikiConstructionContent2')}</p>`}
             />
             
             <NewsBox 
               title={t('news.tibiaRelicServerTitle')}
-              date="01/01/2024"
-              author="Admin"
+              date="01/01/2026"
+              author="Josuba"
               content={`<p>${t('news.tibiaRelicServerContent')} <a href='https://tibiarelic.com' target='_blank' class='text-maroon dark:text-gold hover:underline'>tibiarelic.com</a></p>`}
             />
           </div>
