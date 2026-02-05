@@ -48,10 +48,9 @@ const Index = () => {
             {/* Premium Purchases News - Translated */}
             <NewsBox 
               title={t('news.premiumPurchasesTitle')}
-              date="05/02/2025"
+              date="03/02/2026"
               author="Admin"
               content={t('news.premiumPurchasesContent')}
-              image="/news/premium-purchases.png"
             />
             
             <NewsBox 
