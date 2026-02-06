@@ -51,40 +51,44 @@ export const useXpTracker = (): UseXpTrackerReturn => {
     }
   }, []);
 
-  // Update session duration every second
+  // Update session duration every second - ONLY when actively tracking
   useEffect(() => {
     // Clear any existing timer first
     clearTimer();
 
-    if (isTracking && state.startTime) {
-      timerRef.current = window.setInterval(() => {
-        // Check if still tracking using ref (avoids stale closure)
-        if (!isTrackingRef.current) {
-          clearTimer();
-          return;
+    // Only start timer if actively tracking
+    if (!isTracking || !state.startTime) {
+      return;
+    }
+
+    timerRef.current = window.setInterval(() => {
+      // Double-check using ref (avoids stale closure)
+      if (!isTrackingRef.current) {
+        clearTimer();
+        return;
+      }
+
+      setState(prev => {
+        // Don't update if not tracking or no start time
+        if (!prev.startTime || !isTrackingRef.current) return prev;
+        
+        const now = new Date();
+        const durationMs = now.getTime() - prev.startTime.getTime();
+        const durationSeconds = Math.floor(durationMs / 1000);
+        
+        // Calculate XP per hour
+        let xpPerHour = 0;
+        if (durationSeconds > 0 && prev.xpGained > 0) {
+          xpPerHour = Math.round((prev.xpGained / durationSeconds) * 3600);
         }
 
-        setState(prev => {
-          if (!prev.startTime) return prev;
-          
-          const now = new Date();
-          const durationMs = now.getTime() - prev.startTime.getTime();
-          const durationSeconds = Math.floor(durationMs / 1000);
-          
-          // Calculate XP per hour
-          let xpPerHour = 0;
-          if (durationSeconds > 0 && prev.xpGained > 0) {
-            xpPerHour = Math.round((prev.xpGained / durationSeconds) * 3600);
-          }
-
-          return {
-            ...prev,
-            sessionDuration: durationSeconds,
-            xpPerHour,
-          };
-        });
-      }, 1000);
-    }
+        return {
+          ...prev,
+          sessionDuration: durationSeconds,
+          xpPerHour,
+        };
+      });
+    }, 1000);
 
     return () => {
       clearTimer();
