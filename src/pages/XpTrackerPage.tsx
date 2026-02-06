@@ -22,7 +22,7 @@ import { XpDashboard } from "@/components/xp-tracker/XpDashboard";
 import { PipPanel } from "@/components/xp-tracker/PipPanel";
 import { WebXpTracker } from "@/components/xp-tracker/WebXpTracker";
 
-const DOWNLOAD_URL = "https://tibiarelikwiki.netlify.app/relichelper.zip";
+const DOWNLOAD_URL = "https://tibiarelikwiki.netlify.app/RelicHelper.zip";
 
 const XpTrackerPage = () => {
   const { t } = useTranslation();
