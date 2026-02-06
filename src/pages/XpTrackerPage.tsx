@@ -95,6 +95,11 @@ const XpTrackerPage = () => {
       // Start tracking
       startTracking();
       
+      // Auto-open PiP if supported so user can switch to game
+      if (window.documentPictureInPicture) {
+        setIsPipOpen(true);
+      }
+      
       toast({
         title: t('xpTracker.title'),
         description: t('xpTracker.started'),
