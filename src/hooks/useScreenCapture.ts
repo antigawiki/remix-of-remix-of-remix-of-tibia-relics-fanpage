@@ -1,5 +1,9 @@
 import { useState, useRef, useCallback } from 'react';
 
+interface UseScreenCaptureOptions {
+  onStreamEnded?: () => void;
+}
+
 interface UseScreenCaptureReturn {
   stream: MediaStream | null;
   isCapturing: boolean;
@@ -10,12 +14,16 @@ interface UseScreenCaptureReturn {
   videoRef: React.RefObject<HTMLVideoElement>;
 }
 
-export const useScreenCapture = (): UseScreenCaptureReturn => {
+export const useScreenCapture = (options?: UseScreenCaptureOptions): UseScreenCaptureReturn => {
   const [stream, setStream] = useState<MediaStream | null>(null);
   const [isCapturing, setIsCapturing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const onStreamEndedRef = useRef(options?.onStreamEnded);
+
+  // Keep callback ref updated
+  onStreamEndedRef.current = options?.onStreamEnded;
 
   const startCapture = useCallback(async () => {
     try {
@@ -42,10 +50,12 @@ export const useScreenCapture = (): UseScreenCaptureReturn => {
         await videoRef.current.play();
       }
 
-      // Handle stream end (user stops sharing)
+      // Handle stream end (user stops sharing externally)
       mediaStream.getVideoTracks()[0].onended = () => {
         setStream(null);
         setIsCapturing(false);
+        // Notify parent component that stream ended
+        onStreamEndedRef.current?.();
       };
 
     } catch (err) {
