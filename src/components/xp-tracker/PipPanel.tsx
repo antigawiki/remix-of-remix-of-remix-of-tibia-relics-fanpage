@@ -181,7 +181,7 @@ export const PipPanel = ({
 
     containerRef.current.innerHTML = `
       <div class="pip-container">
-        <img src="/map/icon.png" alt="Tibia Relic" class="logo" />
+        <img src="https://tibiarelic.wiki/assets/main-logo-CQBu3bAW.webp" alt="Tibia Relic" class="logo" />
         <div class="info">
           <div class="xp-value">XP: ${state.currentXp !== null ? state.currentXp.toLocaleString() : '--'}</div>
           <div class="stats-row">
