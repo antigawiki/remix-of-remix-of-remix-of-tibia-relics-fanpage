@@ -1,17 +1,28 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
-import { Play, Square, PictureInPicture2, AlertCircle, Monitor, Loader2, Download, Globe, ChevronDown, ChevronUp } from 'lucide-react';
-import MainLayout from '@/layouts/MainLayout';
-import { Button } from '@/components/ui/button';
-import { useToast } from '@/hooks/use-toast';
-import { useTranslation } from '@/i18n';
-import { useScreenCapture } from '@/hooks/useScreenCapture';
-import { useXpOcr } from '@/hooks/useXpOcr';
-import { useXpTracker } from '@/hooks/useXpTracker';
-import { XpDashboard } from '@/components/xp-tracker/XpDashboard';
-import { PipPanel } from '@/components/xp-tracker/PipPanel';
-import { WebXpTracker } from '@/components/xp-tracker/WebXpTracker';
+import { useState, useEffect, useRef, useCallback } from "react";
+import {
+  Play,
+  Square,
+  PictureInPicture2,
+  AlertCircle,
+  Monitor,
+  Loader2,
+  Download,
+  Globe,
+  ChevronDown,
+  ChevronUp,
+} from "lucide-react";
+import MainLayout from "@/layouts/MainLayout";
+import { Button } from "@/components/ui/button";
+import { useToast } from "@/hooks/use-toast";
+import { useTranslation } from "@/i18n";
+import { useScreenCapture } from "@/hooks/useScreenCapture";
+import { useXpOcr } from "@/hooks/useXpOcr";
+import { useXpTracker } from "@/hooks/useXpTracker";
+import { XpDashboard } from "@/components/xp-tracker/XpDashboard";
+import { PipPanel } from "@/components/xp-tracker/PipPanel";
+import { WebXpTracker } from "@/components/xp-tracker/WebXpTracker";
 
-const DOWNLOAD_URL = 'https://github.com/antigawiki/remix-of-remix-of-tibia-relics-fanpage/releases/download/RelicHelper/RelicHelper.zip';
+const DOWNLOAD_URL = "https://tibiarelikwiki.netlify.app/relichelper.zip";
 
 const XpTrackerPage = () => {
   const { t } = useTranslation();
@@ -25,13 +36,11 @@ const XpTrackerPage = () => {
           <div className="news-box-header">
             <h2 className="flex items-center gap-2">
               <Monitor className="w-5 h-5" />
-              {t('xpTracker.title')}
+              {t("xpTracker.title")}
             </h2>
           </div>
           <div className="p-4">
-            <p className="text-muted-foreground mb-6">
-              {t('xpTracker.description')}
-            </p>
+            <p className="text-muted-foreground mb-6">{t("xpTracker.description")}</p>
 
             {/* Desktop App - Primary Option */}
             <div className="bg-gradient-to-br from-gold/20 to-gold/5 border-2 border-gold/50 rounded-lg p-6 mb-6">
@@ -40,11 +49,10 @@ const XpTrackerPage = () => {
                   <Download className="w-6 h-6 text-gold" />
                 </div>
                 <div className="flex-1">
-                  <h3 className="text-xl font-heading font-bold text-gold mb-2">
-                    RelicHelper (Recomendado)
-                  </h3>
+                  <h3 className="text-xl font-heading font-bold text-gold mb-2">RelicHelper (Recomendado)</h3>
                   <p className="text-muted-foreground mb-4">
-                    Aplicativo desktop para Windows. Coloque na pasta do jogo para rastreamento automático de XP, Level, tempo para o próximo level e muito mais!
+                    Aplicativo desktop para Windows. Coloque na pasta do jogo para rastreamento automático de XP, Level,
+                    tempo para o próximo level e muito mais!
                   </p>
                   <ul className="text-sm text-muted-foreground mb-4 space-y-1">
                     <li>✓ Leitura direta da memória - mais preciso</li>
@@ -52,12 +60,7 @@ const XpTrackerPage = () => {
                     <li>✓ Funciona em segundo plano</li>
                     <li>✓ Timer integrado e busca de personagens</li>
                   </ul>
-                  <a
-                    href={DOWNLOAD_URL}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="inline-flex"
-                  >
+                  <a href={DOWNLOAD_URL} target="_blank" rel="noopener noreferrer" className="inline-flex">
                     <Button className="bg-gold hover:bg-gold/90 text-black font-semibold">
                       <Download className="w-4 h-4 mr-2" />
                       Baixar RelicHelper
