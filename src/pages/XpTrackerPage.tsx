@@ -16,15 +16,10 @@ const XpTrackerPage = () => {
   const { t } = useTranslation();
   const { toast } = useToast();
   
-  const { 
-    isCapturing, 
-    error: captureError, 
-    startCapture, 
-    stopCapture, 
-    captureFrame, 
-    videoRef 
-  } = useScreenCapture();
-  
+  const [isPipOpen, setIsPipOpen] = useState(false);
+  const [isInitializing, setIsInitializing] = useState(false);
+  const ocrIntervalRef = useRef<number | null>(null);
+
   const { 
     isInitialized: ocrReady, 
     isProcessing: ocrProcessing, 
@@ -45,9 +40,28 @@ const XpTrackerPage = () => {
     getProjection 
   } = useXpTracker();
 
-  const [isPipOpen, setIsPipOpen] = useState(false);
-  const [isInitializing, setIsInitializing] = useState(false);
-  const ocrIntervalRef = useRef<number | null>(null);
+  // Handler for when screen sharing ends externally
+  const handleStreamEnded = useCallback(() => {
+    stopTracking();
+    if (ocrIntervalRef.current) {
+      clearInterval(ocrIntervalRef.current);
+      ocrIntervalRef.current = null;
+    }
+    setIsPipOpen(false);
+    toast({
+      title: t('xpTracker.title'),
+      description: t('xpTracker.stopped'),
+    });
+  }, [stopTracking, toast, t]);
+
+  const { 
+    isCapturing, 
+    error: captureError, 
+    startCapture, 
+    stopCapture, 
+    captureFrame, 
+    videoRef 
+  } = useScreenCapture({ onStreamEnded: handleStreamEnded });
 
   // Initialize OCR worker when component mounts
   useEffect(() => {
