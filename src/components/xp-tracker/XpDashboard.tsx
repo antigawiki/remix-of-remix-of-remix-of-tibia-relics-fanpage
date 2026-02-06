@@ -7,13 +7,15 @@ interface XpDashboardProps {
   formatDuration: (seconds: number) => string;
   formatXp: (xp: number) => string;
   getProjection: (hours: number) => number;
+  isPaused?: boolean;
 }
 
 export const XpDashboard = ({ 
   state, 
   formatDuration, 
   formatXp, 
-  getProjection 
+  getProjection,
+  isPaused = false
 }: XpDashboardProps) => {
   const { t } = useTranslation();
 
@@ -45,7 +47,10 @@ export const XpDashboard = ({
       <div className="wood-panel p-4 rounded-sm">
         <div className="flex items-center gap-2 mb-2">
           <Clock className="w-5 h-5 text-blue-400" />
-          <span className="text-sm text-muted-foreground">{t('xpTracker.sessionTime')}</span>
+          <span className="text-sm text-muted-foreground">
+            {t('xpTracker.sessionTime')}
+            {isPaused && <span className="ml-2 text-yellow-500 text-xs">(Pausado)</span>}
+          </span>
         </div>
         <p className="text-2xl font-bold text-blue-400">
           {formatDuration(state.sessionDuration)}

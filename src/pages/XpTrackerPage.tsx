@@ -84,6 +84,9 @@ const XpTrackerPage = () => {
     try {
       setIsInitializing(true);
       
+      // Reset previous session data
+      resetTracking();
+      
       // Initialize OCR if not ready
       if (!ocrReady) {
         await initWorker();
@@ -114,7 +117,7 @@ const XpTrackerPage = () => {
     } finally {
       setIsInitializing(false);
     }
-  }, [ocrReady, initWorker, startCapture, startTracking, toast, t]);
+  }, [ocrReady, initWorker, startCapture, startTracking, resetTracking, toast, t]);
 
   const handleStop = useCallback(() => {
     stopCapture();
@@ -262,13 +265,14 @@ const XpTrackerPage = () => {
           </div>
         )}
 
-        {/* Dashboard */}
-        {isTracking && (
+        {/* Dashboard - show when tracking OR when we have session data */}
+        {(isTracking || trackerState.xpGained > 0 || trackerState.sessionDuration > 0) && (
           <XpDashboard 
             state={trackerState}
             formatDuration={formatDuration}
             formatXp={formatXp}
             getProjection={getProjection}
+            isPaused={!isTracking && trackerState.sessionDuration > 0}
           />
         )}
 
