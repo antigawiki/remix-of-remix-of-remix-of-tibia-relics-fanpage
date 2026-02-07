@@ -502,5 +502,18 @@ export const pl: TranslationKeys = {
     started: 'Śledzenie XP rozpoczęte!',
     stopped: 'Śledzenie XP zatrzymane.',
     ocrHint: 'Upewnij się, że tekst "Experience" jest widoczny w przechwyconym oknie.',
+    desktopApp: {
+      title: 'RelicHelper (Zalecane)',
+      description: 'Aplikacja desktopowa dla Windows. Umieść ją w folderze gry, aby automatycznie śledzić XP, Poziom, czas do następnego poziomu i wiele więcej!',
+      feature1: 'Bezpośredni odczyt pamięci - bardziej dokładny',
+      feature2: 'Nie wymaga udostępniania ekranu',
+      feature3: 'Działa w tle',
+      feature4: 'Zintegrowany timer i wyszukiwanie postaci',
+      downloadButton: 'Pobierz RelicHelper',
+    },
+    webTracker: {
+      title: 'XP Tracker Web (Alternatywa)',
+      description: 'Używa przechwytywania ekranu i OCR - wymaga udostępnienia ekranu',
+    },
   },
 };

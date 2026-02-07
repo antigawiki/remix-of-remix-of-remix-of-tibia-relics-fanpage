@@ -49,21 +49,20 @@ const XpTrackerPage = () => {
                   <Download className="w-6 h-6 text-gold" />
                 </div>
                 <div className="flex-1">
-                  <h3 className="text-xl font-heading font-bold text-gold mb-2">RelicHelper (Recomendado)</h3>
+                  <h3 className="text-xl font-heading font-bold text-gold mb-2">{t("xpTracker.desktopApp.title")}</h3>
                   <p className="text-muted-foreground mb-4">
-                    Aplicativo desktop para Windows. Coloque na pasta do jogo para rastreamento automático de XP, Level,
-                    tempo para o próximo level e muito mais!
+                    {t("xpTracker.desktopApp.description")}
                   </p>
                   <ul className="text-sm text-muted-foreground mb-4 space-y-1">
-                    <li>✓ Leitura direta da memória - mais preciso</li>
-                    <li>✓ Não precisa compartilhar tela</li>
-                    <li>✓ Funciona em segundo plano</li>
-                    <li>✓ Timer integrado e busca de personagens</li>
+                    <li>✓ {t("xpTracker.desktopApp.feature1")}</li>
+                    <li>✓ {t("xpTracker.desktopApp.feature2")}</li>
+                    <li>✓ {t("xpTracker.desktopApp.feature3")}</li>
+                    <li>✓ {t("xpTracker.desktopApp.feature4")}</li>
                   </ul>
                   <a href={DOWNLOAD_URL} target="_blank" rel="noopener noreferrer" className="inline-flex">
                     <Button className="bg-gold hover:bg-gold/90 text-black font-semibold">
                       <Download className="w-4 h-4 mr-2" />
-                      Baixar RelicHelper
+                      {t("xpTracker.desktopApp.downloadButton")}
                     </Button>
                   </a>
                 </div>
@@ -81,9 +80,9 @@ const XpTrackerPage = () => {
                     <Globe className="w-5 h-5 text-muted-foreground" />
                   </div>
                   <div className="text-left">
-                    <h4 className="font-heading font-semibold">XP Tracker Web (Alternativa)</h4>
+                    <h4 className="font-heading font-semibold">{t("xpTracker.webTracker.title")}</h4>
                     <p className="text-sm text-muted-foreground">
-                      Usa captura de tela e OCR - requer compartilhamento de tela
+                      {t("xpTracker.webTracker.description")}
                     </p>
                   </div>
                 </div>
