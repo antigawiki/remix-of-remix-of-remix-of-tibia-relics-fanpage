@@ -502,5 +502,18 @@ export interface TranslationKeys {
     started: string;
     stopped: string;
     ocrHint: string;
+    desktopApp: {
+      title: string;
+      description: string;
+      feature1: string;
+      feature2: string;
+      feature3: string;
+      feature4: string;
+      downloadButton: string;
+    };
+    webTracker: {
+      title: string;
+      description: string;
+    };
   };
 }

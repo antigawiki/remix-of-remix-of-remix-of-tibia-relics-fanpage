@@ -502,5 +502,18 @@ export const pt: TranslationKeys = {
     started: 'Rastreamento de XP iniciado!',
     stopped: 'Rastreamento de XP encerrado.',
     ocrHint: 'Certifique-se de que o texto "Experience" está visível na janela capturada.',
+    desktopApp: {
+      title: 'RelicHelper (Recomendado)',
+      description: 'Aplicativo desktop para Windows. Coloque na pasta do jogo para rastreamento automático de XP, Level, tempo para o próximo level e muito mais!',
+      feature1: 'Leitura direta da memória - mais preciso',
+      feature2: 'Não precisa compartilhar tela',
+      feature3: 'Funciona em segundo plano',
+      feature4: 'Timer integrado e busca de personagens',
+      downloadButton: 'Baixar RelicHelper',
+    },
+    webTracker: {
+      title: 'XP Tracker Web (Alternativa)',
+      description: 'Usa captura de tela e OCR - requer compartilhamento de tela',
+    },
   },
 };

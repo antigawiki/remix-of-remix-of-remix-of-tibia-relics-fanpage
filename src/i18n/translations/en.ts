@@ -502,5 +502,18 @@ export const en: TranslationKeys = {
     started: 'XP tracking started!',
     stopped: 'XP tracking stopped.',
     ocrHint: 'Make sure the "Experience" text is visible in the captured window.',
+    desktopApp: {
+      title: 'RelicHelper (Recommended)',
+      description: 'Desktop application for Windows. Place it in the game folder for automatic XP tracking, Level, time to next level and much more!',
+      feature1: 'Direct memory reading - more accurate',
+      feature2: 'No screen sharing needed',
+      feature3: 'Works in the background',
+      feature4: 'Integrated timer and character search',
+      downloadButton: 'Download RelicHelper',
+    },
+    webTracker: {
+      title: 'XP Tracker Web (Alternative)',
+      description: 'Uses screen capture and OCR - requires screen sharing',
+    },
   },
 };
