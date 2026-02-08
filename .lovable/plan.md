@@ -1,225 +1,88 @@
 
-# Plano: XP Tracker com Captura de Tela e OCR
+# Plano: Modo Flutuante Aprimorado com Informações de Level
 
 ## Visão Geral
 
-Criar uma nova ferramenta "XP Tracker" que utiliza a API de Captura de Tela do navegador combinada com OCR (Tesseract.js) para ler automaticamente o valor de XP exibido no jogo Tibia e calcular estatísticas em tempo real.
+Vamos expandir o painel Picture-in-Picture (modo flutuante) do XP Tracker web para incluir informações detalhadas sobre o progresso do level atual, utilizando as funções de cálculo já existentes na calculadora de experiência.
 
-## Arquitetura da Solução
+## Novas Informações a Adicionar
+
+O painel flutuante passará a exibir:
+
+1. **Barra de Progresso do Level** - Mostra visualmente quanto XP já tem no nível atual
+2. **Level Atual** - Exibe o nível atual do personagem
+3. **XP Restante** - Quanto XP falta para o próximo nível
+4. **Tempo Estimado** - Quanto tempo falta para upar (baseado no XP/h atual)
+5. **Horário Aproximado** - Hora estimada do level up (ex: "~15:42")
+
+## Layout Proposto do PiP
+
+O painel será redimensionado de 340x120 para 380x180 para acomodar as novas informações:
 
 ```text
-┌─────────────────────────────────────────────────────────────┐
-│                      XP Tracker Page                        │
-├─────────────────────────────────────────────────────────────┤
-│  ┌─────────────┐    ┌──────────────┐    ┌───────────────┐  │
-│  │   Screen    │───▶│  Tesseract   │───▶│  XP State     │  │
-│  │   Capture   │    │  OCR Engine  │    │  Calculator   │  │
-│  │   API       │    │              │    │               │  │
-│  └─────────────┘    └──────────────┘    └───────────────┘  │
-│                                                ▼            │
-│  ┌─────────────────────────────────────────────────────┐   │
-│  │              Real-time Dashboard                     │   │
-│  │  • XP Atual    • XP Ganho    • XP/Hora   • Projeção │   │
-│  └─────────────────────────────────────────────────────┘   │
-│                           │                                 │
-│                           ▼                                 │
-│  ┌─────────────────────────────────────────────────────┐   │
-│  │         Picture-in-Picture (Modo Flutuante)          │   │
-│  │  Painel minimalista sempre visível sobre outros apps │   │
-│  └─────────────────────────────────────────────────────┘   │
-└─────────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────┐
+│ [Logo]  XP: 1.328.800                                           │
+│         +25.5k    130k/h     ⏱ 45m 32s                          │
+├─────────────────────────────────────────────────────────────────┤
+│ Level 85 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━◌◌◌ 67.3%                │
+│ Faltam: 156.200 XP  ·  ~1h 12m  ·  Às 15:42                    │
+└─────────────────────────────────────────────────────────────────┘
 ```
-
-## Funcionalidades
-
-1. **Iniciar Captura de Tela**
-   - Solicita permissão via `navigator.mediaDevices.getDisplayMedia()`
-   - Permite selecionar janela/monitor do Tibia
-
-2. **OCR com Tesseract.js**
-   - Captura frames da tela em intervalo (a cada 2-3 segundos)
-   - Extrai região onde aparece "Experience" e o valor numérico
-   - Parse do valor de XP do texto reconhecido
-
-3. **Cálculos em Tempo Real**
-   - XP inicial (primeiro valor capturado)
-   - XP atual (último valor reconhecido)
-   - XP ganho na sessão
-   - Tempo de sessão
-   - XP por hora
-   - Projeção de XP (baseado na taxa atual)
-
-4. **Modo Flutuante (Picture-in-Picture)**
-   - Usa Document Picture-in-Picture API
-   - Painel minimalista com fonte grande
-   - Permanece sobre outros aplicativos
-
-## Arquivos a Criar/Modificar
-
-### Novos Arquivos
-
-| Arquivo | Descrição |
-|---------|-----------|
-| `src/pages/XpTrackerPage.tsx` | Página principal do XP Tracker |
-| `src/hooks/useScreenCapture.ts` | Hook para gerenciar captura de tela |
-| `src/hooks/useXpOcr.ts` | Hook para OCR com Tesseract.js |
-| `src/hooks/useXpTracker.ts` | Hook para cálculos e estado do tracker |
-| `src/components/xp-tracker/XpDashboard.tsx` | Dashboard com estatísticas |
-| `src/components/xp-tracker/PipPanel.tsx` | Painel para modo flutuante |
-
-### Arquivos a Modificar
-
-| Arquivo | Alteração |
-|---------|-----------|
-| `src/App.tsx` | Adicionar rota `/xp-tracker` |
-| `src/components/Sidebar.tsx` | Adicionar link para XP Tracker |
-| `src/components/Header.tsx` | Adicionar no menu mobile |
-| `src/i18n/types.ts` | Adicionar tipos para traduções |
-| `src/i18n/translations/pt.ts` | Traduções PT |
-| `src/i18n/translations/en.ts` | Traduções EN |
-| `src/i18n/translations/es.ts` | Traduções ES |
-| `src/i18n/translations/pl.ts` | Traduções PL |
-| `package.json` | Adicionar dependência tesseract.js |
-
-## Interface do Usuário
-
-### Tela Principal
-- Header com título "XP Tracker" e ícone
-- Botão "Iniciar XP Tracker" (destaque)
-- Preview da captura de tela (pequeno)
-- Cards de estatísticas:
-  - XP Atual (fonte grande)
-  - XP Ganho
-  - Tempo de Sessão
-  - XP/Hora
-  - Projeção (próximas 1h, 2h)
-- Botão "Modo Flutuante" para ativar PiP
-- Botão "Parar" para encerrar sessão
-
-### Painel Flutuante (PiP)
-Design minimalista com fundo semi-transparente:
-```text
-┌────────────────────────┐
-│ XP: 1,234,567          │
-│ +45,230 (23.5k/h)      │
-│ ⏱ 1h 55min             │
-└────────────────────────┘
-```
-
----
 
 ## Detalhes Técnicos
 
-### Dependência
-```json
-{
-  "tesseract.js": "^5.0.0"
-}
+### Modificações em PipPanel.tsx
+
+1. **Importar funções de cálculo:**
+   - `getLevelFromExperience` - Calcular nível atual
+   - `calculateExperienceForLevel` - XP necessária para cada nível
+   - `getLevelProgress` - Progresso percentual no nível
+
+2. **Novos cálculos no componente:**
+   - `currentLevel` = nível baseado no XP atual
+   - `xpForNextLevel` = XP total para próximo nível
+   - `xpRemaining` = XP que falta para upar
+   - `progressPercent` = progresso no nível atual (0-100%)
+   - `timeToLevelUp` = xpRemaining / xpPerHour (em horas)
+   - `estimatedLevelUpTime` = hora atual + tempo estimado
+
+3. **Novos estilos CSS para o PiP:**
+   - `.level-section` - Container da seção de level
+   - `.progress-bar` - Barra de progresso visual
+   - `.progress-fill` - Preenchimento animado da barra
+   - `.level-stats` - Estatísticas de tempo e XP restante
+
+4. **Dimensões atualizadas:**
+   - Largura: 340px → 380px
+   - Altura: 120px → 180px
+
+### Lógica de Cálculo do Tempo
+
+```text
+Se XP/h > 0:
+  horasRestantes = xpRestante / xpPorHora
+  tempoRestante = formatar em "Xh Ym"
+  horarioEstimado = horaAtual + horasRestantes
+Senão:
+  Exibir "--" para tempo e horário
 ```
 
-### Hook de Captura de Tela
-```typescript
-// useScreenCapture.ts
-const useScreenCapture = () => {
-  const [stream, setStream] = useState<MediaStream | null>(null);
-  const [isCapturing, setIsCapturing] = useState(false);
+### Cores Utilizadas (padrão medieval)
 
-  const startCapture = async () => {
-    const mediaStream = await navigator.mediaDevices.getDisplayMedia({
-      video: { displaySurface: "window" },
-      audio: false
-    });
-    setStream(mediaStream);
-    setIsCapturing(true);
-  };
+- **Barra de progresso**: Gradiente dourado (#ffd700 → #f59e0b)
+- **Level**: Dourado (#ffd700)
+- **XP Restante**: Vermelho suave (#ef4444)
+- **Tempo restante**: Azul (#60a5fa)
+- **Horário**: Verde (#4ade80)
 
-  const captureFrame = () => {
-    // Captura frame do video para canvas
-    // Retorna ImageData para OCR
-  };
+## Arquivos a Modificar
 
-  return { stream, isCapturing, startCapture, stopCapture, captureFrame };
-};
-```
+| Arquivo | Alteração |
+|---------|-----------|
+| `src/components/xp-tracker/PipPanel.tsx` | Adicionar cálculos de level, barra de progresso e estilos CSS |
 
-### Hook de OCR
-```typescript
-// useXpOcr.ts
-const useXpOcr = () => {
-  const workerRef = useRef<Worker | null>(null);
+## Comportamento Especial
 
-  const initWorker = async () => {
-    const worker = await createWorker('eng');
-    workerRef.current = worker;
-  };
-
-  const recognizeXp = async (imageData: ImageData) => {
-    const result = await workerRef.current.recognize(imageData);
-    // Parse "Experience    156,507" → 156507
-    return parseXpFromText(result.data.text);
-  };
-
-  return { initWorker, recognizeXp, terminateWorker };
-};
-```
-
-### Cálculos de XP
-```typescript
-// useXpTracker.ts
-interface XpTrackerState {
-  initialXp: number;
-  currentXp: number;
-  startTime: Date;
-  xpGained: number;     // currentXp - initialXp
-  sessionDuration: number; // em segundos
-  xpPerHour: number;    // (xpGained / sessionDuration) * 3600
-}
-```
-
-### Picture-in-Picture
-```typescript
-const openPipPanel = async () => {
-  if (!('documentPictureInPicture' in window)) {
-    toast.error('Modo flutuante não suportado neste navegador');
-    return;
-  }
-
-  const pipWindow = await window.documentPictureInPicture.requestWindow({
-    width: 300,
-    height: 120
-  });
-
-  // Renderiza painel minimalista no pipWindow.document.body
-};
-```
-
-### Traduções (exemplo PT)
-```typescript
-xpTracker: {
-  title: 'XP Tracker',
-  description: 'Rastreie seu ganho de XP em tempo real usando captura de tela',
-  startButton: 'Iniciar XP Tracker',
-  stopButton: 'Parar',
-  floatingMode: 'Modo Flutuante',
-  selectWindow: 'Selecione a janela do Tibia',
-  currentXp: 'XP Atual',
-  xpGained: 'XP Ganho',
-  sessionTime: 'Tempo de Sessão',
-  xpPerHour: 'XP/Hora',
-  projection: 'Projeção',
-  noPermission: 'Permissão de captura negada',
-  pipNotSupported: 'Modo flutuante não suportado neste navegador',
-  processing: 'Processando...',
-  waitingCapture: 'Aguardando captura...',
-}
-```
-
-## Considerações
-
-1. **Compatibilidade**: Screen Capture API e Document Picture-in-Picture são suportados em Chrome/Edge. Firefox tem suporte parcial. Será exibido aviso para navegadores não compatíveis.
-
-2. **Performance**: O OCR será executado a cada 2-3 segundos para não sobrecarregar o navegador. Tesseract.js roda em Web Worker.
-
-3. **Privacidade**: Todo processamento é feito localmente no navegador. Nenhum dado é enviado para servidores.
-
-4. **Precisão OCR**: A região de XP no Tibia tem fonte específica. Pode ser necessário ajustar contraste/preprocessamento da imagem para melhor reconhecimento.
+- Se o XP/h for 0 (jogador parado), os campos de tempo mostrarão "--"
+- Se o XP atual for nulo, toda a seção de level será ocultada
+- A barra de progresso terá animação suave ao atualizar
