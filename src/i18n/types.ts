@@ -515,5 +515,15 @@ export interface TranslationKeys {
       title: string;
       description: string;
     };
+    regionSelector: {
+      instruction: string;
+      dragHint: string;
+      confirm: string;
+      reset: string;
+      selectedSize: string;
+      tooSmall: string;
+      changeRegion: string;
+      usingRegion: string;
+    };
   };
 }

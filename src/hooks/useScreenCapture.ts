@@ -1,4 +1,5 @@
 import { useState, useRef, useCallback } from 'react';
+import type { Region } from './useRegionSelector';
 
 interface UseScreenCaptureOptions {
   onStreamEnded?: () => void;
@@ -10,7 +11,7 @@ interface UseScreenCaptureReturn {
   error: string | null;
   startCapture: () => Promise<void>;
   stopCapture: () => void;
-  captureFrame: () => ImageData | null;
+  captureFrame: (region?: Region | null) => ImageData | null;
   videoRef: React.RefObject<HTMLVideoElement>;
 }
 
@@ -77,7 +78,7 @@ export const useScreenCapture = (options?: UseScreenCaptureOptions): UseScreenCa
     setIsCapturing(false);
   }, [stream]);
 
-  const captureFrame = useCallback((): ImageData | null => {
+  const captureFrame = useCallback((region?: Region | null): ImageData | null => {
     if (!videoRef.current || !isCapturing) {
       return null;
     }
@@ -90,15 +91,29 @@ export const useScreenCapture = (options?: UseScreenCaptureOptions): UseScreenCa
     }
     
     const canvas = canvasRef.current;
-    canvas.width = video.videoWidth;
-    canvas.height = video.videoHeight;
-
     const ctx = canvas.getContext('2d');
     if (!ctx) {
       return null;
     }
 
-    ctx.drawImage(video, 0, 0);
+    // If region is specified, capture only that region
+    if (region && region.width > 0 && region.height > 0) {
+      // Ensure region is within video bounds
+      const x = Math.max(0, Math.min(region.x, video.videoWidth - 1));
+      const y = Math.max(0, Math.min(region.y, video.videoHeight - 1));
+      const width = Math.min(region.width, video.videoWidth - x);
+      const height = Math.min(region.height, video.videoHeight - y);
+
+      canvas.width = width;
+      canvas.height = height;
+      ctx.drawImage(video, x, y, width, height, 0, 0, width, height);
+    } else {
+      // Capture full frame
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
+      ctx.drawImage(video, 0, 0);
+    }
+
     return ctx.getImageData(0, 0, canvas.width, canvas.height);
   }, [isCapturing]);
 
