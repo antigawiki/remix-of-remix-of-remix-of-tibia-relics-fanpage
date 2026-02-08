@@ -1,88 +1,114 @@
 
-# Plano: Modo Flutuante Aprimorado com Informações de Level
 
-## Visão Geral
+# Plano: Otimização de Performance do XP Tracker Web
 
-Vamos expandir o painel Picture-in-Picture (modo flutuante) do XP Tracker web para incluir informações detalhadas sobre o progresso do level atual, utilizando as funções de cálculo já existentes na calculadora de experiência.
+## Diagnóstico do Problema
 
-## Novas Informações a Adicionar
+O XP Tracker atual está lento porque:
 
-O painel flutuante passará a exibir:
+1. **Captura da tela inteira** - Processa toda a janela do jogo (ex: 1920x1080 pixels)
+2. **OCR em imagem grande** - Tesseract.js analisa milhões de pixels para encontrar apenas uma palavra
+3. **Processamento frequente** - A cada 3 segundos faz todo esse trabalho pesado
+4. **Pré-processamento pixel a pixel** - Loop por cada pixel da imagem para melhorar contraste
 
-1. **Barra de Progresso do Level** - Mostra visualmente quanto XP já tem no nível atual
-2. **Level Atual** - Exibe o nível atual do personagem
-3. **XP Restante** - Quanto XP falta para o próximo nível
-4. **Tempo Estimado** - Quanto tempo falta para upar (baseado no XP/h atual)
-5. **Horário Aproximado** - Hora estimada do level up (ex: "~15:42")
+## Solução: Região de Interesse (ROI)
 
-## Layout Proposto do PiP
+A melhor alternativa é permitir que o usuário **selecione apenas a área do XP** na tela. Isso reduz drasticamente o trabalho:
 
-O painel será redimensionado de 340x120 para 380x180 para acomodar as novas informações:
+| Cenário | Tamanho | Pixels processados |
+|---------|---------|-------------------|
+| Tela inteira | 1920x1080 | ~2.073.600 |
+| **Região do XP** | ~200x30 | **~6.000** |
+| **Redução** | -- | **~99.7% menos** |
 
-```text
-┌─────────────────────────────────────────────────────────────────┐
-│ [Logo]  XP: 1.328.800                                           │
-│         +25.5k    130k/h     ⏱ 45m 32s                          │
-├─────────────────────────────────────────────────────────────────┤
-│ Level 85 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━◌◌◌ 67.3%                │
-│ Faltam: 156.200 XP  ·  ~1h 12m  ·  Às 15:42                    │
-└─────────────────────────────────────────────────────────────────┘
-```
+## Funcionalidades a Implementar
+
+### 1. Seletor de Região Visual
+- Após capturar a tela, exibir uma prévia onde o usuário pode desenhar um retângulo
+- Arrastar e soltar para definir a área que contém o XP
+- Botão para confirmar a seleção
+
+### 2. Captura Apenas da Região
+- Ao processar cada frame, recortar apenas a região selecionada
+- Passar imagem muito menor para o OCR
+
+### 3. Intervalo Adaptativo
+- Aumentar intervalo para 5 segundos (reduz 40% das chamadas)
+- Opção para ajustar: "Performance" (10s) vs "Precisão" (3s)
+
+### 4. Persistência da Região
+- Salvar a região selecionada no localStorage
+- Reutilizar nas próximas sessões
 
 ## Detalhes Técnicos
 
-### Modificações em PipPanel.tsx
+### Novo Hook: useRegionSelector
 
-1. **Importar funções de cálculo:**
-   - `getLevelFromExperience` - Calcular nível atual
-   - `calculateExperienceForLevel` - XP necessária para cada nível
-   - `getLevelProgress` - Progresso percentual no nível
+Cria um hook para gerenciar a seleção de região:
 
-2. **Novos cálculos no componente:**
-   - `currentLevel` = nível baseado no XP atual
-   - `xpForNextLevel` = XP total para próximo nível
-   - `xpRemaining` = XP que falta para upar
-   - `progressPercent` = progresso no nível atual (0-100%)
-   - `timeToLevelUp` = xpRemaining / xpPerHour (em horas)
-   - `estimatedLevelUpTime` = hora atual + tempo estimado
+- Estado: `{ x, y, width, height }` da região
+- Método: `startSelection()` - inicia modo de seleção
+- Método: `saveRegion()` - salva no localStorage
+- Callback: `onRegionSelected(rect)` - quando usuário termina
 
-3. **Novos estilos CSS para o PiP:**
-   - `.level-section` - Container da seção de level
-   - `.progress-bar` - Barra de progresso visual
-   - `.progress-fill` - Preenchimento animado da barra
-   - `.level-stats` - Estatísticas de tempo e XP restante
+### Modificações no useScreenCapture
 
-4. **Dimensões atualizadas:**
-   - Largura: 340px → 380px
-   - Altura: 120px → 180px
+Adicionar parâmetro opcional de região:
 
-### Lógica de Cálculo do Tempo
-
-```text
-Se XP/h > 0:
-  horasRestantes = xpRestante / xpPorHora
-  tempoRestante = formatar em "Xh Ym"
-  horarioEstimado = horaAtual + horasRestantes
-Senão:
-  Exibir "--" para tempo e horário
+```
+captureFrame(region?: { x: number, y: number, width: number, height: number })
 ```
 
-### Cores Utilizadas (padrão medieval)
+Se região for fornecida, usa `ctx.drawImage()` com parâmetros de recorte:
 
-- **Barra de progresso**: Gradiente dourado (#ffd700 → #f59e0b)
-- **Level**: Dourado (#ffd700)
-- **XP Restante**: Vermelho suave (#ef4444)
-- **Tempo restante**: Azul (#60a5fa)
-- **Horário**: Verde (#4ade80)
+```
+ctx.drawImage(video, region.x, region.y, region.width, region.height, 0, 0, region.width, region.height)
+```
 
-## Arquivos a Modificar
+### Modificações no useXpOcr
 
-| Arquivo | Alteração |
-|---------|-----------|
-| `src/components/xp-tracker/PipPanel.tsx` | Adicionar cálculos de level, barra de progresso e estilos CSS |
+O hook já funcionará melhor com imagens menores, sem mudanças necessárias.
 
-## Comportamento Especial
+### Interface do Seletor
 
-- Se o XP/h for 0 (jogador parado), os campos de tempo mostrarão "--"
-- Se o XP atual for nulo, toda a seção de level será ocultada
-- A barra de progresso terá animação suave ao atualizar
+Novo componente `RegionSelector`:
+
+```text
+┌──────────────────────────────────────────┐
+│  Preview da Tela Capturada               │
+│                                          │
+│   ┌──────────────────┐                   │
+│   │ Experience 156k  │ ← Região          │
+│   └──────────────────┘   selecionada     │
+│                                          │
+│  [✓ Confirmar Região] [↺ Redefinir]      │
+└──────────────────────────────────────────┘
+```
+
+### Fluxo de Uso Atualizado
+
+1. Usuário clica em "Iniciar XP Tracker"
+2. Seleciona a janela do jogo
+3. **Novo**: Aparece prévia com instrução "Arraste para selecionar a região do XP"
+4. Usuário desenha retângulo sobre a área do Experience
+5. Clica em "Confirmar"
+6. OCR começa a processar apenas essa pequena área
+
+## Arquivos a Criar/Modificar
+
+| Arquivo | Ação | Descrição |
+|---------|------|-----------|
+| `src/hooks/useRegionSelector.ts` | Criar | Hook para gerenciar seleção de região |
+| `src/components/xp-tracker/RegionSelector.tsx` | Criar | Componente visual do seletor |
+| `src/hooks/useScreenCapture.ts` | Modificar | Adicionar suporte a região no captureFrame |
+| `src/components/xp-tracker/WebXpTracker.tsx` | Modificar | Integrar seletor antes do OCR |
+| `src/i18n/translations/*.ts` | Modificar | Adicionar textos do seletor |
+| `src/i18n/types.ts` | Modificar | Adicionar tipos das novas traduções |
+
+## Benefícios Esperados
+
+- **Performance**: Redução de ~99% no processamento de pixels
+- **Precisão**: OCR focado = menos erros de leitura
+- **Flexibilidade**: Funciona com qualquer posição da janela de Skills
+- **Usabilidade**: Configuração feita uma vez, salva para sempre
+
