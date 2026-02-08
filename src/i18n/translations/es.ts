@@ -515,5 +515,15 @@ export const es: TranslationKeys = {
       title: 'XP Tracker Web (Alternativa)',
       description: 'Usa captura de pantalla y OCR - requiere compartir pantalla',
     },
+    regionSelector: {
+      instruction: 'Selecciona el área donde se muestra el XP para mejorar el rendimiento',
+      dragHint: 'Arrastra para seleccionar la región de Experience',
+      confirm: 'Confirmar Región',
+      reset: 'Redibujar',
+      selectedSize: 'Tamaño seleccionado',
+      tooSmall: 'Región muy pequeña. Selecciona un área más grande.',
+      changeRegion: 'Cambiar Región',
+      usingRegion: 'Usando región guardada',
+    },
   },
 };
