@@ -505,8 +505,8 @@ export const es: TranslationKeys = {
     desktopApp: {
       title: 'RelicHelper (Recomendado)',
       description: 'Aplicación de escritorio para Windows. Colócala en la carpeta del juego para rastreo automático de XP, Nivel, tiempo para el siguiente nivel y mucho más!',
-      feature1: 'Lectura directa de memoria - más preciso',
-      feature2: 'No necesita compartir pantalla',
+      feature1: 'Captura de pantalla con OCR automático',
+      feature2: 'No necesita navegador abierto',
       feature3: 'Funciona en segundo plano',
       feature4: 'Temporizador integrado y búsqueda de personajes',
       downloadButton: 'Descargar RelicHelper',
