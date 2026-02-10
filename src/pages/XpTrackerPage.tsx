@@ -7,6 +7,7 @@ import {
   Monitor,
   Loader2,
   Download,
+  Github,
   Globe,
   ChevronDown,
   ChevronUp,
@@ -59,12 +60,18 @@ const XpTrackerPage = () => {
                     <li>✓ {t("xpTracker.desktopApp.feature3")}</li>
                     <li>✓ {t("xpTracker.desktopApp.feature4")}</li>
                   </ul>
-                  <a href={DOWNLOAD_URL} target="_blank" rel="noopener noreferrer" className="inline-flex">
-                    <Button className="bg-gold hover:bg-gold/90 text-black font-semibold">
-                      <Download className="w-4 h-4 mr-2" />
-                      {t("xpTracker.desktopApp.downloadButton")}
-                    </Button>
-                  </a>
+                  <div className="flex items-center gap-4 flex-wrap">
+                    <a href={DOWNLOAD_URL} target="_blank" rel="noopener noreferrer" className="inline-flex">
+                      <Button className="bg-gold hover:bg-gold/90 text-black font-semibold">
+                        <Download className="w-4 h-4 mr-2" />
+                        {t("xpTracker.desktopApp.downloadButton")}
+                      </Button>
+                    </a>
+                    <a href="https://github.com/Josubah/RelicHelper" target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors">
+                      <Github className="w-4 h-4" />
+                      {t("xpTracker.desktopApp.githubLink")}
+                    </a>
+                  </div>
                 </div>
               </div>
             </div>
