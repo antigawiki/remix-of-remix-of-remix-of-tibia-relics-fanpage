@@ -510,6 +510,7 @@ export interface TranslationKeys {
       feature3: string;
       feature4: string;
       downloadButton: string;
+      githubLink: string;
     };
     webTracker: {
       title: string;

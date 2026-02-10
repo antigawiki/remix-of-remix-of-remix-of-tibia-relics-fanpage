@@ -510,6 +510,7 @@ export const en: TranslationKeys = {
       feature3: 'Works in the background',
       feature4: 'Integrated timer and character search',
       downloadButton: 'Download RelicHelper',
+      githubLink: 'Source code on GitHub',
     },
     webTracker: {
       title: 'XP Tracker Web (Alternative)',
