@@ -505,8 +505,8 @@ export const pl: TranslationKeys = {
     desktopApp: {
       title: 'RelicHelper (Zalecane)',
       description: 'Aplikacja desktopowa dla Windows. Umieść ją w folderze gry, aby automatycznie śledzić XP, Poziom, czas do następnego poziomu i wiele więcej!',
-      feature1: 'Bezpośredni odczyt pamięci - bardziej dokładny',
-      feature2: 'Nie wymaga udostępniania ekranu',
+      feature1: 'Automatyczne przechwytywanie ekranu z OCR',
+      feature2: 'Nie wymaga przeglądarki',
       feature3: 'Działa w tle',
       feature4: 'Zintegrowany timer i wyszukiwanie postaci',
       downloadButton: 'Pobierz RelicHelper',

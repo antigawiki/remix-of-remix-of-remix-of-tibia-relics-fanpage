@@ -519,8 +519,8 @@ export const pt: TranslationKeys = {
       title: "RelicHelper (Recomendado)",
       description:
         "Aplicativo desktop para Windows. Coloque na pasta do jogo para rastreamento automático de XP, Level, tempo para o próximo level e muito mais!",
-      feature1: "Leitura direta da memória - mais preciso",
-      feature2: "Não precisa compartilhar tela",
+      feature1: "Captura de tela com OCR automático",
+      feature2: "Não precisa de navegador aberto",
       feature3: "Funciona em segundo plano",
       feature4: "Timer integrado e busca de personagens",
       downloadButton: "Baixar RelicHelper",
