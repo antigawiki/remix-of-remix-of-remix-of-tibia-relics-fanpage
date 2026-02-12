@@ -439,6 +439,7 @@ export interface TranslationKeys {
       chooseVocation: string;
       selectSkills: string;
       currentSkill: string;
+      percentToNext: string;
       desiredSkill: string;
       calculate: string;
       resultsFor: string;

@@ -439,6 +439,7 @@ export const en: TranslationKeys = {
       chooseVocation: 'Choose your Vocation',
       selectSkills: 'Select Skills',
       currentSkill: 'Current Skill',
+      percentToNext: '% to Next',
       desiredSkill: 'Desired Skill',
       calculate: 'Calculate',
       resultsFor: 'Results for',

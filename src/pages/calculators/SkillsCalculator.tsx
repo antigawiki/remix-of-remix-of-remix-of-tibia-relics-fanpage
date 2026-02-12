@@ -17,21 +17,29 @@ const SkillsCalculator = () => {
   const { t } = useTranslation();
   const [selectedVocation, setSelectedVocation] = useState<SkillVocationData | null>(null);
   
-  // Checkboxes
   const [meleeEnabled, setMeleeEnabled] = useState(false);
   const [distanceEnabled, setDistanceEnabled] = useState(false);
   const [shieldEnabled, setShieldEnabled] = useState(false);
   
-  // Inputs
   const [meleeCurrentSkill, setMeleeCurrentSkill] = useState('');
   const [meleeDesiredSkill, setMeleeDesiredSkill] = useState('');
+  const [meleePercent, setMeleePercent] = useState('');
   const [distanceCurrentSkill, setDistanceCurrentSkill] = useState('');
   const [distanceDesiredSkill, setDistanceDesiredSkill] = useState('');
+  const [distancePercent, setDistancePercent] = useState('');
   const [shieldCurrentSkill, setShieldCurrentSkill] = useState('');
   const [shieldDesiredSkill, setShieldDesiredSkill] = useState('');
+  const [shieldPercent, setShieldPercent] = useState('');
   
   const [result, setResult] = useState<SkillsCalculationResult | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  const timeLabels = {
+    days: t('calculatorPages.magicLevel.days'),
+    hours: t('calculatorPages.magicLevel.hours'),
+    minutes: t('calculatorPages.magicLevel.minutes'),
+    seconds: t('calculatorPages.magicLevel.seconds'),
+  };
 
   const resetInputs = () => {
     setMeleeEnabled(false);
@@ -39,10 +47,13 @@ const SkillsCalculator = () => {
     setShieldEnabled(false);
     setMeleeCurrentSkill('');
     setMeleeDesiredSkill('');
+    setMeleePercent('');
     setDistanceCurrentSkill('');
     setDistanceDesiredSkill('');
+    setDistancePercent('');
     setShieldCurrentSkill('');
     setShieldDesiredSkill('');
+    setShieldPercent('');
     setResult(null);
     setError(null);
   };
@@ -74,14 +85,15 @@ const SkillsCalculator = () => {
     }
 
     const skills: {
-      melee?: { current: number; desired: number };
-      distance?: { current: number; desired: number };
-      shield?: { current: number; desired: number };
+      melee?: { current: number; desired: number; percentage?: number };
+      distance?: { current: number; desired: number; percentage?: number };
+      shield?: { current: number; desired: number; percentage?: number };
     } = {};
 
     if (meleeEnabled) {
       const current = parseInt(meleeCurrentSkill);
       const desired = parseInt(meleeDesiredSkill);
+      const pct = meleePercent ? parseInt(meleePercent) : 0;
       
       if (isNaN(current) || isNaN(desired)) {
         setError(t('calculatorPages.skills.fillFieldsCorrectly').replace('{skill}', 'Melee'));
@@ -94,12 +106,13 @@ const SkillsCalculator = () => {
         return;
       }
       
-      skills.melee = { current, desired };
+      skills.melee = { current, desired, percentage: pct };
     }
 
     if (distanceEnabled) {
       const current = parseInt(distanceCurrentSkill);
       const desired = parseInt(distanceDesiredSkill);
+      const pct = distancePercent ? parseInt(distancePercent) : 0;
       
       if (isNaN(current) || isNaN(desired)) {
         setError(t('calculatorPages.skills.fillFieldsCorrectly').replace('{skill}', 'Distance'));
@@ -112,12 +125,13 @@ const SkillsCalculator = () => {
         return;
       }
       
-      skills.distance = { current, desired };
+      skills.distance = { current, desired, percentage: pct };
     }
 
     if (shieldEnabled) {
       const current = parseInt(shieldCurrentSkill);
       const desired = parseInt(shieldDesiredSkill);
+      const pct = shieldPercent ? parseInt(shieldPercent) : 0;
       
       if (isNaN(current) || isNaN(desired)) {
         setError(t('calculatorPages.skills.fillFieldsCorrectly').replace('{skill}', 'Shield'));
@@ -130,7 +144,7 @@ const SkillsCalculator = () => {
         return;
       }
       
-      skills.shield = { current, desired };
+      skills.shield = { current, desired, percentage: pct };
     }
 
     setError(null);
@@ -159,6 +173,83 @@ const SkillsCalculator = () => {
         return 'Shielding';
     }
   };
+
+  const renderSkillInputs = (
+    skillName: string,
+    icon: React.ReactNode,
+    enabled: boolean,
+    setEnabled: (v: boolean) => void,
+    currentSkill: string,
+    setCurrentSkill: (v: string) => void,
+    desiredSkill: string,
+    setDesiredSkill: (v: string) => void,
+    percent: string,
+    setPercent: (v: string) => void,
+    id: string,
+  ) => (
+    <div className="space-y-3">
+      <div className="flex items-center gap-2">
+        <Checkbox
+          id={id}
+          checked={enabled}
+          onCheckedChange={(checked) => {
+            setEnabled(checked === true);
+            if (!checked) {
+              setCurrentSkill('');
+              setDesiredSkill('');
+              setPercent('');
+            }
+            setResult(null);
+          }}
+        />
+        <label htmlFor={id} className="text-sm font-medium cursor-pointer flex items-center gap-2">
+          {icon} {skillName}
+        </label>
+      </div>
+      {enabled && (
+        <div className="grid grid-cols-3 gap-3 ml-6">
+          <div className="space-y-1">
+            <label className="text-xs">{t('calculatorPages.skills.currentSkill')}:</label>
+            <Input
+              type="number"
+              value={currentSkill}
+              onChange={(e) => { setCurrentSkill(e.target.value); setResult(null); }}
+              placeholder="Ex: 10"
+              min={10}
+              className="bg-secondary text-text-dark border-border"
+            />
+          </div>
+          <div className="space-y-1">
+            <label className="text-xs">{t('calculatorPages.skills.percentToNext')}:</label>
+            <Input
+              type="number"
+              value={percent}
+              onChange={(e) => {
+                const val = Math.max(0, Math.min(99, parseInt(e.target.value) || 0));
+                setPercent(e.target.value === '' ? '' : String(val));
+                setResult(null);
+              }}
+              placeholder="0"
+              min={0}
+              max={99}
+              className="bg-secondary text-text-dark border-border"
+            />
+          </div>
+          <div className="space-y-1">
+            <label className="text-xs">{t('calculatorPages.skills.desiredSkill')}:</label>
+            <Input
+              type="number"
+              value={desiredSkill}
+              onChange={(e) => { setDesiredSkill(e.target.value); setResult(null); }}
+              placeholder="Ex: 50"
+              min={10}
+              className="bg-secondary text-text-dark border-border"
+            />
+          </div>
+        </div>
+      )}
+    </div>
+  );
 
   return (
     <MainLayout>
@@ -200,164 +291,9 @@ const SkillsCalculator = () => {
               <div className="space-y-4">
                 <h3 className="text-sm font-medium">{t('calculatorPages.skills.selectSkills')}:</h3>
                 
-                {/* Melee */}
-                <div className="space-y-3">
-                  <div className="flex items-center gap-2">
-                    <Checkbox
-                      id="melee"
-                      checked={meleeEnabled}
-                      onCheckedChange={(checked) => {
-                        setMeleeEnabled(checked === true);
-                        if (!checked) {
-                          setMeleeCurrentSkill('');
-                          setMeleeDesiredSkill('');
-                        }
-                        setResult(null);
-                      }}
-                    />
-                    <label htmlFor="melee" className="text-sm font-medium cursor-pointer flex items-center gap-2">
-                      <Sword className="w-4 h-4" /> Melee
-                    </label>
-                  </div>
-                  {meleeEnabled && (
-                    <div className="grid grid-cols-2 gap-3 ml-6">
-                      <div className="space-y-1">
-                        <label className="text-xs">{t('calculatorPages.skills.currentSkill')}:</label>
-                        <Input
-                          type="number"
-                          value={meleeCurrentSkill}
-                          onChange={(e) => {
-                            setMeleeCurrentSkill(e.target.value);
-                            setResult(null);
-                          }}
-                          placeholder="Ex: 10"
-                          min={10}
-                          className="bg-secondary text-text-dark border-border"
-                        />
-                      </div>
-                      <div className="space-y-1">
-                        <label className="text-xs">{t('calculatorPages.skills.desiredSkill')}:</label>
-                        <Input
-                          type="number"
-                          value={meleeDesiredSkill}
-                          onChange={(e) => {
-                            setMeleeDesiredSkill(e.target.value);
-                            setResult(null);
-                          }}
-                          placeholder="Ex: 50"
-                          min={10}
-                          className="bg-secondary text-text-dark border-border"
-                        />
-                      </div>
-                    </div>
-                  )}
-                </div>
-
-                {/* Distance */}
-                <div className="space-y-3">
-                  <div className="flex items-center gap-2">
-                    <Checkbox
-                      id="distance"
-                      checked={distanceEnabled}
-                      onCheckedChange={(checked) => {
-                        setDistanceEnabled(checked === true);
-                        if (!checked) {
-                          setDistanceCurrentSkill('');
-                          setDistanceDesiredSkill('');
-                        }
-                        setResult(null);
-                      }}
-                    />
-                    <label htmlFor="distance" className="text-sm font-medium cursor-pointer flex items-center gap-2">
-                      <Target className="w-4 h-4" /> Distance
-                    </label>
-                  </div>
-                  {distanceEnabled && (
-                    <div className="grid grid-cols-2 gap-3 ml-6">
-                      <div className="space-y-1">
-                        <label className="text-xs">{t('calculatorPages.skills.currentSkill')}:</label>
-                        <Input
-                          type="number"
-                          value={distanceCurrentSkill}
-                          onChange={(e) => {
-                            setDistanceCurrentSkill(e.target.value);
-                            setResult(null);
-                          }}
-                          placeholder="Ex: 10"
-                          min={10}
-                          className="bg-secondary text-text-dark border-border"
-                        />
-                      </div>
-                      <div className="space-y-1">
-                        <label className="text-xs">{t('calculatorPages.skills.desiredSkill')}:</label>
-                        <Input
-                          type="number"
-                          value={distanceDesiredSkill}
-                          onChange={(e) => {
-                            setDistanceDesiredSkill(e.target.value);
-                            setResult(null);
-                          }}
-                          placeholder="Ex: 80"
-                          min={10}
-                          className="bg-secondary text-text-dark border-border"
-                        />
-                      </div>
-                    </div>
-                  )}
-                </div>
-
-                {/* Shield */}
-                <div className="space-y-3">
-                  <div className="flex items-center gap-2">
-                    <Checkbox
-                      id="shield"
-                      checked={shieldEnabled}
-                      onCheckedChange={(checked) => {
-                        setShieldEnabled(checked === true);
-                        if (!checked) {
-                          setShieldCurrentSkill('');
-                          setShieldDesiredSkill('');
-                        }
-                        setResult(null);
-                      }}
-                    />
-                    <label htmlFor="shield" className="text-sm font-medium cursor-pointer flex items-center gap-2">
-                      <Shield className="w-4 h-4" /> Shield
-                    </label>
-                  </div>
-                  {shieldEnabled && (
-                    <div className="grid grid-cols-2 gap-3 ml-6">
-                      <div className="space-y-1">
-                        <label className="text-xs">{t('calculatorPages.skills.currentSkill')}:</label>
-                        <Input
-                          type="number"
-                          value={shieldCurrentSkill}
-                          onChange={(e) => {
-                            setShieldCurrentSkill(e.target.value);
-                            setResult(null);
-                          }}
-                          placeholder="Ex: 10"
-                          min={10}
-                          className="bg-secondary text-text-dark border-border"
-                        />
-                      </div>
-                      <div className="space-y-1">
-                        <label className="text-xs">{t('calculatorPages.skills.desiredSkill')}:</label>
-                        <Input
-                          type="number"
-                          value={shieldDesiredSkill}
-                          onChange={(e) => {
-                            setShieldDesiredSkill(e.target.value);
-                            setResult(null);
-                          }}
-                          placeholder="Ex: 60"
-                          min={10}
-                          className="bg-secondary text-text-dark border-border"
-                        />
-                      </div>
-                    </div>
-                  )}
-                </div>
+                {renderSkillInputs('Melee', <Sword className="w-4 h-4" />, meleeEnabled, setMeleeEnabled, meleeCurrentSkill, setMeleeCurrentSkill, meleeDesiredSkill, setMeleeDesiredSkill, meleePercent, setMeleePercent, 'melee')}
+                {renderSkillInputs('Distance', <Target className="w-4 h-4" />, distanceEnabled, setDistanceEnabled, distanceCurrentSkill, setDistanceCurrentSkill, distanceDesiredSkill, setDistanceDesiredSkill, distancePercent, setDistancePercent, 'distance')}
+                {renderSkillInputs('Shield', <Shield className="w-4 h-4" />, shieldEnabled, setShieldEnabled, shieldCurrentSkill, setShieldCurrentSkill, shieldDesiredSkill, setShieldDesiredSkill, shieldPercent, setShieldPercent, 'shield')}
               </div>
             )}
 
@@ -399,7 +335,7 @@ const SkillsCalculator = () => {
                         <strong>{skillResult.desiredSkill}</strong>:
                       </p>
                       <p className="text-maroon font-semibold mt-1">
-                        {formatTime(skillResult.time)}
+                        {formatTime(skillResult.time, timeLabels)}
                       </p>
                     </div>
                   ))}
