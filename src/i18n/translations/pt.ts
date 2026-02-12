@@ -451,6 +451,7 @@ export const pt: TranslationKeys = {
       chooseVocation: "Escolha sua Vocação",
       selectSkills: "Selecione as Skills",
       currentSkill: "Skill Atual",
+      percentToNext: "% para Próxima",
       desiredSkill: "Skill Desejada",
       calculate: "Calcular",
       resultsFor: "Resultados para",

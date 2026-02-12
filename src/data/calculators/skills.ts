@@ -2,9 +2,9 @@ export interface SkillVocationData {
   id: string;
   name: string;
   multipliers: {
-    melee: { base: number; exponent: number };
-    distance: { base: number; exponent: number };
-    shield: { base: number; exponent: number };
+    melee: number;
+    distance: number;
+    shield: number;
   };
 }
 
@@ -13,36 +13,36 @@ export const skillVocations: SkillVocationData[] = [
     id: 'knight',
     name: 'Knight',
     multipliers: {
-      melee: { base: 120, exponent: 1.1 },
-      distance: { base: 120, exponent: 1.2 },
-      shield: { base: 120, exponent: 1.1 },
+      melee: 1.1,
+      distance: 1.4,
+      shield: 1.1,
     },
   },
   {
     id: 'paladin',
     name: 'Paladin',
     multipliers: {
-      melee: { base: 120, exponent: 1.2 },
-      distance: { base: 60, exponent: 1.1 },
-      shield: { base: 120, exponent: 1.1 },
+      melee: 1.2,
+      distance: 1.1,
+      shield: 1.1,
     },
   },
   {
     id: 'sorcerer',
     name: 'Sorcerer',
     multipliers: {
-      melee: { base: 240, exponent: 1.4 },
-      distance: { base: 240, exponent: 1.3 },
-      shield: { base: 240, exponent: 1.4 },
+      melee: 2.0,
+      distance: 2.0,
+      shield: 1.5,
     },
   },
   {
     id: 'druid',
     name: 'Druid',
     multipliers: {
-      melee: { base: 240, exponent: 1.4 },
-      distance: { base: 240, exponent: 1.3 },
-      shield: { base: 240, exponent: 1.4 },
+      melee: 1.8,
+      distance: 1.8,
+      shield: 1.5,
     },
   },
 ];
@@ -76,35 +76,51 @@ export function convertSecondsToTime(totalSeconds: number): TimeResult {
   return { days, hours, minutes, seconds, totalSeconds };
 }
 
+/**
+ * Tibia 7.4 skill formula:
+ * tries_to_advance(skill) = 50 * multiplier^(skill - 10)
+ * Each try = 2 seconds (1 combat round)
+ *
+ * With percentage support:
+ * - First level: tries * (1 - percentage/100)
+ * - Remaining levels: full tries
+ */
 export function calculateSkillTime(
   currentSkill: number,
   desiredSkill: number,
-  base: number,
-  exponent: number
+  multiplier: number,
+  percentage: number = 0
 ): TimeResult {
-  let totalSeconds = 0;
+  let totalTries = 0;
 
-  for (let skill = currentSkill; skill < desiredSkill; skill++) {
-    totalSeconds += base * Math.pow(exponent, skill - 9);
+  // First level (partial based on current percentage)
+  const triesFirstLevel = 50 * Math.pow(multiplier, currentSkill - 10);
+  totalTries += triesFirstLevel * (1 - percentage / 100);
+
+  // Remaining full levels
+  for (let skill = currentSkill + 1; skill < desiredSkill; skill++) {
+    totalTries += 50 * Math.pow(multiplier, skill - 10);
   }
 
+  const totalSeconds = totalTries * 2;
   return convertSecondsToTime(totalSeconds);
 }
 
-export function formatTime(time: TimeResult): string {
+export function formatTime(time: TimeResult, translations?: { days: string; hours: string; minutes: string; seconds: string }): string {
+  const labels = translations || { days: 'dia(s)', hours: 'hora(s)', minutes: 'minuto(s)', seconds: 'segundo(s)' };
   const parts: string[] = [];
 
   if (time.days > 0) {
-    parts.push(`${time.days} dia${time.days > 1 ? 's' : ''}`);
+    parts.push(`${time.days} ${labels.days}`);
   }
   if (time.hours > 0) {
-    parts.push(`${time.hours} hora${time.hours > 1 ? 's' : ''}`);
+    parts.push(`${time.hours} ${labels.hours}`);
   }
   if (time.minutes > 0) {
-    parts.push(`${time.minutes} minuto${time.minutes > 1 ? 's' : ''}`);
+    parts.push(`${time.minutes} ${labels.minutes}`);
   }
   if (time.seconds > 0 || parts.length === 0) {
-    parts.push(`${time.seconds} segundo${time.seconds !== 1 ? 's' : ''}`);
+    parts.push(`${time.seconds} ${labels.seconds}`);
   }
 
   if (parts.length === 1) {
@@ -118,9 +134,9 @@ export function formatTime(time: TimeResult): string {
 export function calculateSkills(
   vocation: SkillVocationData,
   skills: {
-    melee?: { current: number; desired: number };
-    distance?: { current: number; desired: number };
-    shield?: { current: number; desired: number };
+    melee?: { current: number; desired: number; percentage?: number };
+    distance?: { current: number; desired: number; percentage?: number };
+    shield?: { current: number; desired: number; percentage?: number };
   }
 ): SkillsCalculationResult {
   const results: SkillResult[] = [];
@@ -129,8 +145,8 @@ export function calculateSkills(
     const time = calculateSkillTime(
       skills.melee.current,
       skills.melee.desired,
-      vocation.multipliers.melee.base,
-      vocation.multipliers.melee.exponent
+      vocation.multipliers.melee,
+      skills.melee.percentage || 0
     );
     results.push({
       skillType: 'melee',
@@ -144,8 +160,8 @@ export function calculateSkills(
     const time = calculateSkillTime(
       skills.distance.current,
       skills.distance.desired,
-      vocation.multipliers.distance.base,
-      vocation.multipliers.distance.exponent
+      vocation.multipliers.distance,
+      skills.distance.percentage || 0
     );
     results.push({
       skillType: 'distance',
@@ -159,8 +175,8 @@ export function calculateSkills(
     const time = calculateSkillTime(
       skills.shield.current,
       skills.shield.desired,
-      vocation.multipliers.shield.base,
-      vocation.multipliers.shield.exponent
+      vocation.multipliers.shield,
+      skills.shield.percentage || 0
     );
     results.push({
       skillType: 'shield',
