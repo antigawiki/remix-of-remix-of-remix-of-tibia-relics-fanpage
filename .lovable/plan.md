@@ -1,80 +1,47 @@
 
+# Corrigir Calculadora de Skills - 2 Bugs
 
-# Corrigir Calculadora de Skills + Adicionar Campo de Porcentagem
+## Bugs Encontrados
 
-## Problema Atual
+### Bug 1: Constante A errada para cada tipo de skill
+O codigo usa `A=50` para todas as skills, mas segundo a formula oficial do Tibia (tibia.fandom.com/wiki/Formulae), cada skill tem uma constante diferente:
 
-A fórmula atual da calculadora de skills está incorreta. Ela usa `base * Math.pow(exponent, skill - 9)` diretamente como segundos, mas a fórmula correta do Tibia 7.4 calcula **tentativas (tries)** necessárias para avançar, e cada tentativa leva **2 segundos** (1 round de combate).
+| Skill | Constante A (correta) | Valor atual (errado) |
+|---|---|---|
+| Melee (Axe/Club/Sword) | 50 | 50 |
+| Distance Fighting | **30** | 50 |
+| Shielding | **100** | 50 |
 
-A fórmula correta do Tibia 7.4 para skills e:
+### Bug 2: Significado do % invertido
+O campo "% para Proxima" representa **quanto falta** para subir de skill (porcentagem restante), mas o codigo trata como porcentagem ja concluida.
 
-```text
-Tentativas para avançar do skill X para X+1 = 50 * vocation_multiplier^(skill - 10)
-Tempo em segundos = tentativas * 2
-```
+- Valor atual: `totalTries * (1 - percentage/100)` (trata % como "feito")
+- Valor correto: `totalTries * (percentage/100)` (trata % como "restante")
 
-Alem disso, falta o campo de **porcentagem (%)** de progresso na skill atual, como existe no site opentibia.info.
+### Validacao com opentibia.info
+Paladin, Distance, skill 62, 27% restante, alvo 63:
+- Correto: `30 * 1.1^52 * 0.27 = 1150 hits`, `1150 * 2 = 2300 sec = 38min 20sec` (igual opentibia)
+- Atual (errado): `50 * 1.1^52 * 0.73 = 5184 hits`, `5184 * 2 = 10369 sec = 2h52min`
 
 ## Alteracoes
 
-### 1. Corrigir a fórmula de cálculo (`src/data/calculators/skills.ts`)
+### Arquivo: `src/data/calculators/skills.ts`
 
-- Mudar a fórmula para: `tries = 50 * vocation_multiplier^(skill - 10)`, `seconds = tries * 2`
-- Atualizar os dados de vocação para usar apenas o **multiplicador** (exponent) por skill, já que A=50 é constante
-- Adicionar suporte ao parâmetro de **porcentagem**: se o jogador já tem 60% de progresso na skill atual, só precisa de 40% das tentativas daquele nível
-- Corrigir a função `formatTime` para usar traduções ao invés de texto fixo em português
+1. Adicionar constantes A por tipo de skill ao modelo de dados (skillConstants: melee=50, distance=30, shielding=100)
+2. Alterar `calculateSkillTime` para receber o parametro `skillConstant` (A) ao inves de usar 50 fixo
+3. Inverter a formula do percentual: de `(1 - percentage/100)` para `(percentage/100)`
+4. Atualizar `calculateSkills` para passar a constante A correta baseada no tipo de skill
 
-### 2. Adicionar campo de % na UI (`src/pages/calculators/SkillsCalculator.tsx`)
-
-- Adicionar um campo de input numérico (0-99) para a porcentagem de cada skill, ao lado dos campos existentes
-- Layout: 3 colunas (Skill Atual | % | Skill Desejada)
-- Seguir o mesmo padrão visual já usado na calculadora de Magic Level
-
-### 3. Adicionar traduções
-
-- Adicionar chave `percentToNext` nas traduções de skills (pt, en, es, pl)
-- Adicionar na interface `types.ts`
-
-## Detalhes Técnicos
-
-### Parâmetros corretos por vocação (Tibia 7.4, rate 1x):
+### Detalhes tecnicos da formula corrigida
 
 ```text
-                    Melee   Distance   Shield
-Knight:              1.1      1.4       1.1
-Paladin:             1.2      1.1       1.1
-Sorcerer:            2.0      2.0       1.5
-Druid:               1.8      1.8       1.5
+// Para o primeiro nivel (parcial baseado no % restante):
+tries_remaining = A * b^(skill - 10) * (percentage / 100)
+
+// Para niveis intermediarios (completos):
+tries_full = A * b^(skill - 10)
+
+// Tempo: tries * 2 segundos
 ```
 
-A = 50 (constante para todas as skills)
-c = 10 (skill de referência)
-
-### Fórmula com porcentagem:
-
-```text
-// Para o primeiro nível (parcial):
-tries_first_level = 50 * b^(currentSkill - 10) * (1 - percentage/100)
-
-// Para os níveis seguintes (completos):
-tries_remaining = sum(50 * b^(skill - 10)) para skill = currentSkill+1 até desiredSkill-1
-
-// Total de tentativas:
-total_tries = tries_first_level + tries_remaining
-
-// Tempo total:
-total_seconds = total_tries * 2
-```
-
-### Arquivos a modificar:
-
-| Arquivo | Alteração |
-|---------|-----------|
-| `src/data/calculators/skills.ts` | Corrigir fórmula, atualizar multiplicadores, suporte a % |
-| `src/pages/calculators/SkillsCalculator.tsx` | Adicionar campo de %, passar para o cálculo |
-| `src/i18n/types.ts` | Adicionar chave `percentToNext` |
-| `src/i18n/translations/pt.ts` | Adicionar tradução |
-| `src/i18n/translations/en.ts` | Adicionar tradução |
-| `src/i18n/translations/es.ts` | Adicionar tradução |
-| `src/i18n/translations/pl.ts` | Adicionar tradução |
-
+Onde A varia por tipo de skill (50, 30, ou 100) e b e o multiplicador da vocacao.
