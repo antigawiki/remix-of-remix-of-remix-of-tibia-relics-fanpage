@@ -1,47 +1,46 @@
 
-# Corrigir Calculadora de Skills - 2 Bugs
 
-## Bugs Encontrados
+# Atualizar Lista de Criaturas
 
-### Bug 1: Constante A errada para cada tipo de skill
-O codigo usa `A=50` para todas as skills, mas segundo a formula oficial do Tibia (tibia.fandom.com/wiki/Formulae), cada skill tem uma constante diferente:
+## Resumo
 
-| Skill | Constante A (correta) | Valor atual (errado) |
-|---|---|---|
-| Melee (Axe/Club/Sword) | 50 | 50 |
-| Distance Fighting | **30** | 50 |
-| Shielding | **100** | 50 |
+Adicionar 16 novas criaturas ao arquivo `src/data/creatures.ts`, atualizar 1 criatura existente (Tarantula), e copiar a imagem do Ice Beetle para o projeto.
 
-### Bug 2: Significado do % invertido
-O campo "% para Proxima" representa **quanto falta** para subir de skill (porcentagem restante), mas o codigo trata como porcentagem ja concluida.
+## Novas Criaturas a Adicionar
 
-- Valor atual: `totalTries * (1 - percentage/100)` (trata % como "feito")
-- Valor correto: `totalTries * (percentage/100)` (trata % como "restante")
+| Criatura | HP | EXP | Summon | Convince |
+|---|---|---|---|---|
+| Ice Beetle | 360 | 180 | - | - |
+| Sibang | 225 | 105 | - | - |
+| Kongra | 340 | 115 | - | - |
+| Merlkin | 230 | 145 | - | - |
+| Centipede | 70 | 30 | 335 | 335 |
+| Carniphila | 255 | 150 | 490 | 490 |
+| Flamingo | 25 | 0 | 250 | 250 |
+| Crab | 55 | 30 | 305 | 305 |
+| Panda | 80 | 3 | 300 | 300 |
+| Crocodile | 105 | 40 | 350 | 350 |
+| Elephant | 320 | 160 | 500 | 500 |
+| Terror Bird | 300 | 150 | 490 | 490 |
+| Spit Nettle | 150 | 20 | - | - |
+| Hydra | 2350 | 2100 | - | - |
+| Lizard Templar | 410 | 155 | - | - |
+| Lizard Sentinel | 265 | 110 | 560 | 560 |
+| Lizard Snakecharmer | 325 | 210 | - | - |
 
-### Validacao com opentibia.info
-Paladin, Distance, skill 62, 27% restante, alvo 63:
-- Correto: `30 * 1.1^52 * 0.27 = 1150 hits`, `1150 * 2 = 2300 sec = 38min 20sec` (igual opentibia)
-- Atual (errado): `50 * 1.1^52 * 0.73 = 5184 hits`, `5184 * 2 = 10369 sec = 2h52min`
+## Criaturas Ja Existentes (sem duplicar)
+
+- **Slime** - ja existe, dados corretos
+- **Hunter** - ja existe, dados corretos
+- **Tarantula** - ja existe, mas summon/convince precisa atualizar de 480 para 485
 
 ## Alteracoes
 
-### Arquivo: `src/data/calculators/skills.ts`
+### 1. Copiar imagem do Ice Beetle
+- Copiar `user-uploads://132.png` para `public/creatures/ice_beetle.png`
 
-1. Adicionar constantes A por tipo de skill ao modelo de dados (skillConstants: melee=50, distance=30, shielding=100)
-2. Alterar `calculateSkillTime` para receber o parametro `skillConstant` (A) ao inves de usar 50 fixo
-3. Inverter a formula do percentual: de `(1 - percentage/100)` para `(percentage/100)`
-4. Atualizar `calculateSkills` para passar a constante A correta baseada no tipo de skill
+### 2. Atualizar `src/data/creatures.ts`
+- Adicionar as 16 novas criaturas listadas acima em ordem alfabetica
+- Atualizar Tarantula: summon e convince de 480 para 485
+- Usar imagens do wiki (`https://wiki.antiga.online/creatures/nome.png`) para as novas criaturas, exceto Ice Beetle que usara a imagem local
 
-### Detalhes tecnicos da formula corrigida
-
-```text
-// Para o primeiro nivel (parcial baseado no % restante):
-tries_remaining = A * b^(skill - 10) * (percentage / 100)
-
-// Para niveis intermediarios (completos):
-tries_full = A * b^(skill - 10)
-
-// Tempo: tries * 2 segundos
-```
-
-Onde A varia por tipo de skill (50, 30, ou 100) e b e o multiplicador da vocacao.
