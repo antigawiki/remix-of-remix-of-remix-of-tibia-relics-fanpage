@@ -1,3 +1,9 @@
+export const SKILL_CONSTANTS = {
+  melee: 50,
+  distance: 30,
+  shield: 100,
+} as const;
+
 export interface SkillVocationData {
   id: string;
   name: string;
@@ -89,17 +95,18 @@ export function calculateSkillTime(
   currentSkill: number,
   desiredSkill: number,
   multiplier: number,
+  skillConstant: number,
   percentage: number = 0
 ): TimeResult {
   let totalTries = 0;
 
-  // First level (partial based on current percentage)
-  const triesFirstLevel = 50 * Math.pow(multiplier, currentSkill - 10);
-  totalTries += triesFirstLevel * (1 - percentage / 100);
+  // First level: percentage means "% remaining to next skill"
+  const triesFirstLevel = skillConstant * Math.pow(multiplier, currentSkill - 10);
+  totalTries += triesFirstLevel * (percentage / 100);
 
   // Remaining full levels
   for (let skill = currentSkill + 1; skill < desiredSkill; skill++) {
-    totalTries += 50 * Math.pow(multiplier, skill - 10);
+    totalTries += skillConstant * Math.pow(multiplier, skill - 10);
   }
 
   const totalSeconds = totalTries * 2;
@@ -146,6 +153,7 @@ export function calculateSkills(
       skills.melee.current,
       skills.melee.desired,
       vocation.multipliers.melee,
+      SKILL_CONSTANTS.melee,
       skills.melee.percentage || 0
     );
     results.push({
@@ -161,6 +169,7 @@ export function calculateSkills(
       skills.distance.current,
       skills.distance.desired,
       vocation.multipliers.distance,
+      SKILL_CONSTANTS.distance,
       skills.distance.percentage || 0
     );
     results.push({
@@ -176,6 +185,7 @@ export function calculateSkills(
       skills.shield.current,
       skills.shield.desired,
       vocation.multipliers.shield,
+      SKILL_CONSTANTS.shield,
       skills.shield.percentage || 0
     );
     results.push({
