@@ -44,7 +44,7 @@ export const creatures: Creature[] = [
   },
   {
     name: "Carniphila",
-    image: "https://wiki.antiga.online/creatures/carniphila.png",
+    image: "/creatures/carniphila.gif",
     exp: 150,
     hp: 255,
     summon: 490,
@@ -52,7 +52,7 @@ export const creatures: Creature[] = [
   },
   {
     name: "Centipede",
-    image: "https://wiki.antiga.online/creatures/centipede.png",
+    image: "/creatures/centipede.gif",
     exp: 30,
     hp: 70,
     summon: 335,
@@ -124,7 +124,7 @@ export const creatures: Creature[] = [
   },
   {
     name: "Crab",
-    image: "https://wiki.antiga.online/creatures/crab.png",
+    image: "/creatures/crab.gif",
     exp: 30,
     hp: 55,
     summon: 305,
@@ -132,7 +132,7 @@ export const creatures: Creature[] = [
   },
   {
     name: "Crocodile",
-    image: "https://wiki.antiga.online/creatures/crocodile.png",
+    image: "/creatures/crocodile.gif",
     exp: 40,
     hp: 105,
     summon: 350,
@@ -196,7 +196,7 @@ export const creatures: Creature[] = [
   },
   {
     name: "Elephant",
-    image: "https://wiki.antiga.online/creatures/elephant.png",
+    image: "/creatures/elephant.gif",
     exp: 160,
     hp: 320,
     summon: 500,
@@ -276,7 +276,7 @@ export const creatures: Creature[] = [
   },
   {
     name: "Flamingo",
-    image: "https://wiki.antiga.online/creatures/flamingo.png",
+    image: "/creatures/flamingo.gif",
     exp: 0,
     hp: 25,
     summon: 250,
@@ -305,6 +305,14 @@ export const creatures: Creature[] = [
     hp: 55,
     summon: 300,
     convince: 300,
+  },
+  {
+    name: "Frost Dragon",
+    image: "/creatures/frost_dragon.png",
+    exp: 1000,
+    hp: 1500,
+    summon: null,
+    convince: null,
   },
   {
     name: "Gargoyle",
@@ -372,7 +380,7 @@ export const creatures: Creature[] = [
   },
   {
     name: "Hydra",
-    image: "https://wiki.antiga.online/creatures/hydra.png",
+    image: "/creatures/hydra.gif",
     exp: 2100,
     hp: 2350,
     summon: null,
@@ -420,7 +428,7 @@ export const creatures: Creature[] = [
   },
   {
     name: "Kongra",
-    image: "https://wiki.antiga.online/creatures/kongra.png",
+    image: "/creatures/kongra.gif",
     exp: 115,
     hp: 340,
     summon: null,
@@ -436,7 +444,7 @@ export const creatures: Creature[] = [
   },
   {
     name: "Lizard Sentinel",
-    image: "https://wiki.antiga.online/creatures/lizard_sentinel.png",
+    image: "/creatures/lizard_sentinel.gif",
     exp: 110,
     hp: 265,
     summon: 560,
@@ -444,7 +452,7 @@ export const creatures: Creature[] = [
   },
   {
     name: "Lizard Snakecharmer",
-    image: "https://wiki.antiga.online/creatures/lizard_snakecharmer.png",
+    image: "/creatures/lizard_snakecharmer.gif",
     exp: 210,
     hp: 325,
     summon: null,
@@ -452,7 +460,7 @@ export const creatures: Creature[] = [
   },
   {
     name: "Lizard Templar",
-    image: "https://wiki.antiga.online/creatures/lizard_templar.png",
+    image: "/creatures/lizard_templar.gif",
     exp: 155,
     hp: 410,
     summon: null,
@@ -468,7 +476,7 @@ export const creatures: Creature[] = [
   },
   {
     name: "Merlkin",
-    image: "https://wiki.antiga.online/creatures/merlkin.png",
+    image: "/creatures/merlkin.gif",
     exp: 145,
     hp: 230,
     summon: null,
@@ -540,7 +548,7 @@ export const creatures: Creature[] = [
   },
   {
     name: "Panda",
-    image: "https://wiki.antiga.online/creatures/panda.png",
+    image: "/creatures/panda.gif",
     exp: 3,
     hp: 80,
     summon: 300,
@@ -692,7 +700,7 @@ export const creatures: Creature[] = [
   },
   {
     name: "Sibang",
-    image: "https://wiki.antiga.online/creatures/sibang.png",
+    image: "/creatures/sibang.gif",
     exp: 105,
     hp: 225,
     summon: null,
@@ -724,7 +732,7 @@ export const creatures: Creature[] = [
   },
   {
     name: "Spit Nettle",
-    image: "https://wiki.antiga.online/creatures/spit_nettle.png",
+    image: "/creatures/spit_nettle.gif",
     exp: 20,
     hp: 150,
     summon: null,
@@ -764,7 +772,7 @@ export const creatures: Creature[] = [
   },
   {
     name: "Terror Bird",
-    image: "https://wiki.antiga.online/creatures/terror_bird.png",
+    image: "/creatures/terror_bird.gif",
     exp: 150,
     hp: 300,
     summon: 490,
