@@ -14,3 +14,9 @@ verify_jwt = false
 
 [functions.scrape-rune-details]
 verify_jwt = false
+
+[functions.track-online-players]
+verify_jwt = false
+
+[functions.analyze-alt-matches]
+verify_jwt = false
