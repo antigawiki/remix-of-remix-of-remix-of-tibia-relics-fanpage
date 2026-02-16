@@ -14,6 +14,42 @@ export type Database = {
   }
   public: {
     Tables: {
+      alt_detector_matches: {
+        Row: {
+          ever_online_together: boolean
+          id: string
+          last_updated: string
+          match_count: number
+          player_a: string
+          player_b: string
+          probability: number
+          total_sessions_a: number
+          total_sessions_b: number
+        }
+        Insert: {
+          ever_online_together?: boolean
+          id?: string
+          last_updated?: string
+          match_count?: number
+          player_a: string
+          player_b: string
+          probability?: number
+          total_sessions_a?: number
+          total_sessions_b?: number
+        }
+        Update: {
+          ever_online_together?: boolean
+          id?: string
+          last_updated?: string
+          match_count?: number
+          player_a?: string
+          player_b?: string
+          probability?: number
+          total_sessions_a?: number
+          total_sessions_b?: number
+        }
+        Relationships: []
+      }
       creatures: {
         Row: {
           abilities: string | null
@@ -215,6 +251,45 @@ export type Database = {
           id?: string
           title?: string
           updated_at?: string | null
+        }
+        Relationships: []
+      }
+      online_tracker_sessions: {
+        Row: {
+          created_at: string
+          id: string
+          login_at: string
+          logout_at: string | null
+          player_name: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          login_at?: string
+          logout_at?: string | null
+          player_name: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          login_at?: string
+          logout_at?: string | null
+          player_name?: string
+        }
+        Relationships: []
+      }
+      online_tracker_state: {
+        Row: {
+          last_seen_at: string
+          player_name: string
+        }
+        Insert: {
+          last_seen_at?: string
+          player_name: string
+        }
+        Update: {
+          last_seen_at?: string
+          player_name?: string
         }
         Relationships: []
       }
