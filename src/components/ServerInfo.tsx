@@ -16,19 +16,19 @@ const ServerInfo = () => {
           </h4>
           <div className="grid grid-cols-2 gap-2 text-sm">
             <div className="flex justify-between">
-              <span className="text-muted-foreground">{t('serverInfo.experience')}:</span>
+              <span>{t('serverInfo.experience')}:</span>
               <span className="font-semibold">1x</span>
             </div>
             <div className="flex justify-between">
-              <span className="text-muted-foreground">{t('serverInfo.magic')}:</span>
+              <span>{t('serverInfo.magic')}:</span>
               <span className="font-semibold">1x</span>
             </div>
             <div className="flex justify-between">
-              <span className="text-muted-foreground">{t('serverInfo.skills')}:</span>
+              <span>{t('serverInfo.skills')}:</span>
               <span className="font-semibold">1x</span>
             </div>
             <div className="flex justify-between">
-              <span className="text-muted-foreground">{t('serverInfo.loot')}:</span>
+              <span>{t('serverInfo.loot')}:</span>
               <span className="font-semibold">1x</span>
             </div>
           </div>
@@ -41,15 +41,15 @@ const ServerInfo = () => {
           </h4>
           <div className="space-y-3 text-sm">
             {/* Tempo PZ */}
-            <div className="bg-muted/30 rounded p-2">
-              <span className="text-foreground font-medium block mb-1">⏱️ {t('serverInfo.pzTime')}</span>
-              <span className="text-muted-foreground">{t('serverInfo.pzTimeValue')}</span>
+            <div className="bg-black/5 rounded p-2">
+              <span className="font-medium block mb-1">⏱️ {t('serverInfo.pzTime')}</span>
+              <span>{t('serverInfo.pzTimeValue')}</span>
             </div>
 
             {/* White Skull */}
-            <div className="bg-muted/30 rounded p-2">
-              <span className="text-foreground font-medium block mb-1">💀 {t('serverInfo.whiteSkull')}</span>
-              <div className="text-muted-foreground space-y-0.5">
+            <div className="bg-black/5 rounded p-2">
+              <span className="font-medium block mb-1">💀 {t('serverInfo.whiteSkull')}</span>
+              <div className="space-y-0.5">
                 <div>
                   • {t('serverInfo.upTo')} <span className="font-semibold">2 {t('serverInfo.kills')}</span> in 24 {t('serverInfo.hours')}
                 </div>
@@ -65,7 +65,7 @@ const ServerInfo = () => {
             {/* Red Skull */}
             <div className="bg-destructive/10 rounded p-2 border border-destructive/20">
               <span className="text-destructive font-medium block mb-1">☠️ {t('serverInfo.redSkull')}</span>
-              <div className="text-muted-foreground space-y-0.5">
+              <div className="space-y-0.5">
                 <div>
                   • {t('serverInfo.from')} <span className="font-semibold">3 {t('serverInfo.kills')}</span> in 24 {t('serverInfo.hours')}
                 </div>
@@ -79,9 +79,9 @@ const ServerInfo = () => {
             </div>
 
             {/* Ban */}
-            <div className="bg-destructive/20 rounded p-2 border border-destructive/30">
+            <div className="bg-destructive/10 rounded p-2 border border-destructive/20">
               <span className="text-destructive font-medium block mb-1">🚫 {t('serverInfo.fragsBan')}</span>
-              <span className="text-muted-foreground">{t('serverInfo.banDescription')}</span>
+              <span>{t('serverInfo.banDescription')}</span>
             </div>
           </div>
         </div>
@@ -91,7 +91,7 @@ const ServerInfo = () => {
           <h4 className="font-heading text-sm font-semibold text-maroon dark:text-gold mb-2 border-b border-border pb-1">
             {t('serverInfo.general')}
           </h4>
-          <ul className="text-sm space-y-1 text-muted-foreground">
+          <ul className="text-sm space-y-1">
             <li>• {t('serverInfo.updatesComingSoon')}</li>
             <li>• {t('serverInfo.visitOfficialSite')}</li>
           </ul>
