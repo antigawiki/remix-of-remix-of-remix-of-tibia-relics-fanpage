@@ -11,7 +11,7 @@ const Footer = () => {
         <div className="flex flex-col md:flex-row items-center justify-between gap-4 text-sm text-muted-foreground">
           <div className="flex items-center gap-1">
             <span>{t('footer.developedBy')}</span>
-            <span> por Josuba</span>
+            <span> Josuba</span>
           </div>
 
           <div className="text-center">

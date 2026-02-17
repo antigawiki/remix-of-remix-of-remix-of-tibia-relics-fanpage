@@ -234,7 +234,7 @@
   }
 
   .news-box-content {
-    @apply p-4 text-text-dark;
+    @apply p-4 text-foreground;
   }
 
   /* Sidebar menu */
