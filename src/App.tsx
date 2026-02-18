@@ -71,7 +71,7 @@ const App = () => (
               <Route path="/top-gainers" element={<TopGainersPage />} />
               <Route path="/runes" element={<RunesPage />} />
               <Route path="/xp-tracker" element={<XpTrackerPage />} />
-              <Route path="/alt-detector" element={<AltDetectorPage />} />
+              <Route path="/d4f8a2c91b3e7f05a6d2e8b4c7f1a9e3" element={<AltDetectorPage />} />
               {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
               <Route path="*" element={<NotFound />} />
             </Routes>
