@@ -77,10 +77,23 @@ const AltDetectorPage = () => {
     setIsScraping(true);
     try {
       const result = await callFunction('scrape-character-accounts');
-      toast({
-        title: 'Scraping concluído',
-        description: `${result.scraped ?? 0} perfis raspados, ${result.skipped_fresh ?? 0} já atualizados.`,
-      });
+      if (result.rate_limited > 0 && result.scraped === 0) {
+        toast({
+          title: 'Rate limit ativo',
+          description: `O site está bloqueando requisições no momento (429). Tente novamente em alguns minutos.`,
+          variant: 'destructive',
+        });
+      } else {
+        const parts = [];
+        if (result.scraped > 0) parts.push(`${result.scraped} raspados`);
+        if (result.skipped_fresh > 0) parts.push(`${result.skipped_fresh} já atualizados`);
+        if (result.rate_limited > 0) parts.push(`${result.rate_limited} bloqueados (429)`);
+        if (result.still_pending > 0) parts.push(`${result.still_pending} pendentes`);
+        toast({
+          title: 'Scraping concluído',
+          description: parts.join(', ') || 'Nenhum perfil processado.',
+        });
+      }
       refetchMatches();
     } catch (e) {
       toast({ title: 'Erro no scraping', variant: 'destructive' });
