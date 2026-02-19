@@ -9,10 +9,28 @@ const corsHeaders = {
 const BASE_URL = "https://www.tibiarelic.com/characters";
 // Re-scrape a character at most once every 4 hours
 const SCRAPE_TTL_MS = 4 * 60 * 60 * 1000;
-// Max characters to scrape per run (to stay within function timeout)
-const MAX_PER_RUN = 20;
-// Base delay between requests to avoid rate limiting (ms)
-const REQUEST_DELAY_MS = 1500;
+// Max characters to scrape per run
+// With 5s delay + ~3s per page = ~8s per char → 6 chars = ~48s safely within timeout
+const MAX_PER_RUN = 6;
+// Base delay between requests (5s conservative to avoid 429)
+const REQUEST_DELAY_MS = 5000;
+// Extra pause after a 429 before stopping the run
+const RATE_LIMIT_COOLDOWN_MS = 15000;
+
+// Rotate User-Agents to reduce fingerprinting
+const USER_AGENTS = [
+  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36",
+  "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36",
+  "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:122.0) Gecko/20100101 Firefox/122.0",
+  "Mozilla/5.0 (Macintosh; Intel Mac OS X 14_3) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.2 Safari/605.1.15",
+];
+
+let uaIndex = 0;
+function getNextUserAgent(): string {
+  const ua = USER_AGENTS[uaIndex % USER_AGENTS.length];
+  uaIndex++;
+  return ua;
+}
 
 serve(async (req) => {
   if (req.method === "OPTIONS") {
@@ -34,35 +52,33 @@ serve(async (req) => {
       );
     }
 
-    // Get already-scraped characters that are still fresh
+    // Get already-scraped characters — only treat as fresh if recently scraped AND has real data
     const cutoff = new Date(Date.now() - SCRAPE_TTL_MS).toISOString();
-    const { data: freshScraped } = await supabase
+    const { data: allScraped } = await supabase
       .from("character_accounts")
-      .select("character_name")
-      .gte("last_scraped_at", cutoff)
-      .is("scrape_error", null);
+      .select("character_name, account_chars, scrape_error, last_scraped_at");
 
-    const freshNames = new Set(
-      (freshScraped || []).map((r: { character_name: string }) => r.character_name)
-    );
+    const freshNames = new Set<string>();
+    const erroredNames = new Set<string>();
 
-    // Prioritize: 429-errored first, then never scraped, then stale
-    const { data: erroredChars } = await supabase
-      .from("character_accounts")
-      .select("character_name, scrape_error")
-      .not("scrape_error", "is", null);
+    for (const r of (allScraped || []) as { character_name: string; account_chars: string[]; scrape_error: string | null; last_scraped_at: string }[]) {
+      const isRecent = r.last_scraped_at >= cutoff;
+      const hasData = r.account_chars && r.account_chars.length > 0;
+      const hasError = r.scrape_error !== null;
 
-    const erroredNames = new Set(
-      (erroredChars || [])
-        .filter((r: { scrape_error: string }) => r.scrape_error?.includes("429"))
-        .map((r: { character_name: string }) => r.character_name)
-    );
+      if (hasError && r.scrape_error?.includes("429")) {
+        erroredNames.add(r.character_name);
+      } else if (isRecent && hasData && !hasError) {
+        // Fresh = recently scraped + has actual account data (not empty array)
+        freshNames.add(r.character_name);
+      }
+    }
 
-    // Sort: never scraped first, then 429-errored (retry), then stale
+    // Sort: non-errored (never scraped or stale) first, then 429-errored (retry at end)
     const toScrape = allNames.filter((name) => !freshNames.has(name)).sort((a, b) => {
       const aErrored = erroredNames.has(a) ? 1 : 0;
       const bErrored = erroredNames.has(b) ? 1 : 0;
-      return aErrored - bErrored; // non-errored first
+      return aErrored - bErrored;
     });
 
     console.log(
@@ -97,15 +113,21 @@ serve(async (req) => {
       if (result.error) {
         if (result.error.includes("429")) {
           rateLimited++;
-          console.warn(`Rate limited at ${name}, stopping run.`);
+          console.warn(`Rate limited at ${name}, stopping run. Cooling down ${RATE_LIMIT_COOLDOWN_MS}ms.`);
+          await sleep(RATE_LIMIT_COOLDOWN_MS);
           break;
         }
         errors++;
+        console.warn(`[${name}] Error: ${result.error}`);
       } else {
         scraped++;
-        console.log(`[${name}] OK — ${result.accountChars.length} chars on account`);
+        const alts = result.accountChars.filter((c) => c !== name);
+        console.log(
+          `[${name}] OK — ${result.accountChars.length} chars${alts.length > 0 ? ` (alts: ${alts.join(", ")})` : ""}`
+        );
       }
 
+      // Delay between requests to respect rate limits
       await sleep(REQUEST_DELAY_MS);
     }
 
@@ -113,7 +135,7 @@ serve(async (req) => {
       JSON.stringify({
         success: true,
         total_known: allNames.length,
-        still_pending: toScrape.length - batch.length,
+        still_pending: Math.max(0, toScrape.length - batch.length),
         scraped,
         errors,
         rate_limited: rateLimited,
@@ -171,25 +193,38 @@ async function scrapeCharacter(name: string): Promise<ScrapeResult> {
   while (attempt < 3) {
     try {
       if (attempt > 0) {
-        await sleep(3000 * attempt);
+        // Exponential backoff: 10s, 20s
+        const backoff = 10000 * attempt;
+        console.log(`[${name}] Retry attempt ${attempt}, waiting ${backoff}ms`);
+        await sleep(backoff);
       }
 
       const url = `${BASE_URL}/${encodeURIComponent(name)}`;
       const response = await fetch(url, {
         headers: {
-          "User-Agent":
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-          Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-          "Accept-Language": "en-US,en;q=0.5",
+          "User-Agent": getNextUserAgent(),
+          Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
+          "Accept-Language": "en-US,en;q=0.9",
+          "Accept-Encoding": "gzip, deflate, br",
           "Cache-Control": "no-cache",
+          "Pragma": "no-cache",
+          "Upgrade-Insecure-Requests": "1",
         },
         signal: AbortSignal.timeout(15000),
       });
 
       if (response.status === 429) {
+        // Check for Retry-After header
+        const retryAfter = response.headers.get("Retry-After");
+        let waitMs = 15000 * (attempt + 1); // default backoff
+        if (retryAfter) {
+          const parsed = parseInt(retryAfter, 10);
+          if (!isNaN(parsed)) waitMs = parsed * 1000;
+        }
         lastError = "HTTP 429 - Rate limited";
+        console.warn(`[${name}] 429 received, retry-after: ${retryAfter ?? "none"}, waiting ${waitMs}ms`);
         attempt++;
-        await sleep(5000 * attempt);
+        await sleep(waitMs);
         continue;
       }
 
@@ -199,6 +234,7 @@ async function scrapeCharacter(name: string): Promise<ScrapeResult> {
 
       const html = await response.text();
 
+      // Strategy 1: __NEXT_DATA__ JSON (most reliable for Next.js apps)
       const nextDataMatch = html.match(
         /<script id="__NEXT_DATA__" type="application\/json">([\s\S]*?)<\/script>/
       );
@@ -210,10 +246,11 @@ async function scrapeCharacter(name: string): Promise<ScrapeResult> {
             return { accountChars };
           }
         } catch (_e) {
-          // fall through
+          // fall through to HTML parsing
         }
       }
 
+      // Strategy 2: Parse character links from the "Characters" section in HTML
       const accountChars = extractCharsFromHtml(html, name);
       return { accountChars };
     } catch (error) {
