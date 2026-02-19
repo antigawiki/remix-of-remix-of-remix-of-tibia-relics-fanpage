@@ -177,37 +177,36 @@ export default function HuntAdminPage() {
           />
         )}
 
-        {/* Admin stats */}
-        {authed && (
-          <>
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-              {[
-                { label: "Cities", value: cities.length, icon: Building2, color: "text-blue-400" },
-                { label: "Active Hunts", value: totalActive, icon: Sword, color: "text-green-400" },
-                { label: "Free Spots", value: totalFreeSpots, icon: MapPin, color: "text-primary" },
-                { label: "In Queue", value: totalInQueue, icon: Users, color: "text-yellow-400" },
-              ].map(({ label, value, icon: Icon, color }) => (
-                <Card key={label} className="border border-border/60">
-                  <CardContent className="p-4 flex items-center gap-3">
-                    <Icon className={`h-8 w-8 ${color} shrink-0`} />
-                    <div>
-                      <p className="text-2xl font-bold">{value}</p>
-                      <p className="text-xs text-muted-foreground">{label}</p>
-                    </div>
-                  </CardContent>
-                </Card>
-              ))}
-            </div>
+        {/* Stats - visible to all */}
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+          {[
+            { label: "Cities", value: cities.length, icon: Building2, color: "text-blue-400" },
+            { label: "Active Hunts", value: totalActive, icon: Sword, color: "text-green-400" },
+            { label: "Free Spots", value: totalFreeSpots, icon: MapPin, color: "text-primary" },
+            { label: "In Queue", value: totalInQueue, icon: Users, color: "text-yellow-400" },
+          ].map(({ label, value, icon: Icon, color }) => (
+            <Card key={label} className="border border-border/60">
+              <CardContent className="p-4 flex items-center gap-3">
+                <Icon className={`h-8 w-8 ${color} shrink-0`} />
+                <div>
+                  <p className="text-2xl font-bold">{value}</p>
+                  <p className="text-xs text-muted-foreground">{label}</p>
+                </div>
+              </CardContent>
+            </Card>
+          ))}
+        </div>
 
-            <div className="flex flex-wrap gap-3">
-              <Button onClick={() => setAddCityOpen(true)}>
-                <Building2 className="h-4 w-4 mr-2" /> Add City
-              </Button>
-              <Button variant="outline" onClick={() => setAddSpotOpen(true)}>
-                <Plus className="h-4 w-4 mr-2" /> Add Spot
-              </Button>
-            </div>
-          </>
+        {/* Admin actions */}
+        {authed && (
+          <div className="flex flex-wrap gap-3">
+            <Button onClick={() => setAddCityOpen(true)}>
+              <Building2 className="h-4 w-4 mr-2" /> Add City
+            </Button>
+            <Button variant="outline" onClick={() => setAddSpotOpen(true)}>
+              <Plus className="h-4 w-4 mr-2" /> Add Spot
+            </Button>
+          </div>
         )}
 
         {/* Spots list */}
