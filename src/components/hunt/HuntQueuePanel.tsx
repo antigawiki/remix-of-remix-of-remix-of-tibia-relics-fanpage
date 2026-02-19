@@ -1,9 +1,9 @@
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Trash2, UserPlus, CheckCircle, Clock } from "lucide-react";
+import { Trash2, UserPlus, CheckCircle, Clock, Loader2 } from "lucide-react";
 import { HuntQueueItem } from "@/hooks/useHuntAdmin";
-import { AddToQueueModal } from "./AddToQueueModal";
+import { useToast } from "@/hooks/use-toast";
 
 interface HuntQueuePanelProps {
   spotId: string;
@@ -11,7 +11,8 @@ interface HuntQueuePanelProps {
   cityName: string;
   queue: HuntQueueItem[];
   playerSessionId: string;
-  myQueueSpotId: string | null; // spotId where the player is already queued (if any)
+  characterName: string;
+  myQueueSpotId: string | null;
   isAdmin: boolean;
   onAdd: (spotId: string, playerName: string, sessionId: string) => Promise<void>;
   onRemove: (queueId: string) => Promise<void>;
@@ -38,19 +39,32 @@ export function HuntQueuePanel({
   cityName,
   queue,
   playerSessionId,
+  characterName,
   myQueueSpotId,
   isAdmin,
   onAdd,
   onRemove,
   onClaim,
 }: HuntQueuePanelProps) {
-  const [addOpen, setAddOpen] = useState(false);
+  const [joining, setJoining] = useState(false);
+  const { toast } = useToast();
 
   const alreadyInThisQueue = myQueueSpotId === spotId;
   const alreadyInAnotherQueue = myQueueSpotId !== null && myQueueSpotId !== spotId;
 
-  const handleAdd = (playerName: string) =>
-    onAdd(spotId, playerName, playerSessionId);
+  const handleJoin = async () => {
+    if (!characterName.trim()) return;
+    setJoining(true);
+    try {
+      await onAdd(spotId, characterName.trim(), playerSessionId);
+      toast({ title: "Joined queue!", description: `You joined the queue for ${spotName} — ${cityName}` });
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "Could not join the queue.";
+      toast({ title: "Error", description: msg, variant: "destructive" });
+    } finally {
+      setJoining(false);
+    }
+  };
 
   return (
     <div className="space-y-2">
@@ -63,8 +77,12 @@ export function HuntQueuePanel({
         ) : alreadyInAnotherQueue ? (
           <span className="text-xs text-muted-foreground italic">You're in another queue</span>
         ) : (
-          <Button size="sm" variant="outline" onClick={() => setAddOpen(true)}>
-            <UserPlus className="h-3 w-3 mr-1" /> Join Queue
+          <Button size="sm" variant="outline" onClick={handleJoin} disabled={joining}>
+            {joining
+              ? <Loader2 className="h-3 w-3 mr-1 animate-spin" />
+              : <UserPlus className="h-3 w-3 mr-1" />
+            }
+            Join as {characterName}
           </Button>
         )}
       </div>
@@ -73,68 +91,61 @@ export function HuntQueuePanel({
         <p className="text-xs text-muted-foreground italic">No players in queue.</p>
       ) : (
         <div className="space-y-1">
-          {queue.map((item, idx) => (
-            <div
-              key={item.id}
-              className="flex items-center justify-between bg-muted/40 rounded-md px-2 py-1.5 gap-2"
-            >
-              <div className="flex items-center gap-2 min-w-0">
-                <span className="text-xs font-bold text-muted-foreground w-4 shrink-0">
-                  #{idx + 1}
-                </span>
-                {/* Only admin sees the name; player sees "You" for their own entry */}
-                <span className="text-sm font-medium truncate">
-                  {isAdmin
-                    ? item.player_name
-                    : (item as HuntQueueItem & { session_id?: string }).session_id === playerSessionId
-                    ? `You (${item.player_name})`
-                    : "—"}
-                </span>
-                <Badge
-                  variant={statusColor[item.status] as "default" | "secondary" | "destructive" | "outline"}
-                  className="text-xs shrink-0"
-                >
-                  {item.status === "notified" && <Clock className="h-2.5 w-2.5 mr-0.5" />}
-                  {statusLabel[item.status]}
-                </Badge>
-              </div>
-              <div className="flex items-center gap-1 shrink-0">
-                {item.status === "notified" && (
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    className="h-6 px-1.5 text-xs"
-                    onClick={() => onClaim(item.id)}
-                    title="Confirm presence"
+          {queue.map((item, idx) => {
+            const isMe = (item as HuntQueueItem & { session_id?: string }).session_id === playerSessionId;
+            return (
+              <div
+                key={item.id}
+                className={`flex items-center justify-between rounded-md px-2 py-1.5 gap-2 ${isMe ? "bg-primary/10 border border-primary/20" : "bg-muted/40"}`}
+              >
+                <div className="flex items-center gap-2 min-w-0">
+                  <span className="text-xs font-bold text-muted-foreground w-4 shrink-0">
+                    #{idx + 1}
+                  </span>
+                  <span className="text-sm font-medium truncate">
+                    {isAdmin
+                      ? item.player_name
+                      : isMe
+                      ? `You (${item.player_name})`
+                      : "—"}
+                  </span>
+                  <Badge
+                    variant={statusColor[item.status] as "default" | "secondary" | "destructive" | "outline"}
+                    className="text-xs shrink-0"
                   >
-                    <CheckCircle className="h-3 w-3" />
-                  </Button>
-                )}
-                {/* Admin can remove anyone; player can only remove themselves */}
-                {(isAdmin || (item as HuntQueueItem & { session_id?: string }).session_id === playerSessionId) && (
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    className="h-6 w-6 p-0 text-destructive hover:text-destructive"
-                    onClick={() => onRemove(item.id)}
-                    title="Leave queue"
-                  >
-                    <Trash2 className="h-3 w-3" />
-                  </Button>
-                )}
+                    {item.status === "notified" && <Clock className="h-2.5 w-2.5 mr-0.5" />}
+                    {statusLabel[item.status]}
+                  </Badge>
+                </div>
+                <div className="flex items-center gap-1 shrink-0">
+                  {item.status === "notified" && isAdmin && (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="h-6 px-1.5 text-xs"
+                      onClick={() => onClaim(item.id)}
+                      title="Confirm presence"
+                    >
+                      <CheckCircle className="h-3 w-3" />
+                    </Button>
+                  )}
+                  {(isAdmin || isMe) && (
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="h-6 w-6 p-0 text-destructive hover:text-destructive"
+                      onClick={() => onRemove(item.id)}
+                      title="Leave queue"
+                    >
+                      <Trash2 className="h-3 w-3" />
+                    </Button>
+                  )}
+                </div>
               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
-
-      <AddToQueueModal
-        open={addOpen}
-        onClose={() => setAddOpen(false)}
-        onAdd={handleAdd}
-        spotName={spotName}
-        cityName={cityName}
-      />
     </div>
   );
 }

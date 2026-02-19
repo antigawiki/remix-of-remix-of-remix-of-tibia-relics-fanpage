@@ -16,6 +16,7 @@ interface HuntSpotCardProps {
   session: HuntSession | undefined;
   queue: HuntQueueItem[];
   playerSessionId: string;
+  characterName: string;
   myQueueSpotId: string | null;
   isAdmin: boolean;
   onStartHunt: (spotId: string, playerName: string) => Promise<void>;
@@ -33,6 +34,7 @@ export function HuntSpotCard({
   session,
   queue,
   playerSessionId,
+  characterName,
   myQueueSpotId,
   isAdmin,
   onStartHunt,
@@ -68,15 +70,17 @@ export function HuntSpotCard({
             </div>
             <div className="flex items-center gap-1 shrink-0">
               {statusBadge}
-              <Button
-                size="sm"
-                variant="ghost"
-                className="h-6 w-6 p-0 text-muted-foreground hover:text-destructive"
-                onClick={() => setDeleteOpen(true)}
-                title="Remover spot"
-              >
-                <Trash2 className="h-3 w-3" />
-              </Button>
+              {isAdmin && (
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="h-6 w-6 p-0 text-muted-foreground hover:text-destructive"
+                  onClick={() => setDeleteOpen(true)}
+                  title="Delete spot"
+                >
+                  <Trash2 className="h-3 w-3" />
+                </Button>
+              )}
             </div>
           </div>
         </CardHeader>
@@ -85,7 +89,9 @@ export function HuntSpotCard({
             <div className="bg-muted/40 rounded-md px-3 py-2 space-y-1">
               <div className="flex items-center justify-between">
                 <span className="text-xs text-muted-foreground">Active player:</span>
-                <span className="text-sm font-bold">{session.player_name}</span>
+                <span className="text-sm font-bold">
+                  {isAdmin ? session.player_name : (session.player_name === characterName ? `You (${session.player_name})` : "—")}
+                </span>
               </div>
               <div className="flex items-center justify-between">
                 <span className="text-xs text-muted-foreground">Time remaining:</span>
@@ -95,29 +101,31 @@ export function HuntSpotCard({
           )}
 
           <div className="flex flex-wrap gap-2">
-            {!isActive ? (
-              <Button
-                size="sm"
-                className="flex-1"
-                onClick={() => setStartOpen(true)}
-              >
-                <Play className="h-3 w-3 mr-1" /> Start Hunt
-              </Button>
-            ) : (
-              <Button
-                size="sm"
-                variant="destructive"
-                className="flex-1"
-                onClick={() => session && onEndHunt(session.id)}
-              >
-                <StopCircle className="h-3 w-3 mr-1" /> End Early
-              </Button>
+            {isAdmin && (
+              !isActive ? (
+                <Button
+                  size="sm"
+                  className="flex-1"
+                  onClick={() => setStartOpen(true)}
+                >
+                  <Play className="h-3 w-3 mr-1" /> Start Hunt
+                </Button>
+              ) : (
+                <Button
+                  size="sm"
+                  variant="destructive"
+                  className="flex-1"
+                  onClick={() => session && onEndHunt(session.id)}
+                >
+                  <StopCircle className="h-3 w-3 mr-1" /> End Early
+                </Button>
+              )
             )}
             <Button
               size="sm"
               variant="outline"
               onClick={() => setQueueOpen(!queueOpen)}
-              className="gap-1"
+              className="gap-1 flex-1"
             >
               <Users className="h-3 w-3" />
               Queue ({queue.length})
@@ -133,6 +141,7 @@ export function HuntSpotCard({
                 cityName={cityName}
                 queue={queue}
                 playerSessionId={playerSessionId}
+                characterName={characterName}
                 myQueueSpotId={myQueueSpotId}
                 isAdmin={isAdmin}
                 onAdd={onAddToQueue}
@@ -144,20 +153,23 @@ export function HuntSpotCard({
         </CardContent>
       </Card>
 
-      <StartHuntModal
-        open={startOpen}
-        onClose={() => setStartOpen(false)}
-        onStart={(playerName) => onStartHunt(spotId, playerName)}
-        spotName={spotName}
-        cityName={cityName}
-      />
-
-      <DeleteConfirmModal
-        open={deleteOpen}
-        onClose={() => setDeleteOpen(false)}
-        onConfirm={() => onDeleteSpot(spotId)}
-        description={`Are you sure you want to delete the spot "${spotName}"?`}
-      />
+      {isAdmin && (
+        <>
+          <StartHuntModal
+            open={startOpen}
+            onClose={() => setStartOpen(false)}
+            onStart={(playerName) => onStartHunt(spotId, playerName)}
+            spotName={spotName}
+            cityName={cityName}
+          />
+          <DeleteConfirmModal
+            open={deleteOpen}
+            onClose={() => setDeleteOpen(false)}
+            onConfirm={() => onDeleteSpot(spotId)}
+            description={`Are you sure you want to delete the spot "${spotName}"?`}
+          />
+        </>
+      )}
     </>
   );
 }
