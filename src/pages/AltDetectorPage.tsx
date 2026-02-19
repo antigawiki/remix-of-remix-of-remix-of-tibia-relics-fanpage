@@ -124,7 +124,44 @@ const AltDetectorPage = () => {
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [isScraping, setIsScraping] = useState(false);
   const [scrapeProgress, setScrapeProgress] = useState<{ done: number; total: number; current: string } | null>(null);
+  const [pendingCount, setPendingCount] = useState<number | null>(null);
   const { toast } = useToast();
+
+  // Fetch ALL player names with pagination (bypasses 1000-row limit)
+  const getAllPlayerNames = async (): Promise<string[]> => {
+    const PAGE_SIZE = 1000;
+    const allNames = new Set<string>();
+    let from = 0;
+    while (true) {
+      const { data, error } = await supabase
+        .from('online_tracker_sessions')
+        .select('player_name')
+        .range(from, from + PAGE_SIZE - 1);
+      if (error || !data || data.length === 0) break;
+      data.forEach((r) => allNames.add(r.player_name));
+      if (data.length < PAGE_SIZE) break;
+      from += PAGE_SIZE;
+    }
+    return [...allNames];
+  };
+
+  // Fetch ALL scraped accounts with pagination
+  const getAllScrapedAccounts = async () => {
+    const PAGE_SIZE = 1000;
+    const all: { character_name: string; account_chars: string[]; scrape_error: string | null; last_scraped_at: string }[] = [];
+    let from = 0;
+    while (true) {
+      const { data, error } = await supabase
+        .from('character_accounts')
+        .select('character_name, account_chars, scrape_error, last_scraped_at')
+        .range(from, from + PAGE_SIZE - 1);
+      if (error || !data || data.length === 0) break;
+      all.push(...(data as typeof all));
+      if (data.length < PAGE_SIZE) break;
+      from += PAGE_SIZE;
+    }
+    return all;
+  };
 
   const { data: matches, isLoading: matchesLoading, refetch: refetchMatches } = useQuery({
     queryKey: ['alt-matches'],
@@ -183,22 +220,18 @@ const AltDetectorPage = () => {
   const triggerScrape = useCallback(async () => {
     setIsScraping(true);
     setScrapeProgress(null);
+    setPendingCount(null);
     try {
-      // 1. Get all unique player names
-      const { data: sessionData } = await supabase
-        .from('online_tracker_sessions')
-        .select('player_name');
-      const allNames = [...new Set((sessionData || []).map((r) => r.player_name))];
+      // 1. Get ALL unique player names (paginated)
+      const allNames = await getAllPlayerNames();
 
-      // 2. Get already-scraped chars — check freshness
+      // 2. Get ALL already-scraped chars (paginated) — check freshness
       const cutoff = new Date(Date.now() - SCRAPE_TTL_MS).toISOString();
-      const { data: alreadyScraped } = await supabase
-        .from('character_accounts')
-        .select('character_name, account_chars, scrape_error, last_scraped_at');
+      const alreadyScraped = await getAllScrapedAccounts();
 
       const freshNames = new Set<string>();
       const erroredNames = new Set<string>();
-      for (const r of alreadyScraped || []) {
+      for (const r of alreadyScraped) {
         const isRecent = r.last_scraped_at >= cutoff;
         const hasData = r.account_chars && r.account_chars.length > 0;
         const hasError = r.scrape_error !== null;
@@ -210,13 +243,15 @@ const AltDetectorPage = () => {
       }
 
       // Sort: non-errored first, 429-errored last
-      const toScrape = allNames
+      const allPending = allNames
         .filter((n) => !freshNames.has(n))
-        .sort((a, b) => (erroredNames.has(a) ? 1 : 0) - (erroredNames.has(b) ? 1 : 0))
-        .slice(0, MAX_PER_RUN);
+        .sort((a, b) => (erroredNames.has(a) ? 1 : 0) - (erroredNames.has(b) ? 1 : 0));
+
+      const toScrape = allPending.slice(0, MAX_PER_RUN);
 
       if (toScrape.length === 0) {
         toast({ title: 'Todos os perfis estão atualizados!' });
+        setPendingCount(0);
         return;
       }
 
@@ -244,23 +279,34 @@ const AltDetectorPage = () => {
           scraped_count++;
         }
 
+        // Save incrementally every 5 records (no data loss if interrupted)
+        if (records.length % 5 === 0) {
+          await saveScrapedRecords(records.slice(-5));
+        }
+
         // Short delay between requests
         if (i < toScrape.length - 1) await new Promise((r) => setTimeout(r, 600));
       }
 
-      // Save all records in one batch
+      // Save remaining records
       setScrapeProgress({ done: toScrape.length, total: toScrape.length, current: 'Salvando...' });
-      await saveScrapedRecords(records);
+      const remainingUnsaved = records.length % 5;
+      if (remainingUnsaved > 0) {
+        await saveScrapedRecords(records.slice(-remainingUnsaved));
+      }
 
-      const stillPending = Math.max(0, allNames.filter((n) => !freshNames.has(n)).length - toScrape.length);
+      // Calculate still pending AFTER this batch (subtract what we actually scraped)
+      const stillPending = Math.max(0, allPending.length - toScrape.length);
+      setPendingCount(stillPending);
+
       const parts = [];
       if (scraped_count > 0) parts.push(`${scraped_count} raspados`);
       if (rateLimited > 0) parts.push(`${rateLimited} bloqueados (429)`);
-      if (stillPending > 0) parts.push(`${stillPending} pendentes`);
+      if (stillPending > 0) parts.push(`${stillPending} ainda pendentes`);
       if (freshNames.size > 0) parts.push(`${freshNames.size} já atualizados`);
 
       toast({
-        title: rateLimited > 0 && scraped_count === 0 ? 'Rate limit ativo' : 'Scraping concluído',
+        title: rateLimited > 0 && scraped_count === 0 ? 'Rate limit ativo' : 'Lote concluído',
         description: parts.join(', ') || 'Nenhum perfil processado.',
         variant: rateLimited > 0 && scraped_count === 0 ? 'destructive' : 'default',
       });
@@ -413,7 +459,7 @@ const AltDetectorPage = () => {
           </div>
           <Button onClick={triggerScrape} variant="outline" size="sm" disabled={isScraping}>
             {isScraping ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <ScanSearch className="h-4 w-4 mr-2" />}
-            Raspar Perfis
+            {pendingCount !== null && pendingCount > 0 ? `Continuar (${pendingCount} restantes)` : 'Raspar Perfis'}
           </Button>
           <Button onClick={triggerAnalysis} variant="outline" size="sm" disabled={isAnalyzing}>
             {isAnalyzing ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <RefreshCw className="h-4 w-4 mr-2" />}
