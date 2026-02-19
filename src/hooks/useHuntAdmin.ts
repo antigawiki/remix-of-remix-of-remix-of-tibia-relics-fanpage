@@ -327,7 +327,9 @@ export function useHuntAdmin() {
     const nextPosition = spotQueue.length > 0 ? spotQueue[0].position + 1 : 1;
 
     // If the spot is free AND no one else is in queue, promote directly to "notified"
-    const spotIsFree = !sessions.find((s) => s.spot_id === spotId && s.status !== "finished");
+    const spotHasActiveSession = !!sessions.find((s) => s.spot_id === spotId && s.status !== "finished");
+    const spotHasClaimed = !!queue.find((q) => q.spot_id === spotId && q.status === "claimed");
+    const spotIsFree = !spotHasActiveSession && !spotHasClaimed;
     const isFirstInQueue = spotQueue.length === 0;
     const initialStatus = spotIsFree && isFirstInQueue ? "notified" : "waiting";
 
