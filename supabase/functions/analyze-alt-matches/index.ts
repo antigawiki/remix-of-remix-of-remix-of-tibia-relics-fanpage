@@ -7,15 +7,27 @@ const corsHeaders = {
 };
 
 /**
- * Alt Detection Algorithm - Inspired by TibiaStalker & kik-tibia/online-tracker
- * 
- * 1. If two characters overlap online for >1min → NOT alts (disqualified)
- * 2. "Adjacencies" = one logs out, the other logs in within 5 min
- * 3. Probability weighted by adjacency ratio, time proximity, bidirectionality, data confidence
- * 4. Cap at 95% - never 100% sure
+ * Alt Detection Algorithm - v2
+ *
+ * Two detection methods:
+ *
+ * METHOD 1 - Account Scraping (definitive):
+ *   If two characters appear on the same tibiarelic account page → confirmed alts
+ *   Probability: 99% (never 100% to account for shared accounts edge cases)
+ *
+ * METHOD 2 - Statistical (fallback for unscraped players):
+ *   Based on login/logout adjacency patterns.
+ *   Inspired by TibiaStalker & kik-tibia/online-tracker
+ *   1. If two characters overlap online for >1min → NOT alts (disqualified)
+ *   2. "Adjacencies" = one logs out, the other logs in within 5 min
+ *   3. Probability weighted by adjacency ratio, time proximity, bidirectionality, data confidence
+ *   4. Cap at 80% - statistical inference is less certain than account scraping
  */
 
-interface Session { login_at: number; logout_at: number; }
+interface Session {
+  login_at: number;
+  logout_at: number;
+}
 
 serve(async (req) => {
   if (req.method === "OPTIONS") {
@@ -27,6 +39,54 @@ serve(async (req) => {
   const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
   try {
+    const now = new Date().toISOString();
+    const results: Record<string, ReturnType<typeof makeResult>> = {};
+
+    // =========================================================
+    // METHOD 1: Account-based detection (definitive)
+    // =========================================================
+    const { data: accountData } = await supabase
+      .from("character_accounts")
+      .select("character_name, account_chars")
+      .not("scrape_error", "is", null) // Include all (even those with errors - they have [name] fallback)
+      .is("scrape_error", null); // Actually only get successful scrapes
+
+    // Re-query without error filter to get all successfully scraped
+    const { data: scraped } = await supabase
+      .from("character_accounts")
+      .select("character_name, account_chars")
+      .is("scrape_error", null);
+
+    // Build account groups: account_chars arrays that have more than 1 char
+    // Group characters that share account info
+    const accountGroups = buildAccountGroups(scraped || []);
+
+    let confirmedPairs = 0;
+    for (const group of accountGroups) {
+      // All pairs within this group are confirmed alts
+      const chars = Array.from(group).sort();
+      for (let i = 0; i < chars.length; i++) {
+        for (let j = i + 1; j < chars.length; j++) {
+          const a = chars[i];
+          const b = chars[j];
+          const key = `${a}|||${b}`;
+          results[key] = makeResult(a, b, {
+            match_count: 0,
+            total_sessions_a: 0,
+            total_sessions_b: 0,
+            ever_online_together: false,
+            probability: 99,
+            last_updated: now,
+            confirmed_by_account: true,
+          });
+          confirmedPairs++;
+        }
+      }
+    }
+
+    // =========================================================
+    // METHOD 2: Statistical detection (for unscraped players)
+    // =========================================================
     const { data: sessions, error: sessionsError } = await supabase
       .from("online_tracker_sessions")
       .select("player_name, login_at, logout_at")
@@ -34,117 +94,133 @@ serve(async (req) => {
       .order("login_at", { ascending: true });
 
     if (sessionsError) throw sessionsError;
-    if (!sessions || sessions.length === 0) {
-      return new Response(
-        JSON.stringify({ success: true, message: "No sessions to analyze", matches: 0 }),
-        { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+
+    // Build set of players already confirmed by account scraping
+    const confirmedPlayers = new Set<string>();
+    for (const group of accountGroups) {
+      group.forEach((name) => confirmedPlayers.add(name));
+    }
+
+    if (sessions && sessions.length > 0) {
+      // Group sessions by player
+      const playerSessions: Record<string, Session[]> = {};
+      for (const s of sessions) {
+        if (!playerSessions[s.player_name]) playerSessions[s.player_name] = [];
+        playerSessions[s.player_name].push({
+          login_at: new Date(s.login_at).getTime(),
+          logout_at: new Date(s.logout_at!).getTime(),
+        });
+      }
+
+      // Only analyze players not yet confirmed by account data
+      const players = Object.keys(playerSessions).filter(
+        (p) => !confirmedPlayers.has(p)
       );
-    }
 
-    // Group sessions by player, pre-parse dates to numbers
-    const playerSessions: Record<string, Session[]> = {};
-    for (const s of sessions) {
-      if (!playerSessions[s.player_name]) playerSessions[s.player_name] = [];
-      playerSessions[s.player_name].push({
-        login_at: new Date(s.login_at).getTime(),
-        logout_at: new Date(s.logout_at!).getTime(),
-      });
-    }
+      const FIVE_MIN_MS = 5 * 60 * 1000;
+      // With 5-min API granularity, two chars "online together" at the boundary
+      // is likely just a cache artifact — use 6 min tolerance to reduce false negatives
+      const OVERLAP_TOLERANCE_MS = 6 * 60 * 1000;
+      const MIN_SESSIONS = 2;
+      const MIN_ADJACENCIES = 2; // Require at least 2 adjacencies to reduce noise
 
-    const players = Object.keys(playerSessions);
-    const FIVE_MIN_MS = 5 * 60 * 1000;
-    const OVERLAP_TOLERANCE_MS = 60 * 1000; // 1 min tolerance for x-logging
-    const MIN_SESSIONS = 2;
-    const MIN_ADJACENCIES = 1;
+      for (let i = 0; i < players.length; i++) {
+        const a = players[i];
+        const sessA = playerSessions[a];
+        if (sessA.length < MIN_SESSIONS) continue;
 
-    const results: any[] = [];
-    const now = new Date().toISOString();
+        for (let j = i + 1; j < players.length; j++) {
+          const b = players[j];
 
-    for (let i = 0; i < players.length; i++) {
-      const a = players[i];
-      const sessA = playerSessions[a];
-      if (sessA.length < MIN_SESSIONS) continue;
+          // Skip if this pair already confirmed by account data
+          const keyAB = [a, b].sort().join("|||");
+          if (results[keyAB]) continue;
 
-      for (let j = i + 1; j < players.length; j++) {
-        const b = players[j];
-        const sessB = playerSessions[b];
-        if (sessB.length < MIN_SESSIONS) continue;
+          const sessB = playerSessions[b];
+          if (sessB.length < MIN_SESSIONS) continue;
 
-        // 1. Check overlap (ever online together for real)
-        let everTogether = false;
-        for (const sa of sessA) {
-          for (const sb of sessB) {
-            const overlapStart = Math.max(sa.login_at, sb.login_at);
-            const overlapEnd = Math.min(sa.logout_at, sb.logout_at);
-            if (overlapEnd - overlapStart > OVERLAP_TOLERANCE_MS) {
-              everTogether = true;
-              break;
+          // 1. Check overlap (ever online together for real)
+          let everTogether = false;
+          for (const sa of sessA) {
+            for (const sb of sessB) {
+              const overlapStart = Math.max(sa.login_at, sb.login_at);
+              const overlapEnd = Math.min(sa.logout_at, sb.logout_at);
+              if (overlapEnd - overlapStart > OVERLAP_TOLERANCE_MS) {
+                everTogether = true;
+                break;
+              }
+            }
+            if (everTogether) break;
+          }
+
+          if (everTogether) continue; // NOT alts
+
+          // 2. Find adjacencies
+          let adjCount = 0;
+          let totalTimeDiff = 0;
+          let hasAtoB = false;
+          let hasBtoA = false;
+
+          for (const sa of sessA) {
+            for (const sb of sessB) {
+              const diffAB = sb.login_at - sa.logout_at;
+              if (diffAB >= 0 && diffAB <= FIVE_MIN_MS) {
+                adjCount++;
+                totalTimeDiff += diffAB;
+                hasAtoB = true;
+              }
+              const diffBA = sa.login_at - sb.logout_at;
+              if (diffBA >= 0 && diffBA <= FIVE_MIN_MS) {
+                adjCount++;
+                totalTimeDiff += diffBA;
+                hasBtoA = true;
+              }
             }
           }
-          if (everTogether) break;
-        }
 
-        if (everTogether) continue; // NOT alts
+          if (adjCount < MIN_ADJACENCIES) continue;
 
-        // 2. Find adjacencies
-        let adjCount = 0;
-        let totalTimeDiff = 0;
-        let hasAtoB = false;
-        let hasBtoA = false;
+          // 3. Calculate probability (max 80% for statistical method)
+          const maxPossible = sessA.length + sessB.length;
+          const adjacencyRatio = adjCount / maxPossible;
+          const avgTimeDiff = totalTimeDiff / adjCount;
+          const proximityScore = 1 - (avgTimeDiff / FIVE_MIN_MS) * 0.8;
+          const bidirectionalBonus = hasAtoB && hasBtoA ? 1.3 : 1.0;
+          const totalMin = Math.min(sessA.length, sessB.length);
+          const dataConfidence = Math.min(1.0, totalMin / 10);
 
-        for (const sa of sessA) {
-          for (const sb of sessB) {
-            const diffAB = sb.login_at - sa.logout_at;
-            if (diffAB >= 0 && diffAB <= FIVE_MIN_MS) {
-              adjCount++;
-              totalTimeDiff += diffAB;
-              hasAtoB = true;
-            }
-            const diffBA = sa.login_at - sb.logout_at;
-            if (diffBA >= 0 && diffBA <= FIVE_MIN_MS) {
-              adjCount++;
-              totalTimeDiff += diffBA;
-              hasBtoA = true;
-            }
+          let probability =
+            adjacencyRatio * proximityScore * bidirectionalBonus * dataConfidence * 100;
+          // Statistical method capped at 80% — account scraping gives higher certainty
+          probability = Math.min(80, Math.round(probability * 100) / 100);
+
+          if (probability > 3) {
+            results[keyAB] = makeResult(a, b, {
+              match_count: adjCount,
+              total_sessions_a: sessA.length,
+              total_sessions_b: sessB.length,
+              ever_online_together: false,
+              probability,
+              last_updated: now,
+              confirmed_by_account: false,
+            });
           }
-        }
-
-        if (adjCount < MIN_ADJACENCIES) continue;
-
-        // 3. Calculate probability
-        const maxPossible = sessA.length + sessB.length;
-        const adjacencyRatio = adjCount / maxPossible;
-        const avgTimeDiff = totalTimeDiff / adjCount;
-        const proximityScore = 1 - (avgTimeDiff / FIVE_MIN_MS) * 0.8;
-        const bidirectionalBonus = (hasAtoB && hasBtoA) ? 1.3 : 1.0;
-        const totalMin = Math.min(sessA.length, sessB.length);
-        const dataConfidence = Math.min(1.0, totalMin / 10);
-
-        let probability = adjacencyRatio * proximityScore * bidirectionalBonus * dataConfidence * 100;
-        probability = Math.min(95, Math.round(probability * 100) / 100);
-
-        if (probability > 3) {
-          results.push({
-            player_a: a,
-            player_b: b,
-            match_count: adjCount,
-            total_sessions_a: sessA.length,
-            total_sessions_b: sessB.length,
-            ever_online_together: false,
-            probability,
-            last_updated: now,
-          });
         }
       }
     }
 
-    // Batch: delete all old matches then insert new ones
-    await supabase.from("alt_detector_matches").delete().gte("id", "00000000-0000-0000-0000-000000000000");
+    // =========================================================
+    // Save results to DB
+    // =========================================================
+    await supabase
+      .from("alt_detector_matches")
+      .delete()
+      .gte("id", "00000000-0000-0000-0000-000000000000");
 
-    if (results.length > 0) {
-      // Insert in batches of 50
-      for (let i = 0; i < results.length; i += 50) {
-        const batch = results.slice(i, i + 50);
+    const finalResults = Object.values(results);
+    if (finalResults.length > 0) {
+      for (let i = 0; i < finalResults.length; i += 50) {
+        const batch = finalResults.slice(i, i + 50);
         await supabase.from("alt_detector_matches").insert(batch);
       }
     }
@@ -152,8 +228,9 @@ serve(async (req) => {
     return new Response(
       JSON.stringify({
         success: true,
-        players_analyzed: players.length,
-        matches_saved: results.length,
+        confirmed_by_account: confirmedPairs,
+        statistical_matches: finalResults.length - confirmedPairs,
+        total_matches_saved: finalResults.length,
       }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
@@ -166,3 +243,69 @@ serve(async (req) => {
     );
   }
 });
+
+interface MatchData {
+  match_count: number;
+  total_sessions_a: number;
+  total_sessions_b: number;
+  ever_online_together: boolean;
+  probability: number;
+  last_updated: string;
+  confirmed_by_account: boolean;
+}
+
+function makeResult(a: string, b: string, data: MatchData) {
+  return {
+    player_a: a,
+    player_b: b,
+    match_count: data.match_count,
+    total_sessions_a: data.total_sessions_a,
+    total_sessions_b: data.total_sessions_b,
+    ever_online_together: data.ever_online_together,
+    probability: data.probability,
+    last_updated: data.last_updated,
+  };
+}
+
+/**
+ * Build groups of characters that belong to the same account.
+ * Uses Union-Find to merge overlapping account_chars arrays.
+ */
+function buildAccountGroups(
+  scraped: { character_name: string; account_chars: string[] }[]
+): Set<string>[] {
+  const parent = new Map<string, string>();
+
+  function find(x: string): string {
+    if (!parent.has(x)) parent.set(x, x);
+    const p = parent.get(x)!;
+    if (p !== x) {
+      parent.set(x, find(p));
+    }
+    return parent.get(x)!;
+  }
+
+  function union(x: string, y: string) {
+    const px = find(x);
+    const py = find(y);
+    if (px !== py) parent.set(px, py);
+  }
+
+  for (const row of scraped) {
+    const allChars = [row.character_name, ...(row.account_chars || [])];
+    for (let i = 1; i < allChars.length; i++) {
+      union(allChars[0], allChars[i]);
+    }
+  }
+
+  // Group by root
+  const groups = new Map<string, Set<string>>();
+  for (const [name] of parent) {
+    const root = find(name);
+    if (!groups.has(root)) groups.set(root, new Set());
+    groups.get(root)!.add(name);
+  }
+
+  // Only return groups with 2+ characters (actual alts)
+  return [...groups.values()].filter((g) => g.size >= 2);
+}

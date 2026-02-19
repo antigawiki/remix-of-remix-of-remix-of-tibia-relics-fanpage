@@ -50,6 +50,27 @@ export type Database = {
         }
         Relationships: []
       }
+      character_accounts: {
+        Row: {
+          account_chars: string[]
+          character_name: string
+          last_scraped_at: string
+          scrape_error: string | null
+        }
+        Insert: {
+          account_chars?: string[]
+          character_name: string
+          last_scraped_at?: string
+          scrape_error?: string | null
+        }
+        Update: {
+          account_chars?: string[]
+          character_name?: string
+          last_scraped_at?: string
+          scrape_error?: string | null
+        }
+        Relationships: []
+      }
       creatures: {
         Row: {
           abilities: string | null
