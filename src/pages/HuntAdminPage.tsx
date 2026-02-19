@@ -238,7 +238,6 @@ export default function HuntAdminPage() {
                 spots={hunt.getSpotsForCity(city.id)}
                 playerSessionId={sessionId}
                 characterName={characterName}
-                myQueueSpotId={myQueueSpotId}
                 isAdmin={authed}
                 getSessionForSpot={hunt.getSessionForSpot}
                 getQueueForSpot={hunt.getQueueForSpot}
