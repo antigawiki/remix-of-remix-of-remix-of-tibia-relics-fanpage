@@ -10,9 +10,9 @@ const BASE_URL = "https://www.tibiarelic.com/characters";
 // Re-scrape a character at most once every 4 hours
 const SCRAPE_TTL_MS = 4 * 60 * 60 * 1000;
 // Max characters to scrape per run (to stay within function timeout)
-const MAX_PER_RUN = 30;
-// Delay between requests to avoid rate limiting (ms)
-const REQUEST_DELAY_MS = 800;
+const MAX_PER_RUN = 20;
+// Base delay between requests to avoid rate limiting (ms)
+const REQUEST_DELAY_MS = 1500;
 
 serve(async (req) => {
   if (req.method === "OPTIONS") {
@@ -24,16 +24,8 @@ serve(async (req) => {
   const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
   try {
-    // Get all distinct player names from sessions
-    const { data: sessionPlayers } = await supabase
-      .from("online_tracker_sessions")
-      .select("player_name");
-
-    const allNames = [
-      ...new Set(
-        (sessionPlayers || []).map((s: { player_name: string }) => s.player_name)
-      ),
-    ];
+    // Get all distinct player names from sessions (paginate to avoid 1000 row limit)
+    const allNames = await getAllPlayerNames(supabase);
 
     if (allNames.length === 0) {
       return new Response(
@@ -48,14 +40,30 @@ serve(async (req) => {
       .from("character_accounts")
       .select("character_name")
       .gte("last_scraped_at", cutoff)
-      .is("scrape_error", null); // Only consider successfully scraped as "fresh"
+      .is("scrape_error", null);
 
     const freshNames = new Set(
       (freshScraped || []).map((r: { character_name: string }) => r.character_name)
     );
 
-    // Only scrape names that are stale or never scraped
-    const toScrape = allNames.filter((name) => !freshNames.has(name));
+    // Prioritize: 429-errored first, then never scraped, then stale
+    const { data: erroredChars } = await supabase
+      .from("character_accounts")
+      .select("character_name, scrape_error")
+      .not("scrape_error", "is", null);
+
+    const erroredNames = new Set(
+      (erroredChars || [])
+        .filter((r: { scrape_error: string }) => r.scrape_error?.includes("429"))
+        .map((r: { character_name: string }) => r.character_name)
+    );
+
+    // Sort: never scraped first, then 429-errored (retry), then stale
+    const toScrape = allNames.filter((name) => !freshNames.has(name)).sort((a, b) => {
+      const aErrored = erroredNames.has(a) ? 1 : 0;
+      const bErrored = erroredNames.has(b) ? 1 : 0;
+      return aErrored - bErrored; // non-errored first
+    });
 
     console.log(
       `Total: ${allNames.length}, fresh: ${freshNames.size}, to scrape: ${toScrape.length}, this run: ${Math.min(toScrape.length, MAX_PER_RUN)}`
@@ -68,7 +76,6 @@ serve(async (req) => {
       );
     }
 
-    // Process up to MAX_PER_RUN sequentially to avoid rate limiting
     const batch = toScrape.slice(0, MAX_PER_RUN);
     let scraped = 0;
     let errors = 0;
@@ -90,19 +97,15 @@ serve(async (req) => {
       if (result.error) {
         if (result.error.includes("429")) {
           rateLimited++;
-          // On rate limit, stop the run early
           console.warn(`Rate limited at ${name}, stopping run.`);
           break;
         }
         errors++;
       } else {
         scraped++;
-        console.log(
-          `[${name}] OK — ${result.accountChars.length} chars on account`
-        );
+        console.log(`[${name}] OK — ${result.accountChars.length} chars on account`);
       }
 
-      // Delay between requests
       await sleep(REQUEST_DELAY_MS);
     }
 
@@ -131,59 +134,97 @@ serve(async (req) => {
   }
 });
 
+async function getAllPlayerNames(supabase: ReturnType<typeof createClient>): Promise<string[]> {
+  const PAGE_SIZE = 1000;
+  const allNames = new Set<string>();
+  let from = 0;
+
+  while (true) {
+    const { data, error } = await supabase
+      .from("online_tracker_sessions")
+      .select("player_name")
+      .range(from, from + PAGE_SIZE - 1);
+
+    if (error) break;
+    if (!data || data.length === 0) break;
+
+    for (const row of data) {
+      allNames.add(row.player_name);
+    }
+
+    if (data.length < PAGE_SIZE) break;
+    from += PAGE_SIZE;
+  }
+
+  return [...allNames];
+}
+
 interface ScrapeResult {
-  name: string;
   accountChars: string[];
   error?: string;
 }
 
 async function scrapeCharacter(name: string): Promise<ScrapeResult> {
-  try {
-    const url = `${BASE_URL}/${encodeURIComponent(name)}`;
-    const response = await fetch(url, {
-      headers: {
-        "User-Agent":
-          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-        Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-        "Accept-Language": "en-US,en;q=0.5",
-      },
-      signal: AbortSignal.timeout(15000),
-    });
+  let attempt = 0;
+  let lastError: string | undefined;
 
-    if (response.status === 429) {
-      return { name, accountChars: [name], error: "HTTP 429 - Rate limited" };
-    }
-
-    if (!response.ok) {
-      return { name, accountChars: [name], error: `HTTP ${response.status}` };
-    }
-
-    const html = await response.text();
-
-    // Strategy 1: Try __NEXT_DATA__ JSON (most reliable for Next.js apps)
-    const nextDataMatch = html.match(
-      /<script id="__NEXT_DATA__" type="application\/json">([\s\S]*?)<\/script>/
-    );
-    if (nextDataMatch) {
-      try {
-        const nextData = JSON.parse(nextDataMatch[1]);
-        const accountChars = extractCharsFromNextData(nextData);
-        if (accountChars.length > 0) {
-          return { name, accountChars };
-        }
-      } catch (_e) {
-        // fall through to HTML parsing
+  while (attempt < 3) {
+    try {
+      if (attempt > 0) {
+        await sleep(3000 * attempt);
       }
-    }
 
-    // Strategy 2: Parse character links from the "Characters" section in HTML
-    const accountChars = extractCharsFromHtml(html, name);
-    return { name, accountChars };
-  } catch (error) {
-    const msg = error instanceof Error ? error.message : "Unknown";
-    console.error(`[${name}] Scrape error:`, msg);
-    return { name, accountChars: [name], error: msg };
+      const url = `${BASE_URL}/${encodeURIComponent(name)}`;
+      const response = await fetch(url, {
+        headers: {
+          "User-Agent":
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+          Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+          "Accept-Language": "en-US,en;q=0.5",
+          "Cache-Control": "no-cache",
+        },
+        signal: AbortSignal.timeout(15000),
+      });
+
+      if (response.status === 429) {
+        lastError = "HTTP 429 - Rate limited";
+        attempt++;
+        await sleep(5000 * attempt);
+        continue;
+      }
+
+      if (!response.ok) {
+        return { accountChars: [name], error: `HTTP ${response.status}` };
+      }
+
+      const html = await response.text();
+
+      const nextDataMatch = html.match(
+        /<script id="__NEXT_DATA__" type="application\/json">([\s\S]*?)<\/script>/
+      );
+      if (nextDataMatch) {
+        try {
+          const nextData = JSON.parse(nextDataMatch[1]);
+          const accountChars = extractCharsFromNextData(nextData);
+          if (accountChars.length > 0) {
+            return { accountChars };
+          }
+        } catch (_e) {
+          // fall through
+        }
+      }
+
+      const accountChars = extractCharsFromHtml(html, name);
+      return { accountChars };
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : "Unknown";
+      lastError = msg;
+      attempt++;
+    }
   }
+
+  console.error(`[${name}] Failed after ${attempt} attempts: ${lastError}`);
+  return { accountChars: [name], error: lastError };
 }
 
 function extractCharsFromNextData(data: unknown): string[] {
@@ -192,15 +233,9 @@ function extractCharsFromNextData(data: unknown): string[] {
   function search(obj: unknown): void {
     if (!obj || typeof obj !== "object") return;
     if (Array.isArray(obj)) {
-      // Check if this array looks like a character list (has items with "name" and "world")
       if (obj.length > 0) {
         const first = obj[0] as Record<string, unknown>;
-        if (
-          first &&
-          typeof first === "object" &&
-          "name" in first &&
-          "world" in first
-        ) {
+        if (first && typeof first === "object" && "name" in first && "world" in first) {
           for (const item of obj) {
             const char = item as Record<string, unknown>;
             if (char.name && typeof char.name === "string") {
@@ -223,11 +258,6 @@ function extractCharsFromNextData(data: unknown): string[] {
 function extractCharsFromHtml(html: string, playerName: string): string[] {
   const chars: string[] = [];
 
-  // The character page has a "Characters" section with a table.
-  // Links are in format: href="/characters/NAME"
-  // We look for the section after "Characters" heading and extract links.
-
-  // Find the characters section by looking for the heading and table
   const charsIndex = html.search(/>\s*Characters\s*</i);
   if (charsIndex !== -1) {
     const section = html.slice(charsIndex, charsIndex + 5000);
@@ -235,14 +265,12 @@ function extractCharsFromHtml(html: string, playerName: string): string[] {
     let match;
     while ((match = linkRegex.exec(section)) !== null) {
       const charName = decodeURIComponent(match[1].replace(/\+/g, " "));
-      // Filter out generic /characters page
       if (charName && charName !== "" && !chars.includes(charName)) {
         chars.push(charName);
       }
     }
   }
 
-  // Fallback: search entire page for character links (but filter more carefully)
   if (chars.length <= 1) {
     chars.length = 0;
     const linkRegex = /href="\/characters\/([^"?#]+)"/g;
@@ -257,7 +285,6 @@ function extractCharsFromHtml(html: string, playerName: string): string[] {
     }
   }
 
-  // Always ensure the searched player is included
   if (!chars.includes(playerName)) {
     chars.push(playerName);
   }
