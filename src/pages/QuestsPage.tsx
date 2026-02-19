@@ -55,8 +55,8 @@ const QuestsPage = () => {
                       <p className="text-sm text-foreground/80 mt-1 line-clamp-2">
                         {quest.description[language]}
                       </p>
-                    </div>
-                  </div> */}
+                    </div>*/}
+                  </div> 
 
                   {/* Right side - Level, Status and Arrow */}
                   <div className="flex items-center gap-3 shrink-0 ml-4">
