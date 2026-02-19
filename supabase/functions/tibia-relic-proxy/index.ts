@@ -36,11 +36,13 @@ serve(async (req) => {
       case "bans":
         apiUrl = `${API_BASE}/Community/Relic/bans`;
         break;
-      case "highscores":
+      case "highscores": {
         const category = url.searchParams.get("category") || "Experience";
         const vocation = url.searchParams.get("vocation") || "All";
-        apiUrl = `${API_BASE}/Highscores?worldName=Relic&category=${category}&vocation=${vocation}`;
+        const pageNumber = url.searchParams.get("pageNumber") || "1";
+        apiUrl = `${API_BASE}/Highscores?worldName=Relic&category=${category}&vocation=${vocation}&pageNumber=${pageNumber}`;
         break;
+      }
       case "character-api": {
         // Fetch character data from JSON API (not HTML)
         const charName = url.searchParams.get("name");
