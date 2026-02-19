@@ -545,6 +545,33 @@ export type Database = {
         }
         Relationships: []
       }
+      xp_snapshots: {
+        Row: {
+          captured_at: string
+          experience: number | null
+          id: string
+          level: number | null
+          player_name: string
+          profession: string | null
+        }
+        Insert: {
+          captured_at?: string
+          experience?: number | null
+          id?: string
+          level?: number | null
+          player_name: string
+          profession?: string | null
+        }
+        Update: {
+          captured_at?: string
+          experience?: number | null
+          id?: string
+          level?: number | null
+          player_name?: string
+          profession?: string | null
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never

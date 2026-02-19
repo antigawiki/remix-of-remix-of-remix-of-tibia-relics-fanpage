@@ -33,6 +33,7 @@ import XpTrackerPage from "./pages/XpTrackerPage";
 import AltDetectorPage from "./pages/AltDetectorPage";
 import ImportPage from "./pages/ImportPage";
 import HuntAdminPage from "./pages/HuntAdminPage";
+import XpActivityPage from "./pages/XpActivityPage";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -76,6 +77,7 @@ const App = () => (
               <Route path="/d4f8a2c91b3e7f05a6d2e8b4c7f1a9e3" element={<AltDetectorPage />} />
               <Route path="/import-data-temp" element={<ImportPage />} />
               <Route path="/hunt-admin" element={<HuntAdminPage />} />
+              <Route path="/xp-activity" element={<XpActivityPage />} />
               {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
               <Route path="*" element={<NotFound />} />
             </Routes>
