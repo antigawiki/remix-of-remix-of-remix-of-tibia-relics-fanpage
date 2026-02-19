@@ -20,7 +20,8 @@ serve(async (req) => {
     const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
-    // Fetch all vocations to get full player list (API returns 100 per call)
+    // Fetch all vocations — API returns top 100 per vocation, union gives all unique players
+    // "All" = global top 100, then per-vocation adds players outside global top that are in voc top
     const vocations = ["All", "Knights", "Paladins", "Sorcerers", "Druids"];
     const playerMap = new Map<string, { name: string; profession: string; level: number; experience: number }>();
 
@@ -29,6 +30,7 @@ serve(async (req) => {
         const apiUrl = `${API_BASE}/Highscores?worldName=Relic&category=Experience&vocation=${vocation}`;
         const response = await fetch(apiUrl, {
           headers: { "Accept": "application/json" },
+          signal: AbortSignal.timeout(10000),
         });
 
         if (!response.ok) {
@@ -39,6 +41,7 @@ serve(async (req) => {
         const data = await response.json();
         const highscores = data.highscores || [];
 
+        let added = 0;
         for (const player of highscores) {
           if (!playerMap.has(player.name)) {
             playerMap.set(player.name, {
@@ -47,10 +50,11 @@ serve(async (req) => {
               level: player.level,
               experience: player.skillLevel,
             });
+            added++;
           }
         }
 
-        // Small delay between vocation requests
+        console.log(`Vocation ${vocation}: ${highscores.length} returned, ${added} new unique (total: ${playerMap.size})`);
         await new Promise((r) => setTimeout(r, 200));
       } catch (err) {
         console.warn(`Error fetching vocation ${vocation}:`, err);
@@ -75,8 +79,8 @@ serve(async (req) => {
 
     console.log(`Saving ${records.length} player snapshots at ${capturedAt}`);
 
-    // Insert in batches of 100
-    const BATCH_SIZE = 100;
+    // Insert in batches of 200
+    const BATCH_SIZE = 200;
     let totalInserted = 0;
     for (let i = 0; i < records.length; i += BATCH_SIZE) {
       const batch = records.slice(i, i + BATCH_SIZE);
@@ -88,7 +92,7 @@ serve(async (req) => {
       }
     }
 
-    // Cleanup: keep only last 24 hours of intraday snapshots
+    // Cleanup: keep only last 24 hours
     const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
     await supabase.from("xp_snapshots").delete().lt("captured_at", oneDayAgo);
 
