@@ -27,11 +27,11 @@ export function AddSpotModal({ open, onClose, onAdd, cities, preselectedCityId }
     setLoading(true);
     try {
       await onAdd(cityId, name.trim(), maxDuration);
-      toast({ title: "Spot adicionado!", description: name });
+      toast({ title: "Spot added!", description: name });
       setName("");
       onClose();
     } catch {
-      toast({ title: "Erro", description: "Não foi possível adicionar o spot.", variant: "destructive" });
+      toast({ title: "Error", description: "Could not add the spot.", variant: "destructive" });
     } finally {
       setLoading(false);
     }
@@ -41,25 +41,25 @@ export function AddSpotModal({ open, onClose, onAdd, cities, preselectedCityId }
     <Dialog open={open} onOpenChange={onClose}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>Adicionar Spot de Hunt</DialogTitle>
+          <DialogTitle>Add Hunt Spot</DialogTitle>
         </DialogHeader>
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="space-y-2">
-            <Label htmlFor="spot-city">Cidade</Label>
+            <Label htmlFor="spot-city">City</Label>
             <select
               id="spot-city"
               value={cityId}
               onChange={(e) => setCityId(e.target.value)}
               className="w-full h-10 px-3 rounded-md border border-input bg-background text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             >
-              <option value="">Selecione a cidade</option>
+              <option value="">Select a city</option>
               {cities.map((c) => (
                 <option key={c.id} value={c.id}>{c.name}</option>
               ))}
             </select>
           </div>
           <div className="space-y-2">
-            <Label htmlFor="spot-name">Nome do Spot</Label>
+            <Label htmlFor="spot-name">Spot Name</Label>
             <Input
               id="spot-name"
               value={name}
@@ -69,7 +69,7 @@ export function AddSpotModal({ open, onClose, onAdd, cities, preselectedCityId }
             />
           </div>
           <div className="space-y-2">
-            <Label htmlFor="spot-duration">Duração Máxima (minutos)</Label>
+            <Label htmlFor="spot-duration">Max Duration (minutes)</Label>
             <Input
               id="spot-duration"
               type="number"
@@ -80,9 +80,9 @@ export function AddSpotModal({ open, onClose, onAdd, cities, preselectedCityId }
             />
           </div>
           <div className="flex justify-end gap-2">
-            <Button type="button" variant="outline" onClick={onClose}>Cancelar</Button>
+            <Button type="button" variant="outline" onClick={onClose}>Cancel</Button>
             <Button type="submit" disabled={loading || !name.trim() || !cityId}>
-              {loading ? "Adicionando..." : "Adicionar"}
+              {loading ? "Adding..." : "Add"}
             </Button>
           </div>
         </form>

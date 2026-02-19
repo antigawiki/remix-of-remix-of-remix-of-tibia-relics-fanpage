@@ -24,11 +24,11 @@ export function AddToQueueModal({ open, onClose, onAdd, spotName, cityName }: Ad
     setLoading(true);
     try {
       await onAdd(playerName.trim());
-      toast({ title: "Adicionado à fila!", description: `${playerName} entrou na fila de ${spotName}` });
+      toast({ title: "Added to queue!", description: `${playerName} joined the queue for ${spotName}` });
       setPlayerName("");
       onClose();
     } catch {
-      toast({ title: "Erro", description: "Não foi possível adicionar à fila.", variant: "destructive" });
+      toast({ title: "Error", description: "Could not add to queue.", variant: "destructive" });
     } finally {
       setLoading(false);
     }
@@ -38,26 +38,26 @@ export function AddToQueueModal({ open, onClose, onAdd, spotName, cityName }: Ad
     <Dialog open={open} onOpenChange={onClose}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>Entrar na Fila de Espera</DialogTitle>
+          <DialogTitle>Join Wait Queue</DialogTitle>
           <DialogDescription>
             {spotName} — {cityName}
           </DialogDescription>
         </DialogHeader>
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="space-y-2">
-            <Label htmlFor="queue-player-name">Nick do Player</Label>
+            <Label htmlFor="queue-player-name">Player Nick</Label>
             <Input
               id="queue-player-name"
               value={playerName}
               onChange={(e) => setPlayerName(e.target.value)}
-              placeholder="Digite o nick..."
+              placeholder="Enter nick..."
               autoFocus
             />
           </div>
           <div className="flex justify-end gap-2">
-            <Button type="button" variant="outline" onClick={onClose}>Cancelar</Button>
+            <Button type="button" variant="outline" onClick={onClose}>Cancel</Button>
             <Button type="submit" disabled={loading || !playerName.trim()}>
-              {loading ? "Adicionando..." : "⏳ Entrar na Fila"}
+              {loading ? "Adding..." : "⏳ Join Queue"}
             </Button>
           </div>
         </form>

@@ -22,11 +22,11 @@ export function AddCityModal({ open, onClose, onAdd }: AddCityModalProps) {
     setLoading(true);
     try {
       await onAdd(name.trim());
-      toast({ title: "Cidade adicionada!", description: name });
+      toast({ title: "City added!", description: name });
       setName("");
       onClose();
     } catch {
-      toast({ title: "Erro", description: "Não foi possível adicionar a cidade.", variant: "destructive" });
+      toast({ title: "Error", description: "Could not add the city.", variant: "destructive" });
     } finally {
       setLoading(false);
     }
@@ -36,11 +36,11 @@ export function AddCityModal({ open, onClose, onAdd }: AddCityModalProps) {
     <Dialog open={open} onOpenChange={onClose}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>Adicionar Cidade</DialogTitle>
+          <DialogTitle>Add City</DialogTitle>
         </DialogHeader>
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="space-y-2">
-            <Label htmlFor="city-name">Nome da Cidade</Label>
+            <Label htmlFor="city-name">City Name</Label>
             <Input
               id="city-name"
               value={name}
@@ -50,9 +50,9 @@ export function AddCityModal({ open, onClose, onAdd }: AddCityModalProps) {
             />
           </div>
           <div className="flex justify-end gap-2">
-            <Button type="button" variant="outline" onClick={onClose}>Cancelar</Button>
+            <Button type="button" variant="outline" onClick={onClose}>Cancel</Button>
             <Button type="submit" disabled={loading || !name.trim()}>
-              {loading ? "Adicionando..." : "Adicionar"}
+              {loading ? "Adding..." : "Add"}
             </Button>
           </div>
         </form>

@@ -44,11 +44,11 @@ export function HuntSpotCard({
   const isEnding = session?.status === "ending";
 
   const statusBadge = isEnding ? (
-    <Badge variant="outline" className="border-yellow-500/50 text-yellow-500">⚠️ Encerrando</Badge>
+    <Badge variant="outline" className="border-yellow-500/50 text-yellow-500">⚠️ Ending</Badge>
   ) : isActive ? (
-    <Badge variant="outline" className="border-green-500/50 text-green-500">🟢 Em uso</Badge>
+    <Badge variant="outline" className="border-green-500/50 text-green-500">🟢 Active</Badge>
   ) : (
-    <Badge variant="secondary">⚪ Livre</Badge>
+    <Badge variant="secondary">⚪ Free</Badge>
   );
 
   return (
@@ -78,11 +78,11 @@ export function HuntSpotCard({
           {isActive && session && (
             <div className="bg-muted/40 rounded-md px-3 py-2 space-y-1">
               <div className="flex items-center justify-between">
-                <span className="text-xs text-muted-foreground">Player ativo:</span>
+                <span className="text-xs text-muted-foreground">Active player:</span>
                 <span className="text-sm font-bold">{session.player_name}</span>
               </div>
               <div className="flex items-center justify-between">
-                <span className="text-xs text-muted-foreground">Tempo restante:</span>
+                <span className="text-xs text-muted-foreground">Time remaining:</span>
                 <HuntTimer endsAt={session.ends_at} />
               </div>
             </div>
@@ -95,7 +95,7 @@ export function HuntSpotCard({
                 className="flex-1"
                 onClick={() => setStartOpen(true)}
               >
-                <Play className="h-3 w-3 mr-1" /> Iniciar Hunt
+                <Play className="h-3 w-3 mr-1" /> Start Hunt
               </Button>
             ) : (
               <Button
@@ -104,7 +104,7 @@ export function HuntSpotCard({
                 className="flex-1"
                 onClick={() => session && onEndHunt(session.id)}
               >
-                <StopCircle className="h-3 w-3 mr-1" /> Encerrar
+                <StopCircle className="h-3 w-3 mr-1" /> End Early
               </Button>
             )}
             <Button
@@ -114,7 +114,7 @@ export function HuntSpotCard({
               className="gap-1"
             >
               <Users className="h-3 w-3" />
-              Fila ({queue.length})
+              Queue ({queue.length})
               {queueOpen ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
             </Button>
           </div>
@@ -147,7 +147,7 @@ export function HuntSpotCard({
         open={deleteOpen}
         onClose={() => setDeleteOpen(false)}
         onConfirm={() => onDeleteSpot(spotId)}
-        description={`Tem certeza que deseja excluir o spot "${spotName}"?`}
+        description={`Are you sure you want to delete the spot "${spotName}"?`}
       />
     </>
   );

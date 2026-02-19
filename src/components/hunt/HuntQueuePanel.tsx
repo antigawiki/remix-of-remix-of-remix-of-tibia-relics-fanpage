@@ -16,10 +16,10 @@ interface HuntQueuePanelProps {
 }
 
 const statusLabel: Record<string, string> = {
-  waiting: "Aguardando",
-  notified: "Notificado",
-  claimed: "Confirmado",
-  expired: "Expirado",
+  waiting: "Waiting",
+  notified: "Notified",
+  claimed: "Claimed",
+  expired: "Expired",
 };
 
 const statusColor: Record<string, string> = {
@@ -44,15 +44,15 @@ export function HuntQueuePanel({
     <div className="space-y-2">
       <div className="flex items-center justify-between">
         <span className="text-sm font-medium text-muted-foreground">
-          Fila de espera
+          Wait queue
         </span>
         <Button size="sm" variant="outline" onClick={() => setAddOpen(true)}>
-          <UserPlus className="h-3 w-3 mr-1" /> Adicionar
+          <UserPlus className="h-3 w-3 mr-1" /> Add
         </Button>
       </div>
 
       {queue.length === 0 ? (
-        <p className="text-xs text-muted-foreground italic">Nenhum player na fila.</p>
+        <p className="text-xs text-muted-foreground italic">No players in queue.</p>
       ) : (
         <div className="space-y-1">
           {queue.map((item, idx) => (
@@ -90,7 +90,7 @@ export function HuntQueuePanel({
                   variant="ghost"
                   className="h-6 w-6 p-0 text-destructive hover:text-destructive"
                   onClick={() => onRemove(item.id)}
-                  title="Remover da fila"
+                  title="Remove from queue"
                 >
                   <Trash2 className="h-3 w-3" />
                 </Button>
