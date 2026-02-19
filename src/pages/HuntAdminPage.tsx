@@ -12,18 +12,19 @@ import { AddSpotModal } from "@/components/hunt/AddSpotModal";
 import { MyQueueStatus } from "@/components/hunt/MyQueueStatus";
 import { Shield, Building2, Sword, Users, MapPin, Plus, LogOut, RefreshCw } from "lucide-react";
 
-const ADMIN_PASSWORD = "ondethweed";
+const ADMIN_PASSWORD = "relic7.4";
+const USER_PASSWORD = "ondethweed";
 const SESSION_KEY = "hunt_admin_auth";
 
 export default function HuntAdminPage() {
   const { sessionId, characterName, saveCharacterName, myQueueItem, leaveQueue, claimMySpot, refetch } = usePlayerSession();
 
   // Has the user set their character name?
-  const [entered, setEntered] = useState(() => !!characterName);
+  const [entered, setEntered] = useState(() => !!characterName && !!sessionStorage.getItem(SESSION_KEY));
   const [charInput, setCharInput] = useState(characterName);
   const [passwordInput, setPasswordInput] = useState("");
   const [pwError, setPwError] = useState(false);
-  const [authed, setAuthed] = useState(() => sessionStorage.getItem(SESSION_KEY) === "1");
+  const [authed, setAuthed] = useState(() => sessionStorage.getItem(SESSION_KEY) === "admin");
 
   const [addCityOpen, setAddCityOpen] = useState(false);
   const [addSpotOpen, setAddSpotOpen] = useState(false);
@@ -34,18 +35,19 @@ export default function HuntAdminPage() {
 
   const handleEnter = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!charInput.trim()) return;
+    if (!charInput.trim() || !passwordInput.trim()) return;
 
-    // Check admin password if provided
-    if (passwordInput.trim()) {
-      if (passwordInput === ADMIN_PASSWORD) {
-        sessionStorage.setItem(SESSION_KEY, "1");
-        setAuthed(true);
-        setPwError(false);
-      } else {
-        setPwError(true);
-        return;
-      }
+    if (passwordInput === ADMIN_PASSWORD) {
+      sessionStorage.setItem(SESSION_KEY, "admin");
+      setAuthed(true);
+      setPwError(false);
+    } else if (passwordInput === USER_PASSWORD) {
+      sessionStorage.setItem(SESSION_KEY, "user");
+      setAuthed(false);
+      setPwError(false);
+    } else {
+      setPwError(true);
+      return;
     }
 
     saveCharacterName(charInput.trim());
@@ -58,6 +60,7 @@ export default function HuntAdminPage() {
     setEntered(false);
     setCharInput("");
     setPasswordInput("");
+    setPwError(false);
   };
 
   const handleLeaveQueue = async () => {
@@ -85,7 +88,7 @@ export default function HuntAdminPage() {
             </div>
             <CardTitle className="text-xl">Hunt Manager</CardTitle>
             <CardDescription>
-              Enter your character name to join queues and receive notifications.
+              Enter your character name and access password to continue.
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -104,23 +107,22 @@ export default function HuntAdminPage() {
               <div className="space-y-2">
                 <Label htmlFor="pw" className="flex items-center gap-1.5">
                   <Shield className="h-3.5 w-3.5 text-muted-foreground" />
-                  Admin Password
-                  <span className="text-xs text-muted-foreground font-normal">(optional)</span>
+                  Password
                 </Label>
                 <Input
                   id="pw"
                   type="password"
                   value={passwordInput}
                   onChange={(e) => setPasswordInput(e.target.value)}
-                  placeholder="Leave blank if not admin"
+                  placeholder="••••••••••"
                   className={pwError ? "border-destructive" : ""}
                 />
                 {pwError && (
-                  <p className="text-xs text-destructive">Wrong admin password.</p>
+                  <p className="text-xs text-destructive">Wrong password. Try again.</p>
                 )}
               </div>
 
-              <Button type="submit" className="w-full" disabled={!charInput.trim()}>
+              <Button type="submit" className="w-full" disabled={!charInput.trim() || !passwordInput.trim()}>
                 Enter
               </Button>
             </form>
