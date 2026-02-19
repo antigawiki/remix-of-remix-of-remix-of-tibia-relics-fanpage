@@ -6,29 +6,17 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
-const BASE_URL = "https://www.tibiarelic.com/characters";
 // Re-scrape a character at most once every 4 hours
 const SCRAPE_TTL_MS = 4 * 60 * 60 * 1000;
-// Max characters to scrape per run
-// ~8s per char (fetch 8s timeout + 1s delay) → 3 chars = ~27s safely within 60s edge limit
-const MAX_PER_RUN = 3;
-// Short delay between requests
-const REQUEST_DELAY_MS = 1000;
+// Max characters per run — JSON API is much faster so we can do more
+const MAX_PER_RUN = 15;
+// Short delay between API requests (JSON API is less strict, but still be polite)
+const REQUEST_DELAY_MS = 500;
 
-// Rotate User-Agents to reduce fingerprinting
-const USER_AGENTS = [
-  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36",
-  "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36",
-  "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:122.0) Gecko/20100101 Firefox/122.0",
-  "Mozilla/5.0 (Macintosh; Intel Mac OS X 14_3) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.2 Safari/605.1.15",
-];
-
-let uaIndex = 0;
-function getNextUserAgent(): string {
-  const ua = USER_AGENTS[uaIndex % USER_AGENTS.length];
-  uaIndex++;
-  return ua;
-}
+// JSON API base (same as used by track-online-players — not blocked)
+const JSON_API_BASE = "https://api.tibiarelic.com/api";
+// HTML scrape fallback
+const HTML_BASE = "https://www.tibiarelic.com/characters";
 
 serve(async (req) => {
   if (req.method === "OPTIONS") {
@@ -67,12 +55,11 @@ serve(async (req) => {
       if (hasError && r.scrape_error?.includes("429")) {
         erroredNames.add(r.character_name);
       } else if (isRecent && hasData && !hasError) {
-        // Fresh = recently scraped + has actual account data (not empty array)
         freshNames.add(r.character_name);
       }
     }
 
-    // Sort: non-errored (never scraped or stale) first, then 429-errored (retry at end)
+    // Sort: non-errored first, then 429-errored (retry at end)
     const toScrape = allNames.filter((name) => !freshNames.has(name)).sort((a, b) => {
       const aErrored = erroredNames.has(a) ? 1 : 0;
       const bErrored = erroredNames.has(b) ? 1 : 0;
@@ -94,9 +81,11 @@ serve(async (req) => {
     let scraped = 0;
     let errors = 0;
     let rateLimited = 0;
+    let apiSuccesses = 0;
+    let htmlFallbacks = 0;
 
     for (const name of batch) {
-      const result = await scrapeCharacter(name);
+      const result = await fetchCharacterData(name);
 
       await supabase.from("character_accounts").upsert(
         {
@@ -112,19 +101,20 @@ serve(async (req) => {
         if (result.error.includes("429")) {
           rateLimited++;
           console.warn(`Rate limited at ${name}, stopping run early.`);
-          break; // Stop the run immediately on 429, no waiting
+          break;
         }
         errors++;
         console.warn(`[${name}] Error: ${result.error}`);
       } else {
         scraped++;
+        if (result.source === "api") apiSuccesses++;
+        else htmlFallbacks++;
         const alts = result.accountChars.filter((c) => c !== name);
         console.log(
-          `[${name}] OK — ${result.accountChars.length} chars${alts.length > 0 ? ` (alts: ${alts.join(", ")})` : ""}`
+          `[${name}] OK via ${result.source} — ${result.accountChars.length} chars${alts.length > 0 ? ` (alts: ${alts.join(", ")})` : ""}`
         );
       }
 
-      // Short delay between requests
       await sleep(REQUEST_DELAY_MS);
     }
 
@@ -137,6 +127,8 @@ serve(async (req) => {
         errors,
         rate_limited: rateLimited,
         skipped_fresh: freshNames.size,
+        api_successes: apiSuccesses,
+        html_fallbacks: htmlFallbacks,
       }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
@@ -178,64 +170,95 @@ async function getAllPlayerNames(supabase: ReturnType<typeof createClient>): Pro
   return [...allNames];
 }
 
-interface ScrapeResult {
+interface FetchResult {
   accountChars: string[];
+  source: "api" | "html";
   error?: string;
 }
 
-async function scrapeCharacter(name: string): Promise<ScrapeResult> {
+/**
+ * Try JSON API first (fast, less blocked), fall back to HTML scraping.
+ * The tibiarelic JSON API endpoint for a character:
+ *   GET https://api.tibiarelic.com/api/Community/Character/{name}
+ * Returns character info including account characters list.
+ */
+async function fetchCharacterData(name: string): Promise<FetchResult> {
+  // --- Attempt 1: JSON API ---
   try {
-    const url = `${BASE_URL}/${encodeURIComponent(name)}`;
-    const response = await fetch(url, {
+    const apiUrl = `${JSON_API_BASE}/Community/Character/${encodeURIComponent(name)}`;
+    const response = await fetch(apiUrl, {
       headers: {
-        "User-Agent": getNextUserAgent(),
-        Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-        "Accept-Language": "en-US,en;q=0.5",
-        "Cache-Control": "no-cache",
-        "Referer": "https://www.tibiarelic.com/",
+        Accept: "application/json",
+        "User-Agent": "Mozilla/5.0 (compatible; TibiaBot/1.0)",
       },
       signal: AbortSignal.timeout(8000),
     });
 
-    if (response.status === 429) {
-      console.warn(`[${name}] 429 - Rate limited (no retry to avoid timeout)`);
-      return { accountChars: [name], error: "HTTP 429 - Rate limited" };
-    }
-
-    if (!response.ok) {
-      return { accountChars: [name], error: `HTTP ${response.status}` };
-    }
-
-    const html = await response.text();
-
-    // Strategy 1: __NEXT_DATA__ JSON (most reliable for Next.js apps)
-    const nextDataMatch = html.match(
-      /<script id="__NEXT_DATA__" type="application\/json">([\s\S]*?)<\/script>/
-    );
-    if (nextDataMatch) {
-      try {
-        const nextData = JSON.parse(nextDataMatch[1]);
-        const accountChars = extractCharsFromNextData(nextData);
-        if (accountChars.length > 0) {
-          console.log(`[${name}] __NEXT_DATA__ found ${accountChars.length} chars: ${accountChars.join(", ")}`);
-          return { accountChars };
-        }
-      } catch (_e) {
-        // fall through to HTML parsing
+    if (response.ok) {
+      const data = await response.json();
+      const chars = extractCharsFromApiResponse(data, name);
+      if (chars.length > 0) {
+        return { accountChars: chars, source: "api" };
       }
+    } else if (response.status === 429) {
+      console.warn(`[${name}] JSON API 429 - trying HTML fallback`);
+      // Don't return yet, try HTML
+    } else {
+      console.log(`[${name}] JSON API returned ${response.status}, trying HTML fallback`);
     }
-
-    // Strategy 2: Parse character links from HTML
-    const accountChars = extractCharsFromHtml(html, name);
-    return { accountChars };
-  } catch (error) {
-    const msg = error instanceof Error ? error.message : "Unknown";
-    console.error(`[${name}] Fetch error: ${msg}`);
-    return { accountChars: [name], error: msg };
+  } catch (e) {
+    console.log(`[${name}] JSON API error: ${e instanceof Error ? e.message : e}, trying HTML`);
   }
+
+  // --- Attempt 2: HTML scraping ---
+  return await scrapeCharacterHtml(name);
 }
 
-function extractCharsFromNextData(data: unknown): string[] {
+/**
+ * Extract character list from the tibiarelic JSON API response.
+ * The API returns various formats depending on the endpoint.
+ */
+function extractCharsFromApiResponse(data: unknown, playerName: string): string[] {
+  if (!data || typeof data !== "object") return [];
+  
+  const obj = data as Record<string, unknown>;
+  
+  // Try common patterns in the API response
+  // Pattern 1: { accountCharacters: [{name: "..."}] }
+  if (Array.isArray(obj.accountCharacters)) {
+    const chars = (obj.accountCharacters as {name?: string}[])
+      .filter(c => c.name)
+      .map(c => c.name!);
+    if (chars.length > 0) return chars;
+  }
+  
+  // Pattern 2: { characters: [{name: "..."}] }
+  if (Array.isArray(obj.characters)) {
+    const chars = (obj.characters as {name?: string}[])
+      .filter(c => c.name)
+      .map(c => c.name!);
+    if (chars.length > 0) return chars;
+  }
+  
+  // Pattern 3: { character: { accountCharacters: [...] } }
+  if (obj.character && typeof obj.character === "object") {
+    const char = obj.character as Record<string, unknown>;
+    if (Array.isArray(char.accountCharacters)) {
+      const chars = (char.accountCharacters as {name?: string}[])
+        .filter(c => c.name)
+        .map(c => c.name!);
+      if (chars.length > 0) return chars;
+    }
+  }
+
+  // Pattern 4: Deep search for arrays with name+world properties (same as __NEXT_DATA__ parser)
+  const chars = deepSearchCharArray(data);
+  if (chars.length > 0) return chars;
+
+  return [];
+}
+
+function deepSearchCharArray(data: unknown): string[] {
   const chars: string[] = [];
 
   function search(obj: unknown): void {
@@ -263,50 +286,72 @@ function extractCharsFromNextData(data: unknown): string[] {
   return chars;
 }
 
-function extractCharsFromHtml(html: string, playerName: string): string[] {
-  // Strategy: find the "Characters" section table and extract all char links from it
-  // The page has a table like: | Name | Level | World | Status |
-  // with rows containing links like /characters/CharName
+async function scrapeCharacterHtml(name: string): Promise<FetchResult> {
+  try {
+    const url = `${HTML_BASE}/${encodeURIComponent(name)}`;
+    const response = await fetch(url, {
+      headers: {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36",
+        Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        "Accept-Language": "en-US,en;q=0.5",
+        "Cache-Control": "no-cache",
+        "Referer": "https://www.tibiarelic.com/",
+      },
+      signal: AbortSignal.timeout(10000),
+    });
 
-  // Find the account "Characters" section (after "Account Information")
-  const accountInfoIdx = html.search(/Account\s+Information/i);
-  const searchFrom = accountInfoIdx !== -1 ? accountInfoIdx : 0;
-  const relevantHtml = html.slice(searchFrom);
-
-  const chars: string[] = [];
-  const seen = new Set<string>();
-
-  // Extract all /characters/ links in the relevant section
-  const linkRegex = /href="\/characters\/([^"?#]+)"/g;
-  let match;
-  while ((match = linkRegex.exec(relevantHtml)) !== null) {
-    const raw = match[1];
-    const charName = decodeURIComponent(raw.replace(/\+/g, " ")).trim();
-    if (charName && !seen.has(charName.toLowerCase())) {
-      seen.add(charName.toLowerCase());
-      chars.push(charName);
+    if (response.status === 429) {
+      console.warn(`[${name}] HTML 429 - Rate limited`);
+      return { accountChars: [name], source: "html", error: "HTTP 429 - Rate limited" };
     }
-  }
 
-  // Fallback: if nothing found, use the entire HTML
-  if (chars.length === 0) {
-    const linkRegex2 = /href="\/characters\/([^"?#]+)"/g;
-    while ((match = linkRegex2.exec(html)) !== null) {
+    if (!response.ok) {
+      return { accountChars: [name], source: "html", error: `HTTP ${response.status}` };
+    }
+
+    const html = await response.text();
+
+    // Strategy 1: __NEXT_DATA__ JSON
+    const nextDataMatch = html.match(
+      /<script id="__NEXT_DATA__" type="application\/json">([\s\S]*?)<\/script>/
+    );
+    if (nextDataMatch) {
+      try {
+        const nextData = JSON.parse(nextDataMatch[1]);
+        const accountChars = deepSearchCharArray(nextData);
+        if (accountChars.length > 0) {
+          console.log(`[${name}] __NEXT_DATA__ found ${accountChars.length} chars`);
+          return { accountChars, source: "html" };
+        }
+      } catch (_e) {
+        // fall through
+      }
+    }
+
+    // Strategy 2: HTML link extraction
+    const accountInfoIdx = html.search(/Account\s+Information/i);
+    const searchFrom = accountInfoIdx !== -1 ? accountInfoIdx : 0;
+    const relevantHtml = html.slice(searchFrom);
+
+    const chars: string[] = [];
+    const seen = new Set<string>();
+    const linkRegex = /href="\/characters\/([^"?#]+)"/g;
+    let match;
+    while ((match = linkRegex.exec(relevantHtml)) !== null) {
       const charName = decodeURIComponent(match[1].replace(/\+/g, " ")).trim();
       if (charName && !seen.has(charName.toLowerCase())) {
         seen.add(charName.toLowerCase());
         chars.push(charName);
       }
     }
-  }
 
-  // Always include the player themselves
-  if (!seen.has(playerName.toLowerCase())) {
-    chars.push(playerName);
-  }
+    if (!seen.has(name.toLowerCase())) chars.push(name);
 
-  console.log(`[${playerName}] HTML extraction found: ${chars.join(", ") || "none"}`);
-  return chars;
+    return { accountChars: chars, source: "html" };
+  } catch (error) {
+    const msg = error instanceof Error ? error.message : "Unknown";
+    return { accountChars: [name], source: "html", error: msg };
+  }
 }
 
 function sleep(ms: number): Promise<void> {

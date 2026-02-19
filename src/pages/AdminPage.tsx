@@ -1,5 +1,4 @@
 import { useState } from 'react';
-import { Link } from 'react-router-dom';
 import { Plus, Edit, Trash2, Save, X, RefreshCw, Loader2 } from 'lucide-react';
 import MainLayout from '@/layouts/MainLayout';
 import { Button } from '@/components/ui/button';
@@ -7,6 +6,7 @@ import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { useToast } from '@/hooks/use-toast';
 import { useNews, NewsItem } from '@/hooks/useNews';
+import { SystemStatus } from '@/components/admin/SystemStatus';
 
 const AdminPage = () => {
   const { toast } = useToast();
@@ -109,6 +109,16 @@ const AdminPage = () => {
   return (
     <MainLayout showSidebars={false}>
       <div className="max-w-4xl mx-auto space-y-6">
+        {/* System Status */}
+        <div className="news-box">
+          <header className="news-box-header">
+            <h2 className="font-semibold">Status do Sistema 24/7</h2>
+          </header>
+          <div className="news-box-content">
+            <SystemStatus />
+          </div>
+        </div>
+
         {/* Header */}
         <div className="news-box">
           <header className="news-box-header">
@@ -134,6 +144,7 @@ const AdminPage = () => {
             )}
           </div>
         </div>
+
 
         {/* Add Button */}
         {!isAdding && !editingId && (

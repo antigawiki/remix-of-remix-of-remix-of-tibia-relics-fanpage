@@ -41,6 +41,30 @@ serve(async (req) => {
         const vocation = url.searchParams.get("vocation") || "All";
         apiUrl = `${API_BASE}/Highscores?worldName=Relic&category=${category}&vocation=${vocation}`;
         break;
+      case "character-api": {
+        // Fetch character data from JSON API (not HTML)
+        const charName = url.searchParams.get("name");
+        if (!charName) {
+          return new Response(
+            JSON.stringify({ error: "Missing name parameter" }),
+            { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+          );
+        }
+        const charApiUrl = `${API_BASE}/Community/Character/${encodeURIComponent(charName)}`;
+        console.log(`Fetching character API: ${charApiUrl}`);
+        const charApiResp = await fetch(charApiUrl, {
+          headers: { Accept: "application/json" },
+          signal: AbortSignal.timeout(8000),
+        });
+        console.log(`Character API status: ${charApiResp.status}`);
+        if (!charApiResp.ok) {
+          return new Response(JSON.stringify({ error: `HTTP ${charApiResp.status}` }), { status: charApiResp.status, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+        }
+        const charData = await charApiResp.json();
+        return new Response(JSON.stringify(charData), {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
       case "character-page": {
         // Fetch the HTML character page and return it as text
         const charName = url.searchParams.get("name");
