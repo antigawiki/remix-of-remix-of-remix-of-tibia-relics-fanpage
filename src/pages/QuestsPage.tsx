@@ -26,7 +26,7 @@ const QuestsPage = () => {
         </div>
 
         {/* Quest List - Full Width Horizontal Items */}
-        <div className="space-y-2">
+ {/*       <div className="space-y-2"> 
           {quests.map((quest) => (
             <Link 
               key={quest.id} 
@@ -38,7 +38,7 @@ const QuestsPage = () => {
             >
               <div className="wood-panel rounded-sm overflow-hidden transition-all duration-200 hover:ring-2 hover:ring-gold/50">
                 <div className="flex items-center justify-between p-4">
-                  {/* Left side - Icon, Title and Description */}
+                  
                   <div className="flex items-start gap-4 flex-1 min-w-0">
                     <div className="shrink-0 w-10 h-10 rounded bg-maroon/20 flex items-center justify-center">
                       <Scroll className="w-5 h-5 text-gold" />
@@ -82,7 +82,7 @@ const QuestsPage = () => {
               </div>
             </Link>
           ))}
-        </div>
+        </div> */}
 
         {/* Info about more quests coming */}
         {quests.length < 5 && (
