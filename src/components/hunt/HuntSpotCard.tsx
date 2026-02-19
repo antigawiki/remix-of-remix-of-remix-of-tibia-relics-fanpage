@@ -90,7 +90,9 @@ export function HuntSpotCard({
               <div className="flex items-center justify-between">
                 <span className="text-xs text-muted-foreground">Active player:</span>
                 <span className="text-sm font-bold">
-                  {isAdmin ? session.player_name : (session.player_name === characterName ? `You (${session.player_name})` : "—")}
+                  {session.player_name === characterName
+                    ? `You (${session.player_name})`
+                    : session.player_name}
                 </span>
               </div>
               <div className="flex items-center justify-between">
@@ -101,26 +103,24 @@ export function HuntSpotCard({
           )}
 
           <div className="flex flex-wrap gap-2">
-            {isAdmin && (
-              !isActive ? (
-                <Button
-                  size="sm"
-                  className="flex-1"
-                  onClick={() => setStartOpen(true)}
-                >
-                  <Play className="h-3 w-3 mr-1" /> Start Hunt
-                </Button>
-              ) : (
-                <Button
-                  size="sm"
-                  variant="destructive"
-                  className="flex-1"
-                  onClick={() => session && onEndHunt(session.id)}
-                >
-                  <StopCircle className="h-3 w-3 mr-1" /> End Early
-                </Button>
-              )
-            )}
+            {!isActive ? (
+              <Button
+                size="sm"
+                className="flex-1"
+                onClick={() => setStartOpen(true)}
+              >
+                <Play className="h-3 w-3 mr-1" /> Start Hunt
+              </Button>
+            ) : isAdmin ? (
+              <Button
+                size="sm"
+                variant="destructive"
+                className="flex-1"
+                onClick={() => session && onEndHunt(session.id)}
+              >
+                <StopCircle className="h-3 w-3 mr-1" /> End Early
+              </Button>
+            ) : null}
             <Button
               size="sm"
               variant="outline"
@@ -153,22 +153,23 @@ export function HuntSpotCard({
         </CardContent>
       </Card>
 
+      <StartHuntModal
+        open={startOpen}
+        onClose={() => setStartOpen(false)}
+        onStart={(playerName) => onStartHunt(spotId, playerName)}
+        spotName={spotName}
+        cityName={cityName}
+        characterName={characterName}
+        isAdmin={isAdmin}
+      />
+
       {isAdmin && (
-        <>
-          <StartHuntModal
-            open={startOpen}
-            onClose={() => setStartOpen(false)}
-            onStart={(playerName) => onStartHunt(spotId, playerName)}
-            spotName={spotName}
-            cityName={cityName}
-          />
-          <DeleteConfirmModal
-            open={deleteOpen}
-            onClose={() => setDeleteOpen(false)}
-            onConfirm={() => onDeleteSpot(spotId)}
-            description={`Are you sure you want to delete the spot "${spotName}"?`}
-          />
-        </>
+        <DeleteConfirmModal
+          open={deleteOpen}
+          onClose={() => setDeleteOpen(false)}
+          onConfirm={() => onDeleteSpot(spotId)}
+          description={`Are you sure you want to delete the spot "${spotName}"?`}
+        />
       )}
     </>
   );
