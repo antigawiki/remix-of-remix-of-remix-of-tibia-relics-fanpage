@@ -7,7 +7,7 @@ const corsHeaders = {
 };
 
 /**
- * Alt Detection Algorithm - v2
+ * Alt Detection Algorithm - v3
  *
  * Two detection methods:
  *
@@ -17,11 +17,12 @@ const corsHeaders = {
  *
  * METHOD 2 - Statistical (fallback for unscraped players):
  *   Based on login/logout adjacency patterns.
- *   Inspired by TibiaStalker & kik-tibia/online-tracker
  *   1. If two characters overlap online for >1min → NOT alts (disqualified)
  *   2. "Adjacencies" = one logs out, the other logs in within 5 min
  *   3. Probability weighted by adjacency ratio, time proximity, bidirectionality, data confidence
  *   4. Cap at 80% - statistical inference is less certain than account scraping
+ *
+ * Fix v3: Uses pagination to fetch ALL sessions (Supabase default limit is 1000 rows)
  */
 
 interface Session {
@@ -45,25 +46,16 @@ serve(async (req) => {
     // =========================================================
     // METHOD 1: Account-based detection (definitive)
     // =========================================================
-    const { data: accountData } = await supabase
-      .from("character_accounts")
-      .select("character_name, account_chars")
-      .not("scrape_error", "is", null) // Include all (even those with errors - they have [name] fallback)
-      .is("scrape_error", null); // Actually only get successful scrapes
-
-    // Re-query without error filter to get all successfully scraped
     const { data: scraped } = await supabase
       .from("character_accounts")
       .select("character_name, account_chars")
       .is("scrape_error", null);
 
     // Build account groups: account_chars arrays that have more than 1 char
-    // Group characters that share account info
     const accountGroups = buildAccountGroups(scraped || []);
 
     let confirmedPairs = 0;
     for (const group of accountGroups) {
-      // All pairs within this group are confirmed alts
       const chars = Array.from(group).sort();
       for (let i = 0; i < chars.length; i++) {
         for (let j = i + 1; j < chars.length; j++) {
@@ -77,7 +69,6 @@ serve(async (req) => {
             ever_online_together: false,
             probability: 99,
             last_updated: now,
-            confirmed_by_account: true,
           });
           confirmedPairs++;
         }
@@ -87,13 +78,8 @@ serve(async (req) => {
     // =========================================================
     // METHOD 2: Statistical detection (for unscraped players)
     // =========================================================
-    const { data: sessions, error: sessionsError } = await supabase
-      .from("online_tracker_sessions")
-      .select("player_name, login_at, logout_at")
-      .not("logout_at", "is", null)
-      .order("login_at", { ascending: true });
-
-    if (sessionsError) throw sessionsError;
+    // Fetch ALL sessions using pagination to bypass the 1000-row limit
+    const sessions = await getAllSessions(supabase);
 
     // Build set of players already confirmed by account scraping
     const confirmedPlayers = new Set<string>();
@@ -101,7 +87,7 @@ serve(async (req) => {
       group.forEach((name) => confirmedPlayers.add(name));
     }
 
-    if (sessions && sessions.length > 0) {
+    if (sessions.length > 0) {
       // Group sessions by player
       const playerSessions: Record<string, Session[]> = {};
       for (const s of sessions) {
@@ -117,12 +103,12 @@ serve(async (req) => {
         (p) => !confirmedPlayers.has(p)
       );
 
+      console.log(`Statistical analysis: ${players.length} unconfirmed players, ${sessions.length} total sessions`);
+
       const FIVE_MIN_MS = 5 * 60 * 1000;
-      // With 5-min API granularity, two chars "online together" at the boundary
-      // is likely just a cache artifact — use 6 min tolerance to reduce false negatives
       const OVERLAP_TOLERANCE_MS = 6 * 60 * 1000;
       const MIN_SESSIONS = 2;
-      const MIN_ADJACENCIES = 2; // Require at least 2 adjacencies to reduce noise
+      const MIN_ADJACENCIES = 2;
 
       for (let i = 0; i < players.length; i++) {
         const a = players[i];
@@ -132,7 +118,6 @@ serve(async (req) => {
         for (let j = i + 1; j < players.length; j++) {
           const b = players[j];
 
-          // Skip if this pair already confirmed by account data
           const keyAB = [a, b].sort().join("|||");
           if (results[keyAB]) continue;
 
@@ -153,7 +138,7 @@ serve(async (req) => {
             if (everTogether) break;
           }
 
-          if (everTogether) continue; // NOT alts
+          if (everTogether) continue;
 
           // 2. Find adjacencies
           let adjCount = 0;
@@ -191,7 +176,6 @@ serve(async (req) => {
 
           let probability =
             adjacencyRatio * proximityScore * bidirectionalBonus * dataConfidence * 100;
-          // Statistical method capped at 80% — account scraping gives higher certainty
           probability = Math.min(80, Math.round(probability * 100) / 100);
 
           if (probability > 3) {
@@ -202,7 +186,6 @@ serve(async (req) => {
               ever_online_together: false,
               probability,
               last_updated: now,
-              confirmed_by_account: false,
             });
           }
         }
@@ -225,6 +208,8 @@ serve(async (req) => {
       }
     }
 
+    console.log(`Done: ${confirmedPairs} confirmed, ${finalResults.length - confirmedPairs} statistical, ${finalResults.length} total`);
+
     return new Response(
       JSON.stringify({
         success: true,
@@ -244,6 +229,39 @@ serve(async (req) => {
   }
 });
 
+/**
+ * Fetch ALL completed sessions using pagination to bypass Supabase's 1000-row default limit.
+ */
+async function getAllSessions(
+  supabase: ReturnType<typeof createClient>
+): Promise<{ player_name: string; login_at: string; logout_at: string }[]> {
+  const PAGE_SIZE = 1000;
+  const all: { player_name: string; login_at: string; logout_at: string }[] = [];
+  let from = 0;
+
+  while (true) {
+    const { data, error } = await supabase
+      .from("online_tracker_sessions")
+      .select("player_name, login_at, logout_at")
+      .not("logout_at", "is", null)
+      .order("login_at", { ascending: true })
+      .range(from, from + PAGE_SIZE - 1);
+
+    if (error) {
+      console.error("Error fetching sessions page:", error.message);
+      break;
+    }
+    if (!data || data.length === 0) break;
+
+    all.push(...(data as { player_name: string; login_at: string; logout_at: string }[]));
+    if (data.length < PAGE_SIZE) break;
+    from += PAGE_SIZE;
+  }
+
+  console.log(`Loaded ${all.length} sessions total`);
+  return all;
+}
+
 interface MatchData {
   match_count: number;
   total_sessions_a: number;
@@ -251,7 +269,6 @@ interface MatchData {
   ever_online_together: boolean;
   probability: number;
   last_updated: string;
-  confirmed_by_account: boolean;
 }
 
 function makeResult(a: string, b: string, data: MatchData) {
@@ -293,8 +310,11 @@ function buildAccountGroups(
 
   for (const row of scraped) {
     const allChars = [row.character_name, ...(row.account_chars || [])];
-    for (let i = 1; i < allChars.length; i++) {
-      union(allChars[0], allChars[i]);
+    // Only form groups if the account has more than 1 char
+    if (allChars.length > 1) {
+      for (let i = 1; i < allChars.length; i++) {
+        union(allChars[0], allChars[i]);
+      }
     }
   }
 
