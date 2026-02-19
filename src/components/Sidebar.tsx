@@ -1,7 +1,7 @@
 import { Link } from 'react-router-dom';
 import { 
   Shield, Wand2, Bug, Scroll, Calculator, 
-  Info, Trophy, Clock, Package, Users, Skull, TrendingUp, Sparkles, Monitor
+  Info, Trophy, Clock, Package, Users, Skull, TrendingUp, Sparkles, Monitor, Swords
 } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
 import { ptBR, enUS, es, pl } from 'date-fns/locale';
@@ -86,6 +86,10 @@ const Sidebar = ({ position }: SidebarProps) => {
             <Link to="/info" className="sidebar-menu-item flex items-center gap-2">
               <Info className="w-4 h-4 text-gold" />
               {t('navigation.info')}
+            </Link>
+            <Link to="/hunt-admin" className="sidebar-menu-item flex items-center gap-2">
+              <Swords className="w-4 h-4 text-gold" />
+              Hunt Admin
             </Link>
           </nav>
         </div>
