@@ -41,6 +41,39 @@ serve(async (req) => {
         const vocation = url.searchParams.get("vocation") || "All";
         apiUrl = `${API_BASE}/Highscores?worldName=Relic&category=${category}&vocation=${vocation}`;
         break;
+      case "character-page": {
+        // Fetch the HTML character page and return it as text
+        const charName = url.searchParams.get("name");
+        if (!charName) {
+          return new Response(
+            JSON.stringify({ error: "Missing name parameter" }),
+            { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+          );
+        }
+        const charUrl = `https://www.tibiarelic.com/characters/${encodeURIComponent(charName)}`;
+        console.log(`Fetching character page: ${charUrl}`);
+        const charResp = await fetch(charUrl, {
+          headers: {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36",
+            Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+            "Accept-Language": "en-US,en;q=0.5",
+            "Cache-Control": "no-cache",
+            "Referer": "https://www.tibiarelic.com/",
+          },
+          signal: AbortSignal.timeout(10000),
+        });
+        console.log(`Character page status: ${charResp.status}`);
+        if (charResp.status === 429) {
+          return new Response(JSON.stringify({ error: "429" }), { status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+        }
+        if (!charResp.ok) {
+          return new Response(JSON.stringify({ error: `HTTP ${charResp.status}` }), { status: charResp.status, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+        }
+        const html = await charResp.text();
+        return new Response(JSON.stringify({ html }), {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
       default:
         return new Response(
           JSON.stringify({ error: "Invalid endpoint" }),
