@@ -118,7 +118,7 @@ export function HuntQueuePanel({
                   </Badge>
                 </div>
                 <div className="flex items-center gap-1 shrink-0">
-                  {item.status === "notified" && isAdmin && (
+                  {item.status === "notified" && (isAdmin || isMe) && (
                     <Button
                       size="sm"
                       variant="outline"
