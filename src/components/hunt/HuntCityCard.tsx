@@ -2,10 +2,10 @@ import { useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Building2, Plus, Trash2 } from "lucide-react";
-import { HuntSpot, HuntSession, HuntQueueItem } from "@/hooks/useHuntAdmin";
+import { HuntSpot, HuntSession, HuntQueueItem, HuntCity } from "@/hooks/useHuntAdmin";
 import { HuntSpotCard } from "./HuntSpotCard";
 import { AddSpotModal } from "./AddSpotModal";
-import { HuntCity } from "@/hooks/useHuntAdmin";
+import { DeleteConfirmModal } from "./DeleteConfirmModal";
 
 interface HuntCityCardProps {
   city: HuntCity;
@@ -39,6 +39,7 @@ export function HuntCityCard({
   onDeleteCity,
 }: HuntCityCardProps) {
   const [addSpotOpen, setAddSpotOpen] = useState(false);
+  const [deleteCityOpen, setDeleteCityOpen] = useState(false);
 
   const activeCount = spots.filter((s) => {
     const session = getSessionForSpot(s.id);
@@ -70,7 +71,7 @@ export function HuntCityCard({
                 size="sm"
                 variant="ghost"
                 className="h-7 w-7 p-0 text-muted-foreground hover:text-destructive"
-                onClick={() => onDeleteCity(city.id)}
+                onClick={() => setDeleteCityOpen(true)}
                 title="Remover cidade"
               >
                 <Trash2 className="h-3 w-3" />
@@ -120,6 +121,13 @@ export function HuntCityCard({
         onAdd={onAddSpot}
         cities={cities}
         preselectedCityId={city.id}
+      />
+
+      <DeleteConfirmModal
+        open={deleteCityOpen}
+        onClose={() => setDeleteCityOpen(false)}
+        onConfirm={() => onDeleteCity(city.id)}
+        description={`Tem certeza que deseja excluir a cidade "${city.name}" e todos os seus spots?`}
       />
     </>
   );

@@ -7,6 +7,7 @@ import { HuntSession, HuntQueueItem } from "@/hooks/useHuntAdmin";
 import { HuntTimer } from "./HuntTimer";
 import { HuntQueuePanel } from "./HuntQueuePanel";
 import { StartHuntModal } from "./StartHuntModal";
+import { DeleteConfirmModal } from "./DeleteConfirmModal";
 
 interface HuntSpotCardProps {
   spotId: string;
@@ -37,6 +38,7 @@ export function HuntSpotCard({
 }: HuntSpotCardProps) {
   const [startOpen, setStartOpen] = useState(false);
   const [queueOpen, setQueueOpen] = useState(false);
+  const [deleteOpen, setDeleteOpen] = useState(false);
 
   const isActive = session && session.status !== "finished";
   const isEnding = session?.status === "ending";
@@ -64,7 +66,7 @@ export function HuntSpotCard({
                 size="sm"
                 variant="ghost"
                 className="h-6 w-6 p-0 text-muted-foreground hover:text-destructive"
-                onClick={() => onDeleteSpot(spotId)}
+                onClick={() => setDeleteOpen(true)}
                 title="Remover spot"
               >
                 <Trash2 className="h-3 w-3" />
@@ -139,6 +141,13 @@ export function HuntSpotCard({
         onStart={(playerName) => onStartHunt(spotId, playerName)}
         spotName={spotName}
         cityName={cityName}
+      />
+
+      <DeleteConfirmModal
+        open={deleteOpen}
+        onClose={() => setDeleteOpen(false)}
+        onConfirm={() => onDeleteSpot(spotId)}
+        description={`Tem certeza que deseja excluir o spot "${spotName}"?`}
       />
     </>
   );
