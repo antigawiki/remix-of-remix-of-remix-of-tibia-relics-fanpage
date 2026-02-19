@@ -1,155 +1,120 @@
 
-# Hunt Administration Page — Plano de Implementação
+# Player Self-Registration with Session ID
 
-## Visão Geral
+## The Problem
 
-Uma página de administração de hunts com acesso protegido por senha, sistema de fila de espera anônima, e notificações em tempo real via browser. A página será acessível por uma URL secreta (como o AltDetectorPage) e totalmente isolada do layout principal do site.
+Currently, an admin can add any player name to the queue for anyone. But browser notifications only work for the person who has the page open. So if player "Atheros" adds "Zezinho" to the queue, "Zezinho" will never see the notification — only whoever added them would see it.
 
----
-
-## Estrutura de Dados (Backend)
-
-Serão criadas 3 novas tabelas no banco de dados:
-
-### `hunt_cities`
-| Coluna | Tipo | Descrição |
-|---|---|---|
-| id | uuid | PK |
-| name | text | Nome da cidade |
-| created_at | timestamptz | Data de criação |
-
-### `hunt_spots`
-| Coluna | Tipo | Descrição |
-|---|---|---|
-| id | uuid | PK |
-| city_id | uuid | FK para hunt_cities |
-| name | text | Nome do spot de hunt |
-| max_duration_minutes | integer | Default 240 (4h) |
-| created_at | timestamptz | — |
-
-### `hunt_sessions`
-| Coluna | Tipo | Descrição |
-|---|---|---|
-| id | uuid | PK |
-| spot_id | uuid | FK para hunt_spots |
-| player_name | text | Nick do player ativo |
-| started_at | timestamptz | Início da hunt |
-| ends_at | timestamptz | Término previsto (started_at + 4h) |
-| status | text | `active`, `ending`, `finished` |
-| notified_1h | boolean | Notificação de 1h enviada? |
-| notified_15min | boolean | Notificação de 15min enviada? |
-| created_at | timestamptz | — |
-
-### `hunt_queue`
-| Coluna | Tipo | Descrição |
-|---|---|---|
-| id | uuid | PK |
-| spot_id | uuid | FK para hunt_spots |
-| player_name | text | Nick do próximo player |
-| position | integer | Posição na fila |
-| status | text | `waiting`, `notified`, `claimed`, `expired` |
-| notified_at | timestamptz | Hora que foi notificado |
-| created_at | timestamptz | — |
-
-**RLS:** Todas as tabelas com políticas restrictivas — somente leitura pública em campos não-sensíveis. Os nomes dos players **não serão expostos via query pública**, sendo filtrados no frontend pela senha.
+The fix: **each player registers themselves**, and the system ties their queue entry to a browser session ID stored in `localStorage`. This way:
+- Only you can add yourself
+- The notifications show up on your browser
+- The admin (with password) can still remove anyone from the queue if needed
 
 ---
 
-## Arquitetura da Página
+## How It Will Work
 
-A página será uma **SPA autônoma** em `/hunt-admin` (URL sem destaque no menu, similar ao AltDetectorPage), com:
+### Step 1 — Player Opens the Page
 
-### 1. Tela de Login por Senha
-- Campo de senha simples
-- Senha `ondethweed` validada localmente (sem chamada ao backend — página administrativa interna)
-- Senha salva em `sessionStorage` (expira ao fechar a aba)
+When someone visits `/hunt-admin`, they **don't need the password** to:
+- See the list of cities and spots
+- See how many people are in each queue
+- Join a queue (as themselves)
 
-### 2. Dashboard Principal
-Após login, o layout terá:
+The admin password is only needed to:
+- Start/End hunts
+- Manage cities and spots
+- See player names in the queue
 
-**Painel Superior — Estatísticas rápidas**
-- Cidades cadastradas
-- Hunts ativas agora
-- Spots disponíveis
-- Total na fila (número apenas, sem nomes)
+### Step 2 — Session ID Generation
 
-**Área Central — Cards por Cidade**
-Cada cidade exibe seus spots em cards, mostrando:
-- Nome do spot
-- Status: `Livre`, `Em uso`, `Encerrando` (badge colorido)
-- Timer em tempo real (countdown)
-- Botão "Iniciar Hunt" (se livre)
-- Botão "Encerrar Antecipado" (se ativo)
-- Botão "Ver Fila (N)" — mostra quantidade sem revelar nomes para quem não tem acesso
+When a player first visits the page, a unique **session ID** is generated and stored in `localStorage`:
 
-**Painel de Fila**
-- Lista de espera por spot com nomes visíveis (só após login com senha)
-- Botão para adicionar nick à fila
-- Botão para remover alguém da fila
-- Exibição da posição de cada um
-
----
-
-## Sistema de Notificações
-
-Será implementado via **Web Notifications API** (notificações nativas do browser) combinado com **polling a cada 30s** no frontend:
-
-### Fluxo de Notificações:
-
-```text
-Hunt Iniciada
-     |
-     ├─ 3h → verifica → 1h restante → Notifica admin + próximo da fila
-     |                                "Faltam 60min para [Spot] em [Cidade]"
-     |                                "Próximo da fila: prepare-se!"
-     |
-     ├─ 3h45 → verifica → 15min → Notifica admin + próximo da fila  
-     |                            "15min restantes — hora de recolher o loot!"
-     |                            "Próximo: sua vez em 15min!"
-     |
-     └─ 4h → Hunt encerrada automaticamente
+```
+localStorage.key: "hunt_session_id"
+localStorage.value: "a1b2c3d4-e5f6-..." (UUID)
 ```
 
-### Lógica de Claimed (5 minutos):
-- Quando o próximo da fila é notificado, ele tem 5 minutos para "clamar" sua vez
-- Um botão **"Já estou indo!"** aparece na interface pública (via URL com token único)
-- Se não clicar em 5 min, passa automaticamente para o próximo
+This ID is **permanent per browser** (survives page refreshes, but not clearing localStorage).
+
+### Step 3 — Adding to Queue
+
+The `hunt_queue` table gets a new column: `session_id (text, nullable)`.
+
+When a player clicks "Join Queue":
+1. They type only their nick
+2. The system checks: is there already a queue entry with **this session_id** that is `waiting` or `notified`? → Block with error message: *"You are already in a queue. Leave it before joining another."*
+3. It also checks: is this nick already in any active queue? → Block with: *"This nick is already in a queue."*
+4. If all clear → inserts with their `session_id` attached
+
+### Step 4 — My Spot Panel
+
+A **"My Spot"** section appears at the top of the page (visible to everyone, no password needed):
+
+```
+┌─────────────────────────────────────────┐
+│ 🎯 Your Queue Status                    │
+│ You are #2 in line at Venore — Edron    │
+│ Status: Waiting                         │
+│ [Leave Queue]                           │
+└─────────────────────────────────────────┘
+```
+
+If the player is **notified** (their turn is coming):
+```
+┌─────────────────────────────────────────┐
+│ 🔔 Your turn is coming!                 │
+│ You have 5 minutes to confirm at        │
+│ Venore — Edron                          │
+│ [✅ I'm on my way!]  [Leave Queue]      │
+└─────────────────────────────────────────┘
+```
+
+### Step 5 — Notifications
+
+Since each player is on the page with their own `session_id`, the 30s polling in `useHuntAdmin` can filter and detect if **this user specifically** was notified — and trigger the browser notification on their screen.
 
 ---
 
-## Páginas e Componentes a Criar
+## Technical Changes
 
-### Arquivos Novos:
-1. `src/pages/HuntAdminPage.tsx` — Página principal com login + dashboard
-2. `src/components/hunt/HuntCityCard.tsx` — Card de uma cidade com seus spots
-3. `src/components/hunt/HuntSpotCard.tsx` — Card individual de um spot
-4. `src/components/hunt/HuntQueuePanel.tsx` — Painel de fila de espera
-5. `src/components/hunt/HuntTimer.tsx` — Componente de countdown em tempo real
-6. `src/components/hunt/AddCityModal.tsx` — Modal para adicionar cidade
-7. `src/components/hunt/AddSpotModal.tsx` — Modal para adicionar spot
-8. `src/components/hunt/StartHuntModal.tsx` — Modal para iniciar hunt (pede nick)
-9. `src/hooks/useHuntAdmin.ts` — Hook central com toda a lógica de negócio
+### Database Migration
+Add `session_id` column to `hunt_queue`:
+```sql
+ALTER TABLE public.hunt_queue 
+ADD COLUMN session_id text;
+```
 
-### Arquivos Editados:
-1. `src/App.tsx` — Adicionar a rota `/hunt-admin`
-2. Migração SQL — Criar as 4 tabelas novas
+### New Hook: `usePlayerSession.ts`
+Manages the player's own session:
+- Generates/retrieves `session_id` from `localStorage`
+- Tracks if the player is in any queue (`myQueueItem`)
+- Detects when their status changes to `notified` and fires browser notification
+- Returns `myQueueItem`, `leaveQueue()`, `claimMySpot()`
 
----
+### Updated: `useHuntAdmin.ts`
+- `addToQueue()` now requires `session_id` as a parameter
+- Validates: no duplicate `session_id` in active queues
+- Validates: no duplicate `player_name` in active queues
 
-## Features Extras (Bonus)
+### Updated: `HuntQueuePanel.tsx`
+- Receives `playerSessionId` as a prop
+- "Add" button only adds the current player (no typing someone else's name)
+- If player is already in a queue elsewhere → shows a message instead of the button
+- Admin (with password) still sees the "Remove" button for all entries
 
-- **Histórico de hunts**: log simples dos últimos 10 players que usaram cada spot
-- **Cor do timer**: verde (>1h), amarelo (15-60min), vermelho (<15min)
-- **Badge "FILA: N"** no topo da página sempre visível, mesmo antes de logar
-- **Auto-refresh** sem reload de página (polling com `setInterval`)
-- **Proteção de nome**: na tela pública (sem login), o botão de fila mostra apenas "Ver fila (3)" sem nomes
+### Updated: `AddToQueueModal.tsx`
+- No longer a generic "type any name" form
+- Shows: "Join as: [your nick]" with a single nick input
+- Includes a warning: "You can only be in one queue at a time"
 
----
+### New Component: `MyQueueStatus.tsx`
+Persistent banner at the top of the page (outside login gate):
+- Shows the player's current queue position and spot
+- Shows "Your turn!" alert when notified
+- "I'm on my way!" (claim) button
+- "Leave Queue" button
 
-## Sequência de Implementação
-
-1. Criar migração SQL com as 4 tabelas e políticas RLS
-2. Criar hook `useHuntAdmin.ts` com toda lógica (CRUD, timers, notificações)
-3. Criar componentes sub-componentes (Timer, Cards, Modals)
-4. Criar a `HuntAdminPage.tsx` com tela de login e dashboard
-5. Registrar a rota em `App.tsx`
+### Updated: `HuntAdminPage.tsx`
+- `MyQueueStatus` renders before the password gate
+- Passes `playerSessionId` down through the component tree
