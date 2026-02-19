@@ -56,7 +56,7 @@ const QuestsPage = () => {
                         {quest.description[language]}
                       </p>
                     </div>
-                  </div>
+                  </div> */}
 
                   {/* Right side - Level, Status and Arrow */}
                   <div className="flex items-center gap-3 shrink-0 ml-4">
