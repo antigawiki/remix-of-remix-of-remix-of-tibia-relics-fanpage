@@ -251,10 +251,20 @@ export function useHuntAdmin() {
     });
     if (error) throw error;
 
+    // Auto-remove player from any active queue
+    const myQueueEntry = queue.find(
+      (q) =>
+        q.player_name.toLowerCase() === playerName.toLowerCase() &&
+        (q.status === "waiting" || q.status === "notified")
+    );
+    if (myQueueEntry) {
+      await supabase.from("hunt_queue").delete().eq("id", myQueueEntry.id);
+    }
+
     const city = cities.find((c) => c.id === spot?.city_id);
     sendBrowserNotification("🏹 Hunt Started!", `${playerName} at ${spot?.name}, ${city?.name}`);
     await fetchAll();
-  }, [spots, cities, sendBrowserNotification, fetchAll]);
+  }, [spots, cities, queue, sendBrowserNotification, fetchAll]);
 
   const endHuntEarly = useCallback(async (sessionId: string) => {
     const session = sessions.find((s) => s.id === sessionId);
@@ -272,6 +282,14 @@ export function useHuntAdmin() {
 
   // Queue CRUD
   const addToQueue = useCallback(async (spotId: string, playerName: string, sessionId: string) => {
+    // Block if user has an active hunt session
+    const activeHunt = sessions.find(
+      (s) => s.player_name.toLowerCase() === playerName.toLowerCase() && s.status !== "finished"
+    );
+    if (activeHunt) {
+      throw new Error("You have an active hunt. End it before joining a queue.");
+    }
+
     // Check for duplicate session_id across all active queues
     const sessionConflict = queue.find(
       (q) => q.session_id === sessionId && (q.status === "waiting" || q.status === "notified")
