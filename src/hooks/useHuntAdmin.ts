@@ -290,20 +290,15 @@ export function useHuntAdmin() {
       throw new Error("You have an active hunt. End it before joining a queue.");
     }
 
-    // Check for duplicate session_id across all active queues
-    const sessionConflict = queue.find(
-      (q) => q.session_id === sessionId && (q.status === "waiting" || q.status === "notified")
+    // Block duplicate in the SAME spot
+    const spotConflict = queue.find(
+      (q) =>
+        q.spot_id === spotId &&
+        q.player_name.toLowerCase() === playerName.toLowerCase() &&
+        (q.status === "waiting" || q.status === "notified")
     );
-    if (sessionConflict) {
-      throw new Error("You are already in a queue. Leave it before joining another.");
-    }
-
-    // Check for duplicate player_name across all active queues
-    const nameConflict = queue.find(
-      (q) => q.player_name.toLowerCase() === playerName.toLowerCase() && (q.status === "waiting" || q.status === "notified")
-    );
-    if (nameConflict) {
-      throw new Error("This nick is already in a queue.");
+    if (spotConflict) {
+      throw new Error("You are already in this queue.");
     }
 
     const spotQueue = queue
