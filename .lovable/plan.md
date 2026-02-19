@@ -1,120 +1,90 @@
 
-# Player Self-Registration with Session ID
+# Sistema Automatizado 24/7 - Rastreamento e Detecção de Alts
 
-## The Problem
+## Diagnóstico do Problema Atual
 
-Currently, an admin can add any player name to the queue for anyone. But browser notifications only work for the person who has the page open. So if player "Atheros" adds "Zezinho" to the queue, "Zezinho" will never see the notification — only whoever added them would see it.
+Existem 3 processos agendados já configurados, mas todos com problemas:
 
-The fix: **each player registers themselves**, and the system ties their queue entry to a browser session ID stored in `localStorage`. This way:
-- Only you can add yourself
-- The notifications show up on your browser
-- The admin (with password) can still remove anyone from the queue if needed
-
----
-
-## How It Will Work
-
-### Step 1 — Player Opens the Page
-
-When someone visits `/hunt-admin`, they **don't need the password** to:
-- See the list of cities and spots
-- See how many people are in each queue
-- Join a queue (as themselves)
-
-The admin password is only needed to:
-- Start/End hunts
-- Manage cities and spots
-- See player names in the queue
-
-### Step 2 — Session ID Generation
-
-When a player first visits the page, a unique **session ID** is generated and stored in `localStorage`:
-
-```
-localStorage.key: "hunt_session_id"
-localStorage.value: "a1b2c3d4-e5f6-..." (UUID)
+```text
+track-online-players    → roda a cada 1 minuto  ✓ (funciona - API pública)
+scrape-character-accounts → roda a cada 15 min  ✗ (bloqueado por 429)
+analyze-alt-matches     → roda a cada 10 min    ✗ (não tem dados para analisar)
 ```
 
-This ID is **permanent per browser** (survives page refreshes, but not clearing localStorage).
+O cron também está com problema de configuração: usa `current_setting('app.supabase_url')` que retorna vazio, então as chamadas nunca chegam nas funções.
 
-### Step 3 — Adding to Queue
+O scraping de perfis falha porque o tibiarelic.com **bloqueia IPs de servidores** (Supabase/Cloudflare). 348 personagens pendentes, 0 com alts confirmados.
 
-The `hunt_queue` table gets a new column: `session_id (text, nullable)`.
+## Solução
 
-When a player clicks "Join Queue":
-1. They type only their nick
-2. The system checks: is there already a queue entry with **this session_id** that is `waiting` or `notified`? → Block with error message: *"You are already in a queue. Leave it before joining another."*
-3. It also checks: is this nick already in any active queue? → Block with: *"This nick is already in a queue."*
-4. If all clear → inserts with their `session_id` attached
+### Parte 1 - Corrigir o Cron (URLs fixas)
 
-### Step 4 — My Spot Panel
+Recriar os jobs de cron usando a URL direta do projeto ao invés de `current_setting()`, que não está configurado:
 
-A **"My Spot"** section appears at the top of the page (visible to everyone, no password needed):
-
-```
-┌─────────────────────────────────────────┐
-│ 🎯 Your Queue Status                    │
-│ You are #2 in line at Venore — Edron    │
-│ Status: Waiting                         │
-│ [Leave Queue]                           │
-└─────────────────────────────────────────┘
-```
-
-If the player is **notified** (their turn is coming):
-```
-┌─────────────────────────────────────────┐
-│ 🔔 Your turn is coming!                 │
-│ You have 5 minutes to confirm at        │
-│ Venore — Edron                          │
-│ [✅ I'm on my way!]  [Leave Queue]      │
-└─────────────────────────────────────────┘
-```
-
-### Step 5 — Notifications
-
-Since each player is on the page with their own `session_id`, the 30s polling in `useHuntAdmin` can filter and detect if **this user specifically** was notified — and trigger the browser notification on their screen.
-
----
-
-## Technical Changes
-
-### Database Migration
-Add `session_id` column to `hunt_queue`:
 ```sql
-ALTER TABLE public.hunt_queue 
-ADD COLUMN session_id text;
+-- Deletar jobs antigos e recriar com URL fixa
+SELECT cron.unschedule('track-online-players');
+SELECT cron.unschedule('scrape-character-accounts');
+SELECT cron.unschedule('analyze-alt-matches');
+
+-- Recriar com URL hardcoded
+SELECT cron.schedule('track-online-players', '* * * * *',
+  $$ SELECT net.http_post(url:='https://rmofmkjmzwkxjzfirbpt.supabase.co/functions/v1/track-online-players', ...) $$
+);
 ```
 
-### New Hook: `usePlayerSession.ts`
-Manages the player's own session:
-- Generates/retrieves `session_id` from `localStorage`
-- Tracks if the player is in any queue (`myQueueItem`)
-- Detects when their status changes to `notified` and fires browser notification
-- Returns `myQueueItem`, `leaveQueue()`, `claimMySpot()`
+### Parte 2 - Contornar o Bloqueio de IP (Estratégia Principal)
 
-### Updated: `useHuntAdmin.ts`
-- `addToQueue()` now requires `session_id` as a parameter
-- Validates: no duplicate `session_id` in active queues
-- Validates: no duplicate `player_name` in active queues
+Como o tibiarelic.com bloqueia IPs de servidores, a raspagem de perfis precisa de uma abordagem diferente. Existem duas opções:
 
-### Updated: `HuntQueuePanel.tsx`
-- Receives `playerSessionId` as a prop
-- "Add" button only adds the current player (no typing someone else's name)
-- If player is already in a queue elsewhere → shows a message instead of the button
-- Admin (with password) still sees the "Remove" button for all entries
+**Opção A - API Oficial do Tibiarelic (preferida)**
+O site tem uma API REST pública usada pelo próprio site: `https://api.tibiarelic.com/`. A função `track-online-players` já usa esta API com sucesso. Vamos verificar se existe um endpoint de characters/account pela mesma API — se houver, resolvemos sem scraping de HTML.
 
-### Updated: `AddToQueueModal.tsx`
-- No longer a generic "type any name" form
-- Shows: "Join as: [your nick]" with a single nick input
-- Includes a warning: "You can only be in one queue at a time"
+**Opção B - Proxy via Browser (cliente)**
+A raspagem pelo navegador já funciona (confirmado anteriormente). Criar uma página de "Status do Sistema" que roda automaticamente quando um admin/usuário acessa, disparando lotes em background com `requestIdleCallback`.
 
-### New Component: `MyQueueStatus.tsx`
-Persistent banner at the top of the page (outside login gate):
-- Shows the player's current queue position and spot
-- Shows "Your turn!" alert when notified
-- "I'm on my way!" (claim) button
-- "Leave Queue" button
+**Plano real: Opção A + fallback Opção B**
 
-### Updated: `HuntAdminPage.tsx`
-- `MyQueueStatus` renders before the password gate
-- Passes `playerSessionId` down through the component tree
+### Parte 3 - Nova Edge Function: `fetch-character-api`
+
+Criar uma nova função que usa a API JSON do tibiarelic (não scraping HTML) para buscar dados de conta:
+
+```typescript
+// Endpoint a investigar/testar:
+GET https://api.tibiarelic.com/api/Community/Character/{name}
+// Retorna dados JSON do personagem incluindo outros chars da conta
+```
+
+Se a API retornar os dados de conta, substituímos o scraping HTML por chamadas JSON, que são muito mais rápidas e menos propensas a bloqueio.
+
+### Parte 4 - Página de Status do Sistema
+
+Criar uma seção visual na página de Admin ou uma página dedicada mostrando:
+
+- Status de cada processo automático (último sucesso, próxima execução)
+- Contadores: players rastreados, perfis raspados, alts confirmados
+- Botão "Forçar raspagem" (dispara lote pelo browser em background)
+- Log das últimas execuções
+
+## Arquivos a Modificar/Criar
+
+1. **SQL Migration** - Recriar os cron jobs com URLs corretas
+2. **`supabase/functions/fetch-character-api/index.ts`** (novo) - Tenta API JSON do tibiarelic para buscar chars da conta
+3. **`supabase/functions/scrape-character-accounts/index.ts`** - Ajustar para usar API JSON quando disponível, com fallback para HTML
+4. **`src/pages/AdminPage.tsx`** ou nova `SystemStatusPage.tsx` - Painel de status dos processos
+5. **`src/App.tsx`** - Adicionar rota caso seja página nova
+
+## Technical Details
+
+- O cron `track-online-players` roda a cada minuto e coleta ~55s de dados de quem entra/sai online — isso está correto
+- O `analyze-alt-matches` roda a cada 10 min para recalcular os pares — correto
+- O `scrape-character-accounts` processa 3 chars por execução a cada 15 min = ~12 chars/hora = para raspar 348 chars precisaria de ~29 horas em condições ideais, ou mais rápido com a API JSON
+- Com API JSON (sem HTML parsing), podemos aumentar o `MAX_PER_RUN` de 3 para 10-15 por execução
+
+## Ordem de Implementação
+
+1. Testar endpoint da API do tibiarelic para characters
+2. Criar nova lógica de busca via API (sem scraping HTML)
+3. Corrigir os cron jobs com URLs diretas
+4. Atualizar `scrape-character-accounts` para usar API JSON
+5. Adicionar painel de status visível no Admin
