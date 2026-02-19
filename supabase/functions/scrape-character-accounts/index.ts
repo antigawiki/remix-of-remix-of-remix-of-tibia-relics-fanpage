@@ -10,12 +10,10 @@ const BASE_URL = "https://www.tibiarelic.com/characters";
 // Re-scrape a character at most once every 4 hours
 const SCRAPE_TTL_MS = 4 * 60 * 60 * 1000;
 // Max characters to scrape per run
-// With 5s delay + ~3s per page = ~8s per char → 6 chars = ~48s safely within timeout
-const MAX_PER_RUN = 6;
-// Base delay between requests (5s conservative to avoid 429)
-const REQUEST_DELAY_MS = 5000;
-// Extra pause after a 429 before stopping the run
-const RATE_LIMIT_COOLDOWN_MS = 15000;
+// ~8s per char (fetch 8s timeout + 1s delay) → 3 chars = ~27s safely within 60s edge limit
+const MAX_PER_RUN = 3;
+// Short delay between requests
+const REQUEST_DELAY_MS = 1000;
 
 // Rotate User-Agents to reduce fingerprinting
 const USER_AGENTS = [
@@ -113,9 +111,8 @@ serve(async (req) => {
       if (result.error) {
         if (result.error.includes("429")) {
           rateLimited++;
-          console.warn(`Rate limited at ${name}, stopping run. Cooling down ${RATE_LIMIT_COOLDOWN_MS}ms.`);
-          await sleep(RATE_LIMIT_COOLDOWN_MS);
-          break;
+          console.warn(`Rate limited at ${name}, stopping run early.`);
+          break; // Stop the run immediately on 429, no waiting
         }
         errors++;
         console.warn(`[${name}] Error: ${result.error}`);
@@ -127,7 +124,7 @@ serve(async (req) => {
         );
       }
 
-      // Delay between requests to respect rate limits
+      // Short delay between requests
       await sleep(REQUEST_DELAY_MS);
     }
 
@@ -187,81 +184,55 @@ interface ScrapeResult {
 }
 
 async function scrapeCharacter(name: string): Promise<ScrapeResult> {
-  let attempt = 0;
-  let lastError: string | undefined;
+  try {
+    const url = `${BASE_URL}/${encodeURIComponent(name)}`;
+    const response = await fetch(url, {
+      headers: {
+        "User-Agent": getNextUserAgent(),
+        Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        "Accept-Language": "en-US,en;q=0.5",
+        "Cache-Control": "no-cache",
+        "Referer": "https://www.tibiarelic.com/",
+      },
+      signal: AbortSignal.timeout(8000),
+    });
 
-  while (attempt < 3) {
-    try {
-      if (attempt > 0) {
-        // Exponential backoff: 10s, 20s
-        const backoff = 10000 * attempt;
-        console.log(`[${name}] Retry attempt ${attempt}, waiting ${backoff}ms`);
-        await sleep(backoff);
-      }
-
-      const url = `${BASE_URL}/${encodeURIComponent(name)}`;
-      const response = await fetch(url, {
-        headers: {
-          "User-Agent": getNextUserAgent(),
-          Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
-          "Accept-Language": "en-US,en;q=0.9",
-          "Accept-Encoding": "gzip, deflate, br",
-          "Cache-Control": "no-cache",
-          "Pragma": "no-cache",
-          "Upgrade-Insecure-Requests": "1",
-        },
-        signal: AbortSignal.timeout(15000),
-      });
-
-      if (response.status === 429) {
-        // Check for Retry-After header
-        const retryAfter = response.headers.get("Retry-After");
-        let waitMs = 15000 * (attempt + 1); // default backoff
-        if (retryAfter) {
-          const parsed = parseInt(retryAfter, 10);
-          if (!isNaN(parsed)) waitMs = parsed * 1000;
-        }
-        lastError = "HTTP 429 - Rate limited";
-        console.warn(`[${name}] 429 received, retry-after: ${retryAfter ?? "none"}, waiting ${waitMs}ms`);
-        attempt++;
-        await sleep(waitMs);
-        continue;
-      }
-
-      if (!response.ok) {
-        return { accountChars: [name], error: `HTTP ${response.status}` };
-      }
-
-      const html = await response.text();
-
-      // Strategy 1: __NEXT_DATA__ JSON (most reliable for Next.js apps)
-      const nextDataMatch = html.match(
-        /<script id="__NEXT_DATA__" type="application\/json">([\s\S]*?)<\/script>/
-      );
-      if (nextDataMatch) {
-        try {
-          const nextData = JSON.parse(nextDataMatch[1]);
-          const accountChars = extractCharsFromNextData(nextData);
-          if (accountChars.length > 0) {
-            return { accountChars };
-          }
-        } catch (_e) {
-          // fall through to HTML parsing
-        }
-      }
-
-      // Strategy 2: Parse character links from the "Characters" section in HTML
-      const accountChars = extractCharsFromHtml(html, name);
-      return { accountChars };
-    } catch (error) {
-      const msg = error instanceof Error ? error.message : "Unknown";
-      lastError = msg;
-      attempt++;
+    if (response.status === 429) {
+      console.warn(`[${name}] 429 - Rate limited (no retry to avoid timeout)`);
+      return { accountChars: [name], error: "HTTP 429 - Rate limited" };
     }
-  }
 
-  console.error(`[${name}] Failed after ${attempt} attempts: ${lastError}`);
-  return { accountChars: [name], error: lastError };
+    if (!response.ok) {
+      return { accountChars: [name], error: `HTTP ${response.status}` };
+    }
+
+    const html = await response.text();
+
+    // Strategy 1: __NEXT_DATA__ JSON (most reliable for Next.js apps)
+    const nextDataMatch = html.match(
+      /<script id="__NEXT_DATA__" type="application\/json">([\s\S]*?)<\/script>/
+    );
+    if (nextDataMatch) {
+      try {
+        const nextData = JSON.parse(nextDataMatch[1]);
+        const accountChars = extractCharsFromNextData(nextData);
+        if (accountChars.length > 0) {
+          console.log(`[${name}] __NEXT_DATA__ found ${accountChars.length} chars: ${accountChars.join(", ")}`);
+          return { accountChars };
+        }
+      } catch (_e) {
+        // fall through to HTML parsing
+      }
+    }
+
+    // Strategy 2: Parse character links from HTML
+    const accountChars = extractCharsFromHtml(html, name);
+    return { accountChars };
+  } catch (error) {
+    const msg = error instanceof Error ? error.message : "Unknown";
+    console.error(`[${name}] Fetch error: ${msg}`);
+    return { accountChars: [name], error: msg };
+  }
 }
 
 function extractCharsFromNextData(data: unknown): string[] {
@@ -293,39 +264,48 @@ function extractCharsFromNextData(data: unknown): string[] {
 }
 
 function extractCharsFromHtml(html: string, playerName: string): string[] {
+  // Strategy: find the "Characters" section table and extract all char links from it
+  // The page has a table like: | Name | Level | World | Status |
+  // with rows containing links like /characters/CharName
+
+  // Find the account "Characters" section (after "Account Information")
+  const accountInfoIdx = html.search(/Account\s+Information/i);
+  const searchFrom = accountInfoIdx !== -1 ? accountInfoIdx : 0;
+  const relevantHtml = html.slice(searchFrom);
+
   const chars: string[] = [];
+  const seen = new Set<string>();
 
-  const charsIndex = html.search(/>\s*Characters\s*</i);
-  if (charsIndex !== -1) {
-    const section = html.slice(charsIndex, charsIndex + 5000);
-    const linkRegex = /href="\/characters\/([^"?#]+)"/g;
-    let match;
-    while ((match = linkRegex.exec(section)) !== null) {
-      const charName = decodeURIComponent(match[1].replace(/\+/g, " "));
-      if (charName && charName !== "" && !chars.includes(charName)) {
-        chars.push(charName);
-      }
+  // Extract all /characters/ links in the relevant section
+  const linkRegex = /href="\/characters\/([^"?#]+)"/g;
+  let match;
+  while ((match = linkRegex.exec(relevantHtml)) !== null) {
+    const raw = match[1];
+    const charName = decodeURIComponent(raw.replace(/\+/g, " ")).trim();
+    if (charName && !seen.has(charName.toLowerCase())) {
+      seen.add(charName.toLowerCase());
+      chars.push(charName);
     }
   }
 
-  if (chars.length <= 1) {
-    chars.length = 0;
-    const linkRegex = /href="\/characters\/([^"?#]+)"/g;
-    let match;
-    const seen = new Set<string>();
-    while ((match = linkRegex.exec(html)) !== null) {
+  // Fallback: if nothing found, use the entire HTML
+  if (chars.length === 0) {
+    const linkRegex2 = /href="\/characters\/([^"?#]+)"/g;
+    while ((match = linkRegex2.exec(html)) !== null) {
       const charName = decodeURIComponent(match[1].replace(/\+/g, " ")).trim();
-      if (charName && !seen.has(charName)) {
-        seen.add(charName);
+      if (charName && !seen.has(charName.toLowerCase())) {
+        seen.add(charName.toLowerCase());
         chars.push(charName);
       }
     }
   }
 
-  if (!chars.includes(playerName)) {
+  // Always include the player themselves
+  if (!seen.has(playerName.toLowerCase())) {
     chars.push(playerName);
   }
 
+  console.log(`[${playerName}] HTML extraction found: ${chars.join(", ") || "none"}`);
   return chars;
 }
 

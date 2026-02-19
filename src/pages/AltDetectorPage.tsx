@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useCallback } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import MainLayout from '@/layouts/MainLayout';
@@ -8,16 +8,122 @@ import { Button } from '@/components/ui/button';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Progress } from '@/components/ui/progress';
 import { Search, RefreshCw, Activity, Users, Database, ShieldCheck, ScanSearch, Loader2 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
 const ANON_KEY = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
 
+// Scrape TTL: skip characters scraped successfully within last 4 hours
+const SCRAPE_TTL_MS = 4 * 60 * 60 * 1000;
+// Max characters to scrape per "Raspar Perfis" click
+const MAX_PER_RUN = 10;
+
+function extractCharsFromNextData(data: unknown): string[] {
+  const chars: string[] = [];
+  function search(obj: unknown): void {
+    if (!obj || typeof obj !== 'object') return;
+    if (Array.isArray(obj)) {
+      if (obj.length > 0) {
+        const first = obj[0] as Record<string, unknown>;
+        if (first && typeof first === 'object' && 'name' in first && 'world' in first) {
+          for (const item of obj) {
+            const char = item as Record<string, unknown>;
+            if (char.name && typeof char.name === 'string') chars.push(char.name);
+          }
+          return;
+        }
+      }
+      obj.forEach((item) => search(item));
+    } else {
+      Object.values(obj as Record<string, unknown>).forEach((val) => search(val));
+    }
+  }
+  search(data);
+  return chars;
+}
+
+function extractCharsFromHtml(html: string, playerName: string): string[] {
+  const seen = new Set<string>();
+  const chars: string[] = [];
+
+  // Find "Account Information" section and extract chars from the table after it
+  const accountInfoIdx = html.search(/Account\s+Information/i);
+  const searchFrom = accountInfoIdx !== -1 ? accountInfoIdx : 0;
+  const relevantHtml = html.slice(searchFrom);
+
+  const linkRegex = /href="\/characters\/([^"?#]+)"/g;
+  let match;
+  while ((match = linkRegex.exec(relevantHtml)) !== null) {
+    const raw = match[1];
+    const charName = decodeURIComponent(raw.replace(/\+/g, ' ')).trim();
+    if (charName && !seen.has(charName.toLowerCase())) {
+      seen.add(charName.toLowerCase());
+      chars.push(charName);
+    }
+  }
+
+  // Fallback: full page
+  if (chars.length === 0) {
+    const linkRegex2 = /href="\/characters\/([^"?#]+)"/g;
+    while ((match = linkRegex2.exec(html)) !== null) {
+      const charName = decodeURIComponent(match[1].replace(/\+/g, ' ')).trim();
+      if (charName && !seen.has(charName.toLowerCase())) {
+        seen.add(charName.toLowerCase());
+        chars.push(charName);
+      }
+    }
+  }
+
+  if (!seen.has(playerName.toLowerCase())) chars.push(playerName);
+  return chars;
+}
+
+async function scrapeCharacterFromBrowser(name: string): Promise<{ accountChars: string[]; error?: string }> {
+  try {
+    const url = `https://www.tibiarelic.com/characters/${encodeURIComponent(name)}`;
+    const resp = await fetch(url, { signal: AbortSignal.timeout(10000) });
+
+    if (resp.status === 429) return { accountChars: [name], error: 'HTTP 429 - Rate limited' };
+    if (!resp.ok) return { accountChars: [name], error: `HTTP ${resp.status}` };
+
+    const html = await resp.text();
+
+    // Try __NEXT_DATA__ first
+    const nextDataMatch = html.match(/<script id="__NEXT_DATA__" type="application\/json">([\s\S]*?)<\/script>/);
+    if (nextDataMatch) {
+      try {
+        const nextData = JSON.parse(nextDataMatch[1]);
+        const accountChars = extractCharsFromNextData(nextData);
+        if (accountChars.length > 0) return { accountChars };
+      } catch (_e) { /* fall through */ }
+    }
+
+    return { accountChars: extractCharsFromHtml(html, name) };
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : 'Unknown';
+    return { accountChars: [name], error: msg };
+  }
+}
+
+async function saveScrapedRecords(records: { character_name: string; account_chars: string[]; scrape_error: string | null }[]) {
+  const res = await fetch(`${SUPABASE_URL}/functions/v1/save-character-accounts`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${ANON_KEY}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ records }),
+  });
+  return res.json();
+}
+
 const AltDetectorPage = () => {
   const [filter, setFilter] = useState('');
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [isScraping, setIsScraping] = useState(false);
+  const [scrapeProgress, setScrapeProgress] = useState<{ done: number; total: number; current: string } | null>(null);
   const { toast } = useToast();
 
   const { data: matches, isLoading: matchesLoading, refetch: refetchMatches } = useQuery({
@@ -33,7 +139,7 @@ const AltDetectorPage = () => {
     refetchInterval: 30000,
   });
 
-  const { data: trackerStats } = useQuery({
+  const { data: trackerStats, refetch: refetchStats } = useQuery({
     queryKey: ['tracker-stats'],
     queryFn: async () => {
       const [sessionsRes, stateRes, uniqueRes, scrapedRes] = await Promise.all([
@@ -73,34 +179,102 @@ const AltDetectorPage = () => {
     return res.json();
   };
 
-  const triggerScrape = async () => {
+  // Browser-side scraping: fetch tibiarelic directly from the browser (avoids IP blocks on edge functions)
+  const triggerScrape = useCallback(async () => {
     setIsScraping(true);
+    setScrapeProgress(null);
     try {
-      const result = await callFunction('scrape-character-accounts');
-      if (result.rate_limited > 0 && result.scraped === 0) {
-        toast({
-          title: 'Rate limit ativo',
-          description: `O site está bloqueando requisições no momento (429). Tente novamente em alguns minutos.`,
-          variant: 'destructive',
-        });
-      } else {
-        const parts = [];
-        if (result.scraped > 0) parts.push(`${result.scraped} raspados`);
-        if (result.skipped_fresh > 0) parts.push(`${result.skipped_fresh} já atualizados`);
-        if (result.rate_limited > 0) parts.push(`${result.rate_limited} bloqueados (429)`);
-        if (result.still_pending > 0) parts.push(`${result.still_pending} pendentes`);
-        toast({
-          title: 'Scraping concluído',
-          description: parts.join(', ') || 'Nenhum perfil processado.',
-        });
+      // 1. Get all unique player names
+      const { data: sessionData } = await supabase
+        .from('online_tracker_sessions')
+        .select('player_name');
+      const allNames = [...new Set((sessionData || []).map((r) => r.player_name))];
+
+      // 2. Get already-scraped chars — check freshness
+      const cutoff = new Date(Date.now() - SCRAPE_TTL_MS).toISOString();
+      const { data: alreadyScraped } = await supabase
+        .from('character_accounts')
+        .select('character_name, account_chars, scrape_error, last_scraped_at');
+
+      const freshNames = new Set<string>();
+      const erroredNames = new Set<string>();
+      for (const r of alreadyScraped || []) {
+        const isRecent = r.last_scraped_at >= cutoff;
+        const hasData = r.account_chars && r.account_chars.length > 0;
+        const hasError = r.scrape_error !== null;
+        if (hasError && r.scrape_error?.includes('429')) {
+          erroredNames.add(r.character_name);
+        } else if (isRecent && hasData && !hasError) {
+          freshNames.add(r.character_name);
+        }
       }
+
+      // Sort: non-errored first, 429-errored last
+      const toScrape = allNames
+        .filter((n) => !freshNames.has(n))
+        .sort((a, b) => (erroredNames.has(a) ? 1 : 0) - (erroredNames.has(b) ? 1 : 0))
+        .slice(0, MAX_PER_RUN);
+
+      if (toScrape.length === 0) {
+        toast({ title: 'Todos os perfis estão atualizados!' });
+        return;
+      }
+
+      setScrapeProgress({ done: 0, total: toScrape.length, current: '' });
+
+      let scraped_count = 0;
+      let rateLimited = 0;
+      const records: { character_name: string; account_chars: string[]; scrape_error: string | null }[] = [];
+
+      for (let i = 0; i < toScrape.length; i++) {
+        const name = toScrape[i];
+        setScrapeProgress({ done: i, total: toScrape.length, current: name });
+
+        const result = await scrapeCharacterFromBrowser(name);
+        records.push({
+          character_name: name,
+          account_chars: result.accountChars,
+          scrape_error: result.error || null,
+        });
+
+        if (result.error?.includes('429')) {
+          rateLimited++;
+          break;
+        } else if (!result.error) {
+          scraped_count++;
+        }
+
+        // Short delay between requests
+        if (i < toScrape.length - 1) await new Promise((r) => setTimeout(r, 600));
+      }
+
+      // Save all records in one batch
+      setScrapeProgress({ done: toScrape.length, total: toScrape.length, current: 'Salvando...' });
+      await saveScrapedRecords(records);
+
+      const stillPending = Math.max(0, allNames.filter((n) => !freshNames.has(n)).length - toScrape.length);
+      const parts = [];
+      if (scraped_count > 0) parts.push(`${scraped_count} raspados`);
+      if (rateLimited > 0) parts.push(`${rateLimited} bloqueados (429)`);
+      if (stillPending > 0) parts.push(`${stillPending} pendentes`);
+      if (freshNames.size > 0) parts.push(`${freshNames.size} já atualizados`);
+
+      toast({
+        title: rateLimited > 0 && scraped_count === 0 ? 'Rate limit ativo' : 'Scraping concluído',
+        description: parts.join(', ') || 'Nenhum perfil processado.',
+        variant: rateLimited > 0 && scraped_count === 0 ? 'destructive' : 'default',
+      });
+
       refetchMatches();
+      refetchStats();
     } catch (e) {
+      console.error('Scrape error:', e);
       toast({ title: 'Erro no scraping', variant: 'destructive' });
     } finally {
       setIsScraping(false);
+      setScrapeProgress(null);
     }
-  };
+  }, [refetchMatches, refetchStats, toast]);
 
   const triggerAnalysis = async () => {
     setIsAnalyzing(true);
@@ -246,6 +420,21 @@ const AltDetectorPage = () => {
             Rodar Análise
           </Button>
         </div>
+
+        {/* Scraping progress */}
+        {scrapeProgress && (
+          <Card>
+            <CardContent className="pt-4 pb-3 space-y-2">
+              <div className="flex items-center justify-between text-sm">
+                <span className="text-muted-foreground">
+                  {scrapeProgress.current ? `Raspando: ${scrapeProgress.current}` : 'Iniciando...'}
+                </span>
+                <span className="font-medium">{scrapeProgress.done}/{scrapeProgress.total}</span>
+              </div>
+              <Progress value={(scrapeProgress.done / scrapeProgress.total) * 100} className="h-2" />
+            </CardContent>
+          </Card>
+        )}
 
         {/* Matches Tabs */}
         <Tabs defaultValue="confirmed">
