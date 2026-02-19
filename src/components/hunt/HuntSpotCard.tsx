@@ -17,7 +17,6 @@ interface HuntSpotCardProps {
   queue: HuntQueueItem[];
   playerSessionId: string;
   characterName: string;
-  myQueueSpotId: string | null;
   isAdmin: boolean;
   onStartHunt: (spotId: string, playerName: string) => Promise<void>;
   onEndHunt: (sessionId: string) => Promise<void>;
@@ -35,7 +34,6 @@ export function HuntSpotCard({
   queue,
   playerSessionId,
   characterName,
-  myQueueSpotId,
   isAdmin,
   onStartHunt,
   onEndHunt,
@@ -142,7 +140,6 @@ export function HuntSpotCard({
                 queue={queue}
                 playerSessionId={playerSessionId}
                 characterName={characterName}
-                myQueueSpotId={myQueueSpotId}
                 isAdmin={isAdmin}
                 onAdd={onAddToQueue}
                 onRemove={onRemoveFromQueue}

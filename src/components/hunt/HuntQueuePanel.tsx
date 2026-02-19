@@ -12,7 +12,6 @@ interface HuntQueuePanelProps {
   queue: HuntQueueItem[];
   playerSessionId: string;
   characterName: string;
-  myQueueSpotId: string | null;
   isAdmin: boolean;
   onAdd: (spotId: string, playerName: string, sessionId: string) => Promise<void>;
   onRemove: (queueId: string) => Promise<void>;
@@ -40,7 +39,6 @@ export function HuntQueuePanel({
   queue,
   playerSessionId,
   characterName,
-  myQueueSpotId,
   isAdmin,
   onAdd,
   onRemove,
@@ -49,8 +47,10 @@ export function HuntQueuePanel({
   const [joining, setJoining] = useState(false);
   const { toast } = useToast();
 
-  const alreadyInThisQueue = myQueueSpotId === spotId;
-  const alreadyInAnotherQueue = myQueueSpotId !== null && myQueueSpotId !== spotId;
+  // Check if this session is already in THIS spot's queue
+  const alreadyInThisQueue = queue.some(
+    (q) => q.session_id === playerSessionId && (q.status === "waiting" || q.status === "notified")
+  );
 
   const handleJoin = async () => {
     if (!characterName.trim()) return;
@@ -74,8 +74,6 @@ export function HuntQueuePanel({
         </span>
         {alreadyInThisQueue ? (
           <span className="text-xs text-primary font-medium">✅ You're in this queue</span>
-        ) : alreadyInAnotherQueue ? (
-          <span className="text-xs text-muted-foreground italic">You're in another queue</span>
         ) : (
           <Button size="sm" variant="outline" onClick={handleJoin} disabled={joining}>
             {joining
@@ -92,7 +90,7 @@ export function HuntQueuePanel({
       ) : (
         <div className="space-y-1">
           {queue.map((item, idx) => {
-            const isMe = (item as HuntQueueItem & { session_id?: string }).session_id === playerSessionId;
+            const isMe = item.session_id === playerSessionId;
             return (
               <div
                 key={item.id}

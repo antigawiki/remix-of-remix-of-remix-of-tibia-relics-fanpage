@@ -307,16 +307,32 @@ export function useHuntAdmin() {
 
     const nextPosition = spotQueue.length > 0 ? spotQueue[0].position + 1 : 1;
 
+    // If the spot is free AND no one else is in queue, promote directly to "notified"
+    const spotIsFree = !sessions.find((s) => s.spot_id === spotId && s.status !== "finished");
+    const isFirstInQueue = spotQueue.length === 0;
+    const initialStatus = spotIsFree && isFirstInQueue ? "notified" : "waiting";
+
     const { error } = await supabase.from("hunt_queue").insert({
       spot_id: spotId,
       player_name: playerName,
       position: nextPosition,
-      status: "waiting",
+      status: initialStatus,
       session_id: sessionId,
+      notified_at: spotIsFree && isFirstInQueue ? new Date().toISOString() : null,
     });
     if (error) throw error;
+
+    if (spotIsFree && isFirstInQueue) {
+      const spot = spots.find((s) => s.id === spotId);
+      const city = cities.find((c) => c.id === spot?.city_id);
+      sendBrowserNotification(
+        "🎯 Your turn!",
+        `${spot?.name} in ${city?.name} is free! You have 5 minutes to claim.`
+      );
+    }
+
     await fetchAll();
-  }, [queue, fetchAll]);
+  }, [sessions, queue, spots, cities, sendBrowserNotification, fetchAll]);
 
   const removeFromQueue = useCallback(async (queueId: string) => {
     const { error } = await supabase.from("hunt_queue").delete().eq("id", queueId);

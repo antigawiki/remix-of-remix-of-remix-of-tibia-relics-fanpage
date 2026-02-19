@@ -13,7 +13,6 @@ interface HuntCityCardProps {
   cities: HuntCity[];
   playerSessionId: string;
   characterName: string;
-  myQueueSpotId: string | null;
   isAdmin: boolean;
   getSessionForSpot: (spotId: string) => HuntSession | undefined;
   getQueueForSpot: (spotId: string) => HuntQueueItem[];
@@ -33,7 +32,6 @@ export function HuntCityCard({
   cities,
   playerSessionId,
   characterName,
-  myQueueSpotId,
   isAdmin,
   getSessionForSpot,
   getQueueForSpot,
@@ -118,7 +116,6 @@ export function HuntCityCard({
                   queue={getQueueForSpot(spot.id)}
                   playerSessionId={playerSessionId}
                   characterName={characterName}
-                  myQueueSpotId={myQueueSpotId}
                   isAdmin={isAdmin}
                   onStartHunt={onStartHunt}
                   onEndHunt={onEndHunt}
