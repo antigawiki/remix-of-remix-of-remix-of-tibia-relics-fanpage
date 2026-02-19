@@ -228,6 +228,7 @@ export type Database = {
           notified_at: string | null
           player_name: string
           position: number
+          session_id: string | null
           spot_id: string
           status: string
         }
@@ -237,6 +238,7 @@ export type Database = {
           notified_at?: string | null
           player_name: string
           position?: number
+          session_id?: string | null
           spot_id: string
           status?: string
         }
@@ -246,6 +248,7 @@ export type Database = {
           notified_at?: string | null
           player_name?: string
           position?: number
+          session_id?: string | null
           spot_id?: string
           status?: string
         }
