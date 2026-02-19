@@ -68,7 +68,7 @@ export function useHuntAdmin() {
       supabase.from("hunt_cities").select("*").order("name"),
       supabase.from("hunt_spots").select("*").order("name"),
       supabase.from("hunt_sessions").select("*").eq("status", "active").order("started_at"),
-      supabase.from("hunt_queue").select("*").in("status", ["waiting", "notified"]).order("position"),
+      supabase.from("hunt_queue").select("*").in("status", ["waiting", "notified", "claimed"]).order("position"),
     ]);
 
     if (citiesRes.data) setCities(citiesRes.data as HuntCity[]);
@@ -168,7 +168,7 @@ export function useHuntAdmin() {
       }
     }
 
-    // Check claimed expiration (5 minutes)
+    // Check notified expiration (5 minutes to claim)
     for (const qItem of queue) {
       if (qItem.status === "notified" && qItem.notified_at) {
         const notifiedAt = new Date(qItem.notified_at);
@@ -178,8 +178,27 @@ export function useHuntAdmin() {
             .from("hunt_queue")
             .update({ status: "expired" })
             .eq("id", qItem.id);
+          await promoteNextInQueue(qItem.spot_id);
+        }
+      }
 
-          // Promote the next person
+      // Check claimed expiration (15 minutes to start hunt)
+      if (qItem.status === "claimed" && qItem.notified_at) {
+        const claimedAt = new Date(qItem.notified_at);
+        const minutesSinceClaimed = (now.getTime() - claimedAt.getTime()) / 60000;
+        if (minutesSinceClaimed >= 15) {
+          await supabase
+            .from("hunt_queue")
+            .update({ status: "expired" })
+            .eq("id", qItem.id);
+
+          const spot = spots.find((s) => s.id === qItem.spot_id);
+          const city = cities.find((c) => c.id === spot?.city_id);
+          sendBrowserNotification(
+            "⏱️ Claim expired!",
+            `${qItem.player_name} didn't start in time at ${spot?.name} — ${city?.name}`
+          );
+
           await promoteNextInQueue(qItem.spot_id);
         }
       }
@@ -343,7 +362,7 @@ export function useHuntAdmin() {
   const claimSpot = useCallback(async (queueId: string) => {
     const { error } = await supabase
       .from("hunt_queue")
-      .update({ status: "claimed" })
+      .update({ status: "claimed", notified_at: new Date().toISOString() })
       .eq("id", queueId);
     if (error) throw error;
     await fetchAll();
@@ -387,6 +406,11 @@ export function useHuntAdmin() {
     [queue]
   );
 
+  const getClaimedForSpot = useCallback(
+    (spotId: string) => queue.find((q) => q.spot_id === spotId && q.status === "claimed") ?? null,
+    [queue]
+  );
+
   const getSpotsForCity = useCallback(
     (cityId: string) => spots.filter((s) => s.city_id === cityId),
     [spots]
@@ -416,7 +440,10 @@ export function useHuntAdmin() {
     claimSpot,
     getSessionForSpot,
     getQueueForSpot,
+    getClaimedForSpot,
     getSpotsForCity,
     fetchAll,
   };
 }
+
+

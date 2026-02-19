@@ -240,6 +240,7 @@ export default function HuntAdminPage() {
                 isAdmin={authed}
                 getSessionForSpot={hunt.getSessionForSpot}
                 getQueueForSpot={hunt.getQueueForSpot}
+                getClaimedForSpot={hunt.getClaimedForSpot}
                 onStartHunt={hunt.startHunt}
                 onEndHunt={hunt.endHuntEarly}
                 onAddToQueue={hunt.addToQueue}
