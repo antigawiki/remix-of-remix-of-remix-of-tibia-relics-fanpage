@@ -206,6 +206,10 @@ export function useHuntAdmin() {
   }, [sessions, spots, cities, queue, sendBrowserNotification, toast]);
 
   const promoteNextInQueue = useCallback(async (spotId: string) => {
+    // Don't promote if someone is already en route (claimed)
+    const alreadyClaimed = queue.find((q) => q.spot_id === spotId && q.status === "claimed");
+    if (alreadyClaimed) return;
+
     const nextWaiting = queue
       .filter((q) => q.spot_id === spotId && q.status === "waiting")
       .sort((a, b) => a.position - b.position)[0];
@@ -270,14 +274,22 @@ export function useHuntAdmin() {
     });
     if (error) throw error;
 
-    // Auto-remove player from any active queue
-    const myQueueEntry = queue.find(
+    // Remove the claimed entry for this spot (player is now actively hunting)
+    const claimedEntry = queue.find(
+      (q) => q.spot_id === spotId && q.status === "claimed"
+    );
+    if (claimedEntry) {
+      await supabase.from("hunt_queue").delete().eq("id", claimedEntry.id);
+    }
+
+    // Auto-remove player from any other active queue entries
+    const myQueueEntries = queue.filter(
       (q) =>
         q.player_name.toLowerCase() === playerName.toLowerCase() &&
         (q.status === "waiting" || q.status === "notified")
     );
-    if (myQueueEntry) {
-      await supabase.from("hunt_queue").delete().eq("id", myQueueEntry.id);
+    for (const entry of myQueueEntries) {
+      await supabase.from("hunt_queue").delete().eq("id", entry.id);
     }
 
     const city = cities.find((c) => c.id === spot?.city_id);
