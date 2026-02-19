@@ -12,37 +12,52 @@ import { AddSpotModal } from "@/components/hunt/AddSpotModal";
 import { MyQueueStatus } from "@/components/hunt/MyQueueStatus";
 import { Shield, Building2, Sword, Users, MapPin, Plus, LogOut, RefreshCw } from "lucide-react";
 
-const PASSWORD = "ondethweed";
+const ADMIN_PASSWORD = "ondethweed";
 const SESSION_KEY = "hunt_admin_auth";
 
 export default function HuntAdminPage() {
-  const [authed, setAuthed] = useState(() => sessionStorage.getItem(SESSION_KEY) === "1");
-  const [password, setPassword] = useState("");
+  const { sessionId, characterName, saveCharacterName, myQueueItem, leaveQueue, claimMySpot, refetch } = usePlayerSession();
+
+  // Has the user set their character name?
+  const [entered, setEntered] = useState(() => !!characterName);
+  const [charInput, setCharInput] = useState(characterName);
+  const [passwordInput, setPasswordInput] = useState("");
   const [pwError, setPwError] = useState(false);
+  const [authed, setAuthed] = useState(() => sessionStorage.getItem(SESSION_KEY) === "1");
+
   const [addCityOpen, setAddCityOpen] = useState(false);
   const [addSpotOpen, setAddSpotOpen] = useState(false);
 
   const hunt = useHuntAdmin();
-  const { sessionId, myQueueItem, leaveQueue, claimMySpot, refetch } = usePlayerSession();
 
-  // Spot ID where this browser's session is currently queued
   const myQueueSpotId = myQueueItem?.spot_id ?? null;
 
-  const handleLogin = (e: React.FormEvent) => {
+  const handleEnter = (e: React.FormEvent) => {
     e.preventDefault();
-    if (password === PASSWORD) {
-      sessionStorage.setItem(SESSION_KEY, "1");
-      setAuthed(true);
-      setPwError(false);
-    } else {
-      setPwError(true);
-      setPassword("");
+    if (!charInput.trim()) return;
+
+    // Check admin password if provided
+    if (passwordInput.trim()) {
+      if (passwordInput === ADMIN_PASSWORD) {
+        sessionStorage.setItem(SESSION_KEY, "1");
+        setAuthed(true);
+        setPwError(false);
+      } else {
+        setPwError(true);
+        return;
+      }
     }
+
+    saveCharacterName(charInput.trim());
+    setEntered(true);
   };
 
   const handleLogout = () => {
     sessionStorage.removeItem(SESSION_KEY);
     setAuthed(false);
+    setEntered(false);
+    setCharInput("");
+    setPasswordInput("");
   };
 
   const handleLeaveQueue = async () => {
@@ -57,50 +72,56 @@ export default function HuntAdminPage() {
     refetch();
   };
 
-  // === LOGIN SCREEN ===
-  if (!authed) {
+  // === ENTRY SCREEN ===
+  if (!entered) {
     return (
-      <div className="min-h-screen bg-background flex flex-col items-center justify-center p-4 gap-6">
-        {/* My Queue Status visible even before login */}
-        {myQueueItem && (
-          <div className="w-full max-w-sm">
-            <MyQueueStatus
-              myQueueItem={myQueueItem}
-              onLeave={handleLeaveQueue}
-              onClaim={handleClaimMySpot}
-            />
-          </div>
-        )}
-
+      <div className="min-h-screen bg-background flex items-center justify-center p-4">
         <Card className="w-full max-w-sm border-2 border-primary/30">
           <CardHeader className="text-center space-y-2">
             <div className="flex justify-center">
               <div className="h-14 w-14 rounded-full bg-primary/10 flex items-center justify-center">
-                <Shield className="h-7 w-7 text-primary" />
+                <Sword className="h-7 w-7 text-primary" />
               </div>
             </div>
-            <CardTitle className="text-xl">Hunt Admin</CardTitle>
-            <CardDescription>Enter the password to manage hunts.</CardDescription>
+            <CardTitle className="text-xl">Hunt Manager</CardTitle>
+            <CardDescription>
+              Enter your character name to join queues and receive notifications.
+            </CardDescription>
           </CardHeader>
           <CardContent>
-            <form onSubmit={handleLogin} className="space-y-4">
+            <form onSubmit={handleEnter} className="space-y-4">
               <div className="space-y-2">
-                <Label htmlFor="pw">Password</Label>
+                <Label htmlFor="char-name">Character Name</Label>
+                <Input
+                  id="char-name"
+                  value={charInput}
+                  onChange={(e) => setCharInput(e.target.value)}
+                  placeholder="Your in-game nick..."
+                  autoFocus
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="pw" className="flex items-center gap-1.5">
+                  <Shield className="h-3.5 w-3.5 text-muted-foreground" />
+                  Admin Password
+                  <span className="text-xs text-muted-foreground font-normal">(optional)</span>
+                </Label>
                 <Input
                   id="pw"
                   type="password"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  placeholder="••••••••••"
-                  autoFocus
+                  value={passwordInput}
+                  onChange={(e) => setPasswordInput(e.target.value)}
+                  placeholder="Leave blank if not admin"
                   className={pwError ? "border-destructive" : ""}
                 />
                 {pwError && (
-                  <p className="text-xs text-destructive">Wrong password. Try again.</p>
+                  <p className="text-xs text-destructive">Wrong admin password.</p>
                 )}
               </div>
-              <Button type="submit" className="w-full">
-                Login
+
+              <Button type="submit" className="w-full" disabled={!charInput.trim()}>
+                Enter
               </Button>
             </form>
           </CardContent>
@@ -109,7 +130,7 @@ export default function HuntAdminPage() {
     );
   }
 
-  // === DASHBOARD ===
+  // === MAIN PAGE ===
   const { cities, spots, loading, totalActive, totalInQueue, totalFreeSpots } = hunt;
 
   return (
@@ -119,18 +140,26 @@ export default function HuntAdminPage() {
         <div className="max-w-7xl mx-auto px-4 py-3 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <Sword className="h-5 w-5 text-primary" />
-            <span className="font-bold text-base">Hunt Admin</span>
+            <span className="font-bold text-base">Hunt Manager</span>
             <Badge variant="outline" className="text-xs">
               <Users className="h-3 w-3 mr-1" />
               Queue: {totalInQueue}
             </Badge>
+            {authed && (
+              <Badge variant="secondary" className="text-xs">
+                <Shield className="h-3 w-3 mr-1" /> Admin
+              </Badge>
+            )}
           </div>
           <div className="flex items-center gap-2">
+            <span className="text-xs text-muted-foreground hidden sm:block">
+              Playing as: <span className="font-semibold text-foreground">{characterName}</span>
+            </span>
             <Button size="sm" variant="outline" onClick={hunt.fetchAll} title="Refresh">
               <RefreshCw className="h-4 w-4" />
             </Button>
             <Button size="sm" variant="ghost" onClick={handleLogout} className="text-muted-foreground">
-              <LogOut className="h-4 w-4 mr-1" /> Logout
+              <LogOut className="h-4 w-4 mr-1" /> Exit
             </Button>
           </div>
         </div>
@@ -146,37 +175,40 @@ export default function HuntAdminPage() {
           />
         )}
 
-        {/* Stats */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-          {[
-            { label: "Cities", value: cities.length, icon: Building2, color: "text-blue-400" },
-            { label: "Active Hunts", value: totalActive, icon: Sword, color: "text-green-400" },
-            { label: "Free Spots", value: totalFreeSpots, icon: MapPin, color: "text-primary" },
-            { label: "In Queue", value: totalInQueue, icon: Users, color: "text-yellow-400" },
-          ].map(({ label, value, icon: Icon, color }) => (
-            <Card key={label} className="border border-border/60">
-              <CardContent className="p-4 flex items-center gap-3">
-                <Icon className={`h-8 w-8 ${color} shrink-0`} />
-                <div>
-                  <p className="text-2xl font-bold">{value}</p>
-                  <p className="text-xs text-muted-foreground">{label}</p>
-                </div>
-              </CardContent>
-            </Card>
-          ))}
-        </div>
+        {/* Admin stats */}
+        {authed && (
+          <>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+              {[
+                { label: "Cities", value: cities.length, icon: Building2, color: "text-blue-400" },
+                { label: "Active Hunts", value: totalActive, icon: Sword, color: "text-green-400" },
+                { label: "Free Spots", value: totalFreeSpots, icon: MapPin, color: "text-primary" },
+                { label: "In Queue", value: totalInQueue, icon: Users, color: "text-yellow-400" },
+              ].map(({ label, value, icon: Icon, color }) => (
+                <Card key={label} className="border border-border/60">
+                  <CardContent className="p-4 flex items-center gap-3">
+                    <Icon className={`h-8 w-8 ${color} shrink-0`} />
+                    <div>
+                      <p className="text-2xl font-bold">{value}</p>
+                      <p className="text-xs text-muted-foreground">{label}</p>
+                    </div>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
 
-        {/* Actions */}
-        <div className="flex flex-wrap gap-3">
-          <Button onClick={() => setAddCityOpen(true)}>
-            <Building2 className="h-4 w-4 mr-2" /> Add City
-          </Button>
-          <Button variant="outline" onClick={() => setAddSpotOpen(true)}>
-            <Plus className="h-4 w-4 mr-2" /> Add Spot
-          </Button>
-        </div>
+            <div className="flex flex-wrap gap-3">
+              <Button onClick={() => setAddCityOpen(true)}>
+                <Building2 className="h-4 w-4 mr-2" /> Add City
+              </Button>
+              <Button variant="outline" onClick={() => setAddSpotOpen(true)}>
+                <Plus className="h-4 w-4 mr-2" /> Add Spot
+              </Button>
+            </div>
+          </>
+        )}
 
-        {/* Loading */}
+        {/* Spots list */}
         {loading ? (
           <div className="text-center py-12 text-muted-foreground">Loading...</div>
         ) : cities.length === 0 ? (
@@ -184,12 +216,14 @@ export default function HuntAdminPage() {
             <CardContent className="flex flex-col items-center justify-center py-16 space-y-3">
               <Building2 className="h-12 w-12 text-muted-foreground/50" />
               <p className="text-muted-foreground text-sm text-center">
-                No cities registered yet.<br />
-                Click "Add City" to get started.
+                No cities registered yet.
+                {authed && <><br />Click "Add City" to get started.</>}
               </p>
-              <Button onClick={() => setAddCityOpen(true)}>
-                <Plus className="h-4 w-4 mr-2" /> Add City
-              </Button>
+              {authed && (
+                <Button onClick={() => setAddCityOpen(true)}>
+                  <Plus className="h-4 w-4 mr-2" /> Add City
+                </Button>
+              )}
             </CardContent>
           </Card>
         ) : (
@@ -201,6 +235,7 @@ export default function HuntAdminPage() {
                 cities={cities}
                 spots={hunt.getSpotsForCity(city.id)}
                 playerSessionId={sessionId}
+                characterName={characterName}
                 myQueueSpotId={myQueueSpotId}
                 isAdmin={authed}
                 getSessionForSpot={hunt.getSessionForSpot}
@@ -219,18 +254,21 @@ export default function HuntAdminPage() {
         )}
       </div>
 
-      {/* Modals */}
-      <AddCityModal
-        open={addCityOpen}
-        onClose={() => setAddCityOpen(false)}
-        onAdd={hunt.addCity}
-      />
-      <AddSpotModal
-        open={addSpotOpen}
-        onClose={() => setAddSpotOpen(false)}
-        onAdd={hunt.addSpot}
-        cities={cities}
-      />
+      {authed && (
+        <>
+          <AddCityModal
+            open={addCityOpen}
+            onClose={() => setAddCityOpen(false)}
+            onAdd={hunt.addCity}
+          />
+          <AddSpotModal
+            open={addSpotOpen}
+            onClose={() => setAddSpotOpen(false)}
+            onAdd={hunt.addSpot}
+            cities={cities}
+          />
+        </>
+      )}
     </div>
   );
 }

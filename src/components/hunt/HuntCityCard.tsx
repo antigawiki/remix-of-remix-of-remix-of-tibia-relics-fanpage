@@ -12,6 +12,7 @@ interface HuntCityCardProps {
   spots: HuntSpot[];
   cities: HuntCity[];
   playerSessionId: string;
+  characterName: string;
   myQueueSpotId: string | null;
   isAdmin: boolean;
   getSessionForSpot: (spotId: string) => HuntSession | undefined;
@@ -31,6 +32,7 @@ export function HuntCityCard({
   spots,
   cities,
   playerSessionId,
+  characterName,
   myQueueSpotId,
   isAdmin,
   getSessionForSpot,
@@ -57,7 +59,7 @@ export function HuntCityCard({
       <Card className="border-2 border-primary/20 bg-card">
         <CardHeader className="pb-3">
           <div className="flex items-center justify-between">
-              <CardTitle className="flex items-center gap-2 text-base">
+            <CardTitle className="flex items-center gap-2 text-base">
               <Building2 className="h-5 w-5 text-primary" />
               {city.name}
               <span className="text-xs font-normal text-muted-foreground">
@@ -65,23 +67,27 @@ export function HuntCityCard({
               </span>
             </CardTitle>
             <div className="flex gap-1">
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={() => setAddSpotOpen(true)}
-                className="h-7 px-2 text-xs"
-              >
-                <Plus className="h-3 w-3 mr-1" /> Spot
-              </Button>
-              <Button
-                size="sm"
-                variant="ghost"
-                className="h-7 w-7 p-0 text-muted-foreground hover:text-destructive"
-                onClick={() => setDeleteCityOpen(true)}
-                title="Remover cidade"
-              >
-                <Trash2 className="h-3 w-3" />
-              </Button>
+              {isAdmin && (
+                <>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => setAddSpotOpen(true)}
+                    className="h-7 px-2 text-xs"
+                  >
+                    <Plus className="h-3 w-3 mr-1" /> Spot
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="h-7 w-7 p-0 text-muted-foreground hover:text-destructive"
+                    onClick={() => setDeleteCityOpen(true)}
+                    title="Delete city"
+                  >
+                    <Trash2 className="h-3 w-3" />
+                  </Button>
+                </>
+              )}
             </div>
           </div>
         </CardHeader>
@@ -89,14 +95,16 @@ export function HuntCityCard({
           {spots.length === 0 ? (
             <div className="text-center py-6 text-muted-foreground text-sm">
               <p>No spots registered.</p>
-              <Button
-                size="sm"
-                variant="ghost"
-                className="mt-2"
-                onClick={() => setAddSpotOpen(true)}
-              >
-                <Plus className="h-3 w-3 mr-1" /> Add first spot
-              </Button>
+              {isAdmin && (
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="mt-2"
+                  onClick={() => setAddSpotOpen(true)}
+                >
+                  <Plus className="h-3 w-3 mr-1" /> Add first spot
+                </Button>
+              )}
             </div>
           ) : (
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -109,6 +117,7 @@ export function HuntCityCard({
                   session={getSessionForSpot(spot.id)}
                   queue={getQueueForSpot(spot.id)}
                   playerSessionId={playerSessionId}
+                  characterName={characterName}
                   myQueueSpotId={myQueueSpotId}
                   isAdmin={isAdmin}
                   onStartHunt={onStartHunt}
@@ -124,20 +133,23 @@ export function HuntCityCard({
         </CardContent>
       </Card>
 
-      <AddSpotModal
-        open={addSpotOpen}
-        onClose={() => setAddSpotOpen(false)}
-        onAdd={onAddSpot}
-        cities={cities}
-        preselectedCityId={city.id}
-      />
-
-      <DeleteConfirmModal
-        open={deleteCityOpen}
-        onClose={() => setDeleteCityOpen(false)}
-        onConfirm={() => onDeleteCity(city.id)}
-        description={`Are you sure you want to delete the city "${city.name}" and all its spots?`}
-      />
+      {isAdmin && (
+        <>
+          <AddSpotModal
+            open={addSpotOpen}
+            onClose={() => setAddSpotOpen(false)}
+            onAdd={onAddSpot}
+            cities={cities}
+            preselectedCityId={city.id}
+          />
+          <DeleteConfirmModal
+            open={deleteCityOpen}
+            onClose={() => setDeleteCityOpen(false)}
+            onConfirm={() => onDeleteCity(city.id)}
+            description={`Are you sure you want to delete the city "${city.name}" and all its spots?`}
+          />
+        </>
+      )}
     </>
   );
 }

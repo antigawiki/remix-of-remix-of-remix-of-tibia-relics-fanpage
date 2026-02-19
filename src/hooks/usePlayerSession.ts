@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { supabase } from "@/integrations/supabase/client";
 
 const SESSION_KEY = "hunt_session_id";
+const CHAR_NAME_KEY = "hunt_character_name";
 
 function getOrCreateSessionId(): string {
   let id = localStorage.getItem(SESSION_KEY);
@@ -10,6 +11,14 @@ function getOrCreateSessionId(): string {
     localStorage.setItem(SESSION_KEY, id);
   }
   return id;
+}
+
+export function getStoredCharacterName(): string {
+  return localStorage.getItem(CHAR_NAME_KEY) ?? "";
+}
+
+export function setStoredCharacterName(name: string): void {
+  localStorage.setItem(CHAR_NAME_KEY, name);
 }
 
 export interface MyQueueItem {
@@ -21,13 +30,13 @@ export interface MyQueueItem {
   notified_at: string | null;
   created_at: string;
   session_id: string | null;
-  // joined via spots/cities
   spot_name?: string;
   city_name?: string;
 }
 
 export function usePlayerSession() {
   const sessionId = useRef<string>(getOrCreateSessionId());
+  const [characterName, setCharacterName] = useState<string>(getStoredCharacterName);
   const [myQueueItem, setMyQueueItem] = useState<MyQueueItem | null>(null);
   const prevStatus = useRef<string | null>(null);
 
@@ -51,7 +60,6 @@ export function usePlayerSession() {
       return;
     }
 
-    // Fetch spot and city info
     const { data: spot } = await supabase
       .from("hunt_spots")
       .select("name, city_id")
@@ -75,7 +83,6 @@ export function usePlayerSession() {
       city_name: cityName,
     };
 
-    // Fire notification if status changed to notified
     if (prevStatus.current !== "notified" && item.status === "notified") {
       sendBrowserNotification(
         "🎯 Your turn is coming!",
@@ -86,6 +93,11 @@ export function usePlayerSession() {
     prevStatus.current = item.status;
     setMyQueueItem(item);
   }, [sendBrowserNotification]);
+
+  const saveCharacterName = useCallback((name: string) => {
+    setStoredCharacterName(name);
+    setCharacterName(name);
+  }, []);
 
   const leaveQueue = useCallback(async () => {
     if (!myQueueItem) return;
@@ -104,14 +116,12 @@ export function usePlayerSession() {
     prevStatus.current = null;
   }, [myQueueItem]);
 
-  // Poll every 15s
   useEffect(() => {
     fetchMyItem();
     const interval = setInterval(fetchMyItem, 15000);
     return () => clearInterval(interval);
   }, [fetchMyItem]);
 
-  // Request notification permission on mount
   useEffect(() => {
     if ("Notification" in window && Notification.permission === "default") {
       Notification.requestPermission();
@@ -120,6 +130,8 @@ export function usePlayerSession() {
 
   return {
     sessionId: sessionId.current,
+    characterName,
+    saveCharacterName,
     myQueueItem,
     leaveQueue,
     claimMySpot,
