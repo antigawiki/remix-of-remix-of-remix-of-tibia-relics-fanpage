@@ -17,8 +17,8 @@ const ANON_KEY = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
 
 // Scrape TTL: skip characters scraped successfully within last 4 hours
 const SCRAPE_TTL_MS = 4 * 60 * 60 * 1000;
-// Max characters to scrape per "Raspar Perfis" click
-const MAX_PER_RUN = 10;
+// Delay between requests to avoid rate limiting
+const REQUEST_DELAY_MS = 800;
 
 function extractCharsFromNextData(data: unknown): string[] {
   const chars: string[] = [];
@@ -176,6 +176,43 @@ const AltDetectorPage = () => {
     refetchInterval: 30000,
   });
 
+  // Fetch accounts with multiple characters (confirmed by account page)
+  const { data: accountGroups, isLoading: accountsLoading, refetch: refetchAccounts } = useQuery({
+    queryKey: ['account-groups'],
+    queryFn: async () => {
+      // Read all character_accounts with >1 char (paginated)
+      const PAGE_SIZE = 1000;
+      const all: { character_name: string; account_chars: string[]; last_scraped_at: string }[] = [];
+      let from = 0;
+      while (true) {
+        const { data, error } = await supabase
+          .from('character_accounts')
+          .select('character_name, account_chars, last_scraped_at')
+          .gt('account_chars', '{}')
+          .range(from, from + PAGE_SIZE - 1);
+        if (error || !data || data.length === 0) break;
+        all.push(...(data as typeof all));
+        if (data.length < PAGE_SIZE) break;
+        from += PAGE_SIZE;
+      }
+
+      // Group by account: same set of chars = same account
+      // Key = sorted array of chars joined
+      const accountMap = new Map<string, { chars: string[]; scraped_at: string }>();
+      for (const row of all) {
+        if (!row.account_chars || row.account_chars.length < 2) continue;
+        const key = [...row.account_chars].sort().join('|');
+        if (!accountMap.has(key)) {
+          accountMap.set(key, { chars: row.account_chars, scraped_at: row.last_scraped_at });
+        }
+      }
+
+      return Array.from(accountMap.values())
+        .sort((a, b) => b.chars.length - a.chars.length);
+    },
+    refetchInterval: 60000,
+  });
+
   const { data: trackerStats, refetch: refetchStats } = useQuery({
     queryKey: ['tracker-stats'],
     queryFn: async () => {
@@ -242,12 +279,10 @@ const AltDetectorPage = () => {
         }
       }
 
-      // Sort: non-errored first, 429-errored last
-      const allPending = allNames
+      // Process ALL pending — no artificial limit
+      const toScrape = allNames
         .filter((n) => !freshNames.has(n))
         .sort((a, b) => (erroredNames.has(a) ? 1 : 0) - (erroredNames.has(b) ? 1 : 0));
-
-      const toScrape = allPending.slice(0, MAX_PER_RUN);
 
       if (toScrape.length === 0) {
         toast({ title: 'Todos os perfis estão atualizados!' });
@@ -259,60 +294,53 @@ const AltDetectorPage = () => {
 
       let scraped_count = 0;
       let rateLimited = 0;
-      const records: { character_name: string; account_chars: string[]; scrape_error: string | null }[] = [];
 
       for (let i = 0; i < toScrape.length; i++) {
         const name = toScrape[i];
         setScrapeProgress({ done: i, total: toScrape.length, current: name });
 
         const result = await scrapeCharacterFromBrowser(name);
-        records.push({
+
+        // Save immediately after each character — no batching, no data loss
+        await saveScrapedRecords([{
           character_name: name,
           account_chars: result.accountChars,
           scrape_error: result.error || null,
-        });
+        }]);
 
         if (result.error?.includes('429')) {
           rateLimited++;
-          break;
+          // Update progress and stop
+          setScrapeProgress({ done: i + 1, total: toScrape.length, current: '' });
+          const stillPending = toScrape.length - (i + 1);
+          setPendingCount(stillPending);
+          toast({
+            title: 'Rate limit atingido',
+            description: `Parou em ${name}. ${stillPending} restantes. Aguarde e clique em Continuar.`,
+            variant: 'destructive',
+          });
+          refetchMatches();
+          refetchStats();
+          return;
         } else if (!result.error) {
           scraped_count++;
         }
 
-        // Save incrementally every 5 records (no data loss if interrupted)
-        if (records.length % 5 === 0) {
-          await saveScrapedRecords(records.slice(-5));
-        }
-
-        // Short delay between requests
-        if (i < toScrape.length - 1) await new Promise((r) => setTimeout(r, 600));
+        // Delay between requests
+        if (i < toScrape.length - 1) await new Promise((r) => setTimeout(r, REQUEST_DELAY_MS));
       }
 
-      // Save remaining records
-      setScrapeProgress({ done: toScrape.length, total: toScrape.length, current: 'Salvando...' });
-      const remainingUnsaved = records.length % 5;
-      if (remainingUnsaved > 0) {
-        await saveScrapedRecords(records.slice(-remainingUnsaved));
-      }
-
-      // Calculate still pending AFTER this batch (subtract what we actually scraped)
-      const stillPending = Math.max(0, allPending.length - toScrape.length);
-      setPendingCount(stillPending);
-
-      const parts = [];
-      if (scraped_count > 0) parts.push(`${scraped_count} raspados`);
-      if (rateLimited > 0) parts.push(`${rateLimited} bloqueados (429)`);
-      if (stillPending > 0) parts.push(`${stillPending} ainda pendentes`);
-      if (freshNames.size > 0) parts.push(`${freshNames.size} já atualizados`);
+      setScrapeProgress({ done: toScrape.length, total: toScrape.length, current: '' });
+      setPendingCount(0);
 
       toast({
-        title: rateLimited > 0 && scraped_count === 0 ? 'Rate limit ativo' : 'Lote concluído',
-        description: parts.join(', ') || 'Nenhum perfil processado.',
-        variant: rateLimited > 0 && scraped_count === 0 ? 'destructive' : 'default',
+        title: 'Scraping concluído!',
+        description: `${scraped_count} perfis raspados. ${freshNames.size} já estavam atualizados.`,
       });
 
       refetchMatches();
       refetchStats();
+      refetchAccounts();
     } catch (e) {
       console.error('Scrape error:', e);
       toast({ title: 'Erro no scraping', variant: 'destructive' });
@@ -320,7 +348,7 @@ const AltDetectorPage = () => {
       setIsScraping(false);
       setScrapeProgress(null);
     }
-  }, [refetchMatches, refetchStats, toast]);
+  }, [refetchMatches, refetchStats, refetchAccounts, toast]);
 
   const triggerAnalysis = async () => {
     setIsAnalyzing(true);
@@ -331,6 +359,7 @@ const AltDetectorPage = () => {
         description: `${result.confirmed_by_account ?? 0} confirmados por conta, ${result.statistical_matches ?? 0} suspeitos estatísticos.`,
       });
       refetchMatches();
+      refetchAccounts();
     } catch (e) {
       toast({ title: 'Erro na análise', variant: 'destructive' });
     } finally {
@@ -483,11 +512,17 @@ const AltDetectorPage = () => {
         )}
 
         {/* Matches Tabs */}
-        <Tabs defaultValue="confirmed">
+        <Tabs defaultValue="accounts">
           <TabsList>
-            <TabsTrigger value="confirmed" className="gap-2">
+            <TabsTrigger value="accounts" className="gap-2">
               <ShieldCheck className="h-4 w-4" />
-              Confirmados por Conta
+              Por Conta
+              {accountGroups && accountGroups.length > 0 && (
+                <Badge variant="destructive" className="ml-1 text-xs">{accountGroups.length}</Badge>
+              )}
+            </TabsTrigger>
+            <TabsTrigger value="confirmed" className="gap-2">
+              Pares Confirmados
               {confirmedMatches.length > 0 && (
                 <Badge variant="destructive" className="ml-1 text-xs">{confirmedMatches.length}</Badge>
               )}
@@ -500,15 +535,66 @@ const AltDetectorPage = () => {
             </TabsTrigger>
           </TabsList>
 
+          {/* Tab: Accounts grouped */}
+          <TabsContent value="accounts">
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <ShieldCheck className="h-5 w-5 text-destructive" />
+                  Contas com múltiplos personagens
+                </CardTitle>
+                <p className="text-sm text-muted-foreground">
+                  Contas onde foram encontrados 2+ personagens na mesma conta via leitura de perfil. Confirmação direta da página do tibiarelic.
+                </p>
+              </CardHeader>
+              <CardContent>
+                {accountsLoading ? (
+                  <p className="text-muted-foreground">Carregando...</p>
+                ) : !accountGroups || accountGroups.length === 0 ? (
+                  <p className="text-muted-foreground">
+                    Nenhuma conta com múltiplos personagens encontrada ainda. Clique em <strong>Raspar Perfis</strong> para começar.
+                  </p>
+                ) : (
+                  <div className="space-y-3">
+                    {accountGroups
+                      .filter(g => {
+                        if (!filter) return true;
+                        const q = filter.toLowerCase();
+                        return g.chars.some(c => c.toLowerCase().includes(q));
+                      })
+                      .map((group, idx) => (
+                        <div key={idx} className="border rounded-lg p-3 space-y-2">
+                          <div className="flex items-center justify-between">
+                            <span className="text-xs text-muted-foreground">
+                              {group.chars.length} personagens na mesma conta
+                            </span>
+                            <Badge variant="destructive" className="text-xs">Confirmado</Badge>
+                          </div>
+                          <div className="flex flex-wrap gap-2">
+                            {group.chars.map((char, ci) => (
+                              <span key={ci} className="bg-muted rounded px-2 py-1 text-sm font-medium">
+                                {char}
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+                      ))
+                    }
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </TabsContent>
+
           <TabsContent value="confirmed">
             <Card>
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
                   <ShieldCheck className="h-5 w-5 text-destructive" />
-                  Alts Confirmados por Página de Conta
+                  Pares Confirmados por Conta
                 </CardTitle>
                 <p className="text-sm text-muted-foreground">
-                  Personagens que aparecem listados na mesma conta no perfil do tibiarelic.com. Certeza praticamente absoluta.
+                  Personagens que aparecem listados na mesma conta no perfil do tibiarelic.com.
                 </p>
               </CardHeader>
               <CardContent>
