@@ -17,90 +17,29 @@ const ANON_KEY = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
 
 // Scrape TTL: skip characters scraped successfully within last 4 hours
 const SCRAPE_TTL_MS = 4 * 60 * 60 * 1000;
-// Delay between requests to avoid rate limiting
-const REQUEST_DELAY_MS = 800;
+// Delay between requests
+const REQUEST_DELAY_MS = 300;
 
-function extractCharsFromNextData(data: unknown): string[] {
-  const chars: string[] = [];
-  function search(obj: unknown): void {
-    if (!obj || typeof obj !== 'object') return;
-    if (Array.isArray(obj)) {
-      if (obj.length > 0) {
-        const first = obj[0] as Record<string, unknown>;
-        if (first && typeof first === 'object' && 'name' in first && 'world' in first) {
-          for (const item of obj) {
-            const char = item as Record<string, unknown>;
-            if (char.name && typeof char.name === 'string') chars.push(char.name);
-          }
-          return;
-        }
-      }
-      obj.forEach((item) => search(item));
-    } else {
-      Object.values(obj as Record<string, unknown>).forEach((val) => search(val));
-    }
-  }
-  search(data);
-  return chars;
-}
-
-function extractCharsFromHtml(html: string, playerName: string): string[] {
-  const seen = new Set<string>();
-  const chars: string[] = [];
-
-  // Find "Account Information" section and extract chars from the table after it
-  const accountInfoIdx = html.search(/Account\s+Information/i);
-  const searchFrom = accountInfoIdx !== -1 ? accountInfoIdx : 0;
-  const relevantHtml = html.slice(searchFrom);
-
-  const linkRegex = /href="\/characters\/([^"?#]+)"/g;
-  let match;
-  while ((match = linkRegex.exec(relevantHtml)) !== null) {
-    const raw = match[1];
-    const charName = decodeURIComponent(raw.replace(/\+/g, ' ')).trim();
-    if (charName && !seen.has(charName.toLowerCase())) {
-      seen.add(charName.toLowerCase());
-      chars.push(charName);
-    }
-  }
-
-  // Fallback: full page
-  if (chars.length === 0) {
-    const linkRegex2 = /href="\/characters\/([^"?#]+)"/g;
-    while ((match = linkRegex2.exec(html)) !== null) {
-      const charName = decodeURIComponent(match[1].replace(/\+/g, ' ')).trim();
-      if (charName && !seen.has(charName.toLowerCase())) {
-        seen.add(charName.toLowerCase());
-        chars.push(charName);
-      }
-    }
-  }
-
-  if (!seen.has(playerName.toLowerCase())) chars.push(playerName);
-  return chars;
-}
-
+// Correct API endpoint that returns account characters without HTML scraping
 async function scrapeCharacterFromBrowser(name: string): Promise<{ accountChars: string[]; error?: string }> {
   try {
-    const url = `https://www.tibiarelic.com/characters/${encodeURIComponent(name)}`;
-    const resp = await fetch(url, { signal: AbortSignal.timeout(10000) });
+    const url = `https://api.tibiarelic.com/api/Community/character/by-name?name=${encodeURIComponent(name)}`;
+    const resp = await fetch(url, {
+      headers: { Accept: 'application/json' },
+      signal: AbortSignal.timeout(8000),
+    });
 
     if (resp.status === 429) return { accountChars: [name], error: 'HTTP 429 - Rate limited' };
     if (!resp.ok) return { accountChars: [name], error: `HTTP ${resp.status}` };
 
-    const html = await resp.text();
+    const data = await resp.json();
+    // API returns { characters: [{name, level, worldName, online}] }
+    const chars: string[] = (data.characters as { name: string }[] | undefined)
+      ?.map((c) => c.name)
+      .filter(Boolean) ?? [];
 
-    // Try __NEXT_DATA__ first
-    const nextDataMatch = html.match(/<script id="__NEXT_DATA__" type="application\/json">([\s\S]*?)<\/script>/);
-    if (nextDataMatch) {
-      try {
-        const nextData = JSON.parse(nextDataMatch[1]);
-        const accountChars = extractCharsFromNextData(nextData);
-        if (accountChars.length > 0) return { accountChars };
-      } catch (_e) { /* fall through */ }
-    }
-
-    return { accountChars: extractCharsFromHtml(html, name) };
+    if (chars.length === 0) chars.push(name);
+    return { accountChars: chars };
   } catch (e) {
     const msg = e instanceof Error ? e.message : 'Unknown';
     return { accountChars: [name], error: msg };
