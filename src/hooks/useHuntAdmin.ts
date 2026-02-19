@@ -36,6 +36,7 @@ export interface HuntQueueItem {
   status: "waiting" | "notified" | "claimed" | "expired";
   notified_at: string | null;
   created_at: string;
+  session_id?: string | null;
 }
 
 export function useHuntAdmin() {
@@ -270,7 +271,23 @@ export function useHuntAdmin() {
   }, [sessions, promoteNextInQueue, fetchAll]);
 
   // Queue CRUD
-  const addToQueue = useCallback(async (spotId: string, playerName: string) => {
+  const addToQueue = useCallback(async (spotId: string, playerName: string, sessionId: string) => {
+    // Check for duplicate session_id across all active queues
+    const sessionConflict = queue.find(
+      (q) => q.session_id === sessionId && (q.status === "waiting" || q.status === "notified")
+    );
+    if (sessionConflict) {
+      throw new Error("You are already in a queue. Leave it before joining another.");
+    }
+
+    // Check for duplicate player_name across all active queues
+    const nameConflict = queue.find(
+      (q) => q.player_name.toLowerCase() === playerName.toLowerCase() && (q.status === "waiting" || q.status === "notified")
+    );
+    if (nameConflict) {
+      throw new Error("This nick is already in a queue.");
+    }
+
     const spotQueue = queue
       .filter((q) => q.spot_id === spotId && (q.status === "waiting" || q.status === "notified"))
       .sort((a, b) => b.position - a.position);
@@ -282,6 +299,7 @@ export function useHuntAdmin() {
       player_name: playerName,
       position: nextPosition,
       status: "waiting",
+      session_id: sessionId,
     });
     if (error) throw error;
     await fetchAll();

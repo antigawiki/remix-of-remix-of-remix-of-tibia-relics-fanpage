@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useHuntAdmin } from "@/hooks/useHuntAdmin";
+import { usePlayerSession } from "@/hooks/usePlayerSession";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -8,8 +9,8 @@ import { Badge } from "@/components/ui/badge";
 import { HuntCityCard } from "@/components/hunt/HuntCityCard";
 import { AddCityModal } from "@/components/hunt/AddCityModal";
 import { AddSpotModal } from "@/components/hunt/AddSpotModal";
-import { Shield, Building2, Sword, Users, MapPin, Plus, LogOut, RefreshCw, Bell } from "lucide-react";
-import { useToast } from "@/hooks/use-toast";
+import { MyQueueStatus } from "@/components/hunt/MyQueueStatus";
+import { Shield, Building2, Sword, Users, MapPin, Plus, LogOut, RefreshCw } from "lucide-react";
 
 const PASSWORD = "ondethweed";
 const SESSION_KEY = "hunt_admin_auth";
@@ -20,9 +21,12 @@ export default function HuntAdminPage() {
   const [pwError, setPwError] = useState(false);
   const [addCityOpen, setAddCityOpen] = useState(false);
   const [addSpotOpen, setAddSpotOpen] = useState(false);
-  const { toast } = useToast();
 
   const hunt = useHuntAdmin();
+  const { sessionId, myQueueItem, leaveQueue, claimMySpot, refetch } = usePlayerSession();
+
+  // Spot ID where this browser's session is currently queued
+  const myQueueSpotId = myQueueItem?.spot_id ?? null;
 
   const handleLogin = (e: React.FormEvent) => {
     e.preventDefault();
@@ -41,21 +45,33 @@ export default function HuntAdminPage() {
     setAuthed(false);
   };
 
-  const requestNotification = async () => {
-    if ("Notification" in window) {
-      const perm = await Notification.requestPermission();
-      if (perm === "granted") {
-        toast({ title: "✅ Notifications enabled!", description: "You will be notified about hunts." });
-      } else {
-        toast({ title: "Notifications blocked", description: "Enable them in your browser settings.", variant: "destructive" });
-      }
-    }
+  const handleLeaveQueue = async () => {
+    await leaveQueue();
+    await hunt.fetchAll();
+    refetch();
+  };
+
+  const handleClaimMySpot = async () => {
+    await claimMySpot();
+    await hunt.fetchAll();
+    refetch();
   };
 
   // === LOGIN SCREEN ===
   if (!authed) {
     return (
-      <div className="min-h-screen bg-background flex items-center justify-center p-4">
+      <div className="min-h-screen bg-background flex flex-col items-center justify-center p-4 gap-6">
+        {/* My Queue Status visible even before login */}
+        {myQueueItem && (
+          <div className="w-full max-w-sm">
+            <MyQueueStatus
+              myQueueItem={myQueueItem}
+              onLeave={handleLeaveQueue}
+              onClaim={handleClaimMySpot}
+            />
+          </div>
+        )}
+
         <Card className="w-full max-w-sm border-2 border-primary/30">
           <CardHeader className="text-center space-y-2">
             <div className="flex justify-center">
@@ -64,7 +80,7 @@ export default function HuntAdminPage() {
               </div>
             </div>
             <CardTitle className="text-xl">Hunt Admin</CardTitle>
-            <CardDescription>Restricted area — enter the password to continue.</CardDescription>
+            <CardDescription>Enter the password to manage hunts.</CardDescription>
           </CardHeader>
           <CardContent>
             <form onSubmit={handleLogin} className="space-y-4">
@@ -110,9 +126,6 @@ export default function HuntAdminPage() {
             </Badge>
           </div>
           <div className="flex items-center gap-2">
-            <Button size="sm" variant="outline" onClick={requestNotification} title="Enable notifications">
-              <Bell className="h-4 w-4" />
-            </Button>
             <Button size="sm" variant="outline" onClick={hunt.fetchAll} title="Refresh">
               <RefreshCw className="h-4 w-4" />
             </Button>
@@ -124,6 +137,15 @@ export default function HuntAdminPage() {
       </div>
 
       <div className="max-w-7xl mx-auto px-4 py-6 space-y-6">
+        {/* My Queue Status */}
+        {myQueueItem && (
+          <MyQueueStatus
+            myQueueItem={myQueueItem}
+            onLeave={handleLeaveQueue}
+            onClaim={handleClaimMySpot}
+          />
+        )}
+
         {/* Stats */}
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
           {[
@@ -178,6 +200,9 @@ export default function HuntAdminPage() {
                 city={city}
                 cities={cities}
                 spots={hunt.getSpotsForCity(city.id)}
+                playerSessionId={sessionId}
+                myQueueSpotId={myQueueSpotId}
+                isAdmin={authed}
                 getSessionForSpot={hunt.getSessionForSpot}
                 getQueueForSpot={hunt.getQueueForSpot}
                 onStartHunt={hunt.startHunt}

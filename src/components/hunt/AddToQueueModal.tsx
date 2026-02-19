@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
+import { Info } from "lucide-react";
 
 interface AddToQueueModalProps {
   open: boolean;
@@ -24,11 +25,12 @@ export function AddToQueueModal({ open, onClose, onAdd, spotName, cityName }: Ad
     setLoading(true);
     try {
       await onAdd(playerName.trim());
-      toast({ title: "Added to queue!", description: `${playerName} joined the queue for ${spotName}` });
+      toast({ title: "Joined queue!", description: `You joined the queue for ${spotName}` });
       setPlayerName("");
       onClose();
-    } catch {
-      toast({ title: "Error", description: "Could not add to queue.", variant: "destructive" });
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "Could not join the queue.";
+      toast({ title: "Error", description: msg, variant: "destructive" });
     } finally {
       setLoading(false);
     }
@@ -43,21 +45,25 @@ export function AddToQueueModal({ open, onClose, onAdd, spotName, cityName }: Ad
             {spotName} — {cityName}
           </DialogDescription>
         </DialogHeader>
+        <div className="flex items-start gap-2 rounded-md bg-muted/50 px-3 py-2 text-xs text-muted-foreground">
+          <Info className="h-3.5 w-3.5 mt-0.5 shrink-0" />
+          <span>You can only be in one queue at a time. Enter your own character nick — notifications will appear only on your browser.</span>
+        </div>
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="space-y-2">
-            <Label htmlFor="queue-player-name">Player Nick</Label>
+            <Label htmlFor="queue-player-name">Your Character Nick</Label>
             <Input
               id="queue-player-name"
               value={playerName}
               onChange={(e) => setPlayerName(e.target.value)}
-              placeholder="Enter nick..."
+              placeholder="Enter your nick..."
               autoFocus
             />
           </div>
           <div className="flex justify-end gap-2">
             <Button type="button" variant="outline" onClick={onClose}>Cancel</Button>
             <Button type="submit" disabled={loading || !playerName.trim()}>
-              {loading ? "Adding..." : "⏳ Join Queue"}
+              {loading ? "Joining..." : "⏳ Join Queue"}
             </Button>
           </div>
         </form>

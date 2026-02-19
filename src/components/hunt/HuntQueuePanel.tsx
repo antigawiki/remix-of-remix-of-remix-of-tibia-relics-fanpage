@@ -10,7 +10,10 @@ interface HuntQueuePanelProps {
   spotName: string;
   cityName: string;
   queue: HuntQueueItem[];
-  onAdd: (spotId: string, playerName: string) => Promise<void>;
+  playerSessionId: string;
+  myQueueSpotId: string | null; // spotId where the player is already queued (if any)
+  isAdmin: boolean;
+  onAdd: (spotId: string, playerName: string, sessionId: string) => Promise<void>;
   onRemove: (queueId: string) => Promise<void>;
   onClaim: (queueId: string) => Promise<void>;
 }
@@ -34,11 +37,20 @@ export function HuntQueuePanel({
   spotName,
   cityName,
   queue,
+  playerSessionId,
+  myQueueSpotId,
+  isAdmin,
   onAdd,
   onRemove,
   onClaim,
 }: HuntQueuePanelProps) {
   const [addOpen, setAddOpen] = useState(false);
+
+  const alreadyInThisQueue = myQueueSpotId === spotId;
+  const alreadyInAnotherQueue = myQueueSpotId !== null && myQueueSpotId !== spotId;
+
+  const handleAdd = (playerName: string) =>
+    onAdd(spotId, playerName, playerSessionId);
 
   return (
     <div className="space-y-2">
@@ -46,9 +58,15 @@ export function HuntQueuePanel({
         <span className="text-sm font-medium text-muted-foreground">
           Wait queue
         </span>
-        <Button size="sm" variant="outline" onClick={() => setAddOpen(true)}>
-          <UserPlus className="h-3 w-3 mr-1" /> Add
-        </Button>
+        {alreadyInThisQueue ? (
+          <span className="text-xs text-primary font-medium">✅ You're in this queue</span>
+        ) : alreadyInAnotherQueue ? (
+          <span className="text-xs text-muted-foreground italic">You're in another queue</span>
+        ) : (
+          <Button size="sm" variant="outline" onClick={() => setAddOpen(true)}>
+            <UserPlus className="h-3 w-3 mr-1" /> Join Queue
+          </Button>
+        )}
       </div>
 
       {queue.length === 0 ? (
@@ -64,7 +82,14 @@ export function HuntQueuePanel({
                 <span className="text-xs font-bold text-muted-foreground w-4 shrink-0">
                   #{idx + 1}
                 </span>
-                <span className="text-sm font-medium truncate">{item.player_name}</span>
+                {/* Only admin sees the name; player sees "You" for their own entry */}
+                <span className="text-sm font-medium truncate">
+                  {isAdmin
+                    ? item.player_name
+                    : (item as HuntQueueItem & { session_id?: string }).session_id === playerSessionId
+                    ? `You (${item.player_name})`
+                    : "—"}
+                </span>
                 <Badge
                   variant={statusColor[item.status] as "default" | "secondary" | "destructive" | "outline"}
                   className="text-xs shrink-0"
@@ -80,20 +105,23 @@ export function HuntQueuePanel({
                     variant="outline"
                     className="h-6 px-1.5 text-xs"
                     onClick={() => onClaim(item.id)}
-                    title="Confirmar presença"
+                    title="Confirm presence"
                   >
                     <CheckCircle className="h-3 w-3" />
                   </Button>
                 )}
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  className="h-6 w-6 p-0 text-destructive hover:text-destructive"
-                  onClick={() => onRemove(item.id)}
-                  title="Remove from queue"
-                >
-                  <Trash2 className="h-3 w-3" />
-                </Button>
+                {/* Admin can remove anyone; player can only remove themselves */}
+                {(isAdmin || (item as HuntQueueItem & { session_id?: string }).session_id === playerSessionId) && (
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="h-6 w-6 p-0 text-destructive hover:text-destructive"
+                    onClick={() => onRemove(item.id)}
+                    title="Leave queue"
+                  >
+                    <Trash2 className="h-3 w-3" />
+                  </Button>
+                )}
               </div>
             </div>
           ))}
@@ -103,7 +131,7 @@ export function HuntQueuePanel({
       <AddToQueueModal
         open={addOpen}
         onClose={() => setAddOpen(false)}
-        onAdd={(playerName) => onAdd(spotId, playerName)}
+        onAdd={handleAdd}
         spotName={spotName}
         cityName={cityName}
       />

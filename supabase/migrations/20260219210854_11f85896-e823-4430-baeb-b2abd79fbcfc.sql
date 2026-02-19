@@ -1,0 +1,1 @@
+ALTER TABLE public.hunt_queue ADD COLUMN IF NOT EXISTS session_id text;

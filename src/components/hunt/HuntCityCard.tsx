@@ -11,11 +11,14 @@ interface HuntCityCardProps {
   city: HuntCity;
   spots: HuntSpot[];
   cities: HuntCity[];
+  playerSessionId: string;
+  myQueueSpotId: string | null;
+  isAdmin: boolean;
   getSessionForSpot: (spotId: string) => HuntSession | undefined;
   getQueueForSpot: (spotId: string) => HuntQueueItem[];
   onStartHunt: (spotId: string, playerName: string) => Promise<void>;
   onEndHunt: (sessionId: string) => Promise<void>;
-  onAddToQueue: (spotId: string, playerName: string) => Promise<void>;
+  onAddToQueue: (spotId: string, playerName: string, sessionId: string) => Promise<void>;
   onRemoveFromQueue: (queueId: string) => Promise<void>;
   onClaimSpot: (queueId: string) => Promise<void>;
   onAddSpot: (cityId: string, name: string, maxDuration: number) => Promise<void>;
@@ -27,6 +30,9 @@ export function HuntCityCard({
   city,
   spots,
   cities,
+  playerSessionId,
+  myQueueSpotId,
+  isAdmin,
   getSessionForSpot,
   getQueueForSpot,
   onStartHunt,
@@ -102,6 +108,9 @@ export function HuntCityCard({
                   cityName={city.name}
                   session={getSessionForSpot(spot.id)}
                   queue={getQueueForSpot(spot.id)}
+                  playerSessionId={playerSessionId}
+                  myQueueSpotId={myQueueSpotId}
+                  isAdmin={isAdmin}
                   onStartHunt={onStartHunt}
                   onEndHunt={onEndHunt}
                   onAddToQueue={onAddToQueue}

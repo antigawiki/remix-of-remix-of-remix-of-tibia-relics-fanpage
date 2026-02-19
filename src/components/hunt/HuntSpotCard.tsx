@@ -15,9 +15,12 @@ interface HuntSpotCardProps {
   cityName: string;
   session: HuntSession | undefined;
   queue: HuntQueueItem[];
+  playerSessionId: string;
+  myQueueSpotId: string | null;
+  isAdmin: boolean;
   onStartHunt: (spotId: string, playerName: string) => Promise<void>;
   onEndHunt: (sessionId: string) => Promise<void>;
-  onAddToQueue: (spotId: string, playerName: string) => Promise<void>;
+  onAddToQueue: (spotId: string, playerName: string, sessionId: string) => Promise<void>;
   onRemoveFromQueue: (queueId: string) => Promise<void>;
   onClaimSpot: (queueId: string) => Promise<void>;
   onDeleteSpot: (spotId: string) => Promise<void>;
@@ -29,6 +32,9 @@ export function HuntSpotCard({
   cityName,
   session,
   queue,
+  playerSessionId,
+  myQueueSpotId,
+  isAdmin,
   onStartHunt,
   onEndHunt,
   onAddToQueue,
@@ -126,6 +132,9 @@ export function HuntSpotCard({
                 spotName={spotName}
                 cityName={cityName}
                 queue={queue}
+                playerSessionId={playerSessionId}
+                myQueueSpotId={myQueueSpotId}
+                isAdmin={isAdmin}
                 onAdd={onAddToQueue}
                 onRemove={onRemoveFromQueue}
                 onClaim={onClaimSpot}
