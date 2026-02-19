@@ -235,7 +235,7 @@
 
   .news-box-content {
     @apply p-4;
-    color: hsl(24 40% 15%);
+    color: hsl(var(--text-dark));
   }
 
   /* Sidebar menu */
