@@ -95,8 +95,8 @@ export function useHuntAdmin() {
         const spot = spots.find((s) => s.id === session.spot_id);
         const city = cities.find((c) => c.id === spot?.city_id);
         sendBrowserNotification(
-          "🏁 Hunt Encerrada!",
-          `${spot?.name} em ${city?.name} — tempo esgotado!`
+          "🏁 Hunt Ended!",
+          `${spot?.name} in ${city?.name} — time's up!`
         );
 
         // Notify next in queue
@@ -114,10 +114,10 @@ export function useHuntAdmin() {
         const spot = spots.find((s) => s.id === session.spot_id);
         const city = cities.find((c) => c.id === spot?.city_id);
         sendBrowserNotification(
-          "⏰ 1 hora restante!",
-          `Faltam 60min para ${spot?.name} em ${city?.name}`
+          "⏰ 1 hour remaining!",
+          `60 min left for ${spot?.name} in ${city?.name}`
         );
-        toast({ title: "⏰ 1 hora restante!", description: `${spot?.name} em ${city?.name}` });
+        toast({ title: "⏰ 1 hour remaining!", description: `${spot?.name} in ${city?.name}` });
 
         // Notify next in queue
         const nextInQueue = queue.find(
@@ -129,8 +129,8 @@ export function useHuntAdmin() {
             .update({ status: "notified", notified_at: now.toISOString() })
             .eq("id", nextInQueue.id);
           sendBrowserNotification(
-            "🎯 Próximo da fila: prepare-se!",
-            `Sua vez em ${spot?.name} em ~1 hora!`
+            "🎯 Next in queue: get ready!",
+            `Your turn at ${spot?.name} in ~1 hour!`
           );
         }
       }
@@ -145,10 +145,10 @@ export function useHuntAdmin() {
         const spot = spots.find((s) => s.id === session.spot_id);
         const city = cities.find((c) => c.id === spot?.city_id);
         sendBrowserNotification(
-          "⚠️ 15 minutos restantes!",
-          `Recolha o loot! ${spot?.name} em ${city?.name}`
+          "⚠️ 15 minutes remaining!",
+          `Pack your loot! ${spot?.name} in ${city?.name}`
         );
-        toast({ title: "⚠️ 15 minutos!", description: `Hora de recolher o loot em ${spot?.name}` });
+        toast({ title: "⚠️ 15 minutes!", description: `Time to loot up at ${spot?.name}` });
 
         // Notify next in queue
         const nextInQueue = queue.find(
@@ -160,8 +160,8 @@ export function useHuntAdmin() {
             .update({ status: "notified", notified_at: now.toISOString() })
             .eq("id", nextInQueue.id);
           sendBrowserNotification(
-            "🎯 Sua vez em 15 minutos!",
-            `Prepare-se para ${spot?.name}!`
+            "🎯 Your turn in 15 minutes!",
+            `Get ready for ${spot?.name}!`
           );
         }
       }
@@ -198,8 +198,8 @@ export function useHuntAdmin() {
 
       const spot = spots.find((s) => s.id === spotId);
       sendBrowserNotification(
-        "🎯 Sua vez chegou!",
-        `${spot?.name} está livre! Você tem 5 minutos para clamar.`
+        "🎯 Your turn!",
+        `${spot?.name} is free! You have 5 minutes to claim.`
       );
     }
   }, [queue, spots, sendBrowserNotification]);
@@ -251,7 +251,7 @@ export function useHuntAdmin() {
     if (error) throw error;
 
     const city = cities.find((c) => c.id === spot?.city_id);
-    sendBrowserNotification("🏹 Hunt Iniciada!", `${playerName} em ${spot?.name}, ${city?.name}`);
+    sendBrowserNotification("🏹 Hunt Started!", `${playerName} at ${spot?.name}, ${city?.name}`);
     await fetchAll();
   }, [spots, cities, sendBrowserNotification, fetchAll]);
 

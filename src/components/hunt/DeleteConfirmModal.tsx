@@ -49,13 +49,13 @@ export function DeleteConfirmModal({ open, onClose, onConfirm, description }: De
         <DialogHeader>
           <div className="flex items-center gap-2">
             <ShieldAlert className="h-5 w-5 text-destructive" />
-            <DialogTitle>Confirmar Exclusão</DialogTitle>
+            <DialogTitle>Confirm Deletion</DialogTitle>
           </div>
           <DialogDescription>{description}</DialogDescription>
         </DialogHeader>
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="space-y-2">
-            <Label htmlFor="delete-pw">Senha de exclusão</Label>
+            <Label htmlFor="delete-pw">Deletion password</Label>
             <Input
               id="delete-pw"
               type="password"
@@ -65,12 +65,12 @@ export function DeleteConfirmModal({ open, onClose, onConfirm, description }: De
               autoFocus
               className={error ? "border-destructive" : ""}
             />
-            {error && <p className="text-xs text-destructive">Senha incorreta.</p>}
+            {error && <p className="text-xs text-destructive">Wrong password.</p>}
           </div>
           <div className="flex justify-end gap-2">
-            <Button type="button" variant="outline" onClick={handleClose}>Cancelar</Button>
+            <Button type="button" variant="outline" onClick={handleClose}>Cancel</Button>
             <Button type="submit" variant="destructive" disabled={loading || !password}>
-              {loading ? "Excluindo..." : "Excluir"}
+              {loading ? "Deleting..." : "Delete"}
             </Button>
           </div>
         </form>

@@ -45,9 +45,9 @@ export default function HuntAdminPage() {
     if ("Notification" in window) {
       const perm = await Notification.requestPermission();
       if (perm === "granted") {
-        toast({ title: "✅ Notificações ativadas!", description: "Você será notificado sobre as hunts." });
+        toast({ title: "✅ Notifications enabled!", description: "You will be notified about hunts." });
       } else {
-        toast({ title: "Notificações bloqueadas", description: "Ative nas configurações do navegador.", variant: "destructive" });
+        toast({ title: "Notifications blocked", description: "Enable them in your browser settings.", variant: "destructive" });
       }
     }
   };
@@ -64,12 +64,12 @@ export default function HuntAdminPage() {
               </div>
             </div>
             <CardTitle className="text-xl">Hunt Admin</CardTitle>
-            <CardDescription>Área restrita — insira a senha para continuar.</CardDescription>
+            <CardDescription>Restricted area — enter the password to continue.</CardDescription>
           </CardHeader>
           <CardContent>
             <form onSubmit={handleLogin} className="space-y-4">
               <div className="space-y-2">
-                <Label htmlFor="pw">Senha</Label>
+                <Label htmlFor="pw">Password</Label>
                 <Input
                   id="pw"
                   type="password"
@@ -80,11 +80,11 @@ export default function HuntAdminPage() {
                   className={pwError ? "border-destructive" : ""}
                 />
                 {pwError && (
-                  <p className="text-xs text-destructive">Senha incorreta. Tente novamente.</p>
+                  <p className="text-xs text-destructive">Wrong password. Try again.</p>
                 )}
               </div>
               <Button type="submit" className="w-full">
-                Entrar
+                Login
               </Button>
             </form>
           </CardContent>
@@ -106,18 +106,18 @@ export default function HuntAdminPage() {
             <span className="font-bold text-base">Hunt Admin</span>
             <Badge variant="outline" className="text-xs">
               <Users className="h-3 w-3 mr-1" />
-              Fila total: {totalInQueue}
+              Queue: {totalInQueue}
             </Badge>
           </div>
           <div className="flex items-center gap-2">
-            <Button size="sm" variant="outline" onClick={requestNotification} title="Ativar notificações">
+            <Button size="sm" variant="outline" onClick={requestNotification} title="Enable notifications">
               <Bell className="h-4 w-4" />
             </Button>
-            <Button size="sm" variant="outline" onClick={hunt.fetchAll} title="Atualizar">
+            <Button size="sm" variant="outline" onClick={hunt.fetchAll} title="Refresh">
               <RefreshCw className="h-4 w-4" />
             </Button>
             <Button size="sm" variant="ghost" onClick={handleLogout} className="text-muted-foreground">
-              <LogOut className="h-4 w-4 mr-1" /> Sair
+              <LogOut className="h-4 w-4 mr-1" /> Logout
             </Button>
           </div>
         </div>
@@ -127,10 +127,10 @@ export default function HuntAdminPage() {
         {/* Stats */}
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
           {[
-            { label: "Cidades", value: cities.length, icon: Building2, color: "text-blue-400" },
-            { label: "Hunts Ativas", value: totalActive, icon: Sword, color: "text-green-400" },
-            { label: "Spots Livres", value: totalFreeSpots, icon: MapPin, color: "text-primary" },
-            { label: "Na Fila", value: totalInQueue, icon: Users, color: "text-yellow-400" },
+            { label: "Cities", value: cities.length, icon: Building2, color: "text-blue-400" },
+            { label: "Active Hunts", value: totalActive, icon: Sword, color: "text-green-400" },
+            { label: "Free Spots", value: totalFreeSpots, icon: MapPin, color: "text-primary" },
+            { label: "In Queue", value: totalInQueue, icon: Users, color: "text-yellow-400" },
           ].map(({ label, value, icon: Icon, color }) => (
             <Card key={label} className="border border-border/60">
               <CardContent className="p-4 flex items-center gap-3">
@@ -147,26 +147,26 @@ export default function HuntAdminPage() {
         {/* Actions */}
         <div className="flex flex-wrap gap-3">
           <Button onClick={() => setAddCityOpen(true)}>
-            <Building2 className="h-4 w-4 mr-2" /> Adicionar Cidade
+            <Building2 className="h-4 w-4 mr-2" /> Add City
           </Button>
           <Button variant="outline" onClick={() => setAddSpotOpen(true)}>
-            <Plus className="h-4 w-4 mr-2" /> Adicionar Spot
+            <Plus className="h-4 w-4 mr-2" /> Add Spot
           </Button>
         </div>
 
         {/* Loading */}
         {loading ? (
-          <div className="text-center py-12 text-muted-foreground">Carregando...</div>
+          <div className="text-center py-12 text-muted-foreground">Loading...</div>
         ) : cities.length === 0 ? (
           <Card className="border-dashed border-2 border-border/40">
             <CardContent className="flex flex-col items-center justify-center py-16 space-y-3">
               <Building2 className="h-12 w-12 text-muted-foreground/50" />
               <p className="text-muted-foreground text-sm text-center">
-                Nenhuma cidade cadastrada ainda.<br />
-                Clique em "Adicionar Cidade" para começar.
+                No cities registered yet.<br />
+                Click "Add City" to get started.
               </p>
               <Button onClick={() => setAddCityOpen(true)}>
-                <Plus className="h-4 w-4 mr-2" /> Adicionar Cidade
+                <Plus className="h-4 w-4 mr-2" /> Add City
               </Button>
             </CardContent>
           </Card>

@@ -51,11 +51,11 @@ export function HuntCityCard({
       <Card className="border-2 border-primary/20 bg-card">
         <CardHeader className="pb-3">
           <div className="flex items-center justify-between">
-            <CardTitle className="flex items-center gap-2 text-base">
+              <CardTitle className="flex items-center gap-2 text-base">
               <Building2 className="h-5 w-5 text-primary" />
               {city.name}
               <span className="text-xs font-normal text-muted-foreground">
-                ({activeCount}/{spots.length} ativos)
+                ({activeCount}/{spots.length} active)
               </span>
             </CardTitle>
             <div className="flex gap-1">
@@ -82,14 +82,14 @@ export function HuntCityCard({
         <CardContent>
           {spots.length === 0 ? (
             <div className="text-center py-6 text-muted-foreground text-sm">
-              <p>Nenhum spot cadastrado.</p>
+              <p>No spots registered.</p>
               <Button
                 size="sm"
                 variant="ghost"
                 className="mt-2"
                 onClick={() => setAddSpotOpen(true)}
               >
-                <Plus className="h-3 w-3 mr-1" /> Adicionar primeiro spot
+                <Plus className="h-3 w-3 mr-1" /> Add first spot
               </Button>
             </div>
           ) : (
@@ -127,7 +127,7 @@ export function HuntCityCard({
         open={deleteCityOpen}
         onClose={() => setDeleteCityOpen(false)}
         onConfirm={() => onDeleteCity(city.id)}
-        description={`Tem certeza que deseja excluir a cidade "${city.name}" e todos os seus spots?`}
+        description={`Are you sure you want to delete the city "${city.name}" and all its spots?`}
       />
     </>
   );
