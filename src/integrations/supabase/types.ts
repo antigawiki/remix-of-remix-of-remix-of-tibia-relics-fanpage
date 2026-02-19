@@ -203,6 +203,138 @@ export type Database = {
         }
         Relationships: []
       }
+      hunt_cities: {
+        Row: {
+          created_at: string
+          id: string
+          name: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          name: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          name?: string
+        }
+        Relationships: []
+      }
+      hunt_queue: {
+        Row: {
+          created_at: string
+          id: string
+          notified_at: string | null
+          player_name: string
+          position: number
+          spot_id: string
+          status: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          notified_at?: string | null
+          player_name: string
+          position?: number
+          spot_id: string
+          status?: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          notified_at?: string | null
+          player_name?: string
+          position?: number
+          spot_id?: string
+          status?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "hunt_queue_spot_id_fkey"
+            columns: ["spot_id"]
+            isOneToOne: false
+            referencedRelation: "hunt_spots"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      hunt_sessions: {
+        Row: {
+          created_at: string
+          ends_at: string
+          id: string
+          notified_15min: boolean
+          notified_1h: boolean
+          player_name: string
+          spot_id: string
+          started_at: string
+          status: string
+        }
+        Insert: {
+          created_at?: string
+          ends_at: string
+          id?: string
+          notified_15min?: boolean
+          notified_1h?: boolean
+          player_name: string
+          spot_id: string
+          started_at?: string
+          status?: string
+        }
+        Update: {
+          created_at?: string
+          ends_at?: string
+          id?: string
+          notified_15min?: boolean
+          notified_1h?: boolean
+          player_name?: string
+          spot_id?: string
+          started_at?: string
+          status?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "hunt_sessions_spot_id_fkey"
+            columns: ["spot_id"]
+            isOneToOne: false
+            referencedRelation: "hunt_spots"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      hunt_spots: {
+        Row: {
+          city_id: string
+          created_at: string
+          id: string
+          max_duration_minutes: number
+          name: string
+        }
+        Insert: {
+          city_id: string
+          created_at?: string
+          id?: string
+          max_duration_minutes?: number
+          name: string
+        }
+        Update: {
+          city_id?: string
+          created_at?: string
+          id?: string
+          max_duration_minutes?: number
+          name?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "hunt_spots_city_id_fkey"
+            columns: ["city_id"]
+            isOneToOne: false
+            referencedRelation: "hunt_cities"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       items: {
         Row: {
           attributes: string | null
