@@ -1,125 +1,20 @@
-import { useState, useCallback } from 'react';
+import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import MainLayout from '@/layouts/MainLayout';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
-import { Button } from '@/components/ui/button';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Progress } from '@/components/ui/progress';
-import { Search, RefreshCw, Activity, Users, Database, ShieldCheck, ScanSearch, Loader2 } from 'lucide-react';
-import { useToast } from '@/hooks/use-toast';
-
-const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
-const ANON_KEY = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
-
-// Scrape TTL: skip characters scraped successfully within last 4 hours
-const SCRAPE_TTL_MS = 4 * 60 * 60 * 1000;
-// Delay between requests
-const REQUEST_DELAY_MS = 300;
-
-// Correct API endpoint that returns account characters without HTML scraping
-async function scrapeCharacterFromBrowser(name: string): Promise<{ accountChars: string[]; error?: string }> {
-  try {
-    const url = `https://api.tibiarelic.com/api/Community/character/by-name?name=${encodeURIComponent(name)}`;
-    const resp = await fetch(url, {
-      headers: { Accept: 'application/json' },
-      signal: AbortSignal.timeout(8000),
-    });
-
-    if (resp.status === 429) return { accountChars: [name], error: 'HTTP 429 - Rate limited' };
-    if (!resp.ok) return { accountChars: [name], error: `HTTP ${resp.status}` };
-
-    const data = await resp.json();
-    // API returns { characters: [{name, level, worldName, online}] }
-    const chars: string[] = (data.characters as { name: string }[] | undefined)
-      ?.map((c) => c.name)
-      .filter(Boolean) ?? [];
-
-    if (chars.length === 0) chars.push(name);
-    return { accountChars: chars };
-  } catch (e) {
-    const msg = e instanceof Error ? e.message : 'Unknown';
-    return { accountChars: [name], error: msg };
-  }
-}
-
-async function saveScrapedRecords(records: { character_name: string; account_chars: string[]; scrape_error: string | null }[]) {
-  const res = await fetch(`${SUPABASE_URL}/functions/v1/save-character-accounts`, {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${ANON_KEY}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({ records }),
-  });
-  return res.json();
-}
+import { Search, Activity, Users, Database, ShieldCheck, ScanSearch, Star, Crown } from 'lucide-react';
 
 const AltDetectorPage = () => {
   const [filter, setFilter] = useState('');
-  const [isAnalyzing, setIsAnalyzing] = useState(false);
-  const [isScraping, setIsScraping] = useState(false);
-  const [scrapeProgress, setScrapeProgress] = useState<{ done: number; total: number; current: string } | null>(null);
-  const [pendingCount, setPendingCount] = useState<number | null>(null);
-  const { toast } = useToast();
 
-  // Fetch ALL player names with pagination (bypasses 1000-row limit)
-  const getAllPlayerNames = async (): Promise<string[]> => {
-    const PAGE_SIZE = 1000;
-    const allNames = new Set<string>();
-    let from = 0;
-    while (true) {
-      const { data, error } = await supabase
-        .from('online_tracker_sessions')
-        .select('player_name')
-        .range(from, from + PAGE_SIZE - 1);
-      if (error || !data || data.length === 0) break;
-      data.forEach((r) => allNames.add(r.player_name));
-      if (data.length < PAGE_SIZE) break;
-      from += PAGE_SIZE;
-    }
-    return [...allNames];
-  };
-
-  // Fetch ALL scraped accounts with pagination
-  const getAllScrapedAccounts = async () => {
-    const PAGE_SIZE = 1000;
-    const all: { character_name: string; account_chars: string[]; scrape_error: string | null; last_scraped_at: string }[] = [];
-    let from = 0;
-    while (true) {
-      const { data, error } = await supabase
-        .from('character_accounts')
-        .select('character_name, account_chars, scrape_error, last_scraped_at')
-        .range(from, from + PAGE_SIZE - 1);
-      if (error || !data || data.length === 0) break;
-      all.push(...(data as typeof all));
-      if (data.length < PAGE_SIZE) break;
-      from += PAGE_SIZE;
-    }
-    return all;
-  };
-
-  const { data: matches, isLoading: matchesLoading, refetch: refetchMatches } = useQuery({
-    queryKey: ['alt-matches'],
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from('alt_detector_matches')
-        .select('*')
-        .order('probability', { ascending: false });
-      if (error) throw error;
-      return data;
-    },
-    refetchInterval: 30000,
-  });
-
-  // Fetch accounts with multiple characters (confirmed by account page)
-  const { data: accountGroups, isLoading: accountsLoading, refetch: refetchAccounts } = useQuery({
+  // Fetch account groups (confirmed by account API)
+  const { data: accountGroups, isLoading: accountsLoading } = useQuery({
     queryKey: ['account-groups'],
     queryFn: async () => {
-      // Read all character_accounts with >1 char (paginated)
       const PAGE_SIZE = 1000;
       const all: { character_name: string; account_chars: string[]; last_scraped_at: string }[] = [];
       let from = 0;
@@ -135,8 +30,7 @@ const AltDetectorPage = () => {
         from += PAGE_SIZE;
       }
 
-      // Group by account: same set of chars = same account
-      // Key = sorted array of chars joined
+      // Deduplicate groups by their sorted char set
       const accountMap = new Map<string, { chars: string[]; scraped_at: string }>();
       for (const row of all) {
         if (!row.account_chars || row.account_chars.length < 2) continue;
@@ -146,13 +40,54 @@ const AltDetectorPage = () => {
         }
       }
 
-      return Array.from(accountMap.values())
-        .sort((a, b) => b.chars.length - a.chars.length);
+      return Array.from(accountMap.values()).sort((a, b) => b.chars.length - a.chars.length);
     },
     refetchInterval: 60000,
   });
 
-  const { data: trackerStats, refetch: refetchStats } = useQuery({
+  // Fetch levels from highscore_snapshots to identify MAIN char
+  const { data: levelMap } = useQuery({
+    queryKey: ['char-levels'],
+    queryFn: async () => {
+      const PAGE_SIZE = 1000;
+      const map = new Map<string, { level: number; profession: string }>();
+      let from = 0;
+      while (true) {
+        const { data, error } = await supabase
+          .from('highscore_snapshots')
+          .select('player_name, level, profession')
+          .order('snapshot_date', { ascending: false })
+          .range(from, from + PAGE_SIZE - 1);
+        if (error || !data || data.length === 0) break;
+        for (const r of data) {
+          if (!map.has(r.player_name) && r.level != null) {
+            map.set(r.player_name, { level: r.level, profession: r.profession ?? '' });
+          }
+        }
+        if (data.length < PAGE_SIZE) break;
+        from += PAGE_SIZE;
+      }
+      return map;
+    },
+    refetchInterval: 300000,
+  });
+
+  // Fetch suspected matches (statistical, prob < 99%)
+  const { data: matches, isLoading: matchesLoading } = useQuery({
+    queryKey: ['alt-matches'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('alt_detector_matches')
+        .select('*')
+        .lt('probability', 99)
+        .order('probability', { ascending: false });
+      if (error) throw error;
+      return data;
+    },
+    refetchInterval: 30000,
+  });
+
+  const { data: trackerStats } = useQuery({
     queryKey: ['tracker-stats'],
     queryFn: async () => {
       const [sessionsRes, stateRes, uniqueRes, scrapedRes] = await Promise.all([
@@ -181,182 +116,38 @@ const AltDetectorPage = () => {
     refetchInterval: 10000,
   });
 
-  const callFunction = async (name: string) => {
-    const res = await fetch(`${SUPABASE_URL}/functions/v1/${name}`, {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${ANON_KEY}`,
-        'Content-Type': 'application/json',
-      },
-    });
-    return res.json();
-  };
-
-  // Browser-side scraping: fetch tibiarelic directly from the browser (avoids IP blocks on edge functions)
-  const triggerScrape = useCallback(async () => {
-    setIsScraping(true);
-    setScrapeProgress(null);
-    setPendingCount(null);
-    try {
-      // 1. Get ALL unique player names (paginated)
-      const allNames = await getAllPlayerNames();
-
-      // 2. Get ALL already-scraped chars (paginated) — check freshness
-      const cutoff = new Date(Date.now() - SCRAPE_TTL_MS).toISOString();
-      const alreadyScraped = await getAllScrapedAccounts();
-
-      const freshNames = new Set<string>();
-      const erroredNames = new Set<string>();
-      for (const r of alreadyScraped) {
-        const isRecent = r.last_scraped_at >= cutoff;
-        const hasData = r.account_chars && r.account_chars.length > 0;
-        const hasError = r.scrape_error !== null;
-        if (hasError && r.scrape_error?.includes('429')) {
-          erroredNames.add(r.character_name);
-        } else if (isRecent && hasData && !hasError) {
-          freshNames.add(r.character_name);
-        }
+  // Resolve main char (highest level) in a group
+  const resolveMainChar = (chars: string[]): string => {
+    if (!levelMap || levelMap.size === 0) return chars[0];
+    let main = chars[0];
+    let maxLevel = levelMap.get(chars[0])?.level ?? 0;
+    for (const c of chars) {
+      const lv = levelMap.get(c)?.level ?? 0;
+      if (lv > maxLevel) {
+        maxLevel = lv;
+        main = c;
       }
-
-      // Process ALL pending — no artificial limit
-      const toScrape = allNames
-        .filter((n) => !freshNames.has(n))
-        .sort((a, b) => (erroredNames.has(a) ? 1 : 0) - (erroredNames.has(b) ? 1 : 0));
-
-      if (toScrape.length === 0) {
-        toast({ title: 'Todos os perfis estão atualizados!' });
-        setPendingCount(0);
-        return;
-      }
-
-      setScrapeProgress({ done: 0, total: toScrape.length, current: '' });
-
-      let scraped_count = 0;
-      let rateLimited = 0;
-
-      for (let i = 0; i < toScrape.length; i++) {
-        const name = toScrape[i];
-        setScrapeProgress({ done: i, total: toScrape.length, current: name });
-
-        const result = await scrapeCharacterFromBrowser(name);
-
-        // Save immediately after each character — no batching, no data loss
-        await saveScrapedRecords([{
-          character_name: name,
-          account_chars: result.accountChars,
-          scrape_error: result.error || null,
-        }]);
-
-        if (result.error?.includes('429')) {
-          rateLimited++;
-          // Update progress and stop
-          setScrapeProgress({ done: i + 1, total: toScrape.length, current: '' });
-          const stillPending = toScrape.length - (i + 1);
-          setPendingCount(stillPending);
-          toast({
-            title: 'Rate limit atingido',
-            description: `Parou em ${name}. ${stillPending} restantes. Aguarde e clique em Continuar.`,
-            variant: 'destructive',
-          });
-          refetchMatches();
-          refetchStats();
-          return;
-        } else if (!result.error) {
-          scraped_count++;
-        }
-
-        // Delay between requests
-        if (i < toScrape.length - 1) await new Promise((r) => setTimeout(r, REQUEST_DELAY_MS));
-      }
-
-      setScrapeProgress({ done: toScrape.length, total: toScrape.length, current: '' });
-      setPendingCount(0);
-
-      toast({
-        title: 'Scraping concluído!',
-        description: `${scraped_count} perfis raspados. ${freshNames.size} já estavam atualizados.`,
-      });
-
-      refetchMatches();
-      refetchStats();
-      refetchAccounts();
-    } catch (e) {
-      console.error('Scrape error:', e);
-      toast({ title: 'Erro no scraping', variant: 'destructive' });
-    } finally {
-      setIsScraping(false);
-      setScrapeProgress(null);
     }
-  }, [refetchMatches, refetchStats, refetchAccounts, toast]);
-
-  const triggerAnalysis = async () => {
-    setIsAnalyzing(true);
-    try {
-      const result = await callFunction('analyze-alt-matches');
-      toast({
-        title: 'Análise concluída',
-        description: `${result.confirmed_by_account ?? 0} confirmados por conta, ${result.statistical_matches ?? 0} suspeitos estatísticos.`,
-      });
-      refetchMatches();
-      refetchAccounts();
-    } catch (e) {
-      toast({ title: 'Erro na análise', variant: 'destructive' });
-    } finally {
-      setIsAnalyzing(false);
-    }
+    return main;
   };
-
-  // Separate confirmed (99%) vs suspected (<99%)
-  const confirmedMatches = matches?.filter((m) => m.probability >= 99) ?? [];
-  const suspectedMatches = matches?.filter((m) => m.probability < 99) ?? [];
-
-  const applyFilter = (list: typeof matches) =>
-    list?.filter((m) => {
-      if (!filter) return true;
-      const q = filter.toLowerCase();
-      return m.player_a.toLowerCase().includes(q) || m.player_b.toLowerCase().includes(q);
-    }) ?? [];
-
-  const filteredConfirmed = applyFilter(confirmedMatches);
-  const filteredSuspected = applyFilter(suspectedMatches);
 
   const getProbabilityBadge = (prob: number) => {
-    if (prob >= 99) return <Badge variant="destructive">✓ Confirmado</Badge>;
     if (prob >= 60) return <Badge variant="destructive">{prob}%</Badge>;
-    if (prob >= 35) return <Badge variant="default">{prob}%</Badge>;
+    if (prob >= 35) return <Badge variant="default" className="opacity-90">{prob}%</Badge>;
     return <Badge variant="secondary">{prob}%</Badge>;
   };
 
-  const MatchTable = ({ rows }: { rows: NonNullable<typeof matches> }) => (
-    <Table>
-      <TableHeader>
-        <TableRow>
-          <TableHead>Player A</TableHead>
-          <TableHead>Player B</TableHead>
-          <TableHead className="text-center">Coincidências</TableHead>
-          <TableHead className="text-center">Sessões A</TableHead>
-          <TableHead className="text-center">Sessões B</TableHead>
-          <TableHead className="text-center">Probabilidade</TableHead>
-          <TableHead className="text-center">Atualizado</TableHead>
-        </TableRow>
-      </TableHeader>
-      <TableBody>
-        {rows.map((m) => (
-          <TableRow key={m.id}>
-            <TableCell className="font-medium">{m.player_a}</TableCell>
-            <TableCell className="font-medium">{m.player_b}</TableCell>
-            <TableCell className="text-center">{m.match_count || '—'}</TableCell>
-            <TableCell className="text-center">{m.total_sessions_a || '—'}</TableCell>
-            <TableCell className="text-center">{m.total_sessions_b || '—'}</TableCell>
-            <TableCell className="text-center">{getProbabilityBadge(m.probability)}</TableCell>
-            <TableCell className="text-center text-sm text-muted-foreground">
-              {new Date(m.last_updated).toLocaleString('pt-BR')}
-            </TableCell>
-          </TableRow>
-        ))}
-      </TableBody>
-    </Table>
-  );
+  const filteredAccounts = (accountGroups ?? []).filter(g => {
+    if (!filter) return true;
+    const q = filter.toLowerCase();
+    return g.chars.some(c => c.toLowerCase().includes(q));
+  });
+
+  const filteredSuspected = (matches ?? []).filter(m => {
+    if (!filter) return true;
+    const q = filter.toLowerCase();
+    return m.player_a.toLowerCase().includes(q) || m.player_b.toLowerCase().includes(q);
+  });
 
   return (
     <MainLayout showSidebars={false}>
@@ -364,7 +155,7 @@ const AltDetectorPage = () => {
         <div>
           <h1 className="text-3xl font-bold">🔍 Alt Detector</h1>
           <p className="text-muted-foreground mt-1">
-            Detecta alts por leitura de perfis de conta e por análise estatística de padrões de login/logout.
+            Detecta alts por leitura de conta via API e por análise estatística de padrões de login/logout (tracker 24h/5s).
           </p>
         </div>
 
@@ -390,7 +181,7 @@ const AltDetectorPage = () => {
           </Card>
           <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Perfis Raspados</CardTitle>
+              <CardTitle className="text-sm font-medium">Perfis Coletados</CardTitle>
               <ScanSearch className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
@@ -414,67 +205,37 @@ const AltDetectorPage = () => {
           </Card>
         </div>
 
-        {/* Controls */}
-        <div className="flex flex-wrap gap-3 items-center">
-          <div className="relative flex-1 min-w-[200px] max-w-sm">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-            <Input
-              placeholder="Filtrar por nome do jogador..."
-              value={filter}
-              onChange={(e) => setFilter(e.target.value)}
-              className="pl-9"
-            />
-          </div>
-          <Button onClick={triggerScrape} variant="outline" size="sm" disabled={isScraping}>
-            {isScraping ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <ScanSearch className="h-4 w-4 mr-2" />}
-            {pendingCount !== null && pendingCount > 0 ? `Continuar (${pendingCount} restantes)` : 'Raspar Perfis'}
-          </Button>
-          <Button onClick={triggerAnalysis} variant="outline" size="sm" disabled={isAnalyzing}>
-            {isAnalyzing ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <RefreshCw className="h-4 w-4 mr-2" />}
-            Rodar Análise
-          </Button>
+        {/* Search */}
+        <div className="relative max-w-sm">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+          <Input
+            placeholder="Filtrar por nome do jogador..."
+            value={filter}
+            onChange={(e) => setFilter(e.target.value)}
+            className="pl-9"
+          />
         </div>
 
-        {/* Scraping progress */}
-        {scrapeProgress && (
-          <Card>
-            <CardContent className="pt-4 pb-3 space-y-2">
-              <div className="flex items-center justify-between text-sm">
-                <span className="text-muted-foreground">
-                  {scrapeProgress.current ? `Raspando: ${scrapeProgress.current}` : 'Iniciando...'}
-                </span>
-                <span className="font-medium">{scrapeProgress.done}/{scrapeProgress.total}</span>
-              </div>
-              <Progress value={(scrapeProgress.done / scrapeProgress.total) * 100} className="h-2" />
-            </CardContent>
-          </Card>
-        )}
-
-        {/* Matches Tabs */}
+        {/* Tabs */}
         <Tabs defaultValue="accounts">
           <TabsList>
             <TabsTrigger value="accounts" className="gap-2">
               <ShieldCheck className="h-4 w-4" />
-              Por Conta
-              {accountGroups && accountGroups.length > 0 && (
-                <Badge variant="destructive" className="ml-1 text-xs">{accountGroups.length}</Badge>
+              Alts por Conta
+              {filteredAccounts.length > 0 && (
+                <Badge variant="destructive" className="ml-1 text-xs">{filteredAccounts.length}</Badge>
               )}
             </TabsTrigger>
-            <TabsTrigger value="confirmed" className="gap-2">
-              Pares Confirmados
-              {confirmedMatches.length > 0 && (
-                <Badge variant="destructive" className="ml-1 text-xs">{confirmedMatches.length}</Badge>
-              )}
-            </TabsTrigger>
-            <TabsTrigger value="suspected">
-              Suspeitos (Estatístico)
-              {suspectedMatches.length > 0 && (
-                <Badge variant="secondary" className="ml-1 text-xs">{suspectedMatches.length}</Badge>
+            <TabsTrigger value="suspected" className="gap-2">
+              <Star className="h-4 w-4" />
+              Suspeitos
+              {filteredSuspected.length > 0 && (
+                <Badge variant="secondary" className="ml-1 text-xs">{filteredSuspected.length}</Badge>
               )}
             </TabsTrigger>
           </TabsList>
 
-          {/* Tab: Accounts grouped */}
+          {/* Tab: Accounts grouped with MAIN highlighted */}
           <TabsContent value="accounts">
             <Card>
               <CardHeader>
@@ -483,90 +244,127 @@ const AltDetectorPage = () => {
                   Contas com múltiplos personagens
                 </CardTitle>
                 <p className="text-sm text-muted-foreground">
-                  Contas onde foram encontrados 2+ personagens na mesma conta via leitura de perfil. Confirmação direta da página do tibiarelic.
+                  Grupos confirmados via API de conta. O personagem de maior level aparece em destaque como <strong>MAIN</strong>.
+                  Cron automático coleta novos personagens a cada 15 minutos.
                 </p>
               </CardHeader>
               <CardContent>
                 {accountsLoading ? (
                   <p className="text-muted-foreground">Carregando...</p>
-                ) : !accountGroups || accountGroups.length === 0 ? (
+                ) : filteredAccounts.length === 0 ? (
                   <p className="text-muted-foreground">
-                    Nenhuma conta com múltiplos personagens encontrada ainda. Clique em <strong>Raspar Perfis</strong> para começar.
+                    Nenhuma conta com múltiplos personagens encontrada ainda. O sistema coleta automaticamente a cada 15 minutos.
                   </p>
                 ) : (
                   <div className="space-y-3">
-                    {accountGroups
-                      .filter(g => {
-                        if (!filter) return true;
-                        const q = filter.toLowerCase();
-                        return g.chars.some(c => c.toLowerCase().includes(q));
-                      })
-                      .map((group, idx) => (
-                        <div key={idx} className="border rounded-lg p-3 space-y-2">
-                          <div className="flex items-center justify-between">
-                            <span className="text-xs text-muted-foreground">
-                              {group.chars.length} personagens na mesma conta
-                            </span>
-                            <Badge variant="destructive" className="text-xs">Confirmado</Badge>
+                    {filteredAccounts.map((group, idx) => {
+                      const mainChar = resolveMainChar(group.chars);
+                      const mainData = levelMap?.get(mainChar);
+                      const altChars = group.chars.filter(c => c !== mainChar);
+
+                      return (
+                        <div key={idx} className="border rounded-lg overflow-hidden">
+                          {/* MAIN char header */}
+                          <div className="bg-primary/10 border-b px-4 py-3 flex items-center gap-3">
+                            <Crown className="h-4 w-4 text-primary shrink-0" />
+                            <div className="flex items-center gap-2 flex-1 min-w-0">
+                              <Badge className="bg-primary text-primary-foreground text-xs shrink-0">MAIN</Badge>
+                              <span className="font-bold text-foreground truncate">{mainChar}</span>
+                              {mainData && (
+                                <>
+                                  <span className="text-sm text-muted-foreground shrink-0">Lv.{mainData.level}</span>
+                                  <span className="text-xs text-muted-foreground hidden sm:block truncate">{mainData.profession}</span>
+                                </>
+                              )}
+                            </div>
+                            <span className="text-xs text-muted-foreground shrink-0">{group.chars.length} chars</span>
                           </div>
-                          <div className="flex flex-wrap gap-2">
-                            {group.chars.map((char, ci) => (
-                              <span key={ci} className="bg-muted rounded px-2 py-1 text-sm font-medium">
-                                {char}
-                              </span>
-                            ))}
-                          </div>
+
+                          {/* Alt chars */}
+                          {altChars.length > 0 && (
+                            <div className="px-4 py-3 flex flex-wrap gap-2">
+                              {altChars.map((char, ci) => {
+                                const altData = levelMap?.get(char);
+                                return (
+                                  <div
+                                    key={ci}
+                                    className="flex items-center gap-1.5 bg-muted rounded-full px-3 py-1 text-sm"
+                                  >
+                                    <span className="text-muted-foreground text-xs">alt</span>
+                                    <span className="font-medium">{char}</span>
+                                    {altData && (
+                                      <span className="text-xs text-muted-foreground">Lv.{altData.level}</span>
+                                    )}
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          )}
                         </div>
-                      ))
-                    }
+                      );
+                    })}
                   </div>
                 )}
               </CardContent>
             </Card>
           </TabsContent>
 
-          <TabsContent value="confirmed">
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <ShieldCheck className="h-5 w-5 text-destructive" />
-                  Pares Confirmados por Conta
-                </CardTitle>
-                <p className="text-sm text-muted-foreground">
-                  Personagens que aparecem listados na mesma conta no perfil do tibiarelic.com.
-                </p>
-              </CardHeader>
-              <CardContent>
-                {matchesLoading ? (
-                  <p className="text-muted-foreground">Carregando...</p>
-                ) : !filteredConfirmed.length ? (
-                  <p className="text-muted-foreground">
-                    Nenhum alt confirmado ainda. Clique em <strong>Raspar Perfis</strong> para começar a leitura das páginas de conta.
-                  </p>
-                ) : (
-                  <MatchTable rows={filteredConfirmed} />
-                )}
-              </CardContent>
-            </Card>
-          </TabsContent>
-
+          {/* Tab: Statistical suspects */}
           <TabsContent value="suspected">
             <Card>
               <CardHeader>
                 <CardTitle>Suspeitos por Análise Estatística</CardTitle>
                 <p className="text-sm text-muted-foreground">
-                  Pares com padrões suspeitos de login/logout adjacentes. Probabilidade máxima de 80% — menos certo que a leitura de conta.
+                  Pares com padrões suspeitos de login/logout adjacentes. Baseado no histórico de sessões do tracker (24h/5s).
+                  Análise automática a cada 10 minutos.
                 </p>
               </CardHeader>
               <CardContent>
                 {matchesLoading ? (
                   <p className="text-muted-foreground">Carregando...</p>
-                ) : !filteredSuspected.length ? (
+                ) : filteredSuspected.length === 0 ? (
                   <p className="text-muted-foreground">
-                    Nenhum suspeito encontrado. O tracker precisa coletar dados por mais tempo.
+                    Nenhum suspeito encontrado. O tracker precisa acumular mais sessões para análise estatística ser precisa.
                   </p>
                 ) : (
-                  <MatchTable rows={filteredSuspected} />
+                  <div className="space-y-3">
+                    {filteredSuspected.map((m) => {
+                      const probNum = Math.round(Number(m.probability));
+                      return (
+                        <div key={m.id} className="border rounded-lg px-4 py-3 flex flex-col sm:flex-row sm:items-center gap-3">
+                          {/* Players */}
+                          <div className="flex items-center gap-2 flex-1 min-w-0">
+                            <div className="flex flex-col min-w-0">
+                              <div className="flex items-center gap-2">
+                                <span className="font-bold text-foreground truncate">{m.player_a}</span>
+                                <span className="text-muted-foreground text-xs">({m.total_sessions_a} sessões)</span>
+                              </div>
+                              <div className="flex items-center gap-1 text-xs text-muted-foreground mt-0.5">
+                                <span>↕</span>
+                                <span>{m.match_count} coincidências de login/logout</span>
+                              </div>
+                              <div className="flex items-center gap-2 mt-0.5">
+                                <span className="font-bold text-foreground truncate">{m.player_b}</span>
+                                <span className="text-muted-foreground text-xs">({m.total_sessions_b} sessões)</span>
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* Probability badge */}
+                          <div className="flex items-center gap-3 shrink-0">
+                            <div className="text-right">
+                              <div className="text-xs text-muted-foreground mb-1">Probabilidade</div>
+                              {getProbabilityBadge(probNum)}
+                            </div>
+                            <div className="text-right hidden sm:block">
+                              <div className="text-xs text-muted-foreground">Atualizado</div>
+                              <div className="text-xs">{new Date(m.last_updated).toLocaleString('pt-BR')}</div>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
                 )}
               </CardContent>
             </Card>
