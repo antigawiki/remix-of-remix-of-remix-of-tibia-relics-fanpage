@@ -111,7 +111,7 @@ export function HuntSpotCard({
               >
                 <Play className="h-3 w-3 mr-1" /> Start Hunt
               </Button>
-            ) : isAdmin ? (
+            ) : (isAdmin || session?.player_name === characterName) ? (
               <Button
                 size="sm"
                 variant="destructive"
