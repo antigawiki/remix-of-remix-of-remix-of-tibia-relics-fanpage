@@ -6,9 +6,10 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import {
   Search, Activity, Users, Database, ShieldCheck,
-  ScanSearch, AlertTriangle, Crown, Link2, Clock, TrendingUp,
+  ScanSearch, AlertTriangle, Crown, Link2, Clock,
 } from 'lucide-react';
 
 /* ─────────────────────────── helpers ─────────────────────────── */
@@ -41,33 +42,6 @@ function ProfBadge({ profession }: { profession: string }) {
   );
 }
 
-function ProbabilityBar({ prob }: { prob: number }) {
-  const color =
-    prob >= 60 ? 'bg-destructive' :
-    prob >= 35 ? 'bg-yellow-500' :
-    'bg-muted-foreground';
-  const label =
-    prob >= 60 ? 'Alto risco' :
-    prob >= 35 ? 'Suspeito' :
-    'Baixo';
-  const variant: 'destructive' | 'default' | 'secondary' =
-    prob >= 60 ? 'destructive' :
-    prob >= 35 ? 'default' :
-    'secondary';
-
-  return (
-    <div className="flex flex-col items-end gap-1 min-w-[80px]">
-      <Badge variant={variant} className="text-xs font-bold">{prob}%</Badge>
-      <div className="w-full h-1.5 rounded-full bg-muted overflow-hidden">
-        <div
-          className={`h-full rounded-full transition-all ${color}`}
-          style={{ width: `${Math.min(prob, 100)}%` }}
-        />
-      </div>
-      <span className="text-[10px] text-muted-foreground">{label}</span>
-    </div>
-  );
-}
 
 /* ─────────────────────────── stat card ─────────────────────────── */
 
@@ -169,76 +143,6 @@ function AccountGroupCard({
   );
 }
 
-/* ─────────────────────────── suspect card ─────────────────────────── */
-
-function SuspectCard({ m }: { m: {
-  id: string; player_a: string; player_b: string;
-  probability: number; match_count: number;
-  total_sessions_a: number; total_sessions_b: number;
-  last_updated: string; ever_online_together: boolean;
-}}) {
-  const prob = Math.round(Number(m.probability));
-  const isHigh = prob >= 60;
-  const isMed = prob >= 35;
-
-  return (
-    <Card className={`overflow-hidden transition-colors ${isHigh ? 'border-destructive/40' : isMed ? 'border-yellow-500/30' : ''}`}>
-      <CardContent className="p-0">
-        <div className="flex flex-col sm:flex-row">
-          {/* Left: players */}
-          <div className="flex-1 p-4 space-y-2">
-            {/* Player A */}
-            <div className="flex items-center gap-2">
-              <div className="w-2 h-2 rounded-full bg-primary shrink-0" />
-              <span className="font-bold text-foreground">{m.player_a}</span>
-              <span className="text-xs text-muted-foreground bg-muted rounded-full px-2 py-0.5">
-                {m.total_sessions_a} sessões
-              </span>
-            </div>
-
-            {/* Connector */}
-            <div className="ml-[3px] flex items-center gap-2 text-xs text-muted-foreground">
-              <div className="w-px h-4 bg-border ml-[3.5px]" />
-              <span className="flex items-center gap-1">
-                <TrendingUp className="h-3 w-3" />
-                {m.match_count} coincidências de login/logout
-              </span>
-            </div>
-
-            {/* Player B */}
-            <div className="flex items-center gap-2">
-              <div className="w-2 h-2 rounded-full bg-muted-foreground shrink-0" />
-              <span className="font-bold text-foreground">{m.player_b}</span>
-              <span className="text-xs text-muted-foreground bg-muted rounded-full px-2 py-0.5">
-                {m.total_sessions_b} sessões
-              </span>
-            </div>
-
-            {/* Footer metadata */}
-            <div className="flex items-center gap-3 pt-1 text-xs text-muted-foreground">
-              {m.ever_online_together && (
-                <span className="flex items-center gap-1 text-green-600">
-                  <Activity className="h-3 w-3" />
-                  Já online juntos
-                </span>
-              )}
-              <span className="flex items-center gap-1">
-                <Clock className="h-3 w-3" />
-                {new Date(m.last_updated).toLocaleString('pt-BR')}
-              </span>
-            </div>
-          </div>
-
-          {/* Right: probability */}
-      <div className={`flex flex-col items-center justify-center px-5 py-4 shrink-0 border-t sm:border-t-0 sm:border-l
-            ${isHigh ? 'bg-destructive/5' : isMed ? 'bg-accent/30' : 'bg-muted/30'}`}>
-            <ProbabilityBar prob={prob} />
-          </div>
-        </div>
-      </CardContent>
-    </Card>
-  );
-}
 
 /* ─────────────────────────── page ─────────────────────────── */
 
@@ -425,7 +329,7 @@ const AltDetectorPage = () => {
             </TabsTrigger>
             <TabsTrigger value="suspected" className="gap-2 px-4 py-2">
               <AlertTriangle className="h-4 w-4" />
-              <span>Suspeitos Estatísticos</span>
+              <span>Suspeitos</span>
               {filteredSuspected.length > 0 && (
                 <Badge variant="secondary" className="ml-1 text-[10px] h-4 px-1.5">{filteredSuspected.length}</Badge>
               )}
@@ -467,16 +371,14 @@ const AltDetectorPage = () => {
           </TabsContent>
 
           {/* ── Suspeitos ── */}
-          <TabsContent value="suspected" className="space-y-3 mt-0">
-            <div className="flex items-center justify-between">
-              <p className="text-xs text-muted-foreground">
-                Pares com padrões suspeitos de login/logout adjacentes · análise automática a cada 10 min
-              </p>
-            </div>
+          <TabsContent value="suspected" className="mt-0">
+            <p className="text-xs text-muted-foreground mb-3">
+              Pares com padrões suspeitos de login/logout adjacentes · análise automática a cada 10 min
+            </p>
             {matchesLoading ? (
               <div className="space-y-2">
                 {[1,2,3].map(i => (
-                  <Card key={i} className="h-24 animate-pulse bg-muted" />
+                  <Card key={i} className="h-10 animate-pulse bg-muted" />
                 ))}
               </div>
             ) : filteredSuspected.length === 0 ? (
@@ -486,11 +388,53 @@ const AltDetectorPage = () => {
                 </CardContent>
               </Card>
             ) : (
-              <div className="space-y-2">
-                {filteredSuspected.map((m) => (
-                  <SuspectCard key={m.id} m={m} />
-                ))}
-              </div>
+              <Card>
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Personagem A</TableHead>
+                      <TableHead>Personagem B</TableHead>
+                      <TableHead className="text-center">Probabilidade</TableHead>
+                      <TableHead className="text-center">Coincidências</TableHead>
+                      <TableHead className="text-center">Sessões A</TableHead>
+                      <TableHead className="text-center">Sessões B</TableHead>
+                      <TableHead className="text-right">Atualizado</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {filteredSuspected.map((m) => {
+                      const prob = Math.round(Number(m.probability));
+                      const isHigh = prob >= 60;
+                      const isMed = prob >= 35;
+                      const badgeClass = isHigh
+                        ? 'bg-destructive text-destructive-foreground'
+                        : isMed
+                        ? 'bg-yellow-500 text-white'
+                        : 'bg-muted text-muted-foreground';
+                      return (
+                        <TableRow key={m.id}>
+                          <TableCell className="font-semibold">{m.player_a}</TableCell>
+                          <TableCell className="font-semibold">{m.player_b}</TableCell>
+                          <TableCell className="text-center">
+                            <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-bold ${badgeClass}`}>
+                              {prob}%
+                            </span>
+                          </TableCell>
+                          <TableCell className="text-center text-sm">{m.match_count}</TableCell>
+                          <TableCell className="text-center text-sm text-muted-foreground">{m.total_sessions_a}</TableCell>
+                          <TableCell className="text-center text-sm text-muted-foreground">{m.total_sessions_b}</TableCell>
+                          <TableCell className="text-right text-xs text-muted-foreground whitespace-nowrap">
+                            <span className="inline-flex items-center gap-1">
+                              <Clock className="h-3 w-3" />
+                              {new Date(m.last_updated).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}
+                            </span>
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })}
+                  </TableBody>
+                </Table>
+              </Card>
             )}
           </TabsContent>
         </Tabs>
