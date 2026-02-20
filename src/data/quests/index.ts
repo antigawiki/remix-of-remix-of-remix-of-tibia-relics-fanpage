@@ -28,6 +28,7 @@ export interface Quest {
   level?: number;
   premium?: boolean;
   available: boolean;
+  hidden?: boolean;
   requirements: {
     items: TranslatedText[];
     quests?: string[];
@@ -38,8 +39,8 @@ export interface Quest {
 }
 
 export const quests: Quest[] = [
-  // explorerSocietyAnkrahmun, // temporarily hidden
-  // sawsankAccess, // temporarily hidden
+  explorerSocietyAnkrahmun,
+  sawsankAccess,
 ];
 
 export const getQuestBySlug = (slug: string): Quest | undefined => {

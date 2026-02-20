@@ -27,7 +27,7 @@ const QuestsPage = () => {
 
         {/* Quest List - Full Width Horizontal Items */}
         <div className="space-y-2">
-          {quests.map((quest) => (
+          {quests.filter(q => !q.hidden).map((quest) => (
             <Link
               key={quest.id}
               to={`/quests/${quest.slug}`}
