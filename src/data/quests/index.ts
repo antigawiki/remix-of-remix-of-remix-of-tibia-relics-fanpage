@@ -38,8 +38,8 @@ export interface Quest {
 }
 
 export const quests: Quest[] = [
-  explorerSocietyAnkrahmun,
-  sawsankAccess,
+  // explorerSocietyAnkrahmun, // temporarily hidden
+  // sawsankAccess, // temporarily hidden
 ];
 
 export const getQuestBySlug = (slug: string): Quest | undefined => {
