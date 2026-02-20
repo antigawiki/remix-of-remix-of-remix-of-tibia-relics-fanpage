@@ -124,23 +124,22 @@ serve(async (req) => {
           const sessB = playerSessions[b];
           if (sessB.length < MIN_SESSIONS) continue;
 
-          // 1. Check overlap (ever online together for real)
-          let everTogether = false;
+          // 1. Count overlaps (ever online together for real)
+          let overlapCount = 0;
           for (const sa of sessA) {
             for (const sb of sessB) {
               const overlapStart = Math.max(sa.login_at, sb.login_at);
               const overlapEnd = Math.min(sa.logout_at, sb.logout_at);
               if (overlapEnd - overlapStart > OVERLAP_TOLERANCE_MS) {
-                everTogether = true;
-                break;
+                overlapCount++;
               }
             }
-            if (everTogether) break;
           }
 
-          if (everTogether) continue;
-
           // 2. Find adjacencies
+          // Require more evidence when overlap exists
+          const minAdjRequired = overlapCount > 0 ? 3 : MIN_ADJACENCIES;
+
           let adjCount = 0;
           let totalTimeDiff = 0;
           let hasAtoB = false;
@@ -163,7 +162,7 @@ serve(async (req) => {
             }
           }
 
-          if (adjCount < MIN_ADJACENCIES) continue;
+          if (adjCount < minAdjRequired) continue;
 
           // 3. Calculate probability (max 80% for statistical method)
           const maxPossible = sessA.length + sessB.length;
@@ -178,12 +177,19 @@ serve(async (req) => {
             adjacencyRatio * proximityScore * bidirectionalBonus * dataConfidence * 100;
           probability = Math.min(80, Math.round(probability * 100) / 100);
 
+          // Apply overlap penalty: proportional to how often they were seen together
+          if (overlapCount > 0) {
+            const totalSessions = sessA.length + sessB.length;
+            const penaltyFactor = Math.max(0.1, 1 - (overlapCount / totalSessions) * 0.6);
+            probability = Math.round(probability * penaltyFactor * 100) / 100;
+          }
+
           if (probability > 3) {
             results[keyAB] = makeResult(a, b, {
               match_count: adjCount,
               total_sessions_a: sessA.length,
               total_sessions_b: sessB.length,
-              ever_online_together: false,
+              ever_online_together: overlapCount > 0,
               probability,
               last_updated: now,
             });

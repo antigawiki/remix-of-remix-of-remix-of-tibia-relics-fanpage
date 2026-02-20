@@ -7,9 +7,12 @@ import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { Switch } from '@/components/ui/switch';
+import { Label } from '@/components/ui/label';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import {
   Search, Activity, Users, Database, ShieldCheck,
-  ScanSearch, AlertTriangle, Crown, Link2, Clock,
+  ScanSearch, AlertTriangle, Crown, Link2, Clock, Eye,
 } from 'lucide-react';
 
 /* ─────────────────────────── helpers ─────────────────────────── */
@@ -148,6 +151,7 @@ function AccountGroupCard({
 
 const AltDetectorPage = () => {
   const [filter, setFilter] = useState('');
+  const [includeSeenTogether, setIncludeSeenTogether] = useState(true);
 
   const { data: accountGroups, isLoading: accountsLoading } = useQuery({
     queryKey: ['account-groups'],
@@ -266,6 +270,7 @@ const AltDetectorPage = () => {
   });
 
   const filteredSuspected = (matches ?? []).filter(m => {
+    if (!includeSeenTogether && m.ever_online_together) return false;
     if (!filter) return true;
     const q = filter.toLowerCase();
     return m.player_a.toLowerCase().includes(q) || m.player_b.toLowerCase().includes(q);
@@ -372,9 +377,22 @@ const AltDetectorPage = () => {
 
           {/* ── Suspeitos ── */}
           <TabsContent value="suspected" className="mt-0">
-            <p className="text-xs text-muted-foreground mb-3">
-              Pares com padrões suspeitos de login/logout adjacentes · análise automática a cada 10 min
-            </p>
+            <div className="flex items-center justify-between mb-3">
+              <p className="text-xs text-muted-foreground">
+                Pares com padrões suspeitos de login/logout adjacentes · análise automática a cada 10 min
+              </p>
+              <div className="flex items-center gap-2 shrink-0">
+                <Switch
+                  id="toggle-seen-together"
+                  checked={includeSeenTogether}
+                  onCheckedChange={setIncludeSeenTogether}
+                />
+                <Label htmlFor="toggle-seen-together" className="text-xs text-muted-foreground cursor-pointer whitespace-nowrap flex items-center gap-1">
+                  <Eye className="h-3 w-3" />
+                  Incluir vistos juntos
+                </Label>
+              </div>
+            </div>
             {matchesLoading ? (
               <div className="space-y-2">
                 {[1,2,3].map(i => (
@@ -402,6 +420,7 @@ const AltDetectorPage = () => {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
+                    <TooltipProvider>
                     {filteredSuspected.map((m) => {
                       const prob = Math.round(Number(m.probability));
                       const isHigh = prob >= 60;
@@ -411,14 +430,33 @@ const AltDetectorPage = () => {
                         : isMed
                         ? 'bg-yellow-500 text-white'
                         : 'bg-muted text-muted-foreground';
+                      const seenTogether = m.ever_online_together;
                       return (
-                        <TableRow key={m.id}>
+                        <TableRow
+                          key={m.id}
+                          className={seenTogether ? 'bg-yellow-500/5 hover:bg-yellow-500/10' : ''}
+                        >
                           <TableCell className="font-semibold">{m.player_a}</TableCell>
                           <TableCell className="font-semibold">{m.player_b}</TableCell>
                           <TableCell className="text-center">
-                            <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-bold ${badgeClass}`}>
-                              {prob}%
-                            </span>
+                            <div className="inline-flex items-center gap-1.5">
+                              <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-bold ${badgeClass}`}>
+                                {prob}%
+                              </span>
+                              {seenTogether && (
+                                <Tooltip>
+                                  <TooltipTrigger asChild>
+                                    <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-yellow-600 dark:text-yellow-400 bg-yellow-500/15 rounded-full px-1.5 py-0.5 cursor-help">
+                                      <Eye className="h-3 w-3" />
+                                      Juntos
+                                    </span>
+                                  </TooltipTrigger>
+                                  <TooltipContent side="top" className="max-w-[200px] text-center text-xs">
+                                    Estes personagens foram vistos online ao mesmo tempo. A probabilidade foi reduzida proporcionalmente.
+                                  </TooltipContent>
+                                </Tooltip>
+                              )}
+                            </div>
                           </TableCell>
                           <TableCell className="text-center text-sm">{m.match_count}</TableCell>
                           <TableCell className="text-center text-sm text-muted-foreground">{m.total_sessions_a}</TableCell>
@@ -432,6 +470,7 @@ const AltDetectorPage = () => {
                         </TableRow>
                       );
                     })}
+                    </TooltipProvider>
                   </TableBody>
                 </Table>
               </Card>
