@@ -5,7 +5,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { ShieldAlert } from "lucide-react";
 
-const DELETE_PASSWORD = "avatarhood";
+const DELETE_PASSWORD = "relic7.4";
 
 interface DeleteConfirmModalProps {
   open: boolean;
