@@ -9,7 +9,7 @@ interface CreaturesTableProps {
   creatures: Creature[];
 }
 
-type SortKey = 'name' | 'exp' | 'hp' | 'summon' | 'convince';
+type SortKey = 'name' | 'exp' | 'hp' | 'summon' | 'convince' | 'ratio';
 type SortDirection = 'asc' | 'desc';
 
 const CreaturesTable = ({ creatures }: CreaturesTableProps) => {
@@ -32,22 +32,34 @@ const CreaturesTable = ({ creatures }: CreaturesTableProps) => {
   );
 
   const sortedCreatures = [...filteredCreatures].sort((a, b) => {
-    const aVal = a[sortKey];
-    const bVal = b[sortKey];
+    const aVal = sortKey === 'ratio' ? (a.ratio ?? 0) : a[sortKey as keyof Creature];
+    const bVal = sortKey === 'ratio' ? (b.ratio ?? 0) : b[sortKey as keyof Creature];
 
-    if (aVal === null) return 1;
-    if (bVal === null) return -1;
+    if (aVal === null || aVal === undefined) return 1;
+    if (bVal === null || bVal === undefined) return -1;
 
     if (typeof aVal === 'string' && typeof bVal === 'string') {
-      return sortDirection === 'asc' 
-        ? aVal.localeCompare(bVal) 
+      return sortDirection === 'asc'
+        ? aVal.localeCompare(bVal)
         : bVal.localeCompare(aVal);
     }
 
-    return sortDirection === 'asc' 
-      ? Number(aVal) - Number(bVal) 
+    return sortDirection === 'asc'
+      ? Number(aVal) - Number(bVal)
       : Number(bVal) - Number(aVal);
   });
+
+  const SortHeader = ({ label, sortField }: { label: string; sortField: SortKey }) => (
+    <TableHead
+      className="text-parchment cursor-pointer hover:bg-maroon/80 whitespace-nowrap"
+      onClick={() => handleSort(sortField)}
+    >
+      <div className="flex items-center gap-1">
+        {label}
+        <ArrowUpDown className="h-3 w-3 shrink-0" />
+      </div>
+    </TableHead>
+  );
 
   return (
     <div className="space-y-4">
@@ -65,73 +77,45 @@ const CreaturesTable = ({ creatures }: CreaturesTableProps) => {
         <Table>
           <TableHeader className="bg-maroon">
             <TableRow>
-              <TableHead className="text-parchment w-16">{t('tables.columns.img')}</TableHead>
-              <TableHead 
-                className="text-parchment cursor-pointer hover:bg-maroon/80"
-                onClick={() => handleSort('name')}
-              >
-                <div className="flex items-center gap-1">
-                  {t('tables.columns.name')}
-                  <ArrowUpDown className="h-3 w-3" />
-                </div>
-              </TableHead>
-              <TableHead 
-                className="text-parchment cursor-pointer hover:bg-maroon/80"
-                onClick={() => handleSort('exp')}
-              >
-                <div className="flex items-center gap-1">
-                  {t('tables.columns.exp')}
-                  <ArrowUpDown className="h-3 w-3" />
-                </div>
-              </TableHead>
-              <TableHead 
-                className="text-parchment cursor-pointer hover:bg-maroon/80"
-                onClick={() => handleSort('hp')}
-              >
-                <div className="flex items-center gap-1">
-                  {t('tables.columns.hp')}
-                  <ArrowUpDown className="h-3 w-3" />
-                </div>
-              </TableHead>
-              <TableHead 
-                className="text-parchment cursor-pointer hover:bg-maroon/80"
-                onClick={() => handleSort('summon')}
-              >
-                <div className="flex items-center gap-1">
-                  {t('tables.columns.summon')}
-                  <ArrowUpDown className="h-3 w-3" />
-                </div>
-              </TableHead>
-              <TableHead 
-                className="text-parchment cursor-pointer hover:bg-maroon/80"
-                onClick={() => handleSort('convince')}
-              >
-                <div className="flex items-center gap-1">
-                  {t('tables.columns.convince')}
-                  <ArrowUpDown className="h-3 w-3" />
-                </div>
-              </TableHead>
+              <TableHead className="text-parchment w-14">{t('tables.columns.img')}</TableHead>
+              <SortHeader label={t('tables.columns.name')} sortField="name" />
+              <SortHeader label={t('tables.columns.exp')} sortField="exp" />
+              <SortHeader label="HP" sortField="hp" />
+              <SortHeader label={t('tables.columns.summon')} sortField="summon" />
+              <SortHeader label={t('tables.columns.convince')} sortField="convince" />
+              <SortHeader label="Exp/HP" sortField="ratio" />
+              <TableHead className="text-parchment">Loot</TableHead>
+              <TableHead className="text-parchment text-center">Custom?</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {sortedCreatures.map((creature, index) => (
-              <TableRow 
-                key={creature.name} 
+              <TableRow
+                key={creature.name}
                 className={index % 2 === 0 ? 'bg-parchment' : 'bg-parchment-dark'}
               >
                 <TableCell>
-                  <img 
-                    src={creature.image} 
-                    alt={creature.name} 
+                  <img
+                    src={creature.image}
+                    alt={creature.name}
                     className="w-10 h-10 object-contain"
                     loading="lazy"
                   />
                 </TableCell>
-                <TableCell className="font-medium text-text-dark">{creature.name}</TableCell>
-                <TableCell>{creature.exp.toLocaleString()}</TableCell>
-                <TableCell>{creature.hp.toLocaleString()}</TableCell>
-                <TableCell>{creature.summon ?? '-'}</TableCell>
-                <TableCell>{creature.convince ?? '-'}</TableCell>
+                <TableCell className="font-medium text-text-dark whitespace-nowrap">{creature.name}</TableCell>
+                <TableCell>{creature.exp > 0 ? creature.exp.toLocaleString() : 0}</TableCell>
+                <TableCell>{creature.hp > 0 ? creature.hp.toLocaleString() : 0}</TableCell>
+                <TableCell>{creature.summon ?? '---'}</TableCell>
+                <TableCell>{creature.convince ?? '---'}</TableCell>
+                <TableCell className={creature.ratio && creature.ratio >= 1 ? 'font-semibold text-primary' : ''}>
+                  {creature.ratio !== undefined ? creature.ratio.toFixed(2) : '---'}
+                </TableCell>
+                <TableCell className="text-xs text-muted-foreground max-w-xs">
+                  {creature.loot ?? '---'}
+                </TableCell>
+                <TableCell className="text-center">
+                  {creature.custom ? <span className="text-amber-600 font-semibold text-xs">yes</span> : <span className="text-muted-foreground text-xs">-</span>}
+                </TableCell>
               </TableRow>
             ))}
           </TableBody>
