@@ -101,11 +101,7 @@ export function HuntQueuePanel({
                     #{idx + 1}
                   </span>
                   <span className="text-sm font-medium truncate">
-                    {isAdmin
-                      ? item.player_name
-                      : isMe
-                      ? `You (${item.player_name})`
-                      : "—"}
+                    {isMe ? `You (${item.player_name})` : item.player_name}
                   </span>
                   <Badge
                     variant={statusColor[item.status] as "default" | "secondary" | "destructive" | "outline"}

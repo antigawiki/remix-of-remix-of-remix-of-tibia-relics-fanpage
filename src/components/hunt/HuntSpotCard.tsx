@@ -124,11 +124,7 @@ export function HuntSpotCard({
                   <PersonStanding className="h-3 w-3" /> En route:
                 </span>
                 <span className="text-sm font-bold">
-                  {isAdmin || isClaimedByMe
-                    ? isClaimedByMe
-                      ? `You (${claimedItem.player_name})`
-                      : claimedItem.player_name
-                    : "—"}
+                  {isClaimedByMe ? `You (${claimedItem.player_name})` : claimedItem.player_name}
                 </span>
               </div>
               <div className="flex items-center justify-between">
