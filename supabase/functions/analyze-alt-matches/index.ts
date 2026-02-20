@@ -137,8 +137,8 @@ serve(async (req) => {
           }
 
           // 2. Find adjacencies
-          // Require more evidence when overlap exists
-          const minAdjRequired = overlapCount > 0 ? 3 : MIN_ADJACENCIES;
+          // Fixed threshold regardless of overlap
+          const minAdjRequired = MIN_ADJACENCIES;
 
           let adjCount = 0;
           let totalTimeDiff = 0;
@@ -176,13 +176,6 @@ serve(async (req) => {
           let probability =
             adjacencyRatio * proximityScore * bidirectionalBonus * dataConfidence * 100;
           probability = Math.min(80, Math.round(probability * 100) / 100);
-
-          // Apply overlap penalty: proportional to how often they were seen together
-          if (overlapCount > 0) {
-            const totalSessions = sessA.length + sessB.length;
-            const penaltyFactor = Math.max(0.1, 1 - (overlapCount / totalSessions) * 0.6);
-            probability = Math.round(probability * penaltyFactor * 100) / 100;
-          }
 
           if (probability > 3) {
             results[keyAB] = makeResult(a, b, {
