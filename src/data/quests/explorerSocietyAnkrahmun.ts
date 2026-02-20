@@ -17,6 +17,7 @@ export const explorerSocietyAnkrahmun: Quest = {
   },
   level: 0,
   premium: true,
+  hidden: true,
   available: true,
   requirements: {
     items: [
