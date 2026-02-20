@@ -98,10 +98,9 @@ serve(async (req) => {
         });
       }
 
-      // Only analyze players not yet confirmed by account data
-      const players = Object.keys(playerSessions).filter(
-        (p) => !confirmedPlayers.has(p)
-      );
+      // Analyze ALL players - pairs already confirmed by account data are skipped
+      // below via `if (results[keyAB]) continue`
+      const players = Object.keys(playerSessions);
 
       console.log(`Statistical analysis: ${players.length} unconfirmed players, ${sessions.length} total sessions`);
 
