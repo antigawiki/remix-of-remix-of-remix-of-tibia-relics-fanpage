@@ -68,6 +68,9 @@ serve(async (req) => {
           headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
+      case "kill-statistics":
+        apiUrl = `${API_BASE}/KillStatistics?worldName=Relic`;
+        break;
       default:
         return new Response(
           JSON.stringify({ error: "Invalid endpoint" }),

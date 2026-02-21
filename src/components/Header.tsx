@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Menu, X, Users, Skull, Map, Home, Shield, Sparkles, Bug, ScrollText, Calculator, Info, Search, Package, Trophy, TrendingUp, Monitor } from 'lucide-react';
+import { Menu, X, Users, Skull, Map, Home, Shield, Sparkles, Bug, ScrollText, Calculator, Info, Search, Package, Trophy, TrendingUp, Monitor, Swords, Target } from 'lucide-react';
 import headerBg from '@/assets/header-bg.jpg';
 import mainLogo from '@/assets/main-logo.webp';
 import GlobalSearch from '@/components/GlobalSearch';
@@ -171,6 +171,18 @@ const Header = () => {
               <Link to="/online" className="sidebar-menu-item flex items-center gap-2" onClick={() => setMobileMenuOpen(false)}>
                 <Users className="w-4 h-4" />
                 {t('navigation.online')}
+              </Link>
+              <Link to="/latest-deaths" className="sidebar-menu-item flex items-center gap-2" onClick={() => setMobileMenuOpen(false)}>
+                <Skull className="w-4 h-4" />
+                {t('navigation.latestDeaths')}
+              </Link>
+              <Link to="/kill-statistics" className="sidebar-menu-item flex items-center gap-2" onClick={() => setMobileMenuOpen(false)}>
+                <Target className="w-4 h-4" />
+                {t('navigation.killStatistics')}
+              </Link>
+              <Link to="/hunt-admin" className="sidebar-menu-item flex items-center gap-2" onClick={() => setMobileMenuOpen(false)}>
+                <Swords className="w-4 h-4" />
+                Hunt Admin
               </Link>
               
               <div className="border-t border-border/30 my-2" />

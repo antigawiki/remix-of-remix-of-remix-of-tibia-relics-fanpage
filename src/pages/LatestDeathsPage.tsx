@@ -20,7 +20,9 @@ type FilterType = 'all' | 'pvp' | 'pve';
 const LatestDeathsPage = () => {
   const [filter, setFilter] = useState<FilterType>('all');
   const [search, setSearch] = useState('');
-  const { data: deaths, isLoading, isFetching } = useLatestDeaths(200);
+  const { data, isLoading, isFetching } = useLatestDeaths(200);
+  const deaths = data?.deaths ?? [];
+  const totalCount = data?.totalCount ?? 0;
   const { t, language } = useTranslation();
   const dateLocale = localeMap[language] || ptBR;
 
@@ -33,7 +35,7 @@ const LatestDeathsPage = () => {
     return mainKiller.name;
   };
 
-  const filtered = (deaths ?? []).filter((d) => {
+  const filtered = deaths.filter((d) => {
     if (filter === 'pvp' && !isPvpDeath(d.killers)) return false;
     if (filter === 'pve' && isPvpDeath(d.killers)) return false;
     if (search) {
@@ -87,7 +89,7 @@ const LatestDeathsPage = () => {
               />
             </div>
             <span className="text-xs text-muted-foreground ml-auto">
-              {filtered.length} morte{filtered.length !== 1 ? 's' : ''}
+              {filtered.length} de {totalCount} morte{totalCount !== 1 ? 's' : ''} registrada{totalCount !== 1 ? 's' : ''}
             </span>
           </div>
 

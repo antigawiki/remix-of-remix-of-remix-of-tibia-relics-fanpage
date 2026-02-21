@@ -15,6 +15,7 @@ export interface TranslationKeys {
     banned: string;
     topGainers: string;
     latestDeaths: string;
+    killStatistics: string;
     map: string;
     officialSite: string;
   };
@@ -284,6 +285,17 @@ export interface TranslationKeys {
       noData: string;
       dataCollected: string;
       errorLoading: string;
+    };
+    killStatistics: {
+      title: string;
+      description: string;
+      creatures: string;
+      race: string;
+      lastDay: string;
+      lastWeek: string;
+      overall: string;
+      killedPlayers: string;
+      killedByPlayers: string;
     };
   };
   tables: {
