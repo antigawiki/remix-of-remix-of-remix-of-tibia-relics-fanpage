@@ -65,7 +65,7 @@ const KillStatisticsPage = () => {
   );
 
   return (
-    <MainLayout>
+    <MainLayout showSidebars={false}>
       <div className="wood-panel rounded-sm overflow-hidden">
         <header className="news-box-header">
           <h2 className="font-semibold flex items-center gap-2">
