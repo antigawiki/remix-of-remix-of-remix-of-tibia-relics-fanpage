@@ -449,6 +449,33 @@ export type Database = {
         }
         Relationships: []
       }
+      player_deaths: {
+        Row: {
+          created_at: string | null
+          death_timestamp: string
+          id: string
+          killers: Json
+          level: number
+          player_name: string
+        }
+        Insert: {
+          created_at?: string | null
+          death_timestamp: string
+          id?: string
+          killers?: Json
+          level: number
+          player_name: string
+        }
+        Update: {
+          created_at?: string | null
+          death_timestamp?: string
+          id?: string
+          killers?: Json
+          level?: number
+          player_name?: string
+        }
+        Relationships: []
+      }
       profiles: {
         Row: {
           created_at: string | null
