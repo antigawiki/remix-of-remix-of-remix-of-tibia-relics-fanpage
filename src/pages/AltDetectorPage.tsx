@@ -10,6 +10,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Switch } from '@/components/ui/switch';
 import { Label } from '@/components/ui/label';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
+import { Link } from 'react-router-dom';
 import {
   Search, Activity, Users, Database, ShieldCheck,
   ScanSearch, AlertTriangle, Crown, Link2, Clock, Eye,
@@ -100,7 +101,7 @@ function AccountGroupCard({
           <Badge className="bg-primary text-primary-foreground text-[10px] px-1.5 py-0 h-4 shrink-0">
             MAIN
           </Badge>
-          <span className="font-bold text-foreground text-sm">{mainChar}</span>
+          <Link to={`/d4f8a2c91b3e7f05a6d2e8b4c7f1a9e3/${encodeURIComponent(mainChar)}`} className="font-bold text-foreground text-sm hover:text-primary hover:underline transition-colors">{mainChar}</Link>
           {mainData && (
             <>
               <span className="text-sm font-semibold text-muted-foreground">Lv.{mainData.level}</span>
@@ -128,7 +129,7 @@ function AccountGroupCard({
                     className="inline-flex items-center gap-1.5 bg-muted/60 border rounded-full px-3 py-1 text-xs hover:bg-muted transition-colors"
                   >
                     <span className="text-muted-foreground font-medium">alt</span>
-                    <span className="font-semibold text-foreground">{char}</span>
+                    <Link to={`/d4f8a2c91b3e7f05a6d2e8b4c7f1a9e3/${encodeURIComponent(char)}`} className="font-semibold text-foreground hover:text-primary hover:underline transition-colors">{char}</Link>
                     {altData && (
                       <>
                         <span className="text-muted-foreground">·</span>
@@ -436,8 +437,16 @@ const AltDetectorPage = () => {
                           key={m.id}
                           className={seenTogether ? 'bg-yellow-500/5 hover:bg-yellow-500/10' : ''}
                         >
-                          <TableCell className="font-semibold">{m.player_a}</TableCell>
-                          <TableCell className="font-semibold">{m.player_b}</TableCell>
+                          <TableCell className="font-semibold">
+                            <Link to={`/d4f8a2c91b3e7f05a6d2e8b4c7f1a9e3/${encodeURIComponent(m.player_a)}`} className="hover:text-primary hover:underline transition-colors">
+                              {m.player_a}
+                            </Link>
+                          </TableCell>
+                          <TableCell className="font-semibold">
+                            <Link to={`/d4f8a2c91b3e7f05a6d2e8b4c7f1a9e3/${encodeURIComponent(m.player_b)}`} className="hover:text-primary hover:underline transition-colors">
+                              {m.player_b}
+                            </Link>
+                          </TableCell>
                           <TableCell className="text-center">
                             <div className="inline-flex items-center gap-1.5">
                               <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-bold ${badgeClass}`}>

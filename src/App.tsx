@@ -31,6 +31,7 @@ import TopGainersPage from "./pages/TopGainersPage";
 import RunesPage from "./pages/RunesPage";
 import XpTrackerPage from "./pages/XpTrackerPage";
 import AltDetectorPage from "./pages/AltDetectorPage";
+import AltPlayerSessionsPage from "./pages/AltPlayerSessionsPage";
 import ImportPage from "./pages/ImportPage";
 import HuntAdminPage from "./pages/HuntAdminPage";
 import XpActivityPage from "./pages/XpActivityPage";
@@ -75,6 +76,7 @@ const App = () => (
               <Route path="/runes" element={<RunesPage />} />
               <Route path="/xp-tracker" element={<XpTrackerPage />} />
               <Route path="/d4f8a2c91b3e7f05a6d2e8b4c7f1a9e3" element={<AltDetectorPage />} />
+              <Route path="/d4f8a2c91b3e7f05a6d2e8b4c7f1a9e3/:playerName" element={<AltPlayerSessionsPage />} />
               <Route path="/import-data-temp" element={<ImportPage />} />
               <Route path="/hunt-admin" element={<HuntAdminPage />} />
               <Route path="/xp-activity" element={<XpActivityPage />} />
