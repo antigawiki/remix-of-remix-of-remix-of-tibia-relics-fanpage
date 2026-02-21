@@ -14,6 +14,7 @@ export interface TranslationKeys {
     online: string;
     banned: string;
     topGainers: string;
+    latestDeaths: string;
     map: string;
     officialSite: string;
   };

@@ -14,6 +14,7 @@ export const pt: TranslationKeys = {
     online: "Players Online",
     banned: "Banidos",
     topGainers: "Top Gainers",
+    latestDeaths: "Últimas Mortes",
     map: "Mapa",
     officialSite: "Site Oficial",
   },
