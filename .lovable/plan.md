@@ -1,71 +1,101 @@
 
 
-# Unificar coleta: Uma unica funcao para mortes E alts
+# 3 Melhorias: Ultimas Mortes, Kill Statistics e Menu Mobile
 
-## Problema
+## 1. Pagina Ultimas Mortes - Mostrar total real
 
-Hoje existem **duas funcoes separadas** que chamam **a mesma API** (`/api/Community/character/by-name`):
-- `scrape-character-accounts` - extrai `characters` (alts)
-- `collect-deaths` - extrai `deaths`
+**Problema:** A pagina mostra "200 mortes" mas existem 356 no banco. Da a entender que so existem 200.
 
-Isso dobra o numero de requests desnecessariamente e causa rate limiting (429).
+**Solucao:**
+- Buscar o total real do banco com uma query `COUNT(*)` separada ou simplesmente aumentar o limit para buscar todas
+- Adicionar texto informativo como "Mostrando as 200 mais recentes de 356 mortes registradas"
+- Ou melhor: mostrar todas com paginacao (carregar mais)
 
-## Solucao
+**Arquivo:** `src/hooks/useLatestDeaths.ts` e `src/pages/LatestDeathsPage.tsx`
+- Aumentar limit padrao ou adicionar botao "Carregar mais"
+- Exibir contagem total no topo
 
-Unificar tudo em `scrape-character-accounts`, que ja roda a cada 15 minutos. Cada chamada de API ja retorna AMBOS os dados (`characters` + `deaths`), entao basta extrair os dois de uma vez.
+---
 
-## Mudancas
+## 2. Nova pagina: Kill Statistics (Monstros Mortos)
 
-### 1. Atualizar `scrape-character-accounts/index.ts`
+**API:** `https://api.tibiarelic.com/api/KillStatistics?worldName=Relic`
 
-- Remover o TTL de 4 horas e o limite de 50 por run
-- Processar TODOS os jogadores em cada execucao
-- De cada resposta da API, extrair:
-  - `characters` -> upsert em `character_accounts` (como ja faz)
-  - `deaths` -> upsert em `player_deaths` (novo)
-- Request sequencial com delay de 200ms (= 5 req/s)
-- 518 jogadores x 200ms = ~104 segundos (dentro do timeout de 150s)
-- Retry 1x com 2s backoff se receber 429
+Esta API retorna estatisticas de mortes de monstros (quantos mataram jogadores e quantos foram mortos por jogadores) nos periodos: ultimo dia, ultima semana e overall.
 
-### 2. Remover `collect-deaths` edge function
+### Mudancas:
 
-- Deletar a pasta `supabase/functions/collect-deaths/`
-- Nao precisa mais existir como funcao separada
+**a) Proxy - adicionar endpoint `kill-statistics`**
+- Arquivo: `supabase/functions/tibia-relic-proxy/index.ts`
+- Novo case no switch para `kill-statistics` apontando para `${API_BASE}/KillStatistics?worldName=Relic`
 
-### 3. Atualizar cron para rodar a cada 2 minutos
+**b) Hook para buscar dados**
+- Novo arquivo: `src/hooks/useKillStatistics.ts`
+- Chama o proxy, retorna a lista de criaturas com estatisticas
 
-- Mudar o schedule de `*/15` para `*/2`
-- Cada execucao cobre todos os 518 jogadores em ~104s
-- A proxima execucao comeca 2 minutos depois, criando um ciclo quase continuo
+**c) Nova pagina: `src/pages/KillStatisticsPage.tsx`**
+- Rota: `/kill-statistics`
+- Layout similar a referencia (tabela com colunas Last Day / Last Week / Overall)
+- Cada linha mostra a imagem da criatura ao lado do nome (mapeando pelo nome com os dados de `src/data/creatures.ts`)
+- Colunas: Race (com imagem), Killed Players (dia/semana/total), Killed by Players (dia/semana/total)
+- Busca por nome de criatura
+- Ordenacao por coluna
 
-### 4. Nenhuma mudanca no frontend
+**d) Rota no App.tsx**
+- Adicionar `<Route path="/kill-statistics" element={<KillStatisticsPage />} />`
 
-- A pagina `LatestDeathsPage` continua lendo de `player_deaths` normalmente
-- O hook `useLatestDeaths` nao muda
+**e) Navegacao**
+- Sidebar: adicionar link "Monstros Mortos" / "Kill Statistics"
+- Mobile menu (Header.tsx): adicionar link tambem
 
-## Fluxo otimizado
+**f) Traducoes (i18n)**
+- Adicionar chaves em `types.ts` e nos 4 arquivos de traducao (pt/en/es/pl)
+- Chaves: `navigation.killStatistics`, `pages.killStatistics.title`, `pages.killStatistics.description`, colunas da tabela
 
-```text
-[Cron cada 2 min] -> scrape-character-accounts
-                          |
-                          v
-                Para cada jogador (5/s):
-                  GET character API
-                          |
-                    +-----+-----+
-                    |           |
-                    v           v
-              characters    deaths
-                    |           |
-                    v           v
-           character_accounts  player_deaths
-              (upsert)        (upsert)
-```
+---
 
-## Resultado esperado
+## 3. Menu Mobile - Links faltando
 
-- Cobertura completa de todos os jogadores a cada ~2 minutos
-- Zero requests duplicados (uma API call = dois dados)
-- Mortes detectadas em ate 2 minutos apos ocorrerem
-- Alt detector tambem atualizado com mesma frequencia
+**Problema:** O menu mobile no Header.tsx nao inclui varios links que existem no Sidebar desktop:
+- "Ultimas Mortes" (latest-deaths)
+- "Hunt Admin" (hunt-admin)
+- "Top Gainers" ja esta, mas falta "Ultimas Mortes"
+- A nova pagina "Kill Statistics" tambem precisa estar
 
+**Solucao:**
+- Arquivo: `src/components/Header.tsx`
+- Adicionar no menu mobile:
+  - Link para `/latest-deaths` com icone Skull
+  - Link para `/kill-statistics` com icone (ex: BarChart3 ou Target)
+  - Link para `/hunt-admin` com icone Swords
+- Organizar os links na mesma ordem do Sidebar
+
+---
+
+## Detalhes Tecnicos
+
+### Mapeamento criatura -> imagem
+
+O arquivo `src/data/creatures.ts` contem todas as criaturas com seus nomes e URLs de imagem. Para a pagina de Kill Statistics, faremos um Map por nome (case-insensitive) para associar a imagem da API ao sprite local. Criaturas sem match mostram um placeholder.
+
+### Estrutura esperada da API KillStatistics
+
+Baseado na referencia visual, cada entrada da API deve conter:
+- `race` (nome da criatura)
+- `lastDayKilledPlayers`, `lastDayKilledByPlayers`
+- `lastWeekKilledPlayers`, `lastWeekKilledByPlayers`
+- `killedPlayers`, `killedByPlayers` (overall)
+
+### Arquivos criados
+- `src/hooks/useKillStatistics.ts`
+- `src/pages/KillStatisticsPage.tsx`
+
+### Arquivos modificados
+- `supabase/functions/tibia-relic-proxy/index.ts` (novo endpoint)
+- `src/App.tsx` (nova rota)
+- `src/components/Sidebar.tsx` (novo link)
+- `src/components/Header.tsx` (links mobile faltando)
+- `src/i18n/types.ts` (novas chaves)
+- `src/i18n/translations/pt.ts`, `en.ts`, `es.ts`, `pl.ts` (traducoes)
+- `src/pages/LatestDeathsPage.tsx` (mostrar total real)
+- `src/hooks/useLatestDeaths.ts` (buscar total)
