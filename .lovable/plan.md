@@ -1,53 +1,56 @@
 
-# Remover Penalização — Apenas Indicador Visual
 
-## Problema atual
+# Suspeitos: Mostrar Todos os Matches (incluindo confirmados)
 
-O backend (`analyze-alt-matches`) aplica duas penalidades para pares que já foram vistos online juntos:
+## Problema
 
-1. **Threshold mais alto**: `minAdjRequired = overlapCount > 0 ? 3 : MIN_ADJACENCIES` — exige mais adjacências para pares com overlap.
-2. **Penalização da probabilidade**: `probability = probability * penaltyFactor` — reduz o score proporcionalmente.
+Jogadores "hidden" na API do TibiaRelic nao aparecem no scraping de conta, entao nunca vao para "Alts por Conta". Porem, o tracker de sessoes captura seus logins/logouts normalmente. O problema e que o backend pula a analise estatistica para pares ja confirmados por conta (`if (results[keyAB]) continue;`), e o frontend filtra `.lt('probability', 99)` -- entao esses pares confirmados nunca aparecem na aba Suspeitos com dados estatisticos reais.
 
-Isso derruba ou exclui pares legítimos como Toru + Amstel.
+## Solucao
 
-## Solução
+Fazer a aba **Suspeitos** mostrar TODOS os pares com match estatistico, independente de ja estarem confirmados por conta. A aba **Alts por Conta** continua igual (so mostra o que a API retorna).
 
-Remover ambas as penalidades. O par é analisado normalmente, e o campo `ever_online_together` é salvo como `true` apenas para uso visual no frontend (ícone + badge "Juntos"), sem impactar a probabilidade.
+## Mudancas
 
-## Arquivo a modificar
+### 1. Backend: `supabase/functions/analyze-alt-matches/index.ts`
 
-### `supabase/functions/analyze-alt-matches/index.ts`
+- Remover o `if (results[keyAB]) continue;` no loop estatistico
+- Em vez de pular, quando o par ja tem resultado confirmado (prob 99), manter a probabilidade 99 mas atualizar os campos estatisticos (match_count, total_sessions_a/b, ever_online_together)
+- Isso garante que pares confirmados tambem tenham dados de sessao preenchidos
 
-Remover as linhas de:
+### 2. Frontend: `src/pages/AltDetectorPage.tsx`
 
-```typescript
-// REMOVER: threshold diferente por overlap
-const minAdjRequired = overlapCount > 0 ? 3 : MIN_ADJACENCIES;
+- Remover o filtro `.lt('probability', 99)` na query de matches
+- Buscar TODOS os registros de `alt_detector_matches`
+- Adicionar um indicador visual (badge "Confirmado") para matches com probability = 99, diferenciando-os dos puramente estatisticos na tabela
 
-// REMOVER: bloco de penalização
-if (overlapCount > 0) {
-  const totalSessions = sessA.length + sessB.length;
-  const penaltyFactor = Math.max(0.1, 1 - (overlapCount / totalSessions) * 0.6);
-  probability = Math.round(probability * penaltyFactor * 100) / 100;
-}
+## Resultado
+
+- **Alts por Conta**: sem mudanca, mostra apenas grupos da API
+- **Suspeitos**: mostra todos os pares com adjacencias detectadas, incluindo os confirmados por conta (com badge "Confirmado" e dados reais de sessao) e os hidden que so aparecem via tracking
+
+## Detalhes Tecnicos
+
+### Backend (`analyze-alt-matches/index.ts`)
+
+No loop estatistico (linha ~107), substituir:
+
+```text
+if (results[keyAB]) continue;
 ```
 
-Manter apenas:
+Por logica que, ao encontrar par ja confirmado, atualiza os campos estatisticos mantendo prob 99:
 
 ```typescript
-// Threshold fixo independente de overlap
-if (adjCount < MIN_ADJACENCIES) continue;
-
-// Probabilidade calculada normalmente sem penalidade
-// ever_online_together salvo apenas para exibição visual
-ever_online_together: overlapCount > 0,
+const existingConfirmed = results[keyAB];
+// Se ja confirmado, vamos calcular stats mas manter prob 99
+// (continua o calculo normal, merge no final)
 ```
 
-Após o deploy, será necessário disparar `analyze-alt-matches` manualmente para reprocessar os dados — o par Toru + Amstel deverá aparecer na aba "Suspeitos" com o ícone "Juntos" e a probabilidade real sem desconto.
+Apos calcular adjCount/probability normalmente, se o par ja existia com prob 99, fazer merge dos dados estatisticos no resultado existente em vez de criar novo.
 
-## O que NÃO muda
+### Frontend (`AltDetectorPage.tsx`)
 
-- O ícone/badge "Juntos" no frontend continua igual
-- O toggle "Incluir vistos juntos" continua funcionando
-- O campo `ever_online_together` continua sendo salvo no banco
-- A lógica de contagem de overlaps continua (apenas para marcar o campo, não para penalizar)
+- Linha 218: remover `.lt('probability', 99)`
+- Na tabela de suspeitos, adicionar badge "Confirmado" quando `probability >= 99` para diferenciar visualmente
+
