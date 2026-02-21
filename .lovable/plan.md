@@ -1,56 +1,29 @@
 
 
-# Suspeitos: Mostrar Todos os Matches (incluindo confirmados)
+# Reverter Suspeitos: Separar Confirmados de Estatisticos
 
-## Problema
-
-Jogadores "hidden" na API do TibiaRelic nao aparecem no scraping de conta, entao nunca vao para "Alts por Conta". Porem, o tracker de sessoes captura seus logins/logouts normalmente. O problema e que o backend pula a analise estatistica para pares ja confirmados por conta (`if (results[keyAB]) continue;`), e o frontend filtra `.lt('probability', 99)` -- entao esses pares confirmados nunca aparecem na aba Suspeitos com dados estatisticos reais.
+## Problema Atual
+Apos a ultima mudanca, pares confirmados por conta (API) aparecem na aba Suspeitos, poluindo a lista. O usuario quer separacao clara:
+- **Alts por Conta**: mostra apenas o que a API retorna (visivel)
+- **Suspeitos**: mostra apenas pares detectados estatisticamente, mesmo que cheguem a probabilidade alta
 
 ## Solucao
 
-Fazer a aba **Suspeitos** mostrar TODOS os pares com match estatistico, independente de ja estarem confirmados por conta. A aba **Alts por Conta** continua igual (so mostra o que a API retorna).
-
-## Mudancas
+Reverter as duas mudancas feitas anteriormente:
 
 ### 1. Backend: `supabase/functions/analyze-alt-matches/index.ts`
-
-- Remover o `if (results[keyAB]) continue;` no loop estatistico
-- Em vez de pular, quando o par ja tem resultado confirmado (prob 99), manter a probabilidade 99 mas atualizar os campos estatisticos (match_count, total_sessions_a/b, ever_online_together)
-- Isso garante que pares confirmados tambem tenham dados de sessao preenchidos
+- Restaurar o `if (results[keyAB]) continue;` no loop estatistico (linha 121/179-184)
+- Isso faz o backend voltar a pular pares ja confirmados por conta durante a analise estatistica
+- Pares confirmados continuam sendo salvos com prob 99 no banco (via METHOD 1), mas nao recebem stats
 
 ### 2. Frontend: `src/pages/AltDetectorPage.tsx`
+- Restaurar o filtro `.lt('probability', 99)` na query de matches
+- Isso esconde pares confirmados da aba Suspeitos
+- Se um par chegar a probabilidade alta (ate 80%, que e o cap estatistico) puramente por tracking, ele permanece visivel em Suspeitos
+- Quando/se esse par sair do "hidden" e a API passar a retorna-lo, ele aparece em "Alts por Conta" e o sistema de conta o marca com prob 99, removendo-o automaticamente de Suspeitos
 
-- Remover o filtro `.lt('probability', 99)` na query de matches
-- Buscar TODOS os registros de `alt_detector_matches`
-- Adicionar um indicador visual (badge "Confirmado") para matches com probability = 99, diferenciando-os dos puramente estatisticos na tabela
-
-## Resultado
-
-- **Alts por Conta**: sem mudanca, mostra apenas grupos da API
-- **Suspeitos**: mostra todos os pares com adjacencias detectadas, incluindo os confirmados por conta (com badge "Confirmado" e dados reais de sessao) e os hidden que so aparecem via tracking
-
-## Detalhes Tecnicos
-
-### Backend (`analyze-alt-matches/index.ts`)
-
-No loop estatistico (linha ~107), substituir:
-
-```text
-if (results[keyAB]) continue;
-```
-
-Por logica que, ao encontrar par ja confirmado, atualiza os campos estatisticos mantendo prob 99:
-
-```typescript
-const existingConfirmed = results[keyAB];
-// Se ja confirmado, vamos calcular stats mas manter prob 99
-// (continua o calculo normal, merge no final)
-```
-
-Apos calcular adjCount/probability normalmente, se o par ja existia com prob 99, fazer merge dos dados estatisticos no resultado existente em vez de criar novo.
-
-### Frontend (`AltDetectorPage.tsx`)
-
-- Linha 218: remover `.lt('probability', 99)`
-- Na tabela de suspeitos, adicionar badge "Confirmado" quando `probability >= 99` para diferenciar visualmente
+### Resultado
+- Pares confirmados pela API: so aparecem em "Alts por Conta"
+- Pares estatisticos (incluindo hidden): aparecem em "Suspeitos" com probabilidade ate 80%
+- Se um par hidden for detectado pela API (sair do hidden): migra automaticamente de Suspeitos para Alts por Conta
 
