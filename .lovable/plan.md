@@ -1,29 +1,66 @@
 
+# Pagina de Sessoes do Jogador com Comparacao de Coincidencias
 
-# Reverter Suspeitos: Separar Confirmados de Estatisticos
+## Objetivo
 
-## Problema Atual
-Apos a ultima mudanca, pares confirmados por conta (API) aparecem na aba Suspeitos, poluindo a lista. O usuario quer separacao clara:
-- **Alts por Conta**: mostra apenas o que a API retorna (visivel)
-- **Suspeitos**: mostra apenas pares detectados estatisticamente, mesmo que cheguem a probabilidade alta
+Ao clicar no nome de um personagem (A ou B) na tabela de Suspeitos, navegar para uma pagina de detalhe que mostra todas as sessoes de login/logout desse jogador, comparando visualmente com as sessoes dos personagens com quem ele tem coincidencias.
 
-## Solucao
+## Mudancas
 
-Reverter as duas mudancas feitas anteriormente:
+### 1. Nova pagina: `src/pages/AltPlayerSessionsPage.tsx`
 
-### 1. Backend: `supabase/functions/analyze-alt-matches/index.ts`
-- Restaurar o `if (results[keyAB]) continue;` no loop estatistico (linha 121/179-184)
-- Isso faz o backend voltar a pular pares ja confirmados por conta durante a analise estatistica
-- Pares confirmados continuam sendo salvos com prob 99 no banco (via METHOD 1), mas nao recebem stats
+- Recebe o nome do jogador via URL param (ex: `/d4f8a2c91b3e7f05a6d2e8b4c7f1a9e3/:playerName`)
+- Busca todos os matches desse jogador na tabela `alt_detector_matches` (onde ele e player_a ou player_b)
+- Busca as sessoes (`online_tracker_sessions`) do jogador e de todos os seus pares suspeitos
+- Exibe uma timeline/tabela mostrando as sessoes do jogador principal com as sessoes coincidentes dos pares lado a lado
+- Layout:
+  - Header com nome do jogador e botao de voltar
+  - Lista dos pares suspeitos com probabilidade (chips clicaveis para filtrar)
+  - Tabela cronologica com colunas: Data/Hora Login, Data/Hora Logout, Duracao, e para cada par suspeito que teve sessao adjacente naquele periodo, mostrar o nome e horarios
+  - Cores diferentes para cada par suspeito para facilitar visualizacao
 
-### 2. Frontend: `src/pages/AltDetectorPage.tsx`
-- Restaurar o filtro `.lt('probability', 99)` na query de matches
-- Isso esconde pares confirmados da aba Suspeitos
-- Se um par chegar a probabilidade alta (ate 80%, que e o cap estatistico) puramente por tracking, ele permanece visivel em Suspeitos
-- Quando/se esse par sair do "hidden" e a API passar a retorna-lo, ele aparece em "Alts por Conta" e o sistema de conta o marca com prob 99, removendo-o automaticamente de Suspeitos
+### 2. Rota no `src/App.tsx`
 
-### Resultado
-- Pares confirmados pela API: so aparecem em "Alts por Conta"
-- Pares estatisticos (incluindo hidden): aparecem em "Suspeitos" com probabilidade ate 80%
-- Se um par hidden for detectado pela API (sair do hidden): migra automaticamente de Suspeitos para Alts por Conta
+- Adicionar rota: `/d4f8a2c91b3e7f05a6d2e8b4c7f1a9e3/:playerName`
+- Importar o novo componente
 
+### 3. Links clicaveis no `src/pages/AltDetectorPage.tsx`
+
+- Transformar os nomes dos personagens nas celulas `player_a` e `player_b` da tabela de Suspeitos em links (`<Link>`) que navegam para a nova pagina
+- Tambem nos cards de "Alts por Conta", tornar os nomes clicaveis
+
+## Detalhes Tecnicos
+
+### Queries na pagina de sessoes
+
+```typescript
+// 1. Buscar matches do jogador
+const matches = await supabase
+  .from('alt_detector_matches')
+  .select('*')
+  .or(`player_a.eq.${playerName},player_b.eq.${playerName}`)
+  .order('probability', { ascending: false });
+
+// 2. Buscar sessoes do jogador e de todos os pares
+const allPlayers = [playerName, ...pairNames];
+const sessions = await supabase
+  .from('online_tracker_sessions')
+  .select('*')
+  .in('player_name', allPlayers)
+  .order('login_at', { ascending: false })
+  .limit(500);
+```
+
+### Layout da tabela de comparacao
+
+Cada linha mostra uma sessao do jogador principal. Ao lado, mostra sessoes de outros jogadores que ocorreram em janela proxima (ex: +/- 5 minutos do login ou logout). Isso permite visualizar rapidamente quais sessoes foram adjacentes.
+
+- Coluna "Jogador" (nome principal)
+- Coluna "Login"
+- Coluna "Logout"  
+- Coluna "Duracao"
+- Coluna "Coincidencias" - lista de chips com nome do par e horario de login/logout adjacente, coloridos por jogador
+
+### Estilo dos links
+
+Os nomes na tabela de suspeitos ficam com `cursor-pointer`, `hover:text-primary`, `hover:underline` para indicar que sao clicaveis, mantendo o estilo atual da pagina.
