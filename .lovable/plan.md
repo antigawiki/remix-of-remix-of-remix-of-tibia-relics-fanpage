@@ -1,99 +1,71 @@
 
 
-# Pagina de Ultimas Mortes do Servidor
+# Unificar coleta: Uma unica funcao para mortes E alts
 
-## Situacao Atual
+## Problema
 
-- Nao existe endpoint global de mortes na API do TibiaRelic
-- A API de character (`/api/Community/character/by-name?name=X`) retorna mortes individuais no campo `deaths`
-- Cada morte tem: `timestamp`, `level`, `killers` (array com `name`, `isPlayer`, `relatedPlayerName`)
-- Ja temos o tracking de jogadores online (`online_tracker_sessions`) com lista de jogadores ativos
+Hoje existem **duas funcoes separadas** que chamam **a mesma API** (`/api/Community/character/by-name`):
+- `scrape-character-accounts` - extrai `characters` (alts)
+- `collect-deaths` - extrai `deaths`
 
-## Solucao: Coletar mortes via character API
+Isso dobra o numero de requests desnecessariamente e causa rate limiting (429).
 
-### 1. Nova tabela: `player_deaths`
+## Solucao
 
-```sql
-CREATE TABLE player_deaths (
-  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  player_name text NOT NULL,
-  death_timestamp timestamptz NOT NULL,
-  level integer NOT NULL,
-  killers jsonb NOT NULL DEFAULT '[]',
-  created_at timestamptz DEFAULT now(),
-  UNIQUE(player_name, death_timestamp)
-);
-```
+Unificar tudo em `scrape-character-accounts`, que ja roda a cada 15 minutos. Cada chamada de API ja retorna AMBOS os dados (`characters` + `deaths`), entao basta extrair os dois de uma vez.
 
-A constraint UNIQUE evita duplicatas ao re-coletar mortes do mesmo personagem.
+## Mudancas
 
-### 2. Nova edge function: `collect-deaths`
+### 1. Atualizar `scrape-character-accounts/index.ts`
 
-- Busca jogadores distintos da tabela `online_tracker_sessions` (ultimos 7 dias para limitar)
-- Para cada jogador, chama a API de character e extrai o campo `deaths`
-- Insere mortes novas na tabela `player_deaths` (upsert para evitar duplicatas)
-- Processa em batches para nao sobrecarregar a API (ex: 5 por vez com delay)
-- Endpoint para ser chamado periodicamente (via cron ou manualmente)
+- Remover o TTL de 4 horas e o limite de 50 por run
+- Processar TODOS os jogadores em cada execucao
+- De cada resposta da API, extrair:
+  - `characters` -> upsert em `character_accounts` (como ja faz)
+  - `deaths` -> upsert em `player_deaths` (novo)
+- Request sequencial com delay de 200ms (= 5 req/s)
+- 518 jogadores x 200ms = ~104 segundos (dentro do timeout de 150s)
+- Retry 1x com 2s backoff se receber 429
 
-### 3. Nova pagina: `src/pages/LatestDeathsPage.tsx`
+### 2. Remover `collect-deaths` edge function
 
-- Rota: `/latest-deaths`
-- Busca mortes da tabela `player_deaths` ordenadas por `death_timestamp` DESC
-- Layout similar a DeathRowPage (tabela com wood-panel)
-- Colunas: Data/Hora, Personagem, Level, Causa da morte (monstro ou player)
-- Icone de caveira para mortes por player, icone de monstro para PvE
-- Nome do personagem clicavel (link para tibiarelic.com)
-- Filtros opcionais: PvP vs PvE, busca por nome
+- Deletar a pasta `supabase/functions/collect-deaths/`
+- Nao precisa mais existir como funcao separada
 
-### 4. Proxy: adicionar endpoint no `tibia-relic-proxy`
+### 3. Atualizar cron para rodar a cada 2 minutos
 
-- Nao necessario - a edge function `collect-deaths` chamara a API diretamente do backend
+- Mudar o schedule de `*/15` para `*/2`
+- Cada execucao cobre todos os 518 jogadores em ~104s
+- A proxima execucao comeca 2 minutos depois, criando um ciclo quase continuo
 
-### 5. Navegacao
+### 4. Nenhuma mudanca no frontend
 
-- Adicionar link "Ultimas Mortes" no Sidebar/menu
-- Adicionar rota no App.tsx
+- A pagina `LatestDeathsPage` continua lendo de `player_deaths` normalmente
+- O hook `useLatestDeaths` nao muda
 
-## Fluxo de dados
+## Fluxo otimizado
 
 ```text
-[Cron/Manual] -> collect-deaths (edge function)
-                    |
-                    v
-        Busca jogadores de online_tracker_sessions
-                    |
-                    v
-        Para cada jogador: GET character API -> extrai deaths
-                    |
-                    v
-        Insere em player_deaths (ignora duplicatas)
-                    |
-                    v
-[Frontend] -> SELECT * FROM player_deaths ORDER BY death_timestamp DESC
+[Cron cada 2 min] -> scrape-character-accounts
+                          |
+                          v
+                Para cada jogador (5/s):
+                  GET character API
+                          |
+                    +-----+-----+
+                    |           |
+                    v           v
+              characters    deaths
+                    |           |
+                    v           v
+           character_accounts  player_deaths
+              (upsert)        (upsert)
 ```
 
-## Detalhes Tecnicos
+## Resultado esperado
 
-### Edge function `collect-deaths`
-
-- Busca `SELECT DISTINCT player_name FROM online_tracker_sessions WHERE login_at > now() - interval '7 days'`
-- Processa em batches de 5 com delay de 500ms entre cada batch
-- Para cada character response, extrai `deaths` e faz upsert
-- Retorna contagem de mortes novas inseridas
-
-### Formato dos killers no banco
-
-Armazena o array `killers` como JSONB direto da API:
-```json
-[{"name": "an orc berserker", "isPlayer": false, "relatedPlayerName": null}]
-```
-
-Na UI, mostra o `name` do primeiro killer. Se `isPlayer: true`, destaca em vermelho.
-
-### Pagina frontend
-
-- Hook `useLatestDeaths` com react-query
-- Paginacao simples (limit 50, botao "carregar mais")
-- Badge colorido: "PvP" vermelho ou "PvE" cinza
-- Componente PlayerLink ja existente para links dos nomes
+- Cobertura completa de todos os jogadores a cada ~2 minutos
+- Zero requests duplicados (uma API call = dois dados)
+- Mortes detectadas em ate 2 minutos apos ocorrerem
+- Alt detector tambem atualizado com mesma frequencia
 
