@@ -6,14 +6,11 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
-// Re-scrape a character at most once every 4 hours
-const SCRAPE_TTL_MS = 4 * 60 * 60 * 1000;
-// Max characters per run — JSON API is fast, process 50 per cron run
-const MAX_PER_RUN = 50;
-// Short delay between API requests (be polite)
-const REQUEST_DELAY_MS = 200;
+// ~2 req/s to stay safely under rate limit
+const REQUEST_DELAY_MS = 500;
+// Stop processing after 120s to stay within 150s edge function timeout
+const MAX_RUNTIME_MS = 120_000;
 
-// Correct JSON API endpoint
 const JSON_API_BASE = "https://api.tibiarelic.com/api";
 
 serve(async (req) => {
@@ -26,54 +23,63 @@ serve(async (req) => {
   const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
   try {
-    // Get all distinct player names from sessions (paginate to avoid 1000 row limit)
+    // Get all distinct player names
     const allNames = await getAllPlayerNames(supabase);
 
     if (allNames.length === 0) {
       return new Response(
-        JSON.stringify({ success: true, message: "No players to scrape", scraped: 0 }),
+        JSON.stringify({ success: true, message: "No players", processed: 0 }),
         { headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
 
-    // Get already-scraped characters — only treat as fresh if recently scraped AND has real data
-    const cutoff = new Date(Date.now() - SCRAPE_TTL_MS).toISOString();
-    const { data: allScraped } = await supabase
+    // Get last_scraped_at for all known characters to prioritize oldest
+    const { data: scraped } = await supabase
       .from("character_accounts")
-      .select("character_name, account_chars, scrape_error, last_scraped_at");
+      .select("character_name, last_scraped_at");
 
-    const freshNames = new Set<string>();
-
-    for (const r of (allScraped || []) as { character_name: string; account_chars: string[]; scrape_error: string | null; last_scraped_at: string }[]) {
-      const isRecent = r.last_scraped_at >= cutoff;
-      const hasData = r.account_chars && r.account_chars.length > 0;
-      const hasError = r.scrape_error !== null;
-
-      if (isRecent && hasData && !hasError) {
-        freshNames.add(r.character_name);
-      }
+    const scrapedMap = new Map<string, string>();
+    for (const r of scraped || []) {
+      scrapedMap.set(r.character_name, r.last_scraped_at);
     }
 
-    const toScrape = allNames.filter((name) => !freshNames.has(name));
+    // Sort: never-scraped first, then oldest scraped first
+    const sorted = allNames.sort((a, b) => {
+      const aTime = scrapedMap.get(a);
+      const bTime = scrapedMap.get(b);
+      if (!aTime && !bTime) return 0;
+      if (!aTime) return -1;
+      if (!bTime) return 1;
+      return aTime.localeCompare(bTime);
+    });
 
-    console.log(
-      `Total: ${allNames.length}, fresh: ${freshNames.size}, to scrape: ${toScrape.length}, this run: ${Math.min(toScrape.length, MAX_PER_RUN)}`
-    );
-
-    if (toScrape.length === 0) {
-      return new Response(
-        JSON.stringify({ success: true, message: "All players are fresh", scraped: 0 }),
-        { headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
-    }
-
-    const batch = toScrape.slice(0, MAX_PER_RUN);
-    let scraped = 0;
+    const startTime = Date.now();
+    let processed = 0;
     let errors = 0;
+    let deathsInserted = 0;
+    let rateLimited = 0;
 
-    for (const name of batch) {
-      const result = await fetchCharacterByName(name);
+    console.log(`Total players: ${sorted.length}. Processing oldest-first until ${MAX_RUNTIME_MS / 1000}s elapsed...`);
 
+    for (const name of sorted) {
+      // Check time budget
+      if (Date.now() - startTime > MAX_RUNTIME_MS) {
+        console.log(`Time budget reached after ${processed} players`);
+        break;
+      }
+
+      const result = await fetchCharacterWithRetry(name);
+
+      if (result.rateLimited) {
+        rateLimited++;
+        // If we get rate limited even after retry, stop — API needs cooldown
+        if (rateLimited >= 3) {
+          console.warn(`Too many 429s (${rateLimited}), stopping early`);
+          break;
+        }
+      }
+
+      // Upsert character accounts
       await supabase.from("character_accounts").upsert(
         {
           character_name: name,
@@ -84,28 +90,48 @@ serve(async (req) => {
         { onConflict: "character_name" }
       );
 
+      // Upsert deaths
+      if (result.deaths.length > 0) {
+        const deathRows = result.deaths.map((d) => ({
+          player_name: name,
+          death_timestamp: d.timestamp,
+          level: d.level ?? 0,
+          killers: d.killers ?? [],
+        }));
+
+        const { error: deathError } = await supabase
+          .from("player_deaths")
+          .upsert(deathRows, { onConflict: "player_name,death_timestamp", ignoreDuplicates: true });
+
+        if (deathError) {
+          console.warn(`[${name}] Death upsert error: ${deathError.message}`);
+        } else {
+          deathsInserted += deathRows.length;
+        }
+      }
+
       if (result.error) {
         errors++;
-        console.warn(`[${name}] Error: ${result.error}`);
       } else {
-        scraped++;
-        const alts = result.accountChars.filter((c) => c !== name);
-        console.log(
-          `[${name}] OK — ${result.accountChars.length} chars${alts.length > 0 ? ` (alts: ${alts.join(", ")})` : ""}`
-        );
+        processed++;
       }
 
       await sleep(REQUEST_DELAY_MS);
     }
 
+    const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
+    const remaining = sorted.length - processed - errors;
+    console.log(`Done in ${elapsed}s. ${processed} OK, ${errors} errs, ${deathsInserted} deaths, ${remaining} remaining for next run`);
+
     return new Response(
       JSON.stringify({
         success: true,
-        total_known: allNames.length,
-        still_pending: Math.max(0, toScrape.length - batch.length),
-        scraped,
+        total: sorted.length,
+        processed,
         errors,
-        skipped_fresh: freshNames.size,
+        deaths_upserted: deathsInserted,
+        remaining_for_next_run: remaining,
+        elapsed_seconds: parseFloat(elapsed),
       }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
@@ -114,10 +140,7 @@ serve(async (req) => {
     console.error("scrape-character-accounts error:", message);
     return new Response(
       JSON.stringify({ success: false, error: message }),
-      {
-        status: 500,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      }
+      { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
   }
 });
@@ -149,15 +172,12 @@ async function getAllPlayerNames(supabase: ReturnType<typeof createClient>): Pro
 
 interface FetchResult {
   accountChars: string[];
+  deaths: Array<{ timestamp: string; level: number; killers: unknown[] }>;
   error?: string;
+  rateLimited?: boolean;
 }
 
-/**
- * Fetch character data using the correct tibiarelic API endpoint:
- *   GET https://api.tibiarelic.com/api/Community/character/by-name?name={name}
- * Returns { characters: [{name, level, worldName, online}] } — all chars on the account.
- */
-async function fetchCharacterByName(name: string): Promise<FetchResult> {
+async function fetchCharacterWithRetry(name: string, retries = 1): Promise<FetchResult> {
   try {
     const apiUrl = `${JSON_API_BASE}/Community/character/by-name?name=${encodeURIComponent(name)}`;
     const response = await fetch(apiUrl, {
@@ -168,19 +188,33 @@ async function fetchCharacterByName(name: string): Promise<FetchResult> {
       signal: AbortSignal.timeout(8000),
     });
 
-    if (!response.ok) {
-      return { accountChars: [name], error: `HTTP ${response.status}` };
+    if (response.status === 429) {
+      if (retries > 0) {
+        console.warn(`[${name}] 429 — retrying in 3s...`);
+        await sleep(3000);
+        return fetchCharacterWithRetry(name, retries - 1);
+      }
+      return { accountChars: [name], deaths: [], error: "429 after retry", rateLimited: true };
     }
 
-    const data = await response.json() as { characters?: { name: string }[] };
-    const chars = (data.characters ?? []).map((c) => c.name).filter(Boolean);
+    if (!response.ok) {
+      return { accountChars: [name], deaths: [], error: `HTTP ${response.status}` };
+    }
 
+    const data = await response.json() as {
+      characters?: { name: string }[];
+      deaths?: Array<{ timestamp: string; level: number; killers: unknown[] }>;
+    };
+
+    const chars = (data.characters ?? []).map((c) => c.name).filter(Boolean);
     if (chars.length === 0) chars.push(name);
 
-    return { accountChars: chars };
+    const deaths = Array.isArray(data.deaths) ? data.deaths : [];
+
+    return { accountChars: chars, deaths };
   } catch (e) {
     const msg = e instanceof Error ? e.message : "Unknown";
-    return { accountChars: [name], error: msg };
+    return { accountChars: [name], deaths: [], error: msg };
   }
 }
 
