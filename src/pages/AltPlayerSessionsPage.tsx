@@ -147,8 +147,8 @@ const AltPlayerSessionsPage = () => {
           const pLogin = new Date(pairS.login_at).getTime();
           const pLogout = pairS.logout_at ? new Date(pairS.logout_at).getTime() : Date.now();
 
-          const loginAdjacent = Math.abs(pLogin - logoutTime) <= ADJACENCY_WINDOW_MS || Math.abs(pLogin - loginTime) <= ADJACENCY_WINDOW_MS;
-          const logoutAdjacent = pairS.logout_at && (Math.abs(pLogout - loginTime) <= ADJACENCY_WINDOW_MS || Math.abs(pLogout - logoutTime) <= ADJACENCY_WINDOW_MS);
+          const loginAdjacent = Math.abs(pLogin - logoutTime) <= ADJACENCY_WINDOW_MS;
+          const logoutAdjacent = pairS.logout_at && Math.abs(pLogout - loginTime) <= ADJACENCY_WINDOW_MS;
 
           if (loginAdjacent || logoutAdjacent) {
             coincidences.push({
