@@ -36,6 +36,7 @@ import AltPlayerSessionsPage from "./pages/AltPlayerSessionsPage";
 import ImportPage from "./pages/ImportPage";
 import HuntAdminPage from "./pages/HuntAdminPage";
 import XpActivityPage from "./pages/XpActivityPage";
+import KillStatisticsPage from "./pages/KillStatisticsPage";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -82,6 +83,7 @@ const App = () => (
               <Route path="/import-data-temp" element={<ImportPage />} />
               <Route path="/hunt-admin" element={<HuntAdminPage />} />
               <Route path="/xp-activity" element={<XpActivityPage />} />
+              <Route path="/kill-statistics" element={<KillStatisticsPage />} />
               {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
               <Route path="*" element={<NotFound />} />
             </Routes>

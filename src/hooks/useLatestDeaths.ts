@@ -10,18 +10,28 @@ export interface PlayerDeath {
   created_at: string;
 }
 
-export function useLatestDeaths(limit = 50) {
+export function useLatestDeaths(initialLimit = 200) {
   return useQuery({
-    queryKey: ['latest-deaths', limit],
+    queryKey: ['latest-deaths', initialLimit],
     queryFn: async () => {
-      const { data, error } = await supabase
-        .from('player_deaths')
-        .select('*')
-        .order('death_timestamp', { ascending: false })
-        .limit(limit);
+      const [{ data, error }, { count, error: countError }] = await Promise.all([
+        supabase
+          .from('player_deaths')
+          .select('*')
+          .order('death_timestamp', { ascending: false })
+          .limit(initialLimit),
+        supabase
+          .from('player_deaths')
+          .select('*', { count: 'exact', head: true }),
+      ]);
 
       if (error) throw error;
-      return (data ?? []) as unknown as PlayerDeath[];
+      if (countError) throw countError;
+
+      return {
+        deaths: (data ?? []) as unknown as PlayerDeath[],
+        totalCount: count ?? 0,
+      };
     },
     refetchInterval: 60000,
   });

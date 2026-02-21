@@ -1,7 +1,7 @@
 import { Link } from 'react-router-dom';
 import { 
   Shield, Wand2, Bug, Scroll, Calculator, 
-  Info, Trophy, Clock, Package, Users, Skull, TrendingUp, Sparkles, Monitor, Swords
+  Info, Trophy, Clock, Package, Users, Skull, TrendingUp, Sparkles, Monitor, Swords, Target
 } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
 import { ptBR, enUS, es, pl } from 'date-fns/locale';
@@ -86,6 +86,10 @@ const Sidebar = ({ position }: SidebarProps) => {
             <Link to="/latest-deaths" className="sidebar-menu-item flex items-center gap-2">
               <Skull className="w-4 h-4 text-destructive" />
               {t('navigation.latestDeaths')}
+            </Link>
+            <Link to="/kill-statistics" className="sidebar-menu-item flex items-center gap-2">
+              <Target className="w-4 h-4 text-gold" />
+              {t('navigation.killStatistics')}
             </Link>
             <Link to="/info" className="sidebar-menu-item flex items-center gap-2">
               <Info className="w-4 h-4 text-gold" />
