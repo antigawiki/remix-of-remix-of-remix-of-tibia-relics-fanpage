@@ -83,6 +83,10 @@ const Sidebar = ({ position }: SidebarProps) => {
               <Skull className="w-4 h-4 text-gold" />
               {t('navigation.banned')}
             </Link>
+            <Link to="/latest-deaths" className="sidebar-menu-item flex items-center gap-2">
+              <Skull className="w-4 h-4 text-destructive" />
+              Últimas Mortes
+            </Link>
             <Link to="/info" className="sidebar-menu-item flex items-center gap-2">
               <Info className="w-4 h-4 text-gold" />
               {t('navigation.info')}

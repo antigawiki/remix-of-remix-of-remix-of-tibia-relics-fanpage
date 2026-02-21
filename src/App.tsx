@@ -27,6 +27,7 @@ import QuestDetailPage from "./pages/QuestDetailPage";
 import HighscoresPage from "./pages/HighscoresPage";
 import OnlinePlayersPage from "./pages/OnlinePlayersPage";
 import DeathRowPage from "./pages/DeathRowPage";
+import LatestDeathsPage from "./pages/LatestDeathsPage";
 import TopGainersPage from "./pages/TopGainersPage";
 import RunesPage from "./pages/RunesPage";
 import XpTrackerPage from "./pages/XpTrackerPage";
@@ -72,6 +73,7 @@ const App = () => (
               <Route path="/highscores" element={<HighscoresPage />} />
               <Route path="/online" element={<OnlinePlayersPage />} />
               <Route path="/death-row" element={<DeathRowPage />} />
+              <Route path="/latest-deaths" element={<LatestDeathsPage />} />
               <Route path="/top-gainers" element={<TopGainersPage />} />
               <Route path="/runes" element={<RunesPage />} />
               <Route path="/xp-tracker" element={<XpTrackerPage />} />
