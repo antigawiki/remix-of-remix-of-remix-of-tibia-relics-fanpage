@@ -118,7 +118,7 @@ serve(async (req) => {
           const b = players[j];
 
           const keyAB = [a, b].sort().join("|||");
-          const existingConfirmed = results[keyAB];
+          if (results[keyAB]) continue;
 
           const sessB = playerSessions[b];
           if (sessB.length < MIN_SESSIONS) continue;
@@ -176,13 +176,7 @@ serve(async (req) => {
             adjacencyRatio * proximityScore * bidirectionalBonus * dataConfidence * 100;
           probability = Math.min(80, Math.round(probability * 100) / 100);
 
-          if (existingConfirmed) {
-            // Pair already confirmed by account scraping - update stats but keep prob 99
-            existingConfirmed.match_count = adjCount;
-            existingConfirmed.total_sessions_a = sessA.length;
-            existingConfirmed.total_sessions_b = sessB.length;
-            existingConfirmed.ever_online_together = overlapCount > 0;
-          } else if (probability > 3) {
+          if (probability > 3) {
             results[keyAB] = makeResult(a, b, {
               match_count: adjCount,
               total_sessions_a: sessA.length,
