@@ -286,6 +286,20 @@ export interface TranslationKeys {
       dataCollected: string;
       errorLoading: string;
     };
+    latestDeaths: {
+      title: string;
+      description: string;
+      all: string;
+      searchPlaceholder: string;
+      deathCount: string;
+      type: string;
+      dateTime: string;
+      character: string;
+      level: string;
+      deathCause: string;
+      noDeaths: string;
+      noDeathsHint: string;
+    };
     killStatistics: {
       title: string;
       description: string;

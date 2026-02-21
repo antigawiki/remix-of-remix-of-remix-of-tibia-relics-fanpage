@@ -46,20 +46,26 @@ const LatestDeathsPage = () => {
     return true;
   });
 
+  const filterLabels: Record<FilterType, string> = {
+    all: t('pages.latestDeaths.all'),
+    pvp: 'PvP',
+    pve: 'PvE',
+  };
+
   return (
     <MainLayout>
       <div className="wood-panel rounded-sm overflow-hidden">
         <header className="news-box-header">
           <h2 className="font-semibold flex items-center gap-2">
             <Skull className="w-5 h-5" />
-            Últimas Mortes
+            {t('pages.latestDeaths.title')}
             {isFetching && <RefreshCw className="w-4 h-4 animate-spin text-muted-foreground" />}
           </h2>
         </header>
 
         <div className="p-4 space-y-4">
           <p className="text-sm text-muted-foreground">
-            Registro das mortes mais recentes dos jogadores do servidor.
+            {t('pages.latestDeaths.description')}
           </p>
 
           {/* Filters */}
@@ -75,21 +81,23 @@ const LatestDeathsPage = () => {
                       : 'bg-background border-border text-muted-foreground hover:text-foreground'
                   }`}
                 >
-                  {f === 'all' ? 'Todas' : f === 'pvp' ? 'PvP' : 'PvE'}
+                  {filterLabels[f]}
                 </button>
               ))}
             </div>
             <div className="relative flex-1 min-w-[180px] max-w-xs">
               <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
               <Input
-                placeholder="Buscar jogador ou killer..."
+                placeholder={t('pages.latestDeaths.searchPlaceholder')}
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 className="pl-8 h-8 text-sm"
               />
             </div>
             <span className="text-xs text-muted-foreground ml-auto">
-              {filtered.length} de {totalCount} morte{totalCount !== 1 ? 's' : ''} registrada{totalCount !== 1 ? 's' : ''}
+              {t('pages.latestDeaths.deathCount')
+                .replace('{shown}', String(filtered.length))
+                .replace('{total}', String(totalCount))}
             </span>
           </div>
 
@@ -104,11 +112,11 @@ const LatestDeathsPage = () => {
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead className="w-10">Tipo</TableHead>
-                  <TableHead>Data/Hora</TableHead>
-                  <TableHead>Personagem</TableHead>
-                  <TableHead className="text-right">Level</TableHead>
-                  <TableHead>Causa da Morte</TableHead>
+                  <TableHead className="w-10">{t('pages.latestDeaths.type')}</TableHead>
+                  <TableHead>{t('pages.latestDeaths.dateTime')}</TableHead>
+                  <TableHead>{t('pages.latestDeaths.character')}</TableHead>
+                  <TableHead className="text-right">{t('pages.latestDeaths.level')}</TableHead>
+                  <TableHead>{t('pages.latestDeaths.deathCause')}</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -154,9 +162,9 @@ const LatestDeathsPage = () => {
           ) : (
             <div className="text-center py-8">
               <Skull className="w-12 h-12 mx-auto text-muted-foreground/50 mb-3" />
-              <p className="text-muted-foreground">Nenhuma morte registrada ainda.</p>
+              <p className="text-muted-foreground">{t('pages.latestDeaths.noDeaths')}</p>
               <p className="text-xs text-muted-foreground/70 mt-1">
-                As mortes são coletadas periodicamente dos jogadores ativos.
+                {t('pages.latestDeaths.noDeathsHint')}
               </p>
             </div>
           )}
