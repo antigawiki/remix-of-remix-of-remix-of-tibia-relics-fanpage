@@ -215,6 +215,7 @@ const AltDetectorPage = () => {
       const { data, error } = await supabase
         .from('alt_detector_matches')
         .select('*')
+        .lt('probability', 99)
         .order('probability', { ascending: false });
       if (error) throw error;
       return data;
@@ -422,12 +423,9 @@ const AltDetectorPage = () => {
                     <TooltipProvider>
                     {filteredSuspected.map((m) => {
                       const prob = Math.round(Number(m.probability));
-                      const isConfirmed = prob >= 99;
                       const isHigh = prob >= 60;
                       const isMed = prob >= 35;
-                      const badgeClass = isConfirmed
-                        ? 'bg-emerald-600 text-white'
-                        : isHigh
+                      const badgeClass = isHigh
                         ? 'bg-destructive text-destructive-foreground'
                         : isMed
                         ? 'bg-yellow-500 text-white'
@@ -443,7 +441,7 @@ const AltDetectorPage = () => {
                           <TableCell className="text-center">
                             <div className="inline-flex items-center gap-1.5">
                               <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-bold ${badgeClass}`}>
-                                {isConfirmed ? 'Confirmado' : `${prob}%`}
+                                {prob}%
                               </span>
                               {seenTogether && (
                                 <Tooltip>
