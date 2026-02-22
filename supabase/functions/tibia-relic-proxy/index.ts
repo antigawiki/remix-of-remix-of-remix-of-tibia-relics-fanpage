@@ -71,6 +71,13 @@ serve(async (req) => {
       case "kill-statistics":
         apiUrl = `${API_BASE}/KillStatistics?worldName=Relic`;
         break;
+      case "houses": {
+        const type = url.searchParams.get("type") || "HousesAndFlats";
+        const status = url.searchParams.get("status") || "All";
+        const town = url.searchParams.get("town") || "";
+        apiUrl = `${API_BASE}/Houses?worldName=Relic&type=${type}&status=${status}${town ? `&town=${encodeURIComponent(town)}` : ''}`;
+        break;
+      }
       default:
         return new Response(
           JSON.stringify({ error: "Invalid endpoint" }),

@@ -16,6 +16,7 @@ export interface TranslationKeys {
     topGainers: string;
     latestDeaths: string;
     killStatistics: string;
+    houses: string;
     map: string;
     officialSite: string;
   };
@@ -310,6 +311,24 @@ export interface TranslationKeys {
       overall: string;
       killedPlayers: string;
       killedByPlayers: string;
+    };
+    houses: {
+      title: string;
+      description: string;
+      town: string;
+      type: string;
+      status: string;
+      housesAndFlats: string;
+      guildhalls: string;
+      auctioned: string;
+      rented: string;
+      free: string;
+      size: string;
+      beds: string;
+      rent: string;
+      searchPlaceholder: string;
+      noHouses: string;
+      errorLoading: string;
     };
   };
   tables: {
