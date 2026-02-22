@@ -1,101 +1,101 @@
 
+# Pagina de Houses (Casas) - 4 Idiomas
 
-# 3 Melhorias: Ultimas Mortes, Kill Statistics e Menu Mobile
+## Resumo
 
-## 1. Pagina Ultimas Mortes - Mostrar total real
-
-**Problema:** A pagina mostra "200 mortes" mas existem 356 no banco. Da a entender que so existem 200.
-
-**Solucao:**
-- Buscar o total real do banco com uma query `COUNT(*)` separada ou simplesmente aumentar o limit para buscar todas
-- Adicionar texto informativo como "Mostrando as 200 mais recentes de 356 mortes registradas"
-- Ou melhor: mostrar todas com paginacao (carregar mais)
-
-**Arquivo:** `src/hooks/useLatestDeaths.ts` e `src/pages/LatestDeathsPage.tsx`
-- Aumentar limit padrao ou adicionar botao "Carregar mais"
-- Exibir contagem total no topo
+Criar uma pagina completa de Houses no estilo da pagina de Highscores, com filtros por cidade, tipo (Houses and Flats / Guildhalls) e status (All / Auctioned / Rented). A tabela tera ordenacao por nome, camas, tamanho e preco (rent).
 
 ---
 
-## 2. Nova pagina: Kill Statistics (Monstros Mortos)
+## Estrutura da API
 
-**API:** `https://api.tibiarelic.com/api/KillStatistics?worldName=Relic`
+**Endpoint:** `https://api.tibiarelic.com/api/Houses?worldName=Relic&status={status}&type={type}&town={town}`
 
-Esta API retorna estatisticas de mortes de monstros (quantos mataram jogadores e quantos foram mortos por jogadores) nos periodos: ultimo dia, ultima semana e overall.
+Parametros:
+- `type`: `HousesAndFlats` ou `GuildHalls`
+- `status`: `All`, `Auctioned` ou `Rented`  
+- `town`: nome da cidade (opcional, se omitido retorna todas)
 
-### Mudancas:
-
-**a) Proxy - adicionar endpoint `kill-statistics`**
-- Arquivo: `supabase/functions/tibia-relic-proxy/index.ts`
-- Novo case no switch para `kill-statistics` apontando para `${API_BASE}/KillStatistics?worldName=Relic`
-
-**b) Hook para buscar dados**
-- Novo arquivo: `src/hooks/useKillStatistics.ts`
-- Chama o proxy, retorna a lista de criaturas com estatisticas
-
-**c) Nova pagina: `src/pages/KillStatisticsPage.tsx`**
-- Rota: `/kill-statistics`
-- Layout similar a referencia (tabela com colunas Last Day / Last Week / Overall)
-- Cada linha mostra a imagem da criatura ao lado do nome (mapeando pelo nome com os dados de `src/data/creatures.ts`)
-- Colunas: Race (com imagem), Killed Players (dia/semana/total), Killed by Players (dia/semana/total)
-- Busca por nome de criatura
-- Ordenacao por coluna
-
-**d) Rota no App.tsx**
-- Adicionar `<Route path="/kill-statistics" element={<KillStatisticsPage />} />`
-
-**e) Navegacao**
-- Sidebar: adicionar link "Monstros Mortos" / "Kill Statistics"
-- Mobile menu (Header.tsx): adicionar link tambem
-
-**f) Traducoes (i18n)**
-- Adicionar chaves em `types.ts` e nos 4 arquivos de traducao (pt/en/es/pl)
-- Chaves: `navigation.killStatistics`, `pages.killStatistics.title`, `pages.killStatistics.description`, colunas da tabela
+Cada house retorna:
+- `houseId`, `name`, `description`, `size` (sqm), `rent` (gold), `town`, `guildHouse`
+- `status`: `{ type: "auctioned"|"rented", bidAmount, bidLimit, finishTime }`
+- Numero de camas extraido do campo `description` (ex: "This guildhall has ten beds.")
 
 ---
 
-## 3. Menu Mobile - Links faltando
+## Arquivos a Criar
 
-**Problema:** O menu mobile no Header.tsx nao inclui varios links que existem no Sidebar desktop:
-- "Ultimas Mortes" (latest-deaths)
-- "Hunt Admin" (hunt-admin)
-- "Top Gainers" ja esta, mas falta "Ultimas Mortes"
-- A nova pagina "Kill Statistics" tambem precisa estar
+### 1. `src/hooks/useHouses.ts`
+- Hook com `useQuery` que chama o proxy
+- Recebe parametros: `type`, `status`, `town`
+- Interface `House` com todos os campos da API
+- Funcao auxiliar para extrair numero de camas do `description`
 
-**Solucao:**
-- Arquivo: `src/components/Header.tsx`
-- Adicionar no menu mobile:
-  - Link para `/latest-deaths` com icone Skull
-  - Link para `/kill-statistics` com icone (ex: BarChart3 ou Target)
-  - Link para `/hunt-admin` com icone Swords
-- Organizar os links na mesma ordem do Sidebar
+### 2. `src/pages/HousesPage.tsx`
+- Layout com `MainLayout` (com sidebars, igual Highscores)
+- Icone de casa (Home do lucide)
+- **3 filtros Select** no topo:
+  - Cidade: All, Ab'Dendriel, Ankrahmun, Carlin, Darashia, Edron, Kazordoon, Liberty Bay, Port Hope, Svargrond, Thais, Venore, Yalahar
+  - Tipo: Houses and Flats, Guildhalls
+  - Status: All, Auctioned, Rented
+- **Tabela com colunas**: Nome, Cidade, Tamanho (sqm), Camas, Aluguel (gold), Status
+- **Ordenacao** clicavel em todas as colunas numericas + nome
+- **Busca** por nome de house
+- Linhas com status "rented" destacadas visualmente
+- Houses em leilao mostram valor do bid e tempo restante
+
+---
+
+## Arquivos a Modificar
+
+### 3. `supabase/functions/tibia-relic-proxy/index.ts`
+- Novo case `houses` no switch
+- Passa parametros `type`, `status` e `town` para a URL da API
+
+### 4. `src/App.tsx`
+- Nova rota: `/houses` -> `<HousesPage />`
+
+### 5. `src/components/Sidebar.tsx`
+- Novo link "Houses" / "Casas" no menu de navegacao (com icone Home)
+
+### 6. `src/components/Header.tsx`
+- Adicionar link "Houses" no menu mobile
+
+### 7. `src/i18n/types.ts`
+- Novas chaves em `navigation.houses`
+- Novo bloco `pages.houses` com: title, description, filters (town, type, status), colunas da tabela, status labels, etc.
+
+### 8. Traducoes (4 arquivos)
+- `src/i18n/translations/pt.ts` - "Casas"
+- `src/i18n/translations/en.ts` - "Houses"
+- `src/i18n/translations/es.ts` - "Casas"
+- `src/i18n/translations/pl.ts` - "Domy"
 
 ---
 
 ## Detalhes Tecnicos
 
-### Mapeamento criatura -> imagem
+### Extracao do numero de camas
+O campo `description` contem texto como "This guildhall has **ten** beds." O numero esta por extenso. Sera criado um mapa de palavras em ingles para numeros (one=1, two=2, ..., thirty=30) para parsear automaticamente. Fallback para 0 se nao encontrar.
 
-O arquivo `src/data/creatures.ts` contem todas as criaturas com seus nomes e URLs de imagem. Para a pagina de Kill Statistics, faremos um Map por nome (case-insensitive) para associar a imagem da API ao sprite local. Criaturas sem match mostram um placeholder.
+### Ordenacao
+A tabela tera state local `sortField` e `sortDirection`. Clicar no header da coluna alterna asc/desc. Colunas ordenáveis: name, town, size, beds (extraido), rent.
 
-### Estrutura esperada da API KillStatistics
+### Proxy
+```text
+case "houses": {
+  const type = url.searchParams.get("type") || "HousesAndFlats";
+  const status = url.searchParams.get("status") || "All";
+  const town = url.searchParams.get("town") || "";
+  apiUrl = `${API_BASE}/Houses?worldName=Relic&type=${type}&status=${status}${town ? `&town=${town}` : ''}`;
+  break;
+}
+```
 
-Baseado na referencia visual, cada entrada da API deve conter:
-- `race` (nome da criatura)
-- `lastDayKilledPlayers`, `lastDayKilledByPlayers`
-- `lastWeekKilledPlayers`, `lastWeekKilledByPlayers`
-- `killedPlayers`, `killedByPlayers` (overall)
-
-### Arquivos criados
-- `src/hooks/useKillStatistics.ts`
-- `src/pages/KillStatisticsPage.tsx`
-
-### Arquivos modificados
-- `supabase/functions/tibia-relic-proxy/index.ts` (novo endpoint)
-- `src/App.tsx` (nova rota)
-- `src/components/Sidebar.tsx` (novo link)
-- `src/components/Header.tsx` (links mobile faltando)
-- `src/i18n/types.ts` (novas chaves)
-- `src/i18n/translations/pt.ts`, `en.ts`, `es.ts`, `pl.ts` (traducoes)
-- `src/pages/LatestDeathsPage.tsx` (mostrar total real)
-- `src/hooks/useLatestDeaths.ts` (buscar total)
+### Estrutura visual
+Segue o mesmo padrao da pagina de Highscores:
+- `wood-panel` container
+- `news-box-header` no topo
+- Filtros em `flex flex-wrap gap-4`
+- Tabela padrao do projeto (`Table`, `TableRow`, etc.)
+- Skeleton loading e estado vazio com traducao
