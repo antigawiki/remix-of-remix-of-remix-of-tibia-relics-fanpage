@@ -37,6 +37,7 @@ import ImportPage from "./pages/ImportPage";
 import HuntAdminPage from "./pages/HuntAdminPage";
 import XpActivityPage from "./pages/XpActivityPage";
 import KillStatisticsPage from "./pages/KillStatisticsPage";
+import HousesPage from "./pages/HousesPage";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -84,6 +85,7 @@ const App = () => (
               <Route path="/hunt-admin" element={<HuntAdminPage />} />
               <Route path="/xp-activity" element={<XpActivityPage />} />
               <Route path="/kill-statistics" element={<KillStatisticsPage />} />
+              <Route path="/houses" element={<HousesPage />} />
               {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
               <Route path="*" element={<NotFound />} />
             </Routes>
