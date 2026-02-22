@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import React, { useState } from 'react';
 import { Skull, RefreshCw, Search, Swords, Bug } from 'lucide-react';
 import { format } from 'date-fns';
 import { ptBR, enUS, es, pl } from 'date-fns/locale';
@@ -20,9 +20,19 @@ type FilterType = 'all' | 'pvp' | 'pve';
 const LatestDeathsPage = () => {
   const [filter, setFilter] = useState<FilterType>('all');
   const [search, setSearch] = useState('');
-  const { data, isLoading, isFetching } = useLatestDeaths(200);
+  const [debouncedSearch, setDebouncedSearch] = useState('');
+  const { data, isLoading, isFetching } = useLatestDeaths(100, debouncedSearch);
   const deaths = data?.deaths ?? [];
   const totalCount = data?.totalCount ?? 0;
+  const isSearchResult = data?.isSearchResult ?? false;
+
+  // Debounce search to avoid too many queries
+  const debounceRef = React.useRef<ReturnType<typeof setTimeout>>();
+  const handleSearchChange = (value: string) => {
+    setSearch(value);
+    clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(() => setDebouncedSearch(value), 400);
+  };
   const { t, language } = useTranslation();
   const dateLocale = localeMap[language] || ptBR;
 
@@ -38,11 +48,6 @@ const LatestDeathsPage = () => {
   const filtered = deaths.filter((d) => {
     if (filter === 'pvp' && !isPvpDeath(d.killers)) return false;
     if (filter === 'pve' && isPvpDeath(d.killers)) return false;
-    if (search) {
-      const s = search.toLowerCase();
-      const killerMatch = d.killers.some((k) => k.name.toLowerCase().includes(s));
-      return d.player_name.toLowerCase().includes(s) || killerMatch;
-    }
     return true;
   });
 
@@ -90,7 +95,7 @@ const LatestDeathsPage = () => {
               <Input
                 placeholder={t('pages.latestDeaths.searchPlaceholder')}
                 value={search}
-                onChange={(e) => setSearch(e.target.value)}
+                onChange={(e) => handleSearchChange(e.target.value)}
                 className="pl-8 h-8 text-sm"
               />
             </div>
