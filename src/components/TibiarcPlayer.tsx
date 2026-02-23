@@ -74,12 +74,16 @@ const TibiarcPlayer = ({ className }: TibiarcPlayerProps) => {
     return new Promise<WasmModule>((resolve, reject) => {
       script.onload = async () => {
         try {
+          console.log('[TibiarcPlayer] Script loaded, checking window.TibiarcModule...');
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           const factory = (window as any).TibiarcModule;
           const canvas = canvasRef.current;
-          if (!factory || !canvas) throw new Error('Module not found');
+          console.log('[TibiarcPlayer] factory:', typeof factory, 'canvas:', !!canvas);
+          if (!factory || !canvas) throw new Error('Module not found - factory: ' + typeof factory + ', canvas: ' + !!canvas);
 
+          console.log('[TibiarcPlayer] Calling factory with canvas...');
           const mod = await factory({ canvas }) as WasmModule;
+          console.log('[TibiarcPlayer] Module instantiated, loading data files...');
           moduleRef.current = mod;
 
           // Load Tibia data files
@@ -125,10 +129,14 @@ const TibiarcPlayer = ({ className }: TibiarcPlayerProps) => {
 
           resolve(mod);
         } catch (err) {
+          console.error('[TibiarcPlayer] Error during WASM init:', err);
           reject(err);
         }
       };
-      script.onerror = () => reject(new Error('Failed to load WASM'));
+      script.onerror = (e) => {
+        console.error('[TibiarcPlayer] Script load error:', e);
+        reject(new Error('Failed to load WASM script'));
+      };
       document.head.appendChild(script);
     });
   }, []);
