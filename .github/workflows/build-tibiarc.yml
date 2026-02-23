@@ -16,6 +16,14 @@ jobs:
         with:
           version: 3.1.51
 
+      - name: Install fmt library
+        run: |
+          cd /tmp
+          git clone --depth 1 --branch 10.2.1 https://github.com/fmtlib/fmt.git
+          cd fmt && mkdir build && cd build
+          emcmake cmake .. -DFMT_DOC=OFF -DFMT_TEST=OFF -DFMT_INSTALL=ON -DCMAKE_INSTALL_PREFIX=/tmp/fmt-install
+          emmake make -j$(nproc) && emmake make install
+
       - name: Clone tibiarc
         run: |
           git clone https://github.com/tibiacast/tibiarc.git /tmp/tibiarc
@@ -34,11 +42,12 @@ jobs:
             -DTIBIARC_NO_OPENMP=ON \
             -DTIBIARC_NO_TBB=ON \
             -DTIBIARC_NO_OPENSSL=ON \
-            -DTIBIARC_NO_FMTLIB=ON \
+            -DTIBIARC_NO_FMTLIB=OFF \
             -DTIBIARC_NO_ZLIB=ON \
             -DTIBIARC_NO_QT=ON \
             -DTIBIARC_NO_SDL2=ON \
-            -DCMAKE_BUILD_TYPE=Release
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_PREFIX_PATH=/tmp/fmt-install
           
           emmake make -j$(nproc) tibiarc
           
@@ -61,9 +70,11 @@ jobs:
             -s MODULARIZE=1 \
             -s EXPORT_NAME='TibiarcModule' \
             -I../lib \
+            -I/tmp/fmt-install/include \
             -std=c++23 \
             ../web_player.cpp \
             libtibiarc.a \
+            /tmp/fmt-install/lib/libfmt.a \
             -o tibiarc_player.js
 
       - name: Prepare output
