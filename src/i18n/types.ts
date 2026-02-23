@@ -17,6 +17,7 @@ export interface TranslationKeys {
     latestDeaths: string;
     killStatistics: string;
     houses: string;
+    camPlayer: string;
     map: string;
     officialSite: string;
   };
@@ -526,6 +527,22 @@ export interface TranslationKeys {
       total: string;
       summary: string;
     };
+  };
+  camPlayer: {
+    title: string;
+    description: string;
+    dropFile: string;
+    supportedFormats: string;
+    selectFile: string;
+    loadingFile: string;
+    noFileLoaded: string;
+    ready: string;
+    playing: string;
+    paused: string;
+    wasmNotFound: string;
+    wasmInstructions: string;
+    invalidFormat: string;
+    loadError: string;
   };
   xpTracker: {
     title: string;
