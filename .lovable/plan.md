@@ -1,101 +1,119 @@
 
-# Pagina de Houses (Casas) - 4 Idiomas
+
+# Player de Replays Tibia (.cam) na Web
 
 ## Resumo
 
-Criar uma pagina completa de Houses no estilo da pagina de Highscores, com filtros por cidade, tipo (Houses and Flats / Guildhalls) e status (All / Auctioned / Rented). A tabela tera ordenacao por nome, camas, tamanho e preco (rent).
+Integrar o **tibiarc** (compilado para WebAssembly via Emscripten) ao projeto para permitir upload e reproducao de arquivos `.cam` do Tibia 7.4 diretamente no navegador. O tibiarc ja suporta oficialmente a compilacao para WASM e inclui um modo GUI/player para navegador.
 
 ---
 
-## Estrutura da API
+## Pre-requisito: Compilacao Externa
 
-**Endpoint:** `https://api.tibiarelic.com/api/Houses?worldName=Relic&status={status}&type={type}&town={town}`
+O tibiarc e um projeto em C que precisa ser compilado para WebAssembly usando Emscripten. Isso **nao pode ser feito dentro do Lovable** - precisa ser feito uma unica vez em uma maquina com Linux ou WSL.
 
-Parametros:
-- `type`: `HousesAndFlats` ou `GuildHalls`
-- `status`: `All`, `Auctioned` ou `Rented`  
-- `town`: nome da cidade (opcional, se omitido retorna todas)
+### Passos para compilar (fora do Lovable):
 
-Cada house retorna:
-- `houseId`, `name`, `description`, `size` (sqm), `rent` (gold), `town`, `guildHouse`
-- `status`: `{ type: "auctioned"|"rented", bidAmount, bidLimit, finishTime }`
-- Numero de camas extraido do campo `description` (ex: "This guildhall has ten beds.")
-
----
-
-## Arquivos a Criar
-
-### 1. `src/hooks/useHouses.ts`
-- Hook com `useQuery` que chama o proxy
-- Recebe parametros: `type`, `status`, `town`
-- Interface `House` com todos os campos da API
-- Funcao auxiliar para extrair numero de camas do `description`
-
-### 2. `src/pages/HousesPage.tsx`
-- Layout com `MainLayout` (com sidebars, igual Highscores)
-- Icone de casa (Home do lucide)
-- **3 filtros Select** no topo:
-  - Cidade: All, Ab'Dendriel, Ankrahmun, Carlin, Darashia, Edron, Kazordoon, Liberty Bay, Port Hope, Svargrond, Thais, Venore, Yalahar
-  - Tipo: Houses and Flats, Guildhalls
-  - Status: All, Auctioned, Rented
-- **Tabela com colunas**: Nome, Cidade, Tamanho (sqm), Camas, Aluguel (gold), Status
-- **Ordenacao** clicavel em todas as colunas numericas + nome
-- **Busca** por nome de house
-- Linhas com status "rented" destacadas visualmente
-- Houses em leilao mostram valor do bid e tempo restante
-
----
-
-## Arquivos a Modificar
-
-### 3. `supabase/functions/tibia-relic-proxy/index.ts`
-- Novo case `houses` no switch
-- Passa parametros `type`, `status` e `town` para a URL da API
-
-### 4. `src/App.tsx`
-- Nova rota: `/houses` -> `<HousesPage />`
-
-### 5. `src/components/Sidebar.tsx`
-- Novo link "Houses" / "Casas" no menu de navegacao (com icone Home)
-
-### 6. `src/components/Header.tsx`
-- Adicionar link "Houses" no menu mobile
-
-### 7. `src/i18n/types.ts`
-- Novas chaves em `navigation.houses`
-- Novo bloco `pages.houses` com: title, description, filters (town, type, status), colunas da tabela, status labels, etc.
-
-### 8. Traducoes (4 arquivos)
-- `src/i18n/translations/pt.ts` - "Casas"
-- `src/i18n/translations/en.ts` - "Houses"
-- `src/i18n/translations/es.ts` - "Casas"
-- `src/i18n/translations/pl.ts` - "Domy"
-
----
-
-## Detalhes Tecnicos
-
-### Extracao do numero de camas
-O campo `description` contem texto como "This guildhall has **ten** beds." O numero esta por extenso. Sera criado um mapa de palavras em ingles para numeros (one=1, two=2, ..., thirty=30) para parsear automaticamente. Fallback para 0 se nao encontrar.
-
-### Ordenacao
-A tabela tera state local `sortField` e `sortDirection`. Clicar no header da coluna alterna asc/desc. Colunas ordenáveis: name, town, size, beds (extraido), rent.
-
-### Proxy
 ```text
-case "houses": {
-  const type = url.searchParams.get("type") || "HousesAndFlats";
-  const status = url.searchParams.get("status") || "All";
-  const town = url.searchParams.get("town") || "";
-  apiUrl = `${API_BASE}/Houses?worldName=Relic&type=${type}&status=${status}${town ? `&town=${town}` : ''}`;
-  break;
-}
+# 1. Instalar Emscripten
+git clone https://github.com/emscripten-core/emsdk.git
+cd emsdk
+./emsdk install latest
+./emsdk activate latest
+source ./emsdk_env.sh
+
+# 2. Clonar tibiarc
+git clone https://github.com/tibiacast/tibiarc.git
+cd tibiarc
+
+# 3. Compilar para WASM
+mkdir build-wasm && cd build-wasm
+emcmake cmake ..
+emmake make
+
+# Resultado: gui.js, gui.wasm (e possivelmente gui.data)
 ```
 
-### Estrutura visual
-Segue o mesmo padrao da pagina de Highscores:
-- `wood-panel` container
-- `news-box-header` no topo
-- Filtros em `flex flex-wrap gap-4`
-- Tabela padrao do projeto (`Table`, `TableRow`, etc.)
-- Skeleton loading e estado vazio com traducao
+### Arquivos resultantes necessarios:
+- `gui.js` - loader JavaScript gerado pelo Emscripten
+- `gui.wasm` - binario WebAssembly
+- Opcionalmente `gui.data` - dados empacotados
+
+### Arquivos de dados do Tibia 7.4:
+- `Tibia.dat` - metadados de itens/criaturas
+- `Tibia.spr` - sprites (imagens)
+- `Tibia.pic` - imagens da interface (pode usar de versao posterior se nao encontrar)
+
+Esses arquivos podem ser encontrados em: https://downloads.ots.me/?dir=data/tibia-clients/dat_and_spr_collections
+
+---
+
+## O que faremos no Lovable (apos a compilacao)
+
+### 1. Hospedagem dos arquivos WASM
+
+Adicionar os arquivos compilados ao projeto:
+- `public/tibiarc/gui.js`
+- `public/tibiarc/gui.wasm`
+- `public/tibiarc/data/Tibia.dat`
+- `public/tibiarc/data/Tibia.spr`
+- `public/tibiarc/data/Tibia.pic`
+
+### 2. Nova pagina: `src/pages/CamPlayerPage.tsx`
+
+- Layout fullscreen sem sidebars (como XP Tracker)
+- Area de upload para arquivos `.cam`
+- Canvas onde o player WASM renderiza o jogo
+- Controles de reproducao: Play/Pause, velocidade (1x, 2x, 4x), barra de progresso
+- Estilizado no tema do projeto (wood-panel)
+
+### 3. Componente wrapper: `src/components/TibiarcPlayer.tsx`
+
+- Carrega o modulo WASM (gui.js)
+- Injeta o arquivo `.cam` no sistema de arquivos virtual do Emscripten (MEMFS)
+- Conecta o canvas HTML5 ao renderer WASM
+- Expoe controles de reproducao via callbacks JavaScript
+
+### 4. Rota e navegacao
+
+- Nova rota `/cam-player` no `src/App.tsx`
+- Links no Sidebar e Header (icone Film/Play do lucide)
+- Traducoes nos 4 idiomas:
+  - PT: "Player de Replays"
+  - EN: "Replay Player"
+  - ES: "Reproductor de Replays"
+  - PL: "Odtwarzacz Powtórek"
+
+---
+
+## Fluxo do usuario
+
+```text
+1. Acessa /cam-player
+2. Ve a interface com area de upload
+3. Arrasta ou seleciona um arquivo .cam
+4. O arquivo e carregado na memoria do WASM (MEMFS)
+5. O tibiarc renderiza frame a frame no canvas
+6. Usuario controla play/pause, velocidade, timeline
+```
+
+---
+
+## Limitacoes e consideracoes
+
+- **Tamanho**: Os arquivos Tibia.dat + Tibia.spr juntos tem ~20-30MB. Serao carregados na primeira visita e cacheados pelo navegador
+- **Performance**: O WASM roda com performance proxima de nativo, muito melhor que a abordagem TypeScript pura do otwebclient
+- **Formatos suportados**: Alem de `.cam`, o tibiarc suporta `.rec`, `.tmv2`, `.trp`, `.ttm`, `.yatc`, `.recording` - todos poderiam funcionar
+- **Versoes**: Suporte bom para Tibia 7.11 ate 8.62, cobrindo o 7.4
+
+---
+
+## Proximo passo imediato
+
+Para comecar, voce precisaria:
+1. Compilar o tibiarc para WASM (instrucoes acima)
+2. Fazer upload dos arquivos resultantes (`gui.js`, `gui.wasm`) para o projeto
+3. Fazer upload dos arquivos de dados do Tibia 7.4 (`Tibia.dat`, `Tibia.spr`, `Tibia.pic`)
+
+Com esses arquivos em maos, eu construo toda a interface, integracao e controles de reproducao.
+
