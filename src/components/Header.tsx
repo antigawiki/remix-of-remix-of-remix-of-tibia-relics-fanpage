@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Menu, X, Users, Skull, Map, Home, Shield, Sparkles, Bug, ScrollText, Calculator, Info, Search, Package, Trophy, TrendingUp, Monitor, Swords, Target, Building } from 'lucide-react';
+import { Menu, X, Users, Skull, Map, Home, Shield, Sparkles, Bug, ScrollText, Calculator, Info, Search, Package, Trophy, TrendingUp, Monitor, Swords, Target, Building, Film } from 'lucide-react';
 import headerBg from '@/assets/header-bg.jpg';
 import mainLogo from '@/assets/main-logo.webp';
 import GlobalSearch from '@/components/GlobalSearch';
@@ -183,6 +183,10 @@ const Header = () => {
               <Link to="/houses" className="sidebar-menu-item flex items-center gap-2" onClick={() => setMobileMenuOpen(false)}>
                 <Building className="w-4 h-4" />
                 {t('navigation.houses')}
+              </Link>
+              <Link to="/cam-player" className="sidebar-menu-item flex items-center gap-2" onClick={() => setMobileMenuOpen(false)}>
+                <Film className="w-4 h-4" />
+                {t('navigation.camPlayer')}
               </Link>
               <Link to="/hunt-admin" className="sidebar-menu-item flex items-center gap-2" onClick={() => setMobileMenuOpen(false)}>
                 <Swords className="w-4 h-4" />
