@@ -534,15 +534,9 @@ export interface TranslationKeys {
     dropFile: string;
     supportedFormats: string;
     selectFile: string;
-    loadingFile: string;
-    noFileLoaded: string;
-    ready: string;
-    playing: string;
-    paused: string;
-    wasmNotFound: string;
-    wasmInstructions: string;
-    invalidFormat: string;
-    loadError: string;
+    howToConvert: string;
+    convertDescription: string;
+    convertNote: string;
   };
   xpTracker: {
     title: string;
