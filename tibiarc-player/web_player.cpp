@@ -34,7 +34,7 @@ static std::unique_ptr<Version> g_version;
 static std::unique_ptr<Recordings::Recording> g_recording;
 static std::unique_ptr<Gamestate> g_gamestate;
 
-static std::vector<Recordings::Frame>::const_iterator g_needle;
+static std::list<Recordings::Recording::Frame>::const_iterator g_needle;
 
 static bool g_playing = false;
 static double g_speed = 1.0;
