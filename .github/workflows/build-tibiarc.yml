@@ -1,0 +1,81 @@
+name: Build tibiarc WASM Player
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Emscripten
+        uses: mymindstorm/setup-emsdk@v14
+        with:
+          version: 3.1.51
+
+      - name: Clone tibiarc
+        run: |
+          git clone https://github.com/tibiacast/tibiarc.git /tmp/tibiarc
+
+      - name: Copy web player source
+        run: |
+          cp tibiarc-player/web_player.cpp /tmp/tibiarc/web_player.cpp
+
+      - name: Build tibiarc library + web player
+        run: |
+          cd /tmp/tibiarc
+          mkdir build && cd build
+          
+          emcmake cmake .. \
+            -DTIBIARC_NO_LIBAV=ON \
+            -DTIBIARC_NO_OPENMP=ON \
+            -DTIBIARC_NO_TBB=ON \
+            -DTIBIARC_NO_OPENSSL=ON \
+            -DTIBIARC_NO_FMTLIB=ON \
+            -DTIBIARC_NO_ZLIB=ON \
+            -DTIBIARC_NO_QT=ON \
+            -DTIBIARC_NO_SDL2=ON \
+            -DCMAKE_BUILD_TYPE=Release
+          
+          emmake make -j$(nproc) tibiarc
+          
+          echo "Library built successfully"
+          ls -la *.a || ls -la lib*.a || echo "Checking for library..."
+          find . -name "*.a" -o -name "libtibiarc*"
+
+      - name: Compile web player
+        run: |
+          cd /tmp/tibiarc/build
+          
+          em++ -O2 \
+            -s USE_SDL=2 \
+            -s ALLOW_MEMORY_GROWTH=1 \
+            -s EXPORTED_FUNCTIONS='["_main","_load_data_files","_load_recording","_play","_pause_playback","_set_speed","_get_progress","_get_duration","_seek","_is_playing","_malloc","_free"]' \
+            -s EXPORTED_RUNTIME_METHODS='["ccall","cwrap","HEAPU8"]' \
+            -s ASYNCIFY=0 \
+            -s TOTAL_MEMORY=268435456 \
+            -s NO_EXIT_RUNTIME=1 \
+            -s MODULARIZE=1 \
+            -s EXPORT_NAME='TibiarcModule' \
+            -I../lib \
+            -std=c++23 \
+            ../web_player.cpp \
+            libtibiarc.a \
+            -o tibiarc_player.js
+
+      - name: Prepare output
+        run: |
+          mkdir -p public/tibiarc
+          cp /tmp/tibiarc/build/tibiarc_player.js public/tibiarc/
+          cp /tmp/tibiarc/build/tibiarc_player.wasm public/tibiarc/
+
+      - name: Commit WASM files
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add public/tibiarc/tibiarc_player.js public/tibiarc/tibiarc_player.wasm
+          git commit -m "build: add compiled tibiarc WASM player" || echo "No changes to commit"
+          git push

@@ -1,5 +1,5 @@
 import { Link } from 'react-router-dom';
-import { ArrowLeft, Film, Terminal } from 'lucide-react';
+import { ArrowLeft, Film, Info } from 'lucide-react';
 import { useTranslation } from '@/i18n';
 import TibiarcPlayer from '@/components/TibiarcPlayer';
 import { ThemeToggle } from '@/components/ThemeToggle';
@@ -38,20 +38,13 @@ const CamPlayerPage = () => {
       <div className="flex-1 flex flex-col items-center p-4 pt-6 gap-6">
         <TibiarcPlayer className="w-full max-w-[850px]" />
 
-        {/* Conversion instructions */}
-        <div className="w-full max-w-[800px] bg-card border border-border/50 rounded-sm p-4 space-y-3">
+        {/* Info box */}
+        <div className="w-full max-w-[800px] bg-card border border-border/50 rounded-sm p-4 space-y-2">
           <div className="flex items-center gap-2 text-gold">
-            <Terminal className="w-4 h-4" />
-            <h2 className="font-heading text-sm">{t('camPlayer.howToConvert')}</h2>
+            <Info className="w-4 h-4" />
+            <h2 className="font-heading text-sm">{t('camPlayer.aboutTitle')}</h2>
           </div>
-          <p className="text-xs text-muted-foreground">{t('camPlayer.convertDescription')}</p>
-          <div className="bg-black/50 rounded p-3 overflow-x-auto">
-            <code className="text-xs text-green-400 whitespace-pre font-mono">
-{`docker run --rm -v $(pwd):/data ghcr.io/tibiacast/tibiarc \\
-  converter /data/tibia-data /data/replay.cam /data/output.mp4`}
-            </code>
-          </div>
-          <p className="text-xs text-muted-foreground">{t('camPlayer.convertNote')}</p>
+          <p className="text-xs text-muted-foreground">{t('camPlayer.aboutDescription')}</p>
         </div>
       </div>
     </div>
