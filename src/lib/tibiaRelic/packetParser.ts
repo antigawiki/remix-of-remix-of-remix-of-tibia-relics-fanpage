@@ -340,17 +340,22 @@ export class PacketParser {
     g.camX++; g.camY++;
 
     if (g.camZ === 7) {
-      // Crossed sea level going up: read floors 5 down to 0 with proper offsets
+      // Crossed sea level going up: read floors 5 down to 0
       let skip = 0;
-      for (let i = 5; i >= 0; i--) {
-        skip = this.readFloorArea(r, g.camX - 8, g.camY - 6, i, 18, 14, g.camZ - i, skip);
+      for (let nz = 5; nz >= 0; nz--) {
+        const offset = g.camZ - nz; // NW perspective offset consistent with mapDesc
+        skip = this.readFloorArea(r, g.camX - 8, g.camY - 6, nz, 18, 14, offset, skip);
       }
     } else if (g.camZ > 7) {
       // Underground: read one floor above (z-2)
-      this.readFloorAreaWithOffset(r, g.camX - 8, g.camY - 6, g.camZ - 2, 18, 14, 3);
+      const nz = g.camZ - 2;
+      const offset = g.camZ - nz; // = 2
+      this.readFloorAreaWithOffset(r, g.camX - 8, g.camY - 6, nz, 18, 14, offset);
     } else {
       // Above ground: read top visible floor
-      this.readFloorAreaWithOffset(r, g.camX - 8, g.camY - 6, g.camZ - 2, 18, 14, g.camZ - (g.camZ - 2));
+      const nz = g.camZ - 2;
+      const offset = g.camZ - nz; // = 2
+      this.readFloorAreaWithOffset(r, g.camX - 8, g.camY - 6, nz, 18, 14, offset);
     }
   }
 
@@ -362,16 +367,19 @@ export class PacketParser {
     if (g.camZ === 8) {
       // Crossed sea level going down: read floors 8, 9, 10
       let skip = 0;
-      let j = -1;
-      for (let z = g.camZ; z <= Math.min(g.camZ + 2, 15); z++) {
-        skip = this.readFloorArea(r, g.camX - 8, g.camY - 6, z, 18, 14, j, skip);
-        j--;
+      for (let nz = g.camZ; nz <= Math.min(g.camZ + 2, 15); nz++) {
+        const offset = g.camZ - nz; // 0, -1, -2
+        skip = this.readFloorArea(r, g.camX - 8, g.camY - 6, nz, 18, 14, offset, skip);
       }
-    } else if (g.camZ > 8 && g.camZ < 14) {
+    } else if (g.camZ > 8 && g.camZ <= 15) {
       // Underground: read one floor below (z+2)
-      this.readFloorAreaWithOffset(r, g.camX - 8, g.camY - 6, g.camZ + 2, 18, 14, -3);
+      const nz = Math.min(g.camZ + 2, 15);
+      const offset = g.camZ - nz; // = -2
+      this.readFloorAreaWithOffset(r, g.camX - 8, g.camY - 6, nz, 18, 14, offset);
     } else {
-      this.readFloorAreaWithOffset(r, g.camX - 8, g.camY - 6, g.camZ + 2, 18, 14, -3);
+      const nz = Math.min(g.camZ + 2, 15);
+      const offset = g.camZ - nz;
+      this.readFloorAreaWithOffset(r, g.camX - 8, g.camY - 6, nz, 18, 14, offset);
     }
   }
 
