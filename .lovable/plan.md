@@ -1,67 +1,163 @@
 
 
-# Correção dos Sprites Fora do Lugar no CAM Player
+# Correção do CAM Player - Offset de Andares e Criaturas Invisíveis
 
-## Diagnóstico
+## Diagnóstico Raiz
 
-Comparei o Python e o TypeScript linha por linha. A renderização e o parsing de pacotes são idênticos. O problema mais provável está em **dessincronia no parsing de tiles** causada pela leitura incorreta de bytes extras em items stackable/fluid/splash, e na **falta de offsets de elevação e deslocamento** na renderização.
+Analisei o código fonte do OTClient (edubart/otclient) e encontrei a causa raiz dos dois problemas. O código chave do OTClient e':
 
-Quando o `skipItem` lê 1 byte a mais ou a menos para algum item, **todos os dados subsequentes ficam deslocados**, causando tiles com sprites errados.
+```text
+setFloorDescription(msg, x, y, nz, width, height, z - nz, skip);
 
-## Correções Planejadas
+// Dentro de setFloorDescription:
+Position tilePos(x + nx + offset, y + ny + offset, z);
+//                        ^^^^^^           ^^^^^^
+//                    offset = z - nz aplicado a AMBAS coordenadas
+```
 
-### 1. Adicionar verificação automática do DatLoader (diagnóstico)
-**Arquivo:** `src/lib/tibiaRelic/datLoader.ts`
+### Problema 1: Coordenadas por andar sem offset
 
-Adicionar a mesma verificação do Python após carregar o `.dat`:
-- item 100 deve ter sprite_ids[0] = algum valor válido
-- item 102 deve mapear para sprite 42
-- item 408 deve mapear para sprite 39
-- item 870 deve mapear para sprite 559
+Quando o Tibia envia dados de multiplos andares, cada andar tem um **offset de perspectiva** de `(camZ - nz)` aplicado tanto a X quanto a Y. Nosso parser aplica todas as tiles na mesma posicao base `(ox, oy)` para todos os andares, o que faz:
 
-Se algum falhar, logar aviso no console indicando que as flags do `.dat` estão incorretas. Isso ajuda a identificar rapidamente se a causa é o DatLoader.
+- Tiles do andar 7 serem armazenadas nas coordenadas do andar 6
+- Criaturas serem salvas em posicoes (x,y) erradas
+- Tiles de andares diferentes se sobreporem no mesmo ponto
 
-### 2. Aplicar offsets de elevação e deslocamento na renderização
-**Arquivo:** `src/lib/tibiaRelic/renderer.ts`
+### Problema 2: Renderer so mostra 1 andar
 
-Atualmente, `elevation`, `dispX` e `dispY` são lidos do `.dat` mas ignorados na renderização. No Tibia, `elevation` desloca itens para cima (simulando altura), e `dispX`/`dispY` deslocam sprites em pixels.
+O renderer atual so desenha `z = camZ`. No Tibia real, andares superiores/inferiores sao visíveis com offset NW/SE, criando a perspectiva de profundidade que voce ve na imagem de referencia (image-37).
 
-Mudanças:
-- Ao desenhar cada tile, acumular `elevation` dos items do ground
-- Aplicar offset de elevação nos sprites subsequentes do mesmo tile
-- Aplicar `dispX`/`dispY` como offset em pixels no `drawImage`
+### Problema 3: Criaturas "invisiveis"
 
-### 3. Melhorar o tratamento de erros no parser de pacotes
+As criaturas estao sendo parseadas (crs=22 aparece no debug), mas seus sprites nao renderizam porque:
+- Se o outfit tem spriteIds validos mas nenhum sprite carrega do SPR, nada e desenhado (falta fallback)
+- As criaturas podem estar em coordenadas erradas por causa do bug do offset
+
+## Plano de Correcoes
+
+### 1. Corrigir o PacketParser - aplicar offset por andar
+
 **Arquivo:** `src/lib/tibiaRelic/packetParser.ts`
 
-- Adicionar validação de limites antes de ler items em `readTileItems`
-- Adicionar contagem de tiles lidos vs esperados em `readBlock` e logar diferenças
-- Proteger `skipItem` contra IDs fora do range do `.dat`
-- Logar opcodes desconhecidos ao invés de lançar exceção (para não perder sync)
+Seguindo exatamente o OTClient, o `readFloorArea` deve receber um parametro `offset` e aplicar `offset` a cada coordenada de tile:
 
-### 4. Corrigir a ordem de renderização por stack priority
+```text
+readFloorArea(r, ox, oy, z, W, H, offset, skip):
+  for each tile at (tx, ty):
+    readTileItems(r, ox + tx + offset, oy + ty + offset, z)
+```
+
+E `readMultiFloorArea` passa `camZ - nz` como offset:
+
+```text
+readMultiFloorArea(r, ox, oy, W, H, camZ, startz, endz, zstep):
+  for nz = startz to endz:
+    skip = readFloorArea(r, ox, oy, nz, W, H, camZ - nz, skip)
+```
+
+Mudancas especificas:
+- `mapDesc`: Passa `z` (camZ) para `readMultiFloorArea`
+- `scroll`: Mesma logica, passa `g.camZ` para offset
+- `floorUp`: Usar offsets corretos: `8 - i` para acima do mar, `3` para underground
+- `floorDown`: Usar offsets corretos: `j` (comeca em -1) para underground, `-3` para deep underground
+- `readFloorArea`: Adicionar parametro `offset` e aplicar a `ox + tx + offset, oy + ty + offset`
+
+### 2. Corrigir o Renderer - desenhar multiplos andares
+
 **Arquivo:** `src/lib/tibiaRelic/renderer.ts`
 
-Ordenar items de cada tile por `stackPrio` antes de desenhar:
-- 0 = ground (primeiro)
-- 1 = clip (borda)
-- 2 = bottom
-- 3 = top
-- 5 = items normais
+Quando o jogador esta acima do nivel do mar (z <= 7), desenhar andares de baixo para cima com offset NW:
 
-Isso garante que sprites de chão sejam desenhados antes de objetos e criaturas.
+```text
+Para z <= 7:
+  Desenhar do andar 7 ate andar max(0, z-2):
+    offset = camZ - fz
+    viewport origin = (camX - 8 + offset, camY - 6 + offset)
+    tiles deste andar aparecem na posicao de tela correta
 
-### 5. Adicionar logging de diagnóstico temporário
+Para z > 7:
+  Desenhar apenas o andar atual (underground nao tem perspectiva multi-andar)
+```
+
+Para cada andar `fz`:
+- Calcular `offset = camZ - fz`
+- O viewport de mundo para este andar e: `(camX - 8 + offset, camY - 6 + offset)` a `(camX + 9 + offset, camY + 7 + offset)`
+- Desenhar tiles na mesma posicao de tela `(tx * tpx, ty * tpx)`, mas buscando tiles do mundo com offset
+- Tiles de andares superiores (com offset positivo) ficam NW na tela
+- Isso cria a perspectiva "isometrica" do Tibia
+
+### 3. Corrigir o fallback de criaturas
+
+**Arquivo:** `src/lib/tibiaRelic/renderer.ts`
+
+Na funcao `drawCreature`, adicionar fallback quando outfit tem spriteIds mas nenhum sprite carrega:
+
+```text
+drawCreature(c, bx, by, tpx, scale):
+  ot = dat.outfits.get(c.outfit)
+  if ot and ot.spriteIds.length > 0:
+    rendered = false
+    for each sprite cell:
+      sprCanvas = getSpriteCanvas(sid, tpx)
+      if sprCanvas:
+        drawImage(sprCanvas, dx, dy)
+        rendered = true
+    if not rendered:
+      drawFallbackRectangle()  // <-- NOVO
+  else:
+    drawFallbackRectangle()
+```
+
+### 4. Corrigir floorUp/floorDown com offsets do OTClient
+
 **Arquivo:** `src/lib/tibiaRelic/packetParser.ts`
 
-Para o primeiro `mapDesc` (0x64), logar:
-- Total de tiles esperados (18x14=252)
-- Total de tiles efetivamente lidos
-- Primeiros N items de cada tile para comparação visual
+Baseado no OTClient:
 
-Isso permite identificar rapidamente se há dessincronia no stream de bytes.
+**floorUp (0xBE):**
+- `camZ--; camX++; camY++;`
+- Se `camZ == 7` (chegou no nivel do mar): ler andares 5 ate 0, offset = `8 - i`
+- Se `camZ > 7` (underground): ler andar `camZ - 2`, offset = `3`
 
-## Resultado Esperado
+**floorDown (0xBF):**
+- `camZ++; camX--; camY--;`
+- Se `camZ == 8` (entrou underground): ler andares 8 ate 10, offset = `-1, -2, -3`
+- Se `camZ > 8`: ler andar `camZ + 2`, offset = `-3`
 
-Com a verificação do DatLoader, saberemos imediatamente se as flags estão corretas. Com elevation/displacement, items empilhados serão posicionados corretamente. Com melhor error handling, o parser não perde sync ao encontrar dados inesperados.
+## Secao Tecnica - Detalhes de Implementacao
+
+### Iteracao de tiles (column-major)
+
+O OTClient itera `nx` (x) como loop externo e `ny` (y) como interno. Nosso codigo usa `tileIdx` com `tx = tileIdx % W, ty = floor(tileIdx / W)`, o que resulta em: para tx=0: ty=0..H-1, tx=1: ty=0..H-1. Isso e equivalente a column-major do OTClient. Correto.
+
+### Outfit dialog (0xC8)
+
+No OTClient 7.4 (sem `GameLooktypeU16`), outfit start/end sao u8, nao u16. Corrigir `skipOutfitWindow`:
+- `readOutfit(r)` (full outfit reading, not just skip)
+- `outfitStart = r.u8()` (nao u16)
+- `outfitEnd = r.u8()`
+
+Mas para 7.72 (TibiaRelic), pode ser u16. Manter u16 por seguranca.
+
+### NPC Trade (0x7A)
+
+No OTClient 7.4 (sem versao 900+), listCount e u8 e inclui `name: str16`. O formato e:
+- u8 count (nao u16)
+- Para cada item: u16 itemId, u8 count, str16 name, u32 weight, u32 buyPrice, u32 sellPrice
+
+Nosso parser le: `u8 n; for: u16, u8, str16, u32, u32, u32` - mas falta o str16 (name)! Isso causa dessincronia. Corrigir para incluir `r.str16()`.
+
+### Campos de criatura extras
+
+No OTClient para versoes < 854, nao ha byte `unpass`. Nosso protocolo 7.4/7.72 pode ou nao ter isso. Como estamos no 7.72 customizado, manter skull+shield (2 bytes) sem byte extra.
+
+## Resumo das Mudancas
+
+| Arquivo | Mudanca |
+|---------|---------|
+| `packetParser.ts` | Aplicar offset `(camZ - nz)` por andar em `readFloorArea` |
+| `packetParser.ts` | Corrigir `floorUp`/`floorDown` com offsets corretos |
+| `packetParser.ts` | Corrigir `skipNpcTrade` para incluir `str16` name |
+| `renderer.ts` | Renderizar multiplos andares com offset NW/SE |
+| `renderer.ts` | Adicionar fallback de sprite para criaturas |
 
