@@ -1,64 +1,73 @@
 
-Objetivo: resolver de vez o problema de floor (camZ correto, visual errado) e dos outfits/sprites desalinhados, alinhando parser + renderer ao comportamento do tibiarc/OTClient 7.72.
+# Fix: Outfits de criaturas e remover mensagens
 
-1) Diagnóstico consolidado (com base no que você reportou + leitura do código open source)
-- O sintoma que você mostrou (cam=33035,32433,6 mas render “parece z=7”) é compatível com ordem de desenho de andares invertida.
-- No nosso `renderer.ts`, `getVisibleFloors()` monta a lista e faz `reverse()`, o que acaba desenhando o andar base por cima dos andares superiores em vários casos.
-- No `packetParser.ts`, ainda existem opcodes com payload incorreto para 7.72 (não só os já corrigidos), o que pode causar desync intermitente e corromper leitura de outfit/tiles depois.
-- Comparando com tibiarc (`lib/parser.cpp`, `lib/versions.cpp`, `lib/renderer.cpp`), os pontos críticos restantes são:
-  - chat/channel opcodes 0xAB/0xAE/0xAF/0xB0
-  - 0x0F e 0x0B também divergentes
-  - alguns skips de payload ainda não seguem 7.72
-- Em sprite de criatura, ainda faltam detalhes de paridade visual (displacement e padrão de variação/addon), o que explica “monstro/player errado” mesmo quando o parse não quebra totalmente.
+## O que foi confirmado
+- Floor rendering esta perfeito (confirmado pelo usuario)
+- Console mostra `unknown opcode 0x63 at pos 6` repetidamente - frames inteiros sendo abandonados, perdendo dados de criaturas
+- Mensagens de chat cobrem a area de jogo e precisam ser removidas
 
-2) Implementação proposta (próxima etapa)
-A. `src/lib/tibiaRelic/renderer.ts` — corrigir floor visível e ordem de pintura
-- Remover inversão indevida em `getVisibleFloors` (eliminar `reverse()` e garantir ordem igual ao tibiarc: bottom -> top no loop de desenho).
-- Ajustar cálculo de faixa visível:
-  - Surface: `bottomVisibleFloor=7`, `topVisibleFloor` dinâmico (equivalente ao `GetTopVisibleFloor`) para não desenhar andares que deveriam ficar ocultos.
-  - Underground: `bottom=min(z+2,15)`, `top=z`.
-- Manter offset NW por andar (`xyOffset = camZ - fz`) na mesma direção do tibiarc.
-- Resultado esperado: quando `camZ=6` ou `camZ=3`, o visual deixa de “colar” no floor 7.
+## Causa dos outfits errados
 
-B. `src/lib/tibiaRelic/packetParser.ts` — fechar gaps de desync 7.72
-- Alinhar opcodes ao mapeamento do tibiarc 7.72:
-  - `0x0F`: sem payload (hoje está `skip16`, incorreto).
-  - `0x0B`: GM actions com skip fixo de versão (7.72 = 32 bytes).
-  - `0xAB`: channel list (u8 count + [u16 + string]).
-  - `0xAC`: open public channel (u16 + string).
-  - `0xAD`: open private conversation (string).
-  - `0xAE` e `0xAF`: sem payload.
-  - `0xB0`: skip fixo de 2 bytes (não `skip16`).
-  - `0x7E`: mesmo payload de trade items (não “no data”).
-  - `0x87`: trappers (u8 count + count*u32).
-- Revisar `0x96` (open text window) para estrutura de 7.72 sem `skipItem()` ambíguo.
-- Manter os fixes já feitos (0xA2 u8, 0x7A sem weight, 0xAA speak mapping).
+### Bug principal: Opcode 0x63 nao tratado
+O console mostra `unknown opcode 0x63` repetidamente. 0x63 e o marcador CR_OLD (creature turn) que normalmente aparece DENTRO de tile data. Porem, ele esta aparecendo como opcode de topo em frames do `.cam`. Quando isso acontece, o parser **abandona o frame inteiro** (incluindo centenas de bytes de dados de criaturas, movimentos e atualizacoes). Resultado: criaturas perdem dados de outfit, posicao, ou simplesmente nao aparecem.
 
-C. `src/components/TibiarcPlayer.tsx` — robustez de modo de parse
-- Para fluxo TibiaRelic 7.72, priorizar `looktypeU16` por padrão (com fallback manual/debug), para evitar falso positivo do auto-detect em arquivos com poucas criaturas no começo.
-- Expor indicador de modo ativo e contadores de desync (unknown opcode / parse error) para validação rápida.
+A solucao: tratar 0x63 como standalone creature turn. Tambem tratar 0x61 e 0x62 (CR_FULL e CR_KNOWN) como standalone, pois podem aparecer da mesma forma.
 
-D. `src/lib/tibiaRelic/renderer.ts` — paridade de outfit de criatura
-- Aplicar displacement do tipo de outfit no desenho da criatura (equivalente ao tibiarc).
-- Ajustar seleção de padrões de outfit para direção/addon (`patX/patY`) ao invés de fixar `patY=0` em todos os casos.
-- Preservar tint no layer de máscara, mas com índice de sprite calculado na mesma lógica de framegroup usada no tibiarc.
+### Bug secundario: Payload com prefixo de tamanho
+Alguns frames do `.cam` podem incluir um prefixo `u16` de tamanho do pacote (padrao TCP do Tibia). Se os 2 primeiros bytes formam um u16 que iguala `payload.length - 2`, devemos pular esse prefixo. Isso explicaria o deslocamento consistente de 6 bytes (2 len + 4 checksum ou similar).
 
-3) Sequência de execução (para reduzir regressão)
-1. Corrigir ordem/filtro de floors no renderer (impacto visual imediato no seu caso).
-2. Corrigir opcodes restantes de desync no parser.
-3. Ajustar outfit displacement + pattern logic.
-4. Ajustar estratégia de parse mode (u16-first para 7.72).
-5. Rodar validação com seus dois cenários de screenshot e logs.
+## Mudancas
 
-4) Critérios de aceite (baseados no seu relato)
-- Cenário A: `cam=(33035,32433,6)` deve renderizar corretamente o andar superior, sem “voltar” visualmente ao base 7.
-- Cenário B: quando estiver em z=3, a cena deve refletir andares acima corretamente (sem aparência de floor base persistente).
-- Monstros e players devem aparecer com sprite/outfit consistente (não só nome/hp bar).
-- Console sem sequência de `unknown opcode`/`parse error` após chat/channel events e troca de andar.
+### A. `src/lib/tibiaRelic/renderer.ts`
+1. **Remover `drawMessages`** - remover a chamada e o metodo inteiro
+2. **Remover texto de debug** no canto inferior (`cam=(x,y,z) crs=N`)
 
-5) Arquivos previstos para alteração
-- `src/lib/tibiaRelic/renderer.ts`
-- `src/lib/tibiaRelic/packetParser.ts`
-- `src/components/TibiarcPlayer.tsx`
+### B. `src/lib/tibiaRelic/packetParser.ts`
+1. **Adicionar opcodes 0x61, 0x62, 0x63 no dispatch** como standalone creature handlers:
+   - 0x61 (CR_FULL standalone): ler como `readCreatureFull` (sem posicao, pois ja tem x/y/z do contexto anterior, ou usar posicao da criatura existente)
+   - 0x62 (CR_KNOWN standalone): ler como `readCreatureKnown` (sem adicionar a tile)
+   - 0x63 (CR_OLD standalone): ler `u32 creatureId + u8 direction` (creature turn simples, 5 bytes)
+2. **Adicionar deteccao de prefixo u16** no metodo `process()`: se `payload[0:2]` como u16 LE == `payload.length - 2`, pular 2 bytes antes de parsear opcodes
+3. **Melhorar recovery de erro**: ao encontrar opcode desconhecido, tentar pular 1 byte e continuar ao inves de abandonar o frame inteiro (com limite de tentativas para evitar loop infinito)
 
-Se você aprovar, eu implemento exatamente nessa ordem para atacar primeiro o bug de floor que você acabou de comprovar nas imagens.
+### C. `src/lib/tibiaRelic/gameState.ts`
+Sem alteracoes necessarias.
+
+## Detalhes tecnicos
+
+### Opcodes standalone de criatura
+No dispatch, adicionar:
+```text
+0x61: pos3(5) + readCreatureFull (mesma logica de addThing com CR_FULL, mas pos vem antes)
+0x62: pos3(5) + readCreatureKnown (mesma logica)
+0x63: pos3(5) + stackPos(1) + u16_marker(2) + u32_cid(4) + u8_dir(1)
+      OU formato simples: u32_cid(4) + u8_dir(1)
+```
+Como nao temos certeza do formato exato do TibiaRelic para estes opcodes standalone, vamos tentar o formato completo (com pos3+stackpos+marker) primeiro, e se falhar, o formato simples.
+
+Na pratica, a abordagem mais segura e tratar 0x63 como: ler os bytes restantes no padrao `chgThing` (pos3 + stackpos + peek creature marker + creature data), pois e o mesmo formato que 0x6B mas identificado com opcode diferente.
+
+### Deteccao de prefixo
+```text
+process(payload):
+  r = new Buf(payload)
+  // Check for u16 length prefix
+  if payload.length >= 4:
+    prefixLen = r.peek16()
+    if prefixLen == payload.length - 2:
+      r.skip(2)  // skip length prefix
+```
+
+### Error recovery
+```text
+Ao encontrar opcode desconhecido:
+  - Tentar pular 1 byte
+  - Continuar parseando
+  - Maximo 3 skips consecutivos antes de abandonar
+```
+
+## Impacto esperado
+- Frames com creature turns (0x63) deixarao de ser abandonados, preservando todas as atualizacoes de criatura no frame
+- Criaturas manterao seus dados de outfit corretamente ao longo do tempo
+- Player deixara de "sumir" quando seus dados de atualizacao estavam em frames abandonados
+- Area de jogo limpa sem mensagens sobrepostas
