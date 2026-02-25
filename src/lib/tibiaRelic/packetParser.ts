@@ -1,5 +1,6 @@
 /**
  * Parser de pacotes do protocolo Tibia 7.4 (OTHire/TibiaRelic)
+ * Suporte a multi-floor map reading
  */
 import { Buf } from './buf';
 import { DatLoader } from './datLoader';
@@ -15,7 +16,7 @@ export class PacketParser {
     if (iid >= 100 && iid <= 9999) {
       const it = this.dat.items.get(iid);
       if (it && (it.isStackable || it.isFluid || it.isSplash)) {
-        r.u8(); // count/subtype
+        r.u8();
       }
     }
     return iid;
@@ -23,8 +24,8 @@ export class PacketParser {
 
   private skipOutfit(r: Buf) {
     const oid = r.u16();
-    if (oid) r.skip(4); // head+body+legs+feet
-    else r.u16(); // lookTypeEx
+    if (oid) r.skip(4);
+    else r.u16();
   }
 
   private readOutfit(r: Buf): { type: number; head: number; body: number; legs: number; feet: number } {
@@ -41,6 +42,15 @@ export class PacketParser {
   private loggedFirst = false;
   private unknownWarnCount = 0;
 
+  /** Get the floor range for multi-floor reading */
+  private getFloorRange(z: number): { startz: number; endz: number; zstep: number } {
+    if (z > 7) {
+      return { startz: z - 2, endz: Math.min(z + 2, 15), zstep: 1 };
+    } else {
+      return { startz: 7, endz: 0, zstep: -1 };
+    }
+  }
+
   process(payload: Uint8Array) {
     const r = new Buf(payload);
     while (!r.eof()) {
@@ -48,9 +58,7 @@ export class PacketParser {
       try {
         const t = r.u8();
         if (!this.dispatch(t, r)) {
-          // Unknown opcode — stop processing this frame entirely.
-          // Byte-walking would only corrupt subsequent data.
-          r.pos = posBefore; // restore position for logging
+          r.pos = posBefore;
           if (this.unknownWarnCount < 20) {
             this.unknownWarnCount++;
             console.warn(`[PacketParser] unknown opcode 0x${t.toString(16)} at pos ${posBefore}, abandoning frame (${payload.length - posBefore} bytes left)`);
@@ -58,17 +66,15 @@ export class PacketParser {
           break;
         }
       } catch (e) {
-        // Parse error — stop processing this frame to prevent cascading corruption
         if (this.unknownWarnCount < 20) {
           this.unknownWarnCount++;
-          console.warn(`[PacketParser] parse error at pos ${posBefore}, abandoning frame (${payload.length - posBefore} bytes left)`, e);
+          console.warn(`[PacketParser] parse error at pos ${posBefore}, abandoning frame`, e);
         }
         break;
       }
     }
   }
 
-  /** Returns true if opcode was handled, false if unknown */
   private dispatch(t: number, r: Buf): boolean {
     const g = this.gs;
     // Map
@@ -84,8 +90,8 @@ export class PacketParser {
     else if (t === 0x6d) this.moveCr(r);
     // Login
     else if (t === 0x0a) this.login(r);
-    else if (t === 0x0b) { /* GM actions - no data in 7.4 cam recordings */ }
-    else if (t === 0x0f) r.skip16(); // FYI message (str16)
+    else if (t === 0x0b) { /* GM actions */ }
+    else if (t === 0x0f) r.skip16();
     else if (t === 0x1e) { /* ping */ }
     // Container
     else if (t === 0x6e) this.openCont(r);
@@ -99,47 +105,47 @@ export class PacketParser {
     // NPC Trade
     else if (t === 0x7a) this.skipNpcTrade(r);
     else if (t === 0x7b) this.skipNpcTradeAck(r);
-    else if (t === 0x7c) { /* close npc trade - no data */ }
+    else if (t === 0x7c) { /* close npc trade */ }
     // Player Trade
     else if (t === 0x7d) this.skipTrade(r);
     else if (t === 0x7e || t === 0x7f) { /* no data */ }
     // World light
     else if (t === 0x82) { r.u8(); r.u8(); }
-    // Effects/projectiles
-    else if (t === 0x83) { r.skip(5); r.u8(); } // magic effect
-    else if (t === 0x84) { r.skip(5); r.u8(); r.skip16(); } // animated text
-    else if (t === 0x85) { r.skip(5); r.skip(5); r.u8(); } // distance shot
+    // Effects
+    else if (t === 0x83) { r.skip(5); r.u8(); }
+    else if (t === 0x84) { r.skip(5); r.u8(); r.skip16(); }
+    else if (t === 0x85) { r.skip(5); r.skip(5); r.u8(); }
     // Creature updates
-    else if (t === 0x86) { r.u32(); r.u8(); } // creature square
+    else if (t === 0x86) { r.u32(); r.u8(); }
     else if (t === 0x8c) { const cid = r.u32(); const hp = r.u8(); const c = g.creatures.get(cid); if (c) c.health = hp; }
-    else if (t === 0x8d) { r.u32(); r.u8(); r.u8(); } // creature light
-    else if (t === 0x8e) { r.u32(); this.skipOutfit(r); } // creature outfit
-    else if (t === 0x8f) { r.u32(); r.u16(); } // creature speed
-    else if (t === 0x90) { r.u32(); r.u8(); } // creature skull
-    else if (t === 0x91) { r.u32(); r.u8(); } // creature shield
+    else if (t === 0x8d) { r.u32(); r.u8(); r.u8(); }
+    else if (t === 0x8e) { r.u32(); this.skipOutfit(r); }
+    else if (t === 0x8f) { r.u32(); r.u16(); }
+    else if (t === 0x90) { r.u32(); r.u8(); }
+    else if (t === 0x91) { r.u32(); r.u8(); }
     // Text windows
     else if (t === 0x96) { r.u32(); this.skipItem(r); r.u16(); r.skip16(); r.u16(); r.skip16(); }
     else if (t === 0x97) { r.u8(); r.u32(); r.skip16(); }
     // Player pos
     else if (t === 0x9a) { const [x, y, z] = this.pos3(r); g.camX = x; g.camY = y; g.camZ = z; }
-    // Player stats / skills / icons
-    else if (t === 0xa0) r.skip(20); // stats
-    else if (t === 0xa1) r.skip(14); // skills
-    else if (t === 0xa2) r.u16(); // player icons/conditions
+    // Stats/skills/icons
+    else if (t === 0xa0) r.skip(20);
+    else if (t === 0xa1) r.skip(14);
+    else if (t === 0xa2) r.u16();
     else if (t === 0xa3) { /* cancelTarget */ }
-    // Chat / Channels
+    // Chat
     else if (t === 0xaa) this.talk(r);
-    else if (t === 0xab) { r.u32(); r.u8(); r.skip16(); } // channel event
-    else if (t === 0xac) { r.u16(); r.skip16(); } // open channel
-    else if (t === 0xad) r.skip16(); // open private channel
-    else if (t === 0xae) { r.u16(); r.skip16(); r.skip16(); r.u32(); } // rule violation
-    else if (t === 0xaf) r.skip16(); // rule violation
-    else if (t === 0xb0) r.skip16(); // rule violation
+    else if (t === 0xab) { r.u32(); r.u8(); r.skip16(); }
+    else if (t === 0xac) { r.u16(); r.skip16(); }
+    else if (t === 0xad) r.skip16();
+    else if (t === 0xae) { r.u16(); r.skip16(); r.skip16(); r.u32(); }
+    else if (t === 0xaf) r.skip16();
+    else if (t === 0xb0) r.skip16();
     else if (t === 0xb1) { /* lockViolation */ }
     else if (t === 0xb2) { r.u16(); r.skip16(); }
     else if (t === 0xb3) r.u16();
     else if (t === 0xb4) this.textMsg(r);
-    else if (t === 0xb5) r.u8(); // cancel walk
+    else if (t === 0xb5) r.u8();
     // Floor change
     else if (t === 0xbe) this.floorUp(r);
     else if (t === 0xbf) this.floorDown(r);
@@ -149,11 +155,11 @@ export class PacketParser {
     else if (t === 0xd2) { r.u32(); r.skip16(); r.u8(); }
     else if (t === 0xd3) r.u32();
     else if (t === 0xd4) r.u32();
-    // Tutorial/quest
-    else if (t === 0xdc) r.u8(); // tutorial hint
+    // Tutorial
+    else if (t === 0xdc) r.u8();
     // Error/MOTD
     else if (t === 0x14) { r.u16(); r.skip16(); }
-    else return false; // unknown opcode
+    else return false;
     return true;
   }
 
@@ -167,26 +173,31 @@ export class PacketParser {
     const [x, y, z] = this.pos3(r);
     this.gs.camX = x; this.gs.camY = y; this.gs.camZ = z;
     this.gs.mapLoaded = true;
-    const posBefore = r.pos;
-    this.readArea(r, x - 8, y - 6, z, 18, 14);
+
+    const { startz, endz, zstep } = this.getFloorRange(z);
+    this.readMultiFloorArea(r, x - 8, y - 6, 18, 14, startz, endz, zstep);
+
     if (!this.loggedFirst) {
       this.loggedFirst = true;
-      console.log(`[PacketParser] First mapDesc: cam=(${x},${y},${z}), bytes consumed=${r.pos - posBefore}`);
+      console.log(`[PacketParser] First mapDesc: cam=(${x},${y},${z}), floors ${startz}->${endz}`);
     }
   }
 
   private scroll(r: Buf, dx: number, dy: number) {
     const g = this.gs;
     g.camX += dx; g.camY += dy;
-    if (dx === 1) this.readArea(r, g.camX + 9, g.camY - 6, g.camZ, 1, 14);
-    else if (dx === -1) this.readArea(r, g.camX - 8, g.camY - 6, g.camZ, 1, 14);
-    else if (dy === 1) this.readArea(r, g.camX - 8, g.camY + 7, g.camZ, 18, 1);
-    else if (dy === -1) this.readArea(r, g.camX - 8, g.camY - 6, g.camZ, 18, 1);
+
+    const { startz, endz, zstep } = this.getFloorRange(g.camZ);
+
+    if (dx === 1) this.readMultiFloorArea(r, g.camX + 9, g.camY - 6, 1, 14, startz, endz, zstep);
+    else if (dx === -1) this.readMultiFloorArea(r, g.camX - 8, g.camY - 6, 1, 14, startz, endz, zstep);
+    else if (dy === 1) this.readMultiFloorArea(r, g.camX - 8, g.camY + 7, 18, 1, startz, endz, zstep);
+    else if (dy === -1) this.readMultiFloorArea(r, g.camX - 8, g.camY - 6, 18, 1, startz, endz, zstep);
   }
 
   private tileUpd(r: Buf) {
     const [x, y, z] = this.pos3(r);
-    this.readArea(r, x, y, z, 1, 1);
+    this.readSingleFloorArea(r, x, y, z, 1, 1);
   }
 
   private addThing(r: Buf) {
@@ -269,94 +280,77 @@ export class PacketParser {
   }
 
   private openCont(r: Buf) {
-    r.u8(); // cid
-    r.u16(); // container item_id
-    r.skip16(); // name
-    r.u8(); // hasParent
-    r.u8(); // capacity
+    r.u8(); r.u16(); r.skip16(); r.u8(); r.u8();
     const n = r.u8();
     for (let i = 0; i < n; i++) this.skipItem(r);
   }
 
   private skipNpcTrade(r: Buf) {
-    const n = r.u8(); // item count (u8 in 7.4)
+    const n = r.u8();
     for (let i = 0; i < n; i++) {
-      r.u16(); // item id
-      r.u8();  // subtype
-      r.skip16(); // name
-      r.u32(); // weight
-      r.u32(); // buy price
-      r.u32(); // sell price
+      r.u16(); r.u8(); r.skip16(); r.u32(); r.u32(); r.u32();
     }
   }
 
   private skipNpcTradeAck(r: Buf) {
-    r.u32(); // money
-    // Items the player has for sale
+    r.u32();
     const n = r.u8();
-    for (let i = 0; i < n; i++) {
-      r.u16(); // item id
-      r.u16(); // count
-    }
+    for (let i = 0; i < n; i++) { r.u16(); r.u16(); }
   }
 
   private skipTrade(r: Buf) {
-    r.skip16(); // player name
+    r.skip16();
     const n = r.u8();
     for (let i = 0; i < n; i++) this.skipItem(r);
   }
 
   private skipOutfitWindow(r: Buf) {
-    // Current outfit
     this.skipOutfit(r);
-    // Available outfits list (in 7.4: just start+end outfit id)
-    const start = r.u16();
-    const end = r.u16();
-    // Some versions have extended outfit list, but 7.4 just has start/end range
-    void start; void end;
+    r.u16(); r.u16(); // start/end outfit range
   }
 
   private floorUp(r: Buf) {
     const g = this.gs;
     g.camZ--;
+    g.camX++; g.camY++;
+
     if (g.camZ === 7) {
-      // Going from underground to ground level
-      // Read 3 floors: 7, 6, 5 (ground + 2 above)
+      // Going from underground to ground: read floors 5 down to 0
+      let skip = 0;
       for (let z = 5; z >= 0; z--) {
-        // Each floor shifts the camera
-        this.readArea(r, g.camX - 8, g.camY - 6, z, 18, 14);
+        skip = this.readFloorArea(r, g.camX - 8, g.camY - 6, z, 18, 14, skip);
       }
     } else if (g.camZ > 7) {
-      // Underground floor change
-      this.readArea(r, g.camX - 8, g.camY - 6, g.camZ - 2, 18, 14);
+      // Underground: read one floor above (z-2)
+      this.readSingleFloorArea(r, g.camX - 8, g.camY - 6, g.camZ - 2, 18, 14);
     } else {
-      // Above ground floor change
-      this.readArea(r, g.camX - 8, g.camY - 6, g.camZ - 2, 18, 14);
+      // Above ground: read top floor
+      this.readSingleFloorArea(r, g.camX - 8, g.camY - 6, g.camZ - 2, 18, 14);
     }
-    // After floor change, also update position
-    g.camX++; g.camY++;
   }
 
   private floorDown(r: Buf) {
     const g = this.gs;
     g.camZ++;
+    g.camX--; g.camY--;
+
     if (g.camZ === 8) {
-      // Going from ground to underground
-      for (let z = g.camZ; z <= g.camZ + 2 && z <= 15; z++) {
-        this.readArea(r, g.camX - 8, g.camY - 6, z, 18, 14);
+      // Going from ground to underground: read floors 8, 9, 10
+      let skip = 0;
+      for (let z = g.camZ; z <= Math.min(g.camZ + 2, 15); z++) {
+        skip = this.readFloorArea(r, g.camX - 8, g.camY - 6, z, 18, 14, skip);
       }
     } else if (g.camZ > 8 && g.camZ < 14) {
-      // Underground floor down
-      this.readArea(r, g.camX - 8, g.camY - 6, g.camZ + 2, 18, 14);
+      // Underground: read one floor below (z+2)
+      this.readSingleFloorArea(r, g.camX - 8, g.camY - 6, g.camZ + 2, 18, 14);
     } else {
-      this.readArea(r, g.camX - 8, g.camY - 6, g.camZ + 2, 18, 14);
+      this.readSingleFloorArea(r, g.camX - 8, g.camY - 6, g.camZ + 2, 18, 14);
     }
-    g.camX--; g.camY--;
   }
 
   private talk(r: Buf) {
     try {
-      r.u32(); // statement_id
+      r.u32();
       const name = r.str16();
       const tp = r.u8();
       const POS_TYPES = new Set([0x01, 0x02, 0x03, 0x10, 0x11]);
@@ -390,7 +384,7 @@ export class PacketParser {
     c.health = r.u8();
     c.direction = r.u8();
     const outfit = this.readOutfit(r);
-    r.u8(); r.u8(); // light level+color
+    r.u8(); r.u8(); // light
     c.speed = r.u16();
     r.u8(); r.u8(); // skull+shield
     if (outfit.type) {
@@ -435,11 +429,11 @@ export class PacketParser {
     while (r.left() >= 2) {
       const word = r.peek16();
       if (word >= 0xFF00) {
-        r.skip(2); // consume terminator
+        r.skip(2);
         this.gs.setTile(x, y, z, items);
-        return word & 0xFF; // extra tiles to skip
+        return word & 0xFF;
       }
-      r.skip(2); // consume the item_id
+      r.skip(2);
       if (word === CR_FULL) {
         const c = this.readCreatureFull(r);
         c.x = x; c.y = y; c.z = z;
@@ -457,7 +451,7 @@ export class PacketParser {
       } else if (word >= 100 && word <= 9999) {
         const it = this.dat.items.get(word);
         if (it && (it.isStackable || it.isFluid || it.isSplash)) {
-          r.u8(); // count/subtype
+          r.u8();
         }
         items.push(['it', word]);
       }
@@ -466,14 +460,36 @@ export class PacketParser {
     return 0;
   }
 
-  private readArea(r: Buf, ox: number, oy: number, z: number, W: number, H: number) {
-    let tileIdx = 0;
+  /** Read a single floor area (no skip carry-over) */
+  private readSingleFloorArea(r: Buf, ox: number, oy: number, z: number, W: number, H: number) {
+    let skip = 0;
     const total = W * H;
-    while (tileIdx < total && r.left() >= 2) {
+    for (let tileIdx = 0; tileIdx < total && r.left() >= 2; tileIdx++) {
+      if (skip > 0) { skip--; continue; }
       const tx = tileIdx % W;
       const ty = Math.floor(tileIdx / W);
-      const extra = this.readTileItems(r, ox + tx, oy + ty, z);
-      tileIdx += 1 + extra;
+      skip = this.readTileItems(r, ox + tx, oy + ty, z);
+    }
+  }
+
+  /** Read one floor and return the remaining skip count (for multi-floor chaining) */
+  private readFloorArea(r: Buf, ox: number, oy: number, z: number, W: number, H: number, skip: number): number {
+    const total = W * H;
+    for (let tileIdx = 0; tileIdx < total && r.left() >= 2; tileIdx++) {
+      if (skip > 0) { skip--; continue; }
+      const tx = tileIdx % W;
+      const ty = Math.floor(tileIdx / W);
+      skip = this.readTileItems(r, ox + tx, oy + ty, z);
+    }
+    return skip;
+  }
+
+  /** Read map area across multiple floors with shared skip counter */
+  private readMultiFloorArea(r: Buf, ox: number, oy: number, W: number, H: number, startz: number, endz: number, zstep: number) {
+    let skip = 0;
+    for (let z = startz; z !== endz + zstep; z += zstep) {
+      if (r.left() < 2) break;
+      skip = this.readFloorArea(r, ox, oy, z, W, H, skip);
     }
   }
 }
