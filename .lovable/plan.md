@@ -1,74 +1,83 @@
 
-Objetivo: corrigir os dois sintomas do caso que você mostrou (players “dentro da montanha” e outfits não formados) alinhando parser + renderer ao comportamento real do tibiarc/OTClient, em vez de ajustes pontuais.
 
-1) Diagnóstico consolidado (causa raiz)
-- O parser ainda está divergente em pontos críticos do protocolo:
-  - Leitura de tiles em ordem errada (row-major), enquanto o protocolo usa x externo / y interno (column-major).
-  - Em `tileSkip > 0`, o código só decrementa skip e não limpa a tile; isso deixa “lixo” antigo no mapa (montanha fantasma).
-  - `floorUp/floorDown` não seguem exatamente a sequência do OTClient/tibiarc (ordem de atualizar camX/camY e offsets específicos).
-  - Existem opcodes válidos não tratados (ex.: 0xF0), e alguns tratados com payload incorreto (ex.: 0xAB/0xAC/0xAD), gerando abandono de frame e estado parcial.
-- O renderer também diverge:
-  - Ordem de desenho de andares acima do solo está invertida em parte dos casos.
-  - Pipeline por stack priority está simplificado demais; isso permite item cobrir criatura em situações em que não deveria.
-  - Desenho de outfit de criatura usa apenas layer 0; players costumam depender de múltiplas camadas + tint (cores head/body/legs/feet), por isso “outfit não forma”.
+# Fix: Sprites errados e camera presa no mesmo floor
 
-2) Implementação proposta (arquivos e mudanças)
-A. `src/lib/tibiaRelic/packetParser.ts` — Paridade de parsing com tibiarc
-- Ajustar `readFloorArea`, `readFloorAreaWithOffset` e `readSingleFloorArea` para iterar em ordem de protocolo:
-  - laço externo em X, interno em Y (equivalente ao `setFloorDescription` real).
-- Corrigir comportamento de skip:
-  - quando `skip > 0`, limpar explicitamente a tile (setar lista vazia) no `(x,y,z)` alvo antes de `skip--`.
-- Corrigir `floorUp/floorDown` com semântica exata:
-  - Atualizar `camZ` antes da leitura.
-  - Ler andares usando `camX/camY` antigos.
-  - Aplicar offsets do protocolo:
-    - floorUp: `8 - i` (ao cruzar para z=7), `3` (underground).
-    - floorDown: `-1,-2,-3` (ao cruzar para z=8), `-3` (underground profundo).
-  - Só depois aplicar shift de posição:
-    - floorUp: `camX++ / camY++`
-    - floorDown: `camX-- / camY--`
-- Completar/corrigir opcodes para eliminar abandonos de frame:
-  - Adicionar 0xF0 (quest dialog) e outros opcodes leves de skip que faltam no conjunto 7.x usado nos .cam.
-  - Corrigir payloads de chat/canais (0xAB/0xAC/0xAD/0xAE/0xAF) para não consumir bytes errado.
-  - Manter limite de warning, mas reduzir falsos “unknown opcode”.
+## Causa raiz (confirmada via OTClient source code)
 
-B. `src/lib/tibiaRelic/renderer.ts` — Pipeline de render mais fiel
-- Corrigir ordem de andares visíveis:
-  - Acima do solo: desenhar de `bottomVisibleFloor=7` até `topVisibleFloor` (de baixo para cima), sem inversão incorreta.
-  - Underground: usar faixa visível (até `z+2`) quando aplicável, com offset NW por andar.
-- Trocar ordenação simplificada por passes de tile (como no tibiarc):
-  - Passo 1: itens prioridade <=2
-  - Passo 2: itens prioridade 5 (ordem reversa)
-  - Passo 3: criaturas
-  - Passo 4: itens prioridade 3
-- Isso evita cenário “nome aparece, sprite some” por sobreposição incorreta.
-- Manter fallback visual de criatura caso sprite realmente não exista.
+Comparei nosso `packetParser.ts` com o `protocolgameparse.cpp` do OTClient e encontrei **3 bugs criticos**:
 
-C. `src/lib/tibiaRelic/renderer.ts` — Outfit de player/NPC
-- Ajustar `drawCreature` para desenhar todas as layers do outfit (não só layer 0).
-- Aplicar tint de outfit quando houver layer de máscara:
-  - usar `head/body/legs/feet` para colorir camadas apropriadas (modelo compatível com tibiarc).
-- Resultado esperado: players deixam de parecer “não formados” mesmo quando looktype está correto.
+### Bug 1: floorUp tem um `else` que le dados inexistentes (CRITICO)
 
-3) Sequência de execução (para minimizar regressão)
-1. Corrigir parser de tiles (ordem + clear no skip).
-2. Corrigir floor transitions (offsets + timing de camX/camY).
-3. Corrigir opcodes de abandono de frame.
-4. Corrigir pipeline de render por prioridade.
-5. Corrigir composição de outfit por layers/tint.
-6. Revisar logs e remover debug excessivo mantendo apenas diagnóstico útil.
+Nosso codigo tem um caso `else` para `camZ < 7` (acima do solo indo mais alto) que tenta ler 18x14 tiles de dados que **nao existem no stream**:
 
-4) Critérios de validação (casos que vou usar)
-- Caso da montanha (seu screenshot):
-  - jogadores/NPCs devem aparecer no topo correto, sem “enterramento” visual.
-- Cams com troca de andar frequente:
-  - transições sem deslocamento de 1 tile e sem “andar fantasma”.
-- Cams com muitos players:
-  - outfits completos (sem borboleta/sem invisibilidade indevida).
-- Console:
-  - queda drástica de `unknown opcode` e ausência de abortos em sequência durante seek.
+```text
+// NOSSO CODIGO (ERRADO):
+} else {
+    // Above ground going higher: read top visible floor
+    const nz = Math.max(0, g.camZ - 2);
+    this.readFloorAreaWithOffset(r, ..., nz, 18, 14, offset);
+}
+```
 
-5) Resultado esperado para você
-- A cena não “trava” visualmente em z=7/6 quando o replay muda de andar.
-- Jogadores e NPCs deixam de sumir sob terreno.
-- Outfit passa a ser montado de forma consistente nas cams problemáticas.
+No OTClient, esse caso simplesmente **nao existe**. Quando o player muda de z=7 para z=6 (ou z=6 para z=5), todos os andares de superficie (0-7) ja estao carregados. O servidor nao envia dados novos. Nosso codigo le 252+ bytes de lixo, destruindo o parse de TODOS os pacotes subsequentes.
+
+### Bug 2: Offsets de floor change errados por 1
+
+Comparacao exata com OTClient:
+
+**floorUp (0xBE) - crossing to surface (camZ == 7):**
+```text
+OTClient: offset = 8 - nz  (floor 5: offset=3, floor 4: offset=4, ...)
+Nosso:    offset = 7 - nz  (floor 5: offset=2, floor 4: offset=3, ...)  ERRADO
+```
+
+**floorUp - underground going up (camZ > 7):**
+```text
+OTClient: offset = 3
+Nosso:    offset = 2  ERRADO
+```
+
+**floorDown (0xBF) - crossing to underground (camZ == 8):**
+```text
+OTClient: j = -1, -2, -3  (floor 8: -1, floor 9: -2, floor 10: -3)
+Nosso:    offset = 0, -1, -2  ERRADO
+```
+
+**floorDown - underground going deeper:**
+```text
+OTClient: offset = -3
+Nosso:    offset = -2  ERRADO
+```
+
+### Bug 3: Tinting de outfit usa composite operation no canvas principal
+
+`drawTintedLayer` usa `source-atop` no canvas principal, o que afeta TODOS os pixels ja desenhados, nao apenas o sprite da criatura. Isso causa artefatos visuais.
+
+## Correcoes (arquivo por arquivo)
+
+### A. `src/lib/tibiaRelic/packetParser.ts`
+
+**floorUp** - Reescrever seguindo OTClient exatamente:
+- Caso `camZ == 7`: loop de nz=5 ate 0, offset = `8 - nz`, skip compartilhado
+- Caso `camZ > 7`: le floor `camZ - 2` com offset fixo `3`
+- **Remover o caso `else`** (camZ < 7 nao envia dados no protocolo)
+- Manter `camX++; camY++` no final
+
+**floorDown** - Reescrever seguindo OTClient exatamente:
+- Caso `camZ == 8`: loop com j comecando em `-1` decrementando
+- Caso `camZ > 8 && camZ < 14`: le floor `camZ + 2` com offset fixo `-3`
+- Sem caso else para transicoes de superficie
+- Manter `camX--; camY--` no final
+
+### B. `src/lib/tibiaRelic/renderer.ts`
+
+**drawTintedLayer** - Corrigir composite:
+- Trocar `source-atop` por `source-over` no canvas principal
+- O canvas `cached` ja tem os pixels tintados corretamente, entao basta desenhar normalmente por cima
+
+## Impacto esperado
+
+- Bug 1 (else espurio) era a causa principal de desync massivo apos qualquer mudanca de andar acima do solo. Sem ele, o parser nao consumira bytes errados e os outfits/tiles subsequentes serao lidos corretamente.
+- Bug 2 (offsets) fazia tiles serem armazenados 1 posicao errada apos mudancas de andar, mostrando terreno do andar errado.
+- Bug 3 (composite) causava artefatos visuais menores no tinting de outfit.
+
