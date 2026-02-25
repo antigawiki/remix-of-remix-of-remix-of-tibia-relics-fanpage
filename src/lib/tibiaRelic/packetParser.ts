@@ -128,6 +128,7 @@ export class PacketParser {
     else if (t === 0x69) this.tileUpd(r);
     else if (t === 0x6a) this.addThing(r);
     else if (t === 0x6b) this.chgThing(r);
+    else if (t === 0x6c) this.delThing(r);
     // Standalone creature opcodes (appear at top-level in some .cam frames)
     else if (t === 0x61) this.standaloneCreatureFull(r);
     else if (t === 0x62) this.standaloneCreatureKnown(r);

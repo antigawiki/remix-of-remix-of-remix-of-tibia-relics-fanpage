@@ -147,27 +147,67 @@ export class Renderer {
   }
 
   private getVisibleFloors(z: number): number[] {
-    // OTClient/tibiarc: draw bottom-to-top (painter's order: far floors first)
     if (z <= 7) {
-      // Surface: bottom=7 (ground level), top=dynamic based on camera
-      // topVisibleFloor: the highest floor we can see (lowest z number)
-      const topVisibleFloor = Math.max(0, z - 2);
+      const firstFloor = this.calcFirstVisibleFloor(z);
       const floors: number[] = [];
-      // Draw from floor 7 (bottom/ground) up to topVisibleFloor (top/sky)
-      for (let fz = 7; fz >= topVisibleFloor; fz--) {
+      for (let fz = 7; fz >= firstFloor; fz--) {
         floors.push(fz);
       }
-      return floors; // Already in bottom-to-top order (7,6,5,...,top)
+      return floors;
     } else {
-      // Underground: draw from deepest visible to camera floor
       const bottomFloor = Math.min(z + 2, 15);
       const topFloor = Math.max(z - 2, 8);
       const floors: number[] = [];
       for (let fz = bottomFloor; fz >= topFloor; fz--) {
         floors.push(fz);
       }
-      return floors; // Bottom-to-top order
+      return floors;
     }
+  }
+
+  /**
+   * OTClient-style first visible floor detection.
+   * Checks if there are roof/ground tiles on floors above the camera.
+   * If a roof is found, we stop rendering floors above it to avoid covering interiors.
+   */
+  private calcFirstVisibleFloor(z: number): number {
+    if (z > 7) return Math.max(z - 2, 8);
+
+    let firstFloor = 0;
+    const g = this.gs;
+
+    // Check a 3x3 area around camera position
+    for (let ix = -1; ix <= 1; ix++) {
+      for (let iy = -1; iy <= 1; iy++) {
+        for (let dz = 1; dz <= z; dz++) {
+          const checkZ = z - dz;
+
+          // Direct position above
+          const tile1 = g.getTile(g.camX + ix, g.camY + iy, checkZ);
+          if (this.tileCoversFloor(tile1)) {
+            firstFloor = Math.max(firstFloor, checkZ + 1);
+          }
+
+          // NW offset position (covered up perspective)
+          const tile2 = g.getTile(g.camX + ix - dz, g.camY + iy - dz, checkZ);
+          if (this.tileCoversFloor(tile2)) {
+            firstFloor = Math.max(firstFloor, checkZ + 1);
+          }
+        }
+      }
+    }
+
+    return firstFloor;
+  }
+
+  /** Check if a tile contains a ground item (roof) that would cover floors below */
+  private tileCoversFloor(items: TileItem[]): boolean {
+    for (const item of items) {
+      if (item[0] !== 'it') continue;
+      const it = this.dat.items.get(item[1]);
+      if (it && it.isGround) return true;
+    }
+    return false;
   }
 
   private drawItem(it: ItemType, bx: number, by: number, elevationOffset: number, scale: number, tpx: number, ph: number, wx: number, wy: number, canvasWidth: number, canvasHeight: number) {
