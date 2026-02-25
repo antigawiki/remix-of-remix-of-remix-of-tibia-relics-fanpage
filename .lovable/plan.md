@@ -1,99 +1,67 @@
 
 
-# Porta do TibiaCamPlayer Python para TypeScript/Canvas
+# Correção dos Sprites Fora do Lugar no CAM Player
 
-## Problema Identificado
+## Diagnóstico
 
-O player WASM (tibiarc) **nao reconhece** o formato `.cam` do TibiaRelic. Esse formato e customizado e diferente dos formatos suportados (TibiaCAM, TibiaCast, TibiaMovie, etc.). Por isso o erro "Could not determine recording version".
+Comparei o Python e o TypeScript linha por linha. A renderização e o parsing de pacotes são idênticos. O problema mais provável está em **dessincronia no parsing de tiles** causada pela leitura incorreta de bytes extras em items stackable/fluid/splash, e na **falta de offsets de elevação e deslocamento** na renderização.
 
-O player Python que voce tem funciona porque implementa o formato diretamente. A solucao e **portar o player Python para TypeScript**, renderizando no Canvas do navegador.
+Quando o `skipItem` lê 1 byte a mais ou a menos para algum item, **todos os dados subsequentes ficam deslocados**, causando tiles com sprites errados.
 
-## Formato .cam TibiaRelic (documentado no Python)
+## Correções Planejadas
 
-```text
-Header (12 bytes):
-  u32 version (= 8)
-  f32 fps (= 125.0)
-  4 bytes extras
-
-Frames (sequenciais):
-  u64 timestamp_ms (relativo ao inicio)
-  u16 payload_size
-  u8[] payload (pacotes protocolo Tibia 7.72)
-```
-
-## Plano de Implementacao
-
-### 1. Criar parser do formato .cam
-**Arquivo:** `src/lib/tibiaRelic/camParser.ts`
-
-Porta da classe `CamFile` do Python. Le o header de 12 bytes e extrai os frames (timestamp + payload).
-
-### 2. Criar loader do .spr (sprites)
-**Arquivo:** `src/lib/tibiaRelic/sprLoader.ts`
-
-Porta da classe `SprLoader`. Le o arquivo Tibia.spr (que ja temos em `/public/tibiarc/data/Tibia.spr`), decodifica sprites RLE para ImageData do Canvas.
-
-- Signature u32 + count u16 + offsets u32[]
-- Cada sprite: 3 bytes chroma key + u16 size + dados RLE (32x32 RGBA)
-
-### 3. Criar loader do .dat (definicoes de items)
+### 1. Adicionar verificação automática do DatLoader (diagnóstico)
 **Arquivo:** `src/lib/tibiaRelic/datLoader.ts`
 
-Porta da classe `DatLoader` e `ItemType`. Le flags dos items (ground, stackable, fluid, blocking, etc.) e layout de sprites (width, height, layers, patterns, animations).
+Adicionar a mesma verificação do Python após carregar o `.dat`:
+- item 100 deve ter sprite_ids[0] = algum valor válido
+- item 102 deve mapear para sprite 42
+- item 408 deve mapear para sprite 39
+- item 870 deve mapear para sprite 559
 
-- Flags 0x00-0xFF com bytes extras conforme tipo
-- Layout: width, height, [exact_size], layers, pat_x, pat_y, pat_z, anim, sprite_ids[]
+Se algum falhar, logar aviso no console indicando que as flags do `.dat` estão incorretas. Isso ajuda a identificar rapidamente se a causa é o DatLoader.
 
-### 4. Criar parser de pacotes do protocolo 7.72
-**Arquivo:** `src/lib/tibiaRelic/packetParser.ts`
-
-Porta da classe `PacketParser`. Interpreta os opcodes do protocolo:
-- 0x0a: login (player_id)
-- 0x64-0x68: mapa e scrolling
-- 0x69-0x6d: atualizacoes de tiles/coisas/criaturas
-- 0x6e-0x79: containers e inventario
-- 0x82-0x91: efeitos, luz, criaturas
-- 0xaa-0xb4: chat e mensagens
-- Inclui logica de tiles (terminadores 0xFF00+), creatures (0x61/0x62/0x63), items com subtipo
-
-### 5. Criar estado do jogo
-**Arquivo:** `src/lib/tibiaRelic/gameState.ts`
-
-Porta das classes `GameState` e `Creature`. Mantem tiles, criaturas, posicao da camera, mensagens.
-
-### 6. Criar renderer Canvas
+### 2. Aplicar offsets de elevação e deslocamento na renderização
 **Arquivo:** `src/lib/tibiaRelic/renderer.ts`
 
-Porta da classe `Renderer`. Desenha no Canvas HTML5 usando ImageData:
-- Viewport 15x11 tiles (32px cada) = 480x352
-- Renderiza tiles com sprites compostos (alpha composite)
-- Renderiza criaturas com outfits
-- HUD: barras de vida, nomes, mensagens de chat
+Atualmente, `elevation`, `dispX` e `dispY` são lidos do `.dat` mas ignorados na renderização. No Tibia, `elevation` desloca itens para cima (simulando altura), e `dispX`/`dispY` deslocam sprites em pixels.
 
-### 7. Atualizar o componente TibiarcPlayer
-**Arquivo:** `src/components/TibiarcPlayer.tsx`
+Mudanças:
+- Ao desenhar cada tile, acumular `elevation` dos items do ground
+- Aplicar offset de elevação nos sprites subsequentes do mesmo tile
+- Aplicar `dispX`/`dispY` como offset em pixels no `drawImage`
 
-Substituir a logica WASM pelo novo player TypeScript:
-- Ao carregar um .cam, usa o novo parser ao inves do WASM
-- Carrega Tibia.spr e Tibia.dat via fetch na inicializacao
-- Renderiza diretamente no Canvas com requestAnimationFrame
-- Mantem todos os controles existentes (play/pause, seek, speed, progress)
-- Remove dependencia do WASM completamente
+### 3. Melhorar o tratamento de erros no parser de pacotes
+**Arquivo:** `src/lib/tibiaRelic/packetParser.ts`
 
-## Ordem de Implementacao
+- Adicionar validação de limites antes de ler items em `readTileItems`
+- Adicionar contagem de tiles lidos vs esperados em `readBlock` e logar diferenças
+- Proteger `skipItem` contra IDs fora do range do `.dat`
+- Logar opcodes desconhecidos ao invés de lançar exceção (para não perder sync)
 
-1. camParser + gameState (sem dependencias)
-2. sprLoader + datLoader (le arquivos de dados)
-3. packetParser (depende de datLoader + gameState)
-4. renderer (depende de todos acima)
-5. Integracao no TibiarcPlayer.tsx
+### 4. Corrigir a ordem de renderização por stack priority
+**Arquivo:** `src/lib/tibiaRelic/renderer.ts`
 
-## Consideracoes
+Ordenar items de cada tile por `stackPrio` antes de desenhar:
+- 0 = ground (primeiro)
+- 1 = clip (borda)
+- 2 = bottom
+- 3 = top
+- 5 = items normais
 
-- Os arquivos Tibia.spr, Tibia.dat e Tibia.pic ja existem em `/public/tibiarc/data/`
-- O seletor de versao pode ser removido (o formato e sempre TibiaRelic 7.72)
-- O player Python tem ~1000 linhas que viram ~800-1000 linhas TypeScript
-- Sem dependencia de compilacao C++/WASM - tudo roda no navegador puro
-- Performance: sprites sao cacheados apos decodificacao, rendering via Canvas 2D
+Isso garante que sprites de chão sejam desenhados antes de objetos e criaturas.
+
+### 5. Adicionar logging de diagnóstico temporário
+**Arquivo:** `src/lib/tibiaRelic/packetParser.ts`
+
+Para o primeiro `mapDesc` (0x64), logar:
+- Total de tiles esperados (18x14=252)
+- Total de tiles efetivamente lidos
+- Primeiros N items de cada tile para comparação visual
+
+Isso permite identificar rapidamente se há dessincronia no stream de bytes.
+
+## Resultado Esperado
+
+Com a verificação do DatLoader, saberemos imediatamente se as flags estão corretas. Com elevation/displacement, items empilhados serão posicionados corretamente. Com melhor error handling, o parser não perde sync ao encontrar dados inesperados.
 
