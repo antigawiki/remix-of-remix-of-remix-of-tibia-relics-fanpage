@@ -178,6 +178,9 @@ export class PacketParser {
     else if (t === 0xd4) r.u32();
     // Tutorial
     else if (t === 0xdc) r.u8();
+    // Quest dialog
+    else if (t === 0xf0) this.skipQuestLog(r);
+    else if (t === 0xf1) this.skipQuestLine(r);
     // Error/MOTD
     else if (t === 0x14) { r.u16(); r.skip16(); }
     else return false;
@@ -334,53 +337,67 @@ export class PacketParser {
     }
   }
 
+  private skipQuestLog(r: Buf) {
+    const n = r.u16();
+    for (let i = 0; i < n; i++) { r.u16(); r.skip16(); r.u8(); }
+  }
+
+  private skipQuestLine(r: Buf) {
+    r.u16(); const n = r.u8();
+    for (let i = 0; i < n; i++) { r.skip16(); r.skip16(); }
+  }
+
   private floorUp(r: Buf) {
     const g = this.gs;
+    const oldZ = g.camZ;
     g.camZ--;
-    g.camX++; g.camY++;
 
     if (g.camZ === 7) {
-      // Crossed sea level going up: read floors 5 down to 0
+      // Crossed from underground to surface: read floors 5 down to 0
+      // Must read BEFORE adjusting camX/camY
       let skip = 0;
       for (let nz = 5; nz >= 0; nz--) {
-        const offset = g.camZ - nz; // NW perspective offset consistent with mapDesc
+        const offset = g.camZ - nz;
         skip = this.readFloorArea(r, g.camX - 8, g.camY - 6, nz, 18, 14, offset, skip);
       }
     } else if (g.camZ > 7) {
-      // Underground: read one floor above (z-2)
+      // Underground going up: read floor z-2
       const nz = g.camZ - 2;
-      const offset = g.camZ - nz; // = 2
+      const offset = g.camZ - nz;
       this.readFloorAreaWithOffset(r, g.camX - 8, g.camY - 6, nz, 18, 14, offset);
     } else {
-      // Above ground: read top visible floor
-      const nz = g.camZ - 2;
-      const offset = g.camZ - nz; // = 2
+      // Above ground going higher: read top visible floor
+      const nz = Math.max(0, g.camZ - 2);
+      const offset = g.camZ - nz;
       this.readFloorAreaWithOffset(r, g.camX - 8, g.camY - 6, nz, 18, 14, offset);
     }
+
+    // Apply NW shift AFTER reading
+    g.camX++; g.camY++;
   }
 
   private floorDown(r: Buf) {
     const g = this.gs;
+    const oldZ = g.camZ;
     g.camZ++;
-    g.camX--; g.camY--;
 
     if (g.camZ === 8) {
-      // Crossed sea level going down: read floors 8, 9, 10
+      // Crossed from surface to underground: read floors 8, 9, 10
+      // Must read BEFORE adjusting camX/camY
       let skip = 0;
       for (let nz = g.camZ; nz <= Math.min(g.camZ + 2, 15); nz++) {
-        const offset = g.camZ - nz; // 0, -1, -2
+        const offset = g.camZ - nz;
         skip = this.readFloorArea(r, g.camX - 8, g.camY - 6, nz, 18, 14, offset, skip);
       }
-    } else if (g.camZ > 8 && g.camZ <= 15) {
-      // Underground: read one floor below (z+2)
-      const nz = Math.min(g.camZ + 2, 15);
-      const offset = g.camZ - nz; // = -2
-      this.readFloorAreaWithOffset(r, g.camX - 8, g.camY - 6, nz, 18, 14, offset);
-    } else {
+    } else if (g.camZ <= 15) {
+      // Underground going deeper: read floor z+2
       const nz = Math.min(g.camZ + 2, 15);
       const offset = g.camZ - nz;
       this.readFloorAreaWithOffset(r, g.camX - 8, g.camY - 6, nz, 18, 14, offset);
     }
+
+    // Apply NW shift AFTER reading
+    g.camX--; g.camY--;
   }
 
   private talk(r: Buf) {
@@ -495,43 +512,55 @@ export class PacketParser {
     return 0;
   }
 
-  /** Read a single floor area (no skip carry-over) */
+  /** Read a single floor area (no skip carry-over) - column-major (X outer, Y inner) */
   private readSingleFloorArea(r: Buf, ox: number, oy: number, z: number, W: number, H: number) {
     let skip = 0;
-    const total = W * H;
-    for (let tileIdx = 0; tileIdx < total && r.left() >= 2; tileIdx++) {
-      if (skip > 0) { skip--; continue; }
-      const tx = tileIdx % W;
-      const ty = Math.floor(tileIdx / W);
-      skip = this.readTileItems(r, ox + tx, oy + ty, z);
+    for (let tx = 0; tx < W; tx++) {
+      for (let ty = 0; ty < H; ty++) {
+        if (r.left() < 2) return;
+        if (skip > 0) {
+          this.gs.setTile(ox + tx, oy + ty, z, []);
+          skip--;
+          continue;
+        }
+        skip = this.readTileItems(r, ox + tx, oy + ty, z);
+      }
     }
   }
 
-  /** Read one floor with perspective offset and return the remaining skip count */
+  /** Read one floor with perspective offset and return the remaining skip count - column-major */
   private readFloorArea(r: Buf, ox: number, oy: number, z: number, W: number, H: number, offset: number, skip: number): number {
-    const total = W * H;
-    for (let tileIdx = 0; tileIdx < total && r.left() >= 2; tileIdx++) {
-      if (skip > 0) { skip--; continue; }
-      const tx = tileIdx % W;
-      const ty = Math.floor(tileIdx / W);
-      skip = this.readTileItems(r, ox + tx + offset, oy + ty + offset, z);
+    for (let tx = 0; tx < W; tx++) {
+      for (let ty = 0; ty < H; ty++) {
+        if (r.left() < 2) return skip;
+        if (skip > 0) {
+          this.gs.setTile(ox + tx + offset, oy + ty + offset, z, []);
+          skip--;
+          continue;
+        }
+        skip = this.readTileItems(r, ox + tx + offset, oy + ty + offset, z);
+      }
     }
     return skip;
   }
 
-  /** Read a single floor with offset (no skip chaining) */
+  /** Read a single floor with offset (no skip chaining) - column-major */
   private readFloorAreaWithOffset(r: Buf, ox: number, oy: number, z: number, W: number, H: number, offset: number) {
     let skip = 0;
-    const total = W * H;
-    for (let tileIdx = 0; tileIdx < total && r.left() >= 2; tileIdx++) {
-      if (skip > 0) { skip--; continue; }
-      const tx = tileIdx % W;
-      const ty = Math.floor(tileIdx / W);
-      skip = this.readTileItems(r, ox + tx + offset, oy + ty + offset, z);
+    for (let tx = 0; tx < W; tx++) {
+      for (let ty = 0; ty < H; ty++) {
+        if (r.left() < 2) return;
+        if (skip > 0) {
+          this.gs.setTile(ox + tx + offset, oy + ty + offset, z, []);
+          skip--;
+          continue;
+        }
+        skip = this.readTileItems(r, ox + tx + offset, oy + ty + offset, z);
+      }
     }
   }
 
-  /** Read map area across multiple floors with shared skip counter and per-floor offsets */
+  /** Read map area across multiple floors with shared skip counter and per-floor offsets - column-major */
   private readMultiFloorArea(r: Buf, ox: number, oy: number, W: number, H: number, camZ: number, startz: number, endz: number, zstep: number) {
     let skip = 0;
     for (let nz = startz; nz !== endz + zstep; nz += zstep) {

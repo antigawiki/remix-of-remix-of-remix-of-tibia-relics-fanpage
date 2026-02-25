@@ -1,18 +1,42 @@
 /**
- * Renderer Canvas - desenha o viewport do jogo
- * Multi-floor rendering with NW perspective offset, elevation, and stack priority
+ * Renderer Canvas - draws game viewport
+ * Multi-floor rendering with NW perspective offset, elevation, stack priority passes, and outfit tinting
  */
 import { SprLoader } from './sprLoader';
 import { DatLoader, type ItemType } from './datLoader';
-import { GameState, type TileItem } from './gameState';
+import { GameState, type TileItem, type Creature } from './gameState';
 
 const VP_W = 15, VP_H = 11;
 const TILE_PX = 32;
 const DIR_MAP: Record<number, number> = { 0: 0, 1: 1, 2: 2, 3: 3 };
 
+// Tibia outfit color palette (HSL-based, 133 colors indexed 0-132)
+const OUTFIT_COLORS: [number, number, number][] = buildOutfitColorTable();
+
+function buildOutfitColorTable(): [number, number, number][] {
+  // Standard Tibia color palette - 19 hues x 7 shades = 133 colors
+  const table: [number, number, number][] = [];
+  const hues = [0, 15, 27, 38, 52, 66, 80, 95, 114, 135, 160, 186, 210, 230, 248, 268, 285, 303, 330];
+  const saturations = [100, 100, 80, 60, 100, 80, 50];
+  const lightnesses = [20, 35, 50, 65, 80, 90, 95];
+
+  for (let h = 0; h < 19; h++) {
+    for (let s = 0; s < 7; s++) {
+      table.push([hues[h], saturations[s], lightnesses[s]]);
+    }
+  }
+  return table;
+}
+
+function getOutfitColor(index: number): [number, number, number] {
+  if (index < 0 || index >= OUTFIT_COLORS.length) return [0, 0, 50];
+  return OUTFIT_COLORS[index];
+}
+
 export class Renderer {
   private tick = 0;
   private spriteCanvasCache: Map<string, HTMLCanvasElement | null> = new Map();
+  private tintCache: Map<string, HTMLCanvasElement | null> = new Map();
   private loggedCreature = false;
 
   constructor(
@@ -41,24 +65,12 @@ export class Renderer {
     const ph = (Math.floor(this.tick / 8)) % 4;
     const scale = tpx / TILE_PX;
 
-    // Determine which floors to draw
-    let floors: number[];
-    if (z <= 7) {
-      // Above ground: draw from floor 7 up to max(0, z-2), bottom to top
-      floors = [];
-      for (let fz = 7; fz >= Math.max(0, z - 2); fz--) {
-        floors.push(fz);
-      }
-      // Reverse so we draw bottom floors first (painter's algorithm)
-      floors.reverse();
-    } else {
-      // Underground: only draw current floor
-      floors = [z];
-    }
+    // Determine visible floors
+    const floors = this.getVisibleFloors(z);
 
-    // Draw each floor
+    // Draw each floor with stack-priority passes
     for (const fz of floors) {
-      const offset = z - fz; // NW offset: higher floors shift NW
+      const offset = z - fz;
       const cx0 = g.camX - 8 + offset;
       const cy0 = g.camY - 6 + offset;
 
@@ -72,47 +84,46 @@ export class Renderer {
           const bx = tx * tpx;
           const by = ty * tpx;
 
-          const sorted = this.sortByStackPrio(items);
+          // Pass 1: Ground + clip + bottom (stackPrio 0, 1, 2)
           let elevationOffset = 0;
-
-          for (const item of sorted) {
-            if (item[0] === 'cr') {
-              const c = g.creatures.get(item[1]);
-              if (c) {
-                this.drawCreature(c, bx, by - Math.round(elevationOffset * scale), tpx, scale);
-              }
-              continue;
-            }
-
+          for (const item of items) {
+            if (item[0] === 'cr') continue;
             const it = this.dat.items.get(item[1]);
-            if (!it) continue;
+            if (!it || it.stackPrio > 2) continue;
+            this.drawItem(it, bx, by, elevationOffset, scale, tpx, ph, wx, wy, canvasWidth, canvasHeight);
+            if (it.elevation > 0) elevationOffset += it.elevation;
+          }
 
-            const dispXPx = Math.round(it.dispX * scale);
-            const dispYPx = Math.round(it.dispY * scale);
+          // Pass 2: Regular items (stackPrio 5, default)
+          for (const item of items) {
+            if (item[0] === 'cr') continue;
+            const it = this.dat.items.get(item[1]);
+            if (!it || it.stackPrio <= 2 || it.stackPrio === 3) continue;
+            this.drawItem(it, bx, by, elevationOffset, scale, tpx, ph, wx, wy, canvasWidth, canvasHeight);
+            if (it.elevation > 0) elevationOffset += it.elevation;
+          }
 
-            for (let th = 0; th < it.height; th++) {
-              for (let tw = 0; tw < it.width; tw++) {
-                const sid = this.getSpriteIndex(it, ph, wx, wy, tw, th);
-                const sprCanvas = this.getSpriteCanvas(sid, tpx);
-                if (sprCanvas) {
-                  const dx = bx - tw * tpx + dispXPx;
-                  const dy = by - th * tpx + dispYPx - Math.round(elevationOffset * scale);
-                  if (dx > -tpx * 2 && dx < canvasWidth && dy > -tpx * 2 && dy < canvasHeight) {
-                    ctx.drawImage(sprCanvas, dx, dy);
-                  }
-                }
-              }
+          // Pass 3: Creatures
+          for (const item of items) {
+            if (item[0] !== 'cr') continue;
+            const c = g.creatures.get(item[1]);
+            if (c) {
+              this.drawCreature(c, bx, by - Math.round(elevationOffset * scale), tpx, scale);
             }
+          }
 
-            if (it.elevation > 0) {
-              elevationOffset += it.elevation;
-            }
+          // Pass 4: Top items (stackPrio 3)
+          for (const item of items) {
+            if (item[0] === 'cr') continue;
+            const it = this.dat.items.get(item[1]);
+            if (!it || it.stackPrio !== 3) continue;
+            this.drawItem(it, bx, by, elevationOffset, scale, tpx, ph, wx, wy, canvasWidth, canvasHeight);
           }
         }
       }
     }
 
-    // Draw creature HUDs on top (only for current floor creatures)
+    // Draw creature HUDs on top (only current floor)
     for (const c of g.creatures.values()) {
       if (c.z !== z) continue;
       const tx2 = c.x - (g.camX - 8);
@@ -140,13 +151,54 @@ export class Renderer {
     ctx.fillText(`cam=(${g.camX},${g.camY},${g.camZ}) crs=${g.creatures.size}`, 3, canvasHeight - 3);
   }
 
-  private drawCreature(c: { outfit: number; direction: number; name: string; id: number; health: number }, bx: number, by: number, tpx: number, scale: number) {
+  private getVisibleFloors(z: number): number[] {
+    if (z <= 7) {
+      // Above ground: draw from floor 7 up to max(0, z-2), bottom first (painter's)
+      const floors: number[] = [];
+      for (let fz = 7; fz >= Math.max(0, z - 2); fz--) {
+        floors.push(fz);
+      }
+      floors.reverse();
+      return floors;
+    } else {
+      // Underground: draw z-2 to z+2 (clamped), bottom first
+      const floors: number[] = [];
+      const minZ = Math.max(z - 2, 8);
+      const maxZ = Math.min(z + 2, 15);
+      for (let fz = maxZ; fz >= minZ; fz--) {
+        floors.push(fz);
+      }
+      floors.reverse();
+      return floors;
+    }
+  }
+
+  private drawItem(it: ItemType, bx: number, by: number, elevationOffset: number, scale: number, tpx: number, ph: number, wx: number, wy: number, canvasWidth: number, canvasHeight: number) {
+    const dispXPx = Math.round(it.dispX * scale);
+    const dispYPx = Math.round(it.dispY * scale);
+
+    for (let th = 0; th < it.height; th++) {
+      for (let tw = 0; tw < it.width; tw++) {
+        const sid = this.getSpriteIndex(it, ph, wx, wy, tw, th);
+        const sprCanvas = this.getSpriteCanvas(sid, tpx);
+        if (sprCanvas) {
+          const dx = bx - tw * tpx + dispXPx;
+          const dy = by - th * tpx + dispYPx - Math.round(elevationOffset * scale);
+          if (dx > -tpx * 2 && dx < canvasWidth && dy > -tpx * 2 && dy < canvasHeight) {
+            this.ctx.drawImage(sprCanvas, dx, dy);
+          }
+        }
+      }
+    }
+  }
+
+  private drawCreature(c: Creature, bx: number, by: number, tpx: number, scale: number) {
     const phCr = (Math.floor(this.tick / 6)) % 3;
     const ot = this.dat.outfits.get(c.outfit);
 
     if (!this.loggedCreature) {
       this.loggedCreature = true;
-      console.log(`[Renderer] First creature: outfit=${c.outfit}, name=${c.name}, datHasOutfit=${!!ot}, spriteIds=${ot?.spriteIds?.slice(0, 8)}`);
+      console.log(`[Renderer] First creature: outfit=${c.outfit}, name=${c.name}, datHasOutfit=${!!ot}, layers=${ot?.layers}, spriteIds=${ot?.spriteIds?.slice(0, 8)}`);
     }
 
     let rendered = false;
@@ -157,23 +209,36 @@ export class Renderer {
       const PX = Math.max(1, ot.patX), L = Math.max(1, ot.layers), H = ot.height, W = ot.width;
       const a = phCr % A;
 
-      for (let th = 0; th < H; th++) {
-        for (let tw = 0; tw < W; tw++) {
-          const idx = ((((((a * PZ + 0) * PY + 0) * PX + xd % PX) * L + 0) * H + th) * W + tw);
-          const sid = (idx < ot.spriteIds.length) ? ot.spriteIds[idx] : 0;
-          const sprCanvas = this.getSpriteCanvas(sid, tpx);
-          if (sprCanvas) {
-            const dx = bx - tw * tpx;
-            const dy = by - th * tpx;
-            this.ctx.drawImage(sprCanvas, dx, dy);
-            rendered = true;
+      // Draw all layers (layer 0 = base, layer 1 = mask for tinting)
+      for (let layer = 0; layer < L; layer++) {
+        for (let th = 0; th < H; th++) {
+          for (let tw = 0; tw < W; tw++) {
+            const idx = ((((((a * PZ + 0) * PY + 0) * PX + xd % PX) * L + layer) * H + th) * W + tw);
+            const sid = (idx < ot.spriteIds.length) ? ot.spriteIds[idx] : 0;
+
+            if (layer === 0) {
+              // Base layer: draw normally
+              const sprCanvas = this.getSpriteCanvas(sid, tpx);
+              if (sprCanvas) {
+                const dx = bx - tw * tpx;
+                const dy = by - th * tpx;
+                this.ctx.drawImage(sprCanvas, dx, dy);
+                rendered = true;
+              }
+            } else if (layer === 1 && L >= 2) {
+              // Mask layer: tint with outfit colors
+              const sprCanvas = this.getSpriteCanvas(sid, tpx);
+              if (sprCanvas) {
+                this.drawTintedLayer(sprCanvas, bx - tw * tpx, by - th * tpx, tpx, c);
+                rendered = true;
+              }
+            }
           }
         }
       }
     }
 
     if (!rendered) {
-      // Fallback: draw colored rectangle
       const isPlayer = c.id === this.gs.playerId;
       this.ctx.fillStyle = isPlayer ? 'rgba(100,200,255,0.6)' : 'rgba(255,200,100,0.6)';
       this.ctx.fillRect(bx + 4, by + 4, tpx - 8, tpx - 8);
@@ -182,13 +247,65 @@ export class Renderer {
     }
   }
 
-  private sortByStackPrio(items: TileItem[]): TileItem[] {
-    if (items.length <= 1) return items;
-    return [...items].sort((a, b) => {
-      const prioA = a[0] === 'cr' ? 4 : (this.dat.items.get(a[1])?.stackPrio ?? 5);
-      const prioB = b[0] === 'cr' ? 4 : (this.dat.items.get(b[1])?.stackPrio ?? 5);
-      return prioA - prioB;
-    });
+  /**
+   * Draw tinted outfit mask layer.
+   * The mask sprite uses specific color channels to indicate which body part to tint:
+   * - Red channel → head color
+   * - Green channel → body color
+   * - Blue channel → legs color
+   * - Yellow (R+G) → feet color
+   */
+  private drawTintedLayer(maskCanvas: HTMLCanvasElement, dx: number, dy: number, tpx: number, c: Creature) {
+    const key = `tint_${maskCanvas.width}_${c.head}_${c.body}_${c.legs}_${c.feet}`;
+
+    let cached = this.tintCache.get(key + '_' + this.getSpriteCanvasKey(maskCanvas));
+    if (cached === undefined) {
+      const tmpCanvas = document.createElement('canvas');
+      tmpCanvas.width = tpx;
+      tmpCanvas.height = tpx;
+      const tmpCtx = tmpCanvas.getContext('2d')!;
+
+      tmpCtx.drawImage(maskCanvas, 0, 0);
+      const imgData = tmpCtx.getImageData(0, 0, tpx, tpx);
+      const data = imgData.data;
+
+      const headColor = getOutfitColor(c.head);
+      const bodyColor = getOutfitColor(c.body);
+      const legsColor = getOutfitColor(c.legs);
+      const feetColor = getOutfitColor(c.feet);
+
+      for (let i = 0; i < data.length; i += 4) {
+        const r = data[i], g = data[i + 1], b = data[i + 2], a = data[i + 3];
+        if (a === 0) continue;
+
+        let color: [number, number, number] | null = null;
+        if (r > 128 && g < 64 && b < 64) color = headColor;       // Red → head
+        else if (g > 128 && r < 64 && b < 64) color = bodyColor;   // Green → body
+        else if (b > 128 && r < 64 && g < 64) color = legsColor;   // Blue → legs
+        else if (r > 128 && g > 128 && b < 64) color = feetColor;  // Yellow → feet
+
+        if (color) {
+          const [h, s, l] = color;
+          const rgb = hslToRgb(h / 360, s / 100, l / 100);
+          data[i] = rgb[0];
+          data[i + 1] = rgb[1];
+          data[i + 2] = rgb[2];
+        }
+      }
+
+      tmpCtx.putImageData(imgData, 0, 0);
+      cached = tmpCanvas;
+      // Don't cache too aggressively - just draw it
+    }
+
+    this.ctx.globalCompositeOperation = 'source-atop';
+    this.ctx.drawImage(cached, dx, dy);
+    this.ctx.globalCompositeOperation = 'source-over';
+  }
+
+  private getSpriteCanvasKey(canvas: HTMLCanvasElement): string {
+    // Use canvas dimensions as a simple identifier
+    return `${canvas.width}x${canvas.height}`;
   }
 
   private drawIdle(w: number, h: number) {
@@ -277,5 +394,29 @@ export class Renderer {
 
   clearCache() {
     this.spriteCanvasCache.clear();
+    this.tintCache.clear();
   }
+}
+
+/** Convert HSL to RGB */
+function hslToRgb(h: number, s: number, l: number): [number, number, number] {
+  let r: number, g: number, b: number;
+  if (s === 0) {
+    r = g = b = l;
+  } else {
+    const hue2rgb = (p: number, q: number, t: number) => {
+      if (t < 0) t += 1;
+      if (t > 1) t -= 1;
+      if (t < 1 / 6) return p + (q - p) * 6 * t;
+      if (t < 1 / 2) return q;
+      if (t < 2 / 3) return p + (q - p) * (2 / 3 - t) * 6;
+      return p;
+    };
+    const q = l < 0.5 ? l * (1 + s) : l + s - l * s;
+    const p = 2 * l - q;
+    r = hue2rgb(p, q, h + 1 / 3);
+    g = hue2rgb(p, q, h);
+    b = hue2rgb(p, q, h - 1 / 3);
+  }
+  return [Math.round(r * 255), Math.round(g * 255), Math.round(b * 255)];
 }
