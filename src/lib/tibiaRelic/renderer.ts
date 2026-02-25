@@ -292,12 +292,16 @@ export class Renderer {
           data[i] = rgb[0];
           data[i + 1] = rgb[1];
           data[i + 2] = rgb[2];
+          // Keep original alpha
+        } else {
+          // Non-matching pixels in the mask must be fully transparent
+          // Otherwise they overlay the base sprite causing ghostly appearance
+          data[i + 3] = 0;
         }
       }
 
       tmpCtx.putImageData(imgData, 0, 0);
       cached = tmpCanvas;
-      // Don't cache too aggressively - just draw it
     }
 
     this.ctx.drawImage(cached, dx, dy);
@@ -367,9 +371,14 @@ export class Renderer {
     ctx.fillRect(px + 1, py - 6, fw, 4);
 
     const fs = Math.max(7, Math.min(10, Math.floor(tpx / 4)));
-    ctx.fillStyle = isPlayer ? '#64c8ff' : '#ffcc64';
-    ctx.font = `${fs}px Arial`;
+    const nameColor = isPlayer ? '#00FF00' : '#64c8ff';
+    ctx.font = `bold ${fs}px Arial`;
     ctx.textAlign = 'center';
+    // Draw text outline for readability
+    ctx.strokeStyle = '#000000';
+    ctx.lineWidth = 2;
+    ctx.strokeText(c.name.substring(0, 16), px + tpx / 2, py - 7);
+    ctx.fillStyle = nameColor;
     ctx.fillText(c.name.substring(0, 16), px + tpx / 2, py - 7);
   }
 
