@@ -8,8 +8,23 @@ import { GameState, createCreature, DIR_N, DIR_E, DIR_S, DIR_W, type Creature, t
 
 const CR_FULL = 0x61, CR_KNOWN = 0x62, CR_OLD = 0x63;
 
+export interface PacketParserOptions {
+  looktypeU16?: boolean;
+  outfitWindowRangeU16?: boolean;
+}
+
 export class PacketParser {
-  constructor(public gs: GameState, public dat: DatLoader) {}
+  private looktypeU16: boolean;
+  private outfitWindowRangeU16: boolean;
+
+  constructor(public gs: GameState, public dat: DatLoader, opts: PacketParserOptions = {}) {
+    this.looktypeU16 = !!opts.looktypeU16;
+    this.outfitWindowRangeU16 = opts.outfitWindowRangeU16 ?? this.looktypeU16;
+  }
+
+  private readLooktype(r: Buf): number {
+    return this.looktypeU16 ? r.u16() : r.u8();
+  }
 
   private skipItem(r: Buf): number {
     const iid = r.u16();
@@ -23,7 +38,7 @@ export class PacketParser {
   }
 
   private skipOutfit(r: Buf) {
-    const oid = r.u8();
+    const oid = this.readLooktype(r);
     if (oid) r.skip(4);
     else r.u16();
   }
@@ -31,12 +46,12 @@ export class PacketParser {
   private outfitLogCount = 0;
 
   private readOutfit(r: Buf): { type: number; head: number; body: number; legs: number; feet: number } {
-    const oid = r.u8();
+    const oid = this.readLooktype(r);
     if (oid === 0) { r.u16(); return { type: 0, head: 0, body: 0, legs: 0, feet: 0 }; }
     const h = r.u8(), b = r.u8(), l = r.u8(), f = r.u8();
     if (this.outfitLogCount < 5) {
       this.outfitLogCount++;
-      console.log(`[PacketParser] Outfit read: looktype=${oid}, head=${h}, body=${b}, legs=${l}, feet=${f}`);
+      console.log(`[PacketParser] Outfit read: mode=${this.looktypeU16 ? 'u16' : 'u8'}, looktype=${oid}, head=${h}, body=${b}, legs=${l}, feet=${f}`);
     }
     return { type: oid, head: h, body: b, legs: l, feet: f };
   }
@@ -312,7 +327,11 @@ export class PacketParser {
 
   private skipOutfitWindow(r: Buf) {
     this.skipOutfit(r);
-    r.u8(); r.u8(); // start/end outfit range (u8 in 7.x protocol)
+    if (this.outfitWindowRangeU16) {
+      r.u16(); r.u16(); // start/end outfit range
+    } else {
+      r.u8(); r.u8(); // start/end outfit range (legacy 7.x)
+    }
   }
 
   private floorUp(r: Buf) {
