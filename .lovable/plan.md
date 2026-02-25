@@ -1,83 +1,80 @@
 
 
-# Fix: Sprites errados e camera presa no mesmo floor
+# Fix: Stream desync bugs causing wrong sprites and broken floor changes
 
-## Causa raiz (confirmada via OTClient source code)
+## Root Cause
 
-Comparei nosso `packetParser.ts` com o `protocolgameparse.cpp` do OTClient e encontrei **3 bugs criticos**:
+The floor change logic and sprite index formulas are actually correct (verified against both OTClient and tibiarc). The real problem is **byte-level stream desynchronization** caused by several opcodes reading the wrong number of bytes for protocol 7.72. Once any of these opcodes fires, every subsequent opcode in the frame reads corrupted data.
 
-### Bug 1: floorUp tem um `else` que le dados inexistentes (CRITICO)
+## Bugs Found (confirmed via tibiarc `versions.cpp`)
 
-Nosso codigo tem um caso `else` para `camZ < 7` (acima do solo indo mais alto) que tenta ler 18x14 tiles de dados que **nao existem no stream**:
+### Bug 1: Player Icons (0xA2) reads u16 instead of u8
+
+For protocol 7.72, `IconsU16` is only enabled from 7.80+. Our code reads `r.u16()` (2 bytes) but should read `r.u8()` (1 byte). Every icons update consumes 1 extra byte, desynchronizing the stream.
+
+### Bug 2: NPC Trade (0x7A) reads extra weight field
+
+For 7.72, `NPCVendorWeight` is only from 8.30+. Our code reads `u16 + u8 + string + u32 + u32 + u32` per item, but should be `u16 + u8 + string + u32 + u32` (no weight). Every trade item consumes 4 extra bytes.
+
+### Bug 3: Talk (0xAA) speak mode mapping wrong for 7.72
+
+The speak mode byte values for 7.72 differ from what our code assumes. Per tibiarc's `InitSpeakTypes` for 7.20-7.72:
 
 ```text
-// NOSSO CODIGO (ERRADO):
-} else {
-    // Above ground going higher: read top visible floor
-    const nz = Math.max(0, g.camZ - 2);
-    this.readFloorAreaWithOffset(r, ..., nz, 18, 14, offset);
-}
+Type 14 (0x0E) = MonsterSay -> needs POSITION (5 bytes)
+   Our code: treats as CHAN_TYPE -> reads CHANNEL (2 bytes) = 3 bytes short!
+
+Type 9 (0x09) = Broadcast -> needs NO extra data
+   Our code: not in any set -> falls through correctly
+
+Type 11 (0x0B) = GMToPlayer -> needs NO extra data (not position)
+   Our code: not in any set -> correct
 ```
 
-No OTClient, esse caso simplesmente **nao existe**. Quando o player muda de z=7 para z=6 (ou z=6 para z=5), todos os andares de superficie (0-7) ja estao carregados. O servidor nao envia dados novos. Nosso codigo le 252+ bytes de lixo, destruindo o parse de TODOS os pacotes subsequentes.
+This is the most frequent desync source since monsters speak often.
 
-### Bug 2: Offsets de floor change errados por 1
+### Bug 4: Player Stats (0xA0) may have wrong size for custom server
 
-Comparacao exata com OTClient:
+TibiaRelic (Nekiro TFS-1.5-Downgrades-7.72) might include Stamina (u16) in player stats. Our hardcoded `r.skip(20)` doesn't account for this possibility. If stamina is present, we're 2 bytes short. Need to verify with actual data or make it adaptive.
 
-**floorUp (0xBE) - crossing to surface (camZ == 7):**
-```text
-OTClient: offset = 8 - nz  (floor 5: offset=3, floor 4: offset=4, ...)
-Nosso:    offset = 7 - nz  (floor 5: offset=2, floor 4: offset=3, ...)  ERRADO
-```
-
-**floorUp - underground going up (camZ > 7):**
-```text
-OTClient: offset = 3
-Nosso:    offset = 2  ERRADO
-```
-
-**floorDown (0xBF) - crossing to underground (camZ == 8):**
-```text
-OTClient: j = -1, -2, -3  (floor 8: -1, floor 9: -2, floor 10: -3)
-Nosso:    offset = 0, -1, -2  ERRADO
-```
-
-**floorDown - underground going deeper:**
-```text
-OTClient: offset = -3
-Nosso:    offset = -2  ERRADO
-```
-
-### Bug 3: Tinting de outfit usa composite operation no canvas principal
-
-`drawTintedLayer` usa `source-atop` no canvas principal, o que afeta TODOS os pixels ja desenhados, nao apenas o sprite da criatura. Isso causa artefatos visuais.
-
-## Correcoes (arquivo por arquivo)
+## Fixes
 
 ### A. `src/lib/tibiaRelic/packetParser.ts`
 
-**floorUp** - Reescrever seguindo OTClient exatamente:
-- Caso `camZ == 7`: loop de nz=5 ate 0, offset = `8 - nz`, skip compartilhado
-- Caso `camZ > 7`: le floor `camZ - 2` com offset fixo `3`
-- **Remover o caso `else`** (camZ < 7 nao envia dados no protocolo)
-- Manter `camX++; camY++` no final
+1. **Fix 0xA2**: Change `r.u16()` to `r.u8()` for player icons (or make it version-aware)
 
-**floorDown** - Reescrever seguindo OTClient exatamente:
-- Caso `camZ == 8`: loop com j comecando em `-1` decrementando
-- Caso `camZ > 8 && camZ < 14`: le floor `camZ + 2` com offset fixo `-3`
-- Sem caso else para transicoes de superficie
-- Manter `camX--; camY--` no final
+2. **Fix 0x7A**: Remove the third `r.u32()` (weight) from NPC trade item loop:
+   ```text
+   Before: r.u16(); r.u8(); r.str16(); r.u32(); r.u32(); r.u32();
+   After:  r.u16(); r.u8(); r.str16(); r.u32(); r.u32();
+   ```
+
+3. **Fix 0xAA talk**: Rewrite speak mode handling to match 7.72 protocol exactly:
+   ```text
+   Position types: 1,2,3,14,16 (Say, Whisper, Yell, MonsterSay, MonsterYell)
+   Channel types:  5,10,12     (ChannelYellow, ChannelRed, ChannelOrange)
+   Time types:     6           (RuleViolationChannel -> u32)
+   No-data types:  4,7,8,9,11 (PrivateIn, RVAnswer, RVContinue, Broadcast, GMToPlayer)
+   ```
+
+4. **Fix 0xA0 stats**: Since TibiaRelic is a custom server, try a safer approach: instead of hardcoded `skip(20)`, parse the known fields individually so mismatches cause a controlled error rather than silent desync. Or keep 20 if verified working, and add stamina (22 bytes) as a fallback.
+
+5. **Add defensive logging**: Log when creature outfits are parsed, showing the decoded looktype and colors, to help debug any remaining issues.
 
 ### B. `src/lib/tibiaRelic/renderer.ts`
 
-**drawTintedLayer** - Corrigir composite:
-- Trocar `source-atop` por `source-over` no canvas principal
-- O canvas `cached` ja tem os pixels tintados corretamente, entao basta desenhar normalmente por cima
+No changes needed -- the rendering logic (sprite index formula, multi-floor drawing, outfit tinting) is correct. The visual bugs are entirely caused by the parser consuming wrong bytes.
 
-## Impacto esperado
+## Why this explains both symptoms
 
-- Bug 1 (else espurio) era a causa principal de desync massivo apos qualquer mudanca de andar acima do solo. Sem ele, o parser nao consumira bytes errados e os outfits/tiles subsequentes serao lidos corretamente.
-- Bug 2 (offsets) fazia tiles serem armazenados 1 posicao errada apos mudancas de andar, mostrando terreno do andar errado.
-- Bug 3 (composite) causava artefatos visuais menores no tinting de outfit.
+- **"Floor changes don't work"**: After a MonsterSay message (which happens frequently), the parser is offset by 3 bytes. The next opcode read is garbage, causing frame abandonment. Floor change opcodes (0xBE/0xBF) in subsequent frames may also be affected.
+
+- **"Outfits are wrong"**: When creature data is read from a desynchronized stream, the looktype, head/body/legs/feet colors, and even the creature ID become garbage values, producing wrong or missing sprites.
+
+## Validation
+
+After these fixes:
+- Monster/NPC speech should no longer cause stream corruption
+- Floor transitions should work since the actual floor change code already matches OTClient/tibiarc
+- Creature outfits should render correctly since the looktype values will be read from properly synchronized data
 
