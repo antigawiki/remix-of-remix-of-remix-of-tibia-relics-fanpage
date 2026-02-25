@@ -1,119 +1,99 @@
 
 
-# Player de Replays Tibia (.cam) na Web
+# Porta do TibiaCamPlayer Python para TypeScript/Canvas
 
-## Resumo
+## Problema Identificado
 
-Integrar o **tibiarc** (compilado para WebAssembly via Emscripten) ao projeto para permitir upload e reproducao de arquivos `.cam` do Tibia 7.4 diretamente no navegador. O tibiarc ja suporta oficialmente a compilacao para WASM e inclui um modo GUI/player para navegador.
+O player WASM (tibiarc) **nao reconhece** o formato `.cam` do TibiaRelic. Esse formato e customizado e diferente dos formatos suportados (TibiaCAM, TibiaCast, TibiaMovie, etc.). Por isso o erro "Could not determine recording version".
 
----
+O player Python que voce tem funciona porque implementa o formato diretamente. A solucao e **portar o player Python para TypeScript**, renderizando no Canvas do navegador.
 
-## Pre-requisito: Compilacao Externa
-
-O tibiarc e um projeto em C que precisa ser compilado para WebAssembly usando Emscripten. Isso **nao pode ser feito dentro do Lovable** - precisa ser feito uma unica vez em uma maquina com Linux ou WSL.
-
-### Passos para compilar (fora do Lovable):
+## Formato .cam TibiaRelic (documentado no Python)
 
 ```text
-# 1. Instalar Emscripten
-git clone https://github.com/emscripten-core/emsdk.git
-cd emsdk
-./emsdk install latest
-./emsdk activate latest
-source ./emsdk_env.sh
+Header (12 bytes):
+  u32 version (= 8)
+  f32 fps (= 125.0)
+  4 bytes extras
 
-# 2. Clonar tibiarc
-git clone https://github.com/tibiacast/tibiarc.git
-cd tibiarc
-
-# 3. Compilar para WASM
-mkdir build-wasm && cd build-wasm
-emcmake cmake ..
-emmake make
-
-# Resultado: gui.js, gui.wasm (e possivelmente gui.data)
+Frames (sequenciais):
+  u64 timestamp_ms (relativo ao inicio)
+  u16 payload_size
+  u8[] payload (pacotes protocolo Tibia 7.72)
 ```
 
-### Arquivos resultantes necessarios:
-- `gui.js` - loader JavaScript gerado pelo Emscripten
-- `gui.wasm` - binario WebAssembly
-- Opcionalmente `gui.data` - dados empacotados
+## Plano de Implementacao
 
-### Arquivos de dados do Tibia 7.4:
-- `Tibia.dat` - metadados de itens/criaturas
-- `Tibia.spr` - sprites (imagens)
-- `Tibia.pic` - imagens da interface (pode usar de versao posterior se nao encontrar)
+### 1. Criar parser do formato .cam
+**Arquivo:** `src/lib/tibiaRelic/camParser.ts`
 
-Esses arquivos podem ser encontrados em: https://downloads.ots.me/?dir=data/tibia-clients/dat_and_spr_collections
+Porta da classe `CamFile` do Python. Le o header de 12 bytes e extrai os frames (timestamp + payload).
 
----
+### 2. Criar loader do .spr (sprites)
+**Arquivo:** `src/lib/tibiaRelic/sprLoader.ts`
 
-## O que faremos no Lovable (apos a compilacao)
+Porta da classe `SprLoader`. Le o arquivo Tibia.spr (que ja temos em `/public/tibiarc/data/Tibia.spr`), decodifica sprites RLE para ImageData do Canvas.
 
-### 1. Hospedagem dos arquivos WASM
+- Signature u32 + count u16 + offsets u32[]
+- Cada sprite: 3 bytes chroma key + u16 size + dados RLE (32x32 RGBA)
 
-Adicionar os arquivos compilados ao projeto:
-- `public/tibiarc/gui.js`
-- `public/tibiarc/gui.wasm`
-- `public/tibiarc/data/Tibia.dat`
-- `public/tibiarc/data/Tibia.spr`
-- `public/tibiarc/data/Tibia.pic`
+### 3. Criar loader do .dat (definicoes de items)
+**Arquivo:** `src/lib/tibiaRelic/datLoader.ts`
 
-### 2. Nova pagina: `src/pages/CamPlayerPage.tsx`
+Porta da classe `DatLoader` e `ItemType`. Le flags dos items (ground, stackable, fluid, blocking, etc.) e layout de sprites (width, height, layers, patterns, animations).
 
-- Layout fullscreen sem sidebars (como XP Tracker)
-- Area de upload para arquivos `.cam`
-- Canvas onde o player WASM renderiza o jogo
-- Controles de reproducao: Play/Pause, velocidade (1x, 2x, 4x), barra de progresso
-- Estilizado no tema do projeto (wood-panel)
+- Flags 0x00-0xFF com bytes extras conforme tipo
+- Layout: width, height, [exact_size], layers, pat_x, pat_y, pat_z, anim, sprite_ids[]
 
-### 3. Componente wrapper: `src/components/TibiarcPlayer.tsx`
+### 4. Criar parser de pacotes do protocolo 7.72
+**Arquivo:** `src/lib/tibiaRelic/packetParser.ts`
 
-- Carrega o modulo WASM (gui.js)
-- Injeta o arquivo `.cam` no sistema de arquivos virtual do Emscripten (MEMFS)
-- Conecta o canvas HTML5 ao renderer WASM
-- Expoe controles de reproducao via callbacks JavaScript
+Porta da classe `PacketParser`. Interpreta os opcodes do protocolo:
+- 0x0a: login (player_id)
+- 0x64-0x68: mapa e scrolling
+- 0x69-0x6d: atualizacoes de tiles/coisas/criaturas
+- 0x6e-0x79: containers e inventario
+- 0x82-0x91: efeitos, luz, criaturas
+- 0xaa-0xb4: chat e mensagens
+- Inclui logica de tiles (terminadores 0xFF00+), creatures (0x61/0x62/0x63), items com subtipo
 
-### 4. Rota e navegacao
+### 5. Criar estado do jogo
+**Arquivo:** `src/lib/tibiaRelic/gameState.ts`
 
-- Nova rota `/cam-player` no `src/App.tsx`
-- Links no Sidebar e Header (icone Film/Play do lucide)
-- Traducoes nos 4 idiomas:
-  - PT: "Player de Replays"
-  - EN: "Replay Player"
-  - ES: "Reproductor de Replays"
-  - PL: "Odtwarzacz Powtórek"
+Porta das classes `GameState` e `Creature`. Mantem tiles, criaturas, posicao da camera, mensagens.
 
----
+### 6. Criar renderer Canvas
+**Arquivo:** `src/lib/tibiaRelic/renderer.ts`
 
-## Fluxo do usuario
+Porta da classe `Renderer`. Desenha no Canvas HTML5 usando ImageData:
+- Viewport 15x11 tiles (32px cada) = 480x352
+- Renderiza tiles com sprites compostos (alpha composite)
+- Renderiza criaturas com outfits
+- HUD: barras de vida, nomes, mensagens de chat
 
-```text
-1. Acessa /cam-player
-2. Ve a interface com area de upload
-3. Arrasta ou seleciona um arquivo .cam
-4. O arquivo e carregado na memoria do WASM (MEMFS)
-5. O tibiarc renderiza frame a frame no canvas
-6. Usuario controla play/pause, velocidade, timeline
-```
+### 7. Atualizar o componente TibiarcPlayer
+**Arquivo:** `src/components/TibiarcPlayer.tsx`
 
----
+Substituir a logica WASM pelo novo player TypeScript:
+- Ao carregar um .cam, usa o novo parser ao inves do WASM
+- Carrega Tibia.spr e Tibia.dat via fetch na inicializacao
+- Renderiza diretamente no Canvas com requestAnimationFrame
+- Mantem todos os controles existentes (play/pause, seek, speed, progress)
+- Remove dependencia do WASM completamente
 
-## Limitacoes e consideracoes
+## Ordem de Implementacao
 
-- **Tamanho**: Os arquivos Tibia.dat + Tibia.spr juntos tem ~20-30MB. Serao carregados na primeira visita e cacheados pelo navegador
-- **Performance**: O WASM roda com performance proxima de nativo, muito melhor que a abordagem TypeScript pura do otwebclient
-- **Formatos suportados**: Alem de `.cam`, o tibiarc suporta `.rec`, `.tmv2`, `.trp`, `.ttm`, `.yatc`, `.recording` - todos poderiam funcionar
-- **Versoes**: Suporte bom para Tibia 7.11 ate 8.62, cobrindo o 7.4
+1. camParser + gameState (sem dependencias)
+2. sprLoader + datLoader (le arquivos de dados)
+3. packetParser (depende de datLoader + gameState)
+4. renderer (depende de todos acima)
+5. Integracao no TibiarcPlayer.tsx
 
----
+## Consideracoes
 
-## Proximo passo imediato
-
-Para comecar, voce precisaria:
-1. Compilar o tibiarc para WASM (instrucoes acima)
-2. Fazer upload dos arquivos resultantes (`gui.js`, `gui.wasm`) para o projeto
-3. Fazer upload dos arquivos de dados do Tibia 7.4 (`Tibia.dat`, `Tibia.spr`, `Tibia.pic`)
-
-Com esses arquivos em maos, eu construo toda a interface, integracao e controles de reproducao.
+- Os arquivos Tibia.spr, Tibia.dat e Tibia.pic ja existem em `/public/tibiarc/data/`
+- O seletor de versao pode ser removido (o formato e sempre TibiaRelic 7.72)
+- O player Python tem ~1000 linhas que viram ~800-1000 linhas TypeScript
+- Sem dependencia de compilacao C++/WASM - tudo roda no navegador puro
+- Performance: sprites sao cacheados apos decodificacao, rendering via Canvas 2D
 
