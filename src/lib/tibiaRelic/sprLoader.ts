@@ -33,8 +33,8 @@ export class SprLoader {
     const raw = this.raw;
     if (off + 5 > raw.length) { this.cache.set(sid, null); return null; }
 
-    // Chroma key (3 bytes)
-    const ckR = raw[off], ckG = raw[off + 1], ckB = raw[off + 2];
+    // Skip 3 legacy "color key" bytes (not used for filtering)
+    // Transparency is handled by RLE encoding itself
     const sz = this.view.getUint16(off + 3, true);
     if (sz === 0) { this.cache.set(sid, null); return null; }
 
@@ -53,10 +53,8 @@ export class SprLoader {
       for (let j = 0; j < cl; j++) {
         if (pixel >= N || p + 2 >= raw.length) break;
         const r = raw[p], g = raw[p + 1], b = raw[p + 2]; p += 3;
-        if (r !== ckR || g !== ckG || b !== ckB) {
-          const i = pixel * 4;
-          px[i] = r; px[i + 1] = g; px[i + 2] = b; px[i + 3] = 255;
-        }
+        const i = pixel * 4;
+        px[i] = r; px[i + 1] = g; px[i + 2] = b; px[i + 3] = 255;
         pixel++;
       }
     }

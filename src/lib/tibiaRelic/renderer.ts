@@ -231,7 +231,7 @@ export class Renderer {
             } else if (layer === 1 && L >= 2) {
               const sprCanvas = this.getSpriteCanvas(sid, tpx);
               if (sprCanvas) {
-                this.drawTintedLayer(sprCanvas, bx - tw * tpx + dispXPx, by - th * tpx + dispYPx, tpx, c);
+                this.drawTintedLayer(sprCanvas, bx - tw * tpx + dispXPx, by - th * tpx + dispYPx, tpx, c, sid);
                 rendered = true;
               }
             }
@@ -257,10 +257,10 @@ export class Renderer {
    * - Blue channel → legs color
    * - Yellow (R+G) → feet color
    */
-  private drawTintedLayer(maskCanvas: HTMLCanvasElement, dx: number, dy: number, tpx: number, c: Creature) {
-    const key = `tint_${maskCanvas.width}_${c.head}_${c.body}_${c.legs}_${c.feet}`;
+  private drawTintedLayer(maskCanvas: HTMLCanvasElement, dx: number, dy: number, tpx: number, c: Creature, spriteId?: number) {
+    const cacheKey = `tint_${spriteId ?? 'unk'}_${c.head}_${c.body}_${c.legs}_${c.feet}`;
 
-    let cached = this.tintCache.get(key + '_' + this.getSpriteCanvasKey(maskCanvas));
+    let cached = this.tintCache.get(cacheKey);
     if (cached === undefined) {
       const tmpCanvas = document.createElement('canvas');
       tmpCanvas.width = tpx;
@@ -301,15 +301,11 @@ export class Renderer {
       }
 
       tmpCtx.putImageData(imgData, 0, 0);
+      this.tintCache.set(cacheKey, tmpCanvas);
       cached = tmpCanvas;
     }
 
     this.ctx.drawImage(cached, dx, dy);
-  }
-
-  private getSpriteCanvasKey(canvas: HTMLCanvasElement): string {
-    // Use canvas dimensions as a simple identifier
-    return `${canvas.width}x${canvas.height}`;
   }
 
   private drawIdle(w: number, h: number) {
