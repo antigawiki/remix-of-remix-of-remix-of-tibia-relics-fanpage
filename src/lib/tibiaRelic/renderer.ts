@@ -30,6 +30,8 @@ export class Renderer {
   private tintCache: Map<string, HTMLCanvasElement | null> = new Map();
   private loggedCreature = false;
 
+  public floorOverride: number | null = null;
+
   constructor(
     private ctx: CanvasRenderingContext2D,
     private spr: SprLoader,
@@ -52,7 +54,7 @@ export class Renderer {
       return;
     }
 
-    const z = g.camZ;
+    const z = this.floorOverride ?? g.camZ;
     const ph = (Math.floor(this.tick / 8)) % 4;
     const scale = tpx / TILE_PX;
 
