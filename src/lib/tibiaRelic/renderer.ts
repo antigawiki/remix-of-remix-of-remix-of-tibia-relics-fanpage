@@ -143,12 +143,7 @@ export class Renderer {
       }
     }
 
-    this.drawMessages(canvasWidth, canvasHeight);
-
-    ctx.fillStyle = '#444444';
-    ctx.font = '7px Arial';
-    ctx.textAlign = 'left';
-    ctx.fillText(`cam=(${g.camX},${g.camY},${g.camZ}) crs=${g.creatures.size}`, 3, canvasHeight - 3);
+    // Messages and debug text removed per user request
   }
 
   private getVisibleFloors(z: number): number[] {
@@ -378,24 +373,6 @@ export class Renderer {
     ctx.fillText(c.name.substring(0, 16), px + tpx / 2, py - 7);
   }
 
-  private drawMessages(cw: number, ch: number) {
-    const now = performance.now();
-    const msgs = this.gs.messages.filter(m => m.expireAt > now).slice(-6);
-    const ctx = this.ctx;
-    let y = ch - 18;
-
-    for (let i = msgs.length - 1; i >= 0; i--) {
-      const m = msgs[i];
-      const l = Math.min(m.text.length * 6, cw - 8);
-      ctx.fillStyle = '#111827';
-      ctx.fillRect(4, y - 12, l, 15);
-      ctx.fillStyle = m.color;
-      ctx.font = '9px Arial';
-      ctx.textAlign = 'left';
-      ctx.fillText(m.text.substring(0, 80), 6, y);
-      y -= 16;
-    }
-  }
 
   clearCache() {
     this.spriteCanvasCache.clear();
