@@ -16,6 +16,61 @@ interface TibiarcPlayerProps {
   className?: string;
 }
 
+type ParseProtocolMode = 'u8' | 'u16';
+
+const createPacketParser = (gs: GameState, dat: DatLoader, mode: ParseProtocolMode) =>
+  new PacketParser(gs, dat, {
+    looktypeU16: mode === 'u16',
+    outfitWindowRangeU16: mode === 'u16',
+  });
+
+const evaluateParseMode = (cam: CamFile, dat: DatLoader, mode: ParseProtocolMode) => {
+  const gs = new GameState();
+  const parser = createPacketParser(gs, dat, mode);
+  const maxProbeMs = Math.min(10000, cam.totalMs);
+  const maxFrames = Math.min(500, cam.frames.length);
+
+  for (let i = 0; i < maxFrames; i++) {
+    const frame = cam.frames[i];
+    if (frame.timestamp > maxProbeMs) break;
+    try { parser.process(frame.payload); } catch { /* ignore */ }
+  }
+
+  const creatures = Array.from(gs.creatures.values());
+  const knownOutfits = creatures.filter(c => c.outfit > 0 && dat.outfits.has(c.outfit)).length;
+  const unknownOutfits = creatures.filter(c => c.outfit > 0 && !dat.outfits.has(c.outfit)).length;
+  const hugeOutfits = creatures.filter(c => c.outfit > dat.outfits.size).length;
+
+  let score = 0;
+  if (gs.mapLoaded) score += 20;
+  score += Math.min(gs.tiles.size, 300) * 0.05;
+  score += knownOutfits * 2;
+  score -= unknownOutfits * 3;
+  score -= hugeOutfits * 5;
+
+  return {
+    score,
+    knownOutfits,
+    unknownOutfits,
+    hugeOutfits,
+    creatures: creatures.length,
+    tiles: gs.tiles.size,
+  };
+};
+
+const detectParseProtocolMode = (cam: CamFile, dat: DatLoader): ParseProtocolMode => {
+  const u8 = evaluateParseMode(cam, dat, 'u8');
+  const u16 = evaluateParseMode(cam, dat, 'u16');
+  const selected = u16.score > u8.score + 1 ? 'u16' : 'u8';
+
+  console.log(
+    `[TibiarcPlayer] Parser mode detection: u8(score=${u8.score.toFixed(1)}, known=${u8.knownOutfits}, unknown=${u8.unknownOutfits}) ` +
+    `u16(score=${u16.score.toFixed(1)}, known=${u16.knownOutfits}, unknown=${u16.unknownOutfits}) -> ${selected}`
+  );
+
+  return selected;
+};
+
 const TibiarcPlayer = ({ className }: TibiarcPlayerProps) => {
   const { t } = useTranslation();
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -27,6 +82,7 @@ const TibiarcPlayer = ({ className }: TibiarcPlayerProps) => {
     gs: GameState;
     parser: PacketParser;
     renderer: Renderer;
+    parseProtocol: ParseProtocolMode;
     cam: CamFile | null;
     curFrame: number;
     curMs: number;
@@ -64,7 +120,7 @@ const TibiarcPlayer = ({ className }: TibiarcPlayerProps) => {
         const dat = new DatLoader();
         dat.load(datBuf);
         const gs = new GameState();
-        const parser = new PacketParser(gs, dat);
+        const parser = createPacketParser(gs, dat, 'u8');
 
         const canvas = canvasRef.current;
         if (!canvas) return;
@@ -75,6 +131,7 @@ const TibiarcPlayer = ({ className }: TibiarcPlayerProps) => {
 
         engineRef.current = {
           spr, dat, gs, parser, renderer,
+          parseProtocol: 'u8',
           cam: null, curFrame: 0, curMs: 0,
           wallT0: 0, camT0Ms: 0, speed: 1,
           playing: false, rafId: null,
@@ -170,9 +227,12 @@ const TibiarcPlayer = ({ className }: TibiarcPlayerProps) => {
         return;
       }
 
+      const parseProtocol = detectParseProtocolMode(cam, engine.dat);
+
       // Reset game state
       engine.gs.reset();
-      engine.parser = new PacketParser(engine.gs, engine.dat);
+      engine.parseProtocol = parseProtocol;
+      engine.parser = createPacketParser(engine.gs, engine.dat, parseProtocol);
       engine.renderer.gs = engine.gs;
       engine.renderer.clearCache();
       engine.cam = cam;
@@ -186,7 +246,7 @@ const TibiarcPlayer = ({ className }: TibiarcPlayerProps) => {
       setProgress(0);
       setState('paused');
 
-      console.log(`[TibiarcPlayer] Loaded ${cam.frames.length} frames, ${(cam.totalMs / 1000).toFixed(1)}s`);
+      console.log(`[TibiarcPlayer] Loaded ${cam.frames.length} frames, ${(cam.totalMs / 1000).toFixed(1)}s, parser=${parseProtocol}`);
     } catch (err) {
       console.error('Failed to load .cam:', err);
       setErrorMsg(err instanceof Error ? err.message : t('camPlayer.loadError'));
@@ -222,7 +282,7 @@ const TibiarcPlayer = ({ className }: TibiarcPlayerProps) => {
 
     engine.playing = false;
     engine.gs.reset();
-    engine.parser = new PacketParser(engine.gs, engine.dat);
+    engine.parser = createPacketParser(engine.gs, engine.dat, engine.parseProtocol);
     engine.renderer.gs = engine.gs;
     engine.renderer.clearCache();
     engine.curFrame = 0;
@@ -256,7 +316,7 @@ const TibiarcPlayer = ({ className }: TibiarcPlayerProps) => {
 
     // Reset and replay to target
     engine.gs.reset();
-    engine.parser = new PacketParser(engine.gs, engine.dat);
+    engine.parser = createPacketParser(engine.gs, engine.dat, engine.parseProtocol);
     engine.renderer.gs = engine.gs;
     engine.renderer.clearCache();
     engine.curFrame = 0;
