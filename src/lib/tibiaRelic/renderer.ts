@@ -152,24 +152,26 @@ export class Renderer {
   }
 
   private getVisibleFloors(z: number): number[] {
+    // OTClient/tibiarc: draw bottom-to-top (painter's order: far floors first)
     if (z <= 7) {
-      // Above ground: draw from floor 7 up to max(0, z-2), bottom first (painter's)
+      // Surface: bottom=7 (ground level), top=dynamic based on camera
+      // topVisibleFloor: the highest floor we can see (lowest z number)
+      const topVisibleFloor = Math.max(0, z - 2);
       const floors: number[] = [];
-      for (let fz = 7; fz >= Math.max(0, z - 2); fz--) {
+      // Draw from floor 7 (bottom/ground) up to topVisibleFloor (top/sky)
+      for (let fz = 7; fz >= topVisibleFloor; fz--) {
         floors.push(fz);
       }
-      floors.reverse();
-      return floors;
+      return floors; // Already in bottom-to-top order (7,6,5,...,top)
     } else {
-      // Underground: draw z-2 to z+2 (clamped), bottom first
+      // Underground: draw from deepest visible to camera floor
+      const bottomFloor = Math.min(z + 2, 15);
+      const topFloor = Math.max(z - 2, 8);
       const floors: number[] = [];
-      const minZ = Math.max(z - 2, 8);
-      const maxZ = Math.min(z + 2, 15);
-      for (let fz = maxZ; fz >= minZ; fz--) {
+      for (let fz = bottomFloor; fz >= topFloor; fz--) {
         floors.push(fz);
       }
-      floors.reverse();
-      return floors;
+      return floors; // Bottom-to-top order
     }
   }
 
@@ -209,27 +211,32 @@ export class Renderer {
       const PX = Math.max(1, ot.patX), L = Math.max(1, ot.layers), H = ot.height, W = ot.width;
       const a = phCr % A;
 
+      // Apply outfit displacement (like tibiarc/OTClient)
+      const dispXPx = Math.round(ot.dispX * scale);
+      const dispYPx = Math.round(ot.dispY * scale);
+
       // Draw all layers (layer 0 = base, layer 1 = mask for tinting)
       for (let layer = 0; layer < L; layer++) {
         for (let th = 0; th < H; th++) {
           for (let tw = 0; tw < W; tw++) {
-            const idx = ((((((a * PZ + 0) * PY + 0) * PX + xd % PX) * L + layer) * H + th) * W + tw);
+            // patX = direction, patY = addon (0=base, 1=first addon, 2=second addon)
+            const patX = xd % PX;
+            const patY = 0; // base outfit, no addons for now
+            const idx = ((((((a * PZ + 0) * PY + patY) * PX + patX) * L + layer) * H + th) * W + tw);
             const sid = (idx < ot.spriteIds.length) ? ot.spriteIds[idx] : 0;
 
             if (layer === 0) {
-              // Base layer: draw normally
               const sprCanvas = this.getSpriteCanvas(sid, tpx);
               if (sprCanvas) {
-                const dx = bx - tw * tpx;
-                const dy = by - th * tpx;
+                const dx = bx - tw * tpx + dispXPx;
+                const dy = by - th * tpx + dispYPx;
                 this.ctx.drawImage(sprCanvas, dx, dy);
                 rendered = true;
               }
             } else if (layer === 1 && L >= 2) {
-              // Mask layer: tint with outfit colors
               const sprCanvas = this.getSpriteCanvas(sid, tpx);
               if (sprCanvas) {
-                this.drawTintedLayer(sprCanvas, bx - tw * tpx, by - th * tpx, tpx, c);
+                this.drawTintedLayer(sprCanvas, bx - tw * tpx + dispXPx, by - th * tpx + dispYPx, tpx, c);
                 rendered = true;
               }
             }
