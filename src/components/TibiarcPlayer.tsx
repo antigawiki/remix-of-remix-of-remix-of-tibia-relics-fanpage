@@ -2,39 +2,15 @@ import { useRef, useState, useCallback, useEffect } from 'react';
 import { Upload, Play, Pause, FastForward, RotateCcw, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Slider } from '@/components/ui/slider';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useTranslation } from '@/i18n';
+import { parseCamFile, type CamFile } from '@/lib/tibiaRelic/camParser';
+import { SprLoader } from '@/lib/tibiaRelic/sprLoader';
+import { DatLoader } from '@/lib/tibiaRelic/datLoader';
+import { PacketParser } from '@/lib/tibiaRelic/packetParser';
+import { GameState } from '@/lib/tibiaRelic/gameState';
+import { Renderer } from '@/lib/tibiaRelic/renderer';
 
-type PlayerState = 'idle' | 'loading-wasm' | 'ready' | 'loading-cam' | 'playing' | 'paused' | 'error' | 'need-version';
-
-const TIBIA_VERSIONS = [
-  { label: 'Auto-detect', value: '0.0.0' },
-  { label: '7.1', value: '7.1.0' },
-  { label: '7.2', value: '7.2.0' },
-  { label: '7.3', value: '7.3.0' },
-  { label: '7.4', value: '7.4.0' },
-  { label: '7.5', value: '7.5.0' },
-  { label: '7.6', value: '7.6.0' },
-  { label: '7.7', value: '7.7.0' },
-  { label: '7.72', value: '7.72.0' },
-  { label: '7.8', value: '7.8.0' },
-  { label: '7.9', value: '7.9.0' },
-  { label: '7.92', value: '7.92.0' },
-  { label: '8.0', value: '8.0.0' },
-  { label: '8.1', value: '8.1.0' },
-  { label: '8.2', value: '8.2.0' },
-  { label: '8.4', value: '8.4.0' },
-  { label: '8.5', value: '8.5.0' },
-  { label: '8.6', value: '8.6.0' },
-];
-
-interface WasmModule {
-  ccall: (name: string, returnType: string, argTypes: string[], args: unknown[]) => unknown;
-  cwrap: (name: string, returnType: string, argTypes: string[]) => (...args: unknown[]) => unknown;
-  HEAPU8: Uint8Array;
-  _malloc: (size: number) => number;
-  _free: (ptr: number) => void;
-}
+type PlayerState = 'idle' | 'loading-data' | 'ready' | 'loading-cam' | 'playing' | 'paused' | 'error';
 
 interface TibiarcPlayerProps {
   className?: string;
@@ -44,9 +20,22 @@ const TibiarcPlayer = ({ className }: TibiarcPlayerProps) => {
   const { t } = useTranslation();
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const moduleRef = useRef<WasmModule | null>(null);
-  const progressIntervalRef = useRef<number | null>(null);
-  const pendingFileRef = useRef<{ data: Uint8Array; name: string } | null>(null);
+
+  const engineRef = useRef<{
+    spr: SprLoader;
+    dat: DatLoader;
+    gs: GameState;
+    parser: PacketParser;
+    renderer: Renderer;
+    cam: CamFile | null;
+    curFrame: number;
+    curMs: number;
+    wallT0: number;
+    camT0Ms: number;
+    speed: number;
+    playing: boolean;
+    rafId: number | null;
+  } | null>(null);
 
   const [state, setState] = useState<PlayerState>('idle');
   const [speed, setSpeed] = useState(1);
@@ -54,205 +43,156 @@ const TibiarcPlayer = ({ className }: TibiarcPlayerProps) => {
   const [errorMsg, setErrorMsg] = useState('');
   const [progress, setProgress] = useState(0);
   const [duration, setDuration] = useState(0);
-  const [wasmAvailable, setWasmAvailable] = useState<boolean | null>(null);
-  const [selectedVersion, setSelectedVersion] = useState('0.0.0');
+  const [dataLoaded, setDataLoaded] = useState(false);
 
-  // Check WASM availability
+  // Load Tibia data files on mount
   useEffect(() => {
-    fetch('/tibiarc/tibiarc_player.js', { method: 'HEAD' })
-      .then(res => setWasmAvailable(res.ok))
-      .catch(() => setWasmAvailable(false));
-  }, []);
+    let cancelled = false;
+    const loadData = async () => {
+      setState('loading-data');
+      try {
+        const [sprRes, datRes] = await Promise.all([
+          fetch('/tibiarc/data/Tibia.spr'),
+          fetch('/tibiarc/data/Tibia.dat'),
+        ]);
+        if (!sprRes.ok || !datRes.ok) throw new Error('Tibia data files not found');
+        const [sprBuf, datBuf] = await Promise.all([sprRes.arrayBuffer(), datRes.arrayBuffer()]);
+        if (cancelled) return;
 
-  // Progress polling
-  useEffect(() => {
-    if (state === 'playing' && moduleRef.current) {
-      progressIntervalRef.current = window.setInterval(() => {
-        const mod = moduleRef.current;
-        if (!mod) return;
-        const p = mod.ccall('get_progress', 'number', [], []) as number;
-        const isPlaying = mod.ccall('is_playing', 'number', [], []) as number;
-        setProgress(p);
-        if (!isPlaying) {
-          setState('paused');
-        }
-      }, 100);
-    }
-    return () => {
-      if (progressIntervalRef.current) {
-        clearInterval(progressIntervalRef.current);
-        progressIntervalRef.current = null;
+        const spr = new SprLoader();
+        spr.load(sprBuf);
+        const dat = new DatLoader();
+        dat.load(datBuf);
+        const gs = new GameState();
+        const parser = new PacketParser(gs, dat);
+
+        const canvas = canvasRef.current;
+        if (!canvas) return;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) return;
+
+        const renderer = new Renderer(ctx, spr, dat, gs);
+
+        engineRef.current = {
+          spr, dat, gs, parser, renderer,
+          cam: null, curFrame: 0, curMs: 0,
+          wallT0: 0, camT0Ms: 0, speed: 1,
+          playing: false, rafId: null,
+        };
+
+        setDataLoaded(true);
+        setState('idle');
+        console.log(`[TibiarcPlayer] Loaded: ${spr.count} sprites, ${dat.items.size} items, ${dat.outfits.size} outfits`);
+      } catch (err) {
+        if (cancelled) return;
+        console.error('[TibiarcPlayer] Failed to load data:', err);
+        setErrorMsg(err instanceof Error ? err.message : 'Failed to load data');
+        setState('error');
       }
     };
-  }, [state]);
-
-  const loadWasmModule = useCallback(async () => {
-    if (moduleRef.current) return moduleRef.current;
-
-    setState('loading-wasm');
-
-    const script = document.createElement('script');
-    script.src = '/tibiarc/tibiarc_player.js';
-
-    return new Promise<WasmModule>((resolve, reject) => {
-      script.onload = async () => {
-        try {
-          console.log('[TibiarcPlayer] Script loaded, checking window.TibiarcModule...');
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          const factory = (window as any).TibiarcModule;
-          const canvas = canvasRef.current;
-          console.log('[TibiarcPlayer] factory:', typeof factory, 'canvas:', !!canvas);
-          if (!factory || !canvas) throw new Error('Module not found - factory: ' + typeof factory + ', canvas: ' + !!canvas);
-
-          console.log('[TibiarcPlayer] Calling factory with canvas...');
-          const mod = await factory({ canvas }) as WasmModule;
-          console.log('[TibiarcPlayer] Module instantiated, loading data files...');
-          moduleRef.current = mod;
-
-          // Load Tibia data files
-          const [picRes, sprRes, datRes] = await Promise.all([
-            fetch('/tibiarc/data/Tibia.pic'),
-            fetch('/tibiarc/data/Tibia.spr'),
-            fetch('/tibiarc/data/Tibia.dat'),
-          ]);
-
-          if (!picRes.ok || !sprRes.ok || !datRes.ok) {
-            throw new Error('Tibia data files not found');
-          }
-
-          const [pic, spr, dat] = await Promise.all([
-            picRes.arrayBuffer(),
-            sprRes.arrayBuffer(),
-            datRes.arrayBuffer(),
-          ]);
-
-          const picArr = new Uint8Array(pic);
-          const sprArr = new Uint8Array(spr);
-          const datArr = new Uint8Array(dat);
-
-          const picPtr = mod._malloc(picArr.length);
-          const sprPtr = mod._malloc(sprArr.length);
-          const datPtr = mod._malloc(datArr.length);
-
-          mod.HEAPU8.set(picArr, picPtr);
-          mod.HEAPU8.set(sprArr, sprPtr);
-          mod.HEAPU8.set(datArr, datPtr);
-
-          const result = mod.ccall('load_data_files', 'number',
-            ['number', 'number', 'number', 'number', 'number', 'number'],
-            [picPtr, picArr.length, sprPtr, sprArr.length, datPtr, datArr.length]
-          );
-
-          mod._free(picPtr);
-          mod._free(sprPtr);
-          mod._free(datPtr);
-
-          if (!result) throw new Error('Failed to load data files');
-
-          resolve(mod);
-        } catch (err) {
-          console.error('[TibiarcPlayer] Error during WASM init:', err);
-          reject(err);
-        }
-      };
-      script.onerror = (e) => {
-        console.error('[TibiarcPlayer] Script load error:', e);
-        reject(new Error('Failed to load WASM script'));
-      };
-      document.head.appendChild(script);
-    });
+    loadData();
+    return () => { cancelled = true; };
   }, []);
 
-  const loadRecordingWithVersion = useCallback(async (data: Uint8Array, name: string, version: string) => {
-    const mod = moduleRef.current;
-    if (!mod) return;
+  // Animation loop
+  useEffect(() => {
+    let rafId: number;
+    const FPS = 20;
+    const interval = 1000 / FPS;
+    let lastTime = 0;
 
-    setState('loading-cam');
+    const loop = (time: number) => {
+      rafId = requestAnimationFrame(loop);
+      if (time - lastTime < interval) return;
+      lastTime = time;
 
-    const ptr = mod._malloc(data.length);
-    mod.HEAPU8.set(data, ptr);
+      const engine = engineRef.current;
+      if (!engine) return;
 
-    const encoder = new TextEncoder();
-    const nameBytes = encoder.encode(name + '\0');
-    const namePtr = mod._malloc(nameBytes.length);
-    mod.HEAPU8.set(nameBytes, namePtr);
+      const canvas = canvasRef.current;
+      if (!canvas) return;
 
-    const [major, minor, patch] = version.split('.').map(Number);
+      if (engine.playing && engine.cam) {
+        const elapsed = (performance.now() - engine.wallT0) / 1000;
+        const target = Math.floor(engine.camT0Ms + elapsed * 1000 * engine.speed);
 
-    // Try load_recording_with_version first, fallback to load_recording
-    let durationMs: number;
-    try {
-      durationMs = mod.ccall('load_recording_with_version', 'number',
-        ['number', 'number', 'number', 'number', 'number', 'number'],
-        [ptr, data.length, namePtr, major, minor, patch]
-      ) as number;
-    } catch {
-      // Fallback: old WASM without load_recording_with_version
-      console.log('[TibiarcPlayer] load_recording_with_version not available, using load_recording');
-      durationMs = mod.ccall('load_recording', 'number',
-        ['number', 'number', 'number'],
-        [ptr, data.length, namePtr]
-      ) as number;
+        if (target >= engine.cam.totalMs) {
+          applyTo(engine, engine.cam.totalMs);
+          engine.playing = false;
+          setState('paused');
+        } else {
+          applyTo(engine, target);
+        }
+        setProgress(engine.curMs);
+      }
+
+      engine.renderer.incTick();
+      engine.renderer.draw(canvas.width, canvas.height);
+    };
+
+    rafId = requestAnimationFrame(loop);
+    return () => cancelAnimationFrame(rafId);
+  }, []);
+
+  const applyTo = (engine: NonNullable<typeof engineRef.current>, targetMs: number) => {
+    if (!engine.cam) return;
+    while (engine.curFrame < engine.cam.frames.length) {
+      const frame = engine.cam.frames[engine.curFrame];
+      if (frame.timestamp > targetMs) break;
+      try { engine.parser.process(frame.payload); } catch { /* skip */ }
+      engine.curFrame++;
     }
-
-    mod._free(ptr);
-    mod._free(namePtr);
-
-    if (durationMs === -1) {
-      // Version detection failed, ask user
-      pendingFileRef.current = { data, name };
-      setState('need-version');
-      return;
-    }
-
-    if (!durationMs) {
-      setErrorMsg(t('camPlayer.loadError'));
-      setState('error');
-      return;
-    }
-
-    setDuration(durationMs);
-    setProgress(0);
-    setState('paused');
-  }, [t]);
+    engine.curMs = targetMs;
+  };
 
   const handleFileSelect = useCallback(async (file: File) => {
-    const validExtensions = ['.cam', '.rec', '.tmv2', '.trp', '.ttm', '.yatc', '.recording'];
     const ext = '.' + file.name.split('.').pop()?.toLowerCase();
-
-    if (!validExtensions.includes(ext)) {
+    if (ext !== '.cam') {
       setErrorMsg(t('camPlayer.invalidFormat'));
       setState('error');
       return;
     }
 
+    const engine = engineRef.current;
+    if (!engine) return;
+
     setFileName(file.name);
     setErrorMsg('');
+    setState('loading-cam');
 
     try {
-      await loadWasmModule();
       const buffer = await file.arrayBuffer();
-      const data = new Uint8Array(buffer);
-      await loadRecordingWithVersion(data, file.name, selectedVersion);
+      const cam = parseCamFile(buffer);
+
+      if (cam.frames.length === 0) {
+        setErrorMsg(t('camPlayer.loadError'));
+        setState('error');
+        return;
+      }
+
+      // Reset game state
+      engine.gs.reset();
+      engine.parser = new PacketParser(engine.gs, engine.dat);
+      engine.renderer.gs = engine.gs;
+      engine.renderer.clearCache();
+      engine.cam = cam;
+      engine.curFrame = 0;
+      engine.curMs = 0;
+
+      // Apply first frames to get initial map
+      applyTo(engine, 0);
+
+      setDuration(cam.totalMs);
+      setProgress(0);
+      setState('paused');
+
+      console.log(`[TibiarcPlayer] Loaded ${cam.frames.length} frames, ${(cam.totalMs / 1000).toFixed(1)}s`);
     } catch (err) {
-      console.error('Failed to load recording:', err);
+      console.error('Failed to load .cam:', err);
       setErrorMsg(err instanceof Error ? err.message : t('camPlayer.loadError'));
       setState('error');
     }
-  }, [loadWasmModule, loadRecordingWithVersion, selectedVersion, t]);
-
-  const handleRetryWithVersion = useCallback(async () => {
-    const pending = pendingFileRef.current;
-    if (!pending || selectedVersion === '0.0.0') return;
-
-    try {
-      await loadRecordingWithVersion(pending.data, pending.name, selectedVersion);
-    } catch (err) {
-      console.error('Failed to load recording:', err);
-      setErrorMsg(err instanceof Error ? err.message : t('camPlayer.loadError'));
-      setState('error');
-    }
-  }, [selectedVersion, loadRecordingWithVersion, t]);
+  }, [t]);
 
   const handleDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault();
@@ -261,25 +201,34 @@ const TibiarcPlayer = ({ className }: TibiarcPlayerProps) => {
   }, [handleFileSelect]);
 
   const togglePlayback = () => {
-    const mod = moduleRef.current;
-    if (!mod) return;
+    const engine = engineRef.current;
+    if (!engine || !engine.cam) return;
 
     if (state === 'paused') {
-      mod.ccall('play', null, [], []);
-      mod.ccall('set_speed', null, ['number'], [speed]);
+      engine.wallT0 = performance.now();
+      engine.camT0Ms = engine.curMs;
+      engine.speed = speed;
+      engine.playing = true;
       setState('playing');
     } else if (state === 'playing') {
-      mod.ccall('pause_playback', null, [], []);
+      engine.playing = false;
       setState('paused');
     }
   };
 
   const resetPlayback = () => {
-    const mod = moduleRef.current;
-    if (mod) {
-      mod.ccall('pause_playback', null, [], []);
-      mod.ccall('seek', null, ['number'], [0]);
-    }
+    const engine = engineRef.current;
+    if (!engine || !engine.cam) return;
+
+    engine.playing = false;
+    engine.gs.reset();
+    engine.parser = new PacketParser(engine.gs, engine.dat);
+    engine.renderer.gs = engine.gs;
+    engine.renderer.clearCache();
+    engine.curFrame = 0;
+    engine.curMs = 0;
+    applyTo(engine, 0);
+
     setProgress(0);
     setState('paused');
   };
@@ -289,16 +238,38 @@ const TibiarcPlayer = ({ className }: TibiarcPlayerProps) => {
     const currentIndex = speeds.indexOf(speed);
     const newSpeed = speeds[(currentIndex + 1) % speeds.length];
     setSpeed(newSpeed);
-    if (moduleRef.current) {
-      moduleRef.current.ccall('set_speed', null, ['number'], [newSpeed]);
+    const engine = engineRef.current;
+    if (engine && engine.playing) {
+      engine.wallT0 = performance.now();
+      engine.camT0Ms = engine.curMs;
+      engine.speed = newSpeed;
     }
   };
 
   const handleSeek = (val: number[]) => {
     const ms = val[0];
+    const engine = engineRef.current;
+    if (!engine || !engine.cam) return;
+
+    const wasPlaying = engine.playing;
+    engine.playing = false;
+
+    // Reset and replay to target
+    engine.gs.reset();
+    engine.parser = new PacketParser(engine.gs, engine.dat);
+    engine.renderer.gs = engine.gs;
+    engine.renderer.clearCache();
+    engine.curFrame = 0;
+    engine.curMs = 0;
+    applyTo(engine, ms);
+
     setProgress(ms);
-    if (moduleRef.current) {
-      moduleRef.current.ccall('seek', null, ['number'], [ms]);
+
+    if (wasPlaying) {
+      engine.wallT0 = performance.now();
+      engine.camT0Ms = ms;
+      engine.speed = speed;
+      engine.playing = true;
     }
   };
 
@@ -310,26 +281,11 @@ const TibiarcPlayer = ({ className }: TibiarcPlayerProps) => {
     return `${m}:${String(s % 60).padStart(2, '0')}`;
   };
 
-  const isLoading = state === 'loading-wasm' || state === 'loading-cam';
+  const isLoading = state === 'loading-data' || state === 'loading-cam';
   const hasRecording = state === 'playing' || state === 'paused';
 
   return (
     <div className={`flex flex-col gap-4 ${className}`}>
-      {/* Version selector */}
-      <div className="max-w-[800px] mx-auto w-full flex items-center gap-3">
-        <label className="text-sm text-muted-foreground whitespace-nowrap">Tibia Version:</label>
-        <Select value={selectedVersion} onValueChange={setSelectedVersion}>
-          <SelectTrigger className="w-[160px] border-border/50">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            {TIBIA_VERSIONS.map(v => (
-              <SelectItem key={v.value} value={v.value}>{v.label}</SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      </div>
-
       {/* Canvas / Upload Area */}
       <div
         className="relative w-full aspect-[4/3] max-w-[800px] mx-auto bg-black rounded-sm overflow-hidden border-2 border-border/50"
@@ -338,14 +294,14 @@ const TibiarcPlayer = ({ className }: TibiarcPlayerProps) => {
       >
         <canvas
           ref={canvasRef}
-          width={640}
-          height={480}
+          width={480}
+          height={352}
           className="w-full h-full"
           style={{ imageRendering: 'pixelated' }}
         />
 
         {/* Idle overlay */}
-        {(state === 'idle' || state === 'error') && (
+        {(state === 'idle' || state === 'error') && dataLoaded && (
           <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/80 gap-4">
             <Upload className="w-12 h-12 text-gold/60" />
             <div className="text-center space-y-2">
@@ -353,14 +309,8 @@ const TibiarcPlayer = ({ className }: TibiarcPlayerProps) => {
                 {t('camPlayer.dropFile')}
               </p>
               <p className="text-muted-foreground text-sm">
-                {t('camPlayer.supportedFormats')}
+                Formatos suportados: .cam (TibiaRelic)
               </p>
-              {wasmAvailable === false && (
-                <div className="mt-4 p-3 bg-destructive/10 border border-destructive/30 rounded-sm max-w-md">
-                  <p className="text-destructive text-sm">{t('camPlayer.wasmNotFound')}</p>
-                  <p className="text-muted-foreground text-xs mt-1">{t('camPlayer.wasmInstructions')}</p>
-                </div>
-              )}
               {errorMsg && (
                 <p className="text-destructive text-sm mt-2">{errorMsg}</p>
               )}
@@ -369,14 +319,13 @@ const TibiarcPlayer = ({ className }: TibiarcPlayerProps) => {
               variant="outline"
               className="mt-2 border-gold/50 text-gold hover:bg-gold/10"
               onClick={() => fileInputRef.current?.click()}
-              disabled={wasmAvailable === false}
             >
               {t('camPlayer.selectFile')}
             </Button>
             <input
               ref={fileInputRef}
               type="file"
-              accept=".cam,.rec,.tmv2,.trp,.ttm,.yatc,.recording"
+              accept=".cam"
               className="hidden"
               onChange={(e) => {
                 const file = e.target.files?.[0];
@@ -386,34 +335,12 @@ const TibiarcPlayer = ({ className }: TibiarcPlayerProps) => {
           </div>
         )}
 
-        {/* Need version overlay */}
-        {state === 'need-version' && (
-          <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/80 gap-4">
-            <div className="text-center space-y-3 max-w-md">
-              <p className="text-gold font-heading text-lg">
-                Versão não detectada
-              </p>
-              <p className="text-muted-foreground text-sm">
-                Não foi possível detectar a versão do Tibia automaticamente. Selecione a versão acima e clique em "Carregar".
-              </p>
-              <Button
-                variant="outline"
-                className="mt-2 border-gold/50 text-gold hover:bg-gold/10"
-                onClick={handleRetryWithVersion}
-                disabled={selectedVersion === '0.0.0'}
-              >
-                Carregar com versão {selectedVersion !== '0.0.0' ? TIBIA_VERSIONS.find(v => v.value === selectedVersion)?.label : '...'}
-              </Button>
-            </div>
-          </div>
-        )}
-
         {/* Loading overlay */}
         {isLoading && (
           <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/80 gap-3">
             <Loader2 className="w-8 h-8 text-gold animate-spin" />
             <p className="text-gold text-sm">
-              {state === 'loading-wasm' ? t('camPlayer.loadingWasm') : `${t('camPlayer.loadingFile')} ${fileName}`}
+              {state === 'loading-data' ? 'Carregando sprites e definições...' : `Carregando ${fileName}...`}
             </p>
           </div>
         )}
@@ -480,12 +407,12 @@ const TibiarcPlayer = ({ className }: TibiarcPlayerProps) => {
           </div>
 
           <div className="text-sm text-muted-foreground">
-            {state === 'idle' && t('camPlayer.noFileLoaded')}
+            {state === 'idle' && !dataLoaded && 'Inicializando...'}
+            {state === 'idle' && dataLoaded && t('camPlayer.noFileLoaded')}
             {isLoading && t('common.loading')}
             {state === 'playing' && t('camPlayer.playing')}
             {state === 'paused' && t('camPlayer.paused')}
             {state === 'error' && t('camPlayer.loadError')}
-            {state === 'need-version' && 'Selecione a versão'}
           </div>
         </div>
       </div>
