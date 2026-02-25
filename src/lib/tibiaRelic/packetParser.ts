@@ -111,8 +111,8 @@ export class PacketParser {
     else if (t === 0x6d) this.moveCr(r);
     // Login
     else if (t === 0x0a) this.login(r);
-    else if (t === 0x0b) { /* GM actions */ }
-    else if (t === 0x0f) r.skip16();
+    else if (t === 0x0b) { /* GM actions - no payload in 7.72 */ }
+    else if (t === 0x0f) { /* FYI token - no payload in 7.72 */ }
     else if (t === 0x1e) { /* ping */ }
     // Container
     else if (t === 0x6e) this.openCont(r);
@@ -129,7 +129,8 @@ export class PacketParser {
     else if (t === 0x7c) { /* close npc trade */ }
     // Player Trade
     else if (t === 0x7d) this.skipTrade(r);
-    else if (t === 0x7e || t === 0x7f) { /* no data */ }
+    else if (t === 0x7e) { r.skip16(); const n2 = r.u8(); for (let i = 0; i < n2; i++) this.skipItem(r); }
+    else if (t === 0x7f) { /* close trade - no data */ }
     // World light
     else if (t === 0x82) { r.u8(); r.u8(); }
     // Effects
@@ -138,6 +139,7 @@ export class PacketParser {
     else if (t === 0x85) { r.skip(5); r.skip(5); r.u8(); }
     // Creature updates
     else if (t === 0x86) { r.u32(); r.u8(); }
+    else if (t === 0x87) { const nt = r.u8(); for (let i = 0; i < nt; i++) r.u32(); } // trappers
     else if (t === 0x8c) { const cid = r.u32(); const hp = r.u8(); const c = g.creatures.get(cid); if (c) c.health = hp; }
     else if (t === 0x8d) { r.u32(); r.u8(); r.u8(); }
     else if (t === 0x8e) { r.u32(); this.skipOutfit(r); }
@@ -145,7 +147,7 @@ export class PacketParser {
     else if (t === 0x90) { r.u32(); r.u8(); }
     else if (t === 0x91) { r.u32(); r.u8(); }
     // Text windows
-    else if (t === 0x96) { r.u32(); this.skipItem(r); r.u16(); r.skip16(); r.u16(); r.skip16(); }
+    else if (t === 0x96) { r.u32(); r.u16(); r.u16(); r.skip16(); }
     else if (t === 0x97) { r.u8(); r.u32(); r.skip16(); }
     // Player pos
     else if (t === 0x9a) { const [x, y, z] = this.pos3(r); g.camX = x; g.camY = y; g.camZ = z; }
@@ -156,12 +158,12 @@ export class PacketParser {
     else if (t === 0xa3) { /* cancelTarget */ }
     // Chat
     else if (t === 0xaa) this.talk(r);
-    else if (t === 0xab) { r.u32(); r.u8(); r.skip16(); }
-    else if (t === 0xac) { r.u16(); r.skip16(); }
-    else if (t === 0xad) r.skip16();
-    else if (t === 0xae) { r.u16(); r.skip16(); r.skip16(); r.u32(); }
-    else if (t === 0xaf) r.skip16();
-    else if (t === 0xb0) r.skip16();
+    else if (t === 0xab) { const nc = r.u8(); for (let i = 0; i < nc; i++) { r.u16(); r.str16(); } }
+    else if (t === 0xac) { r.u16(); r.str16(); }
+    else if (t === 0xad) r.str16();
+    else if (t === 0xae) { /* close channel - no payload in 7.72 */ }
+    else if (t === 0xaf) { /* close channel - no payload in 7.72 */ }
+    else if (t === 0xb0) r.skip(2);
     else if (t === 0xb1) { /* lockViolation */ }
     else if (t === 0xb2) { r.u16(); r.skip16(); }
     else if (t === 0xb3) r.u16();
