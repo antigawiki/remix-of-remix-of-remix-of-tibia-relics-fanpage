@@ -50,6 +50,33 @@ export type Database = {
         }
         Relationships: []
       }
+      cam_uploads: {
+        Row: {
+          file_name: string
+          file_size_bytes: number
+          id: string
+          ip_hint: string | null
+          storage_path: string
+          uploaded_at: string
+        }
+        Insert: {
+          file_name: string
+          file_size_bytes: number
+          id?: string
+          ip_hint?: string | null
+          storage_path: string
+          uploaded_at?: string
+        }
+        Update: {
+          file_name?: string
+          file_size_bytes?: number
+          id?: string
+          ip_hint?: string | null
+          storage_path?: string
+          uploaded_at?: string
+        }
+        Relationships: []
+      }
       character_accounts: {
         Row: {
           account_chars: string[]
