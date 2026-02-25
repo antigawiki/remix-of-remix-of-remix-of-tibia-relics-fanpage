@@ -1,9 +1,10 @@
 /**
  * Renderer Canvas - desenha o viewport do jogo
+ * Com suporte a elevation, dispX/dispY e stack priority
  */
 import { SprLoader } from './sprLoader';
 import { DatLoader, type ItemType } from './datLoader';
-import { GameState } from './gameState';
+import { GameState, type TileItem } from './gameState';
 
 const VP_W = 15, VP_H = 11;
 const TILE_PX = 32;
@@ -27,7 +28,6 @@ export class Renderer {
     const ctx = this.ctx;
     const tpx = Math.max(4, Math.min(Math.floor(canvasWidth / VP_W), Math.floor(canvasHeight / VP_H)));
 
-    // Clear
     ctx.fillStyle = '#1a2420';
     ctx.fillRect(0, 0, canvasWidth, canvasHeight);
 
@@ -39,30 +39,45 @@ export class Renderer {
     const cx0 = g.camX - 8;
     const cy0 = g.camY - 6;
     const ph = (Math.floor(this.tick / 8)) % 4;
+    const scale = tpx / TILE_PX;
 
-    // Draw tiles
+    // Draw tiles with elevation and displacement
     for (let ty = 0; ty < VP_H + 2; ty++) {
       for (let tx = 0; tx < VP_W + 2; tx++) {
         const wx = cx0 + tx, wy = cy0 + ty;
         const items = g.getTile(wx, wy, g.camZ);
         const bx = tx * tpx, by = ty * tpx;
 
-        for (const item of items) {
+        // Sort by stack priority
+        const sorted = this.sortByStackPrio(items);
+
+        let elevationOffset = 0;
+
+        for (const item of sorted) {
           if (item[0] !== 'it') continue;
           const it = this.dat.items.get(item[1]);
           if (!it) continue;
+
+          const dispXPx = Math.round(it.dispX * scale);
+          const dispYPx = Math.round(it.dispY * scale);
+
           for (let th = 0; th < it.height; th++) {
             for (let tw = 0; tw < it.width; tw++) {
               const sid = this.getSpriteIndex(it, ph, wx, wy, tw, th);
               const sprCanvas = this.getSpriteCanvas(sid, tpx);
               if (sprCanvas) {
-                const dx = bx - (tw + 1) * tpx;
-                const dy = by - (th + 1) * tpx;
-                if (dx > -tpx && dx < canvasWidth && dy > -tpx && dy < canvasHeight) {
+                const dx = bx - (tw + 1) * tpx + dispXPx;
+                const dy = by - (th + 1) * tpx + dispYPx - Math.round(elevationOffset * scale);
+                if (dx > -tpx * 2 && dx < canvasWidth && dy > -tpx * 2 && dy < canvasHeight) {
                   ctx.drawImage(sprCanvas, dx, dy);
                 }
               }
             }
+          }
+
+          // Accumulate elevation for subsequent items on same tile
+          if (it.elevation > 0) {
+            elevationOffset += it.elevation;
           }
         }
       }
@@ -71,7 +86,20 @@ export class Renderer {
     // Draw creatures
     for (const c of g.creatures.values()) {
       const tx2 = c.x - cx0, ty2 = c.y - cy0;
-      const sx = (tx2 - 1) * tpx, sy = (ty2 - 1) * tpx;
+      if (tx2 < 0 || tx2 > VP_W + 2 || ty2 < 0 || ty2 > VP_H + 2) continue;
+
+      // Get elevation from tile items under creature
+      const tileItems = g.getTile(c.x, c.y, g.camZ);
+      let elev = 0;
+      for (const ti of tileItems) {
+        if (ti[0] === 'it') {
+          const it = this.dat.items.get(ti[1]);
+          if (it && it.elevation > 0) elev += it.elevation;
+        }
+      }
+
+      const sx = (tx2 - 1) * tpx;
+      const sy = (ty2 - 1) * tpx - Math.round(elev * scale);
       const phCr = (Math.floor(this.tick / 6)) % 3;
       const sid = this.getOutfitSid(c, phCr);
       const sprCanvas = this.getSpriteCanvas(sid, tpx);
@@ -80,7 +108,7 @@ export class Renderer {
       }
     }
 
-    // HUD - creature names and health bars
+    // HUD
     for (const c of g.creatures.values()) {
       const tx2 = c.x - cx0, ty2 = c.y - cy0;
       if (tx2 >= 1 && tx2 <= VP_W + 1 && ty2 >= 1 && ty2 <= VP_H + 1) {
@@ -88,14 +116,21 @@ export class Renderer {
       }
     }
 
-    // Chat messages
     this.drawMessages(canvasWidth, canvasHeight);
 
-    // Debug info
     ctx.fillStyle = '#444444';
     ctx.font = '7px Arial';
     ctx.textAlign = 'left';
     ctx.fillText(`cam=(${g.camX},${g.camY},${g.camZ}) crs=${g.creatures.size}`, 3, canvasHeight - 3);
+  }
+
+  private sortByStackPrio(items: TileItem[]): TileItem[] {
+    if (items.length <= 1) return items;
+    return [...items].sort((a, b) => {
+      const prioA = a[0] === 'cr' ? 4 : (this.dat.items.get(a[1])?.stackPrio ?? 5);
+      const prioB = b[0] === 'cr' ? 4 : (this.dat.items.get(b[1])?.stackPrio ?? 5);
+      return prioA - prioB;
+    });
   }
 
   private drawIdle(w: number, h: number) {
@@ -136,7 +171,6 @@ export class Renderer {
     const imgData = this.spr.getSprite(sid);
     if (!imgData) { this.spriteCanvasCache.set(key, null); return null; }
 
-    // Create offscreen canvas with the sprite
     const canvas = document.createElement('canvas');
     canvas.width = tpx;
     canvas.height = tpx;
@@ -145,7 +179,6 @@ export class Renderer {
     if (tpx === TILE_PX) {
       sctx.putImageData(imgData, 0, 0);
     } else {
-      // Draw at original size then scale
       const tmp = document.createElement('canvas');
       tmp.width = TILE_PX; tmp.height = TILE_PX;
       tmp.getContext('2d')!.putImageData(imgData, 0, 0);
@@ -164,14 +197,11 @@ export class Renderer {
     const fw = Math.max(1, Math.floor(bw * c.health / 100));
     const hc = c.health > 50 ? '#00c800' : (c.health > 25 ? '#c8c800' : '#c80000');
 
-    // Health bar bg
     ctx.fillStyle = '#500000';
     ctx.fillRect(px + 1, py - 6, bw, 4);
-    // Health bar fill
     ctx.fillStyle = hc;
     ctx.fillRect(px + 1, py - 6, fw, 4);
 
-    // Name
     const fs = Math.max(7, Math.min(10, Math.floor(tpx / 4)));
     ctx.fillStyle = isPlayer ? '#64c8ff' : '#ffcc64';
     ctx.font = `${fs}px Arial`;

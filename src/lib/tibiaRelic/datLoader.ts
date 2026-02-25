@@ -55,6 +55,8 @@ export class DatLoader {
     const nFx = view.getUint16(p, true); p += 2;
     const nDist = view.getUint16(p, true); p += 2;
 
+    console.log(`[DatLoader] items=${nItems} outfits=${nOutfits} fx=${nFx} dist=${nDist}`);
+
     for (let i = 0; i < nItems; i++) {
       const [it, np] = this.readItem(bytes, view, p);
       it.id = 100 + i;
@@ -70,6 +72,23 @@ export class DatLoader {
     for (let i = 0; i < nFx + nDist; i++) {
       const [, np] = this.readItem(bytes, view, p);
       p = np;
+    }
+
+    // Verification checks
+    this.verify();
+  }
+
+  private verify() {
+    const checks: [number, number | null][] = [[102, 42], [408, 39], [870, 559]];
+    for (const [id, expectedSpr] of checks) {
+      const it = this.items.get(id);
+      if (!it) { console.warn(`[DatLoader] MISSING item ${id}`); continue; }
+      const spr0 = it.spriteIds[0] ?? -1;
+      if (expectedSpr !== null && spr0 !== expectedSpr) {
+        console.warn(`[DatLoader] item ${id}: sprite[0]=${spr0}, expected=${expectedSpr} — flags may be wrong`);
+      } else {
+        console.log(`[DatLoader] item ${id}: sprite[0]=${spr0} ✓`);
+      }
     }
   }
 

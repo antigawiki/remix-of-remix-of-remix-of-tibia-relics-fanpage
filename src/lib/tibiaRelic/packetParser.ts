@@ -38,6 +38,8 @@ export class PacketParser {
     return [r.u16(), r.u16(), r.u8()];
   }
 
+  private loggedFirst = false;
+
   process(payload: Uint8Array) {
     const r = new Buf(payload);
     while (!r.eof()) {
@@ -45,7 +47,8 @@ export class PacketParser {
       try {
         const t = r.u8();
         this.dispatch(t, r);
-      } catch {
+      } catch (e) {
+        // On error, skip this byte and continue — don't lose sync
         r.pos = posBefore + 1;
       }
     }
@@ -119,7 +122,7 @@ export class PacketParser {
     else if (t === 0x9a) { const [x, y, z] = this.pos3(r); g.camX = x; g.camY = y; g.camZ = z; }
     else if (t === 0xbe || t === 0xbf) { /* moveUp/Down */ }
     else if (t === 0x14) { r.u16(); r.skip16(); }
-    else { throw new Error(`unknown opcode 0x${t.toString(16)}`); }
+    else { console.warn(`[PacketParser] unknown opcode 0x${t.toString(16)} at pos ${r.pos}`); throw new Error('unknown'); }
   }
 
   // --- Handlers ---
@@ -132,7 +135,19 @@ export class PacketParser {
     const [x, y, z] = this.pos3(r);
     this.gs.camX = x; this.gs.camY = y; this.gs.camZ = z;
     this.gs.mapLoaded = true;
+    const posBefore = r.pos;
     this.readBlock(r, x - 8, y - 6, z, 18, 14);
+    if (!this.loggedFirst) {
+      this.loggedFirst = true;
+      console.log(`[PacketParser] First mapDesc: cam=(${x},${y},${z}), bytes consumed=${r.pos - posBefore}`);
+      // Log first few tiles for debugging
+      for (let dy = 0; dy < 3; dy++) {
+        for (let dx = 0; dx < 3; dx++) {
+          const tile = this.gs.getTile(x - 8 + dx, y - 6 + dy, z);
+          console.log(`  tile(${dx},${dy}): ${JSON.stringify(tile.slice(0, 5))}`);
+        }
+      }
+    }
   }
 
   private scroll(r: Buf, dx: number, dy: number) {
@@ -364,6 +379,9 @@ export class PacketParser {
       const ty = Math.floor(tileIdx / W);
       const extra = this.readTileItems(r, ox + tx, oy + ty, z);
       tileIdx += 1 + extra;
+    }
+    if (!this.loggedFirst && tileIdx < total) {
+      console.warn(`[PacketParser] readBlock incomplete: read ${tileIdx}/${total} tiles`);
     }
   }
 }
