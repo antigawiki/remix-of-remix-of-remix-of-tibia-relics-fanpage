@@ -1,8 +1,9 @@
 import { useRef, useState, useCallback, useEffect } from 'react';
-import { Upload, Play, Pause, FastForward, RotateCcw, Loader2 } from 'lucide-react';
+import { Upload, Play, Pause, FastForward, RotateCcw, Loader2, ChevronUp, ChevronDown, Layers } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Slider } from '@/components/ui/slider';
 import { useTranslation } from '@/i18n';
+import { Badge } from '@/components/ui/badge';
 import { parseCamFile, type CamFile } from '@/lib/tibiaRelic/camParser';
 import { SprLoader } from '@/lib/tibiaRelic/sprLoader';
 import { DatLoader } from '@/lib/tibiaRelic/datLoader';
@@ -101,6 +102,11 @@ const TibiarcPlayer = ({ className }: TibiarcPlayerProps) => {
   const [progress, setProgress] = useState(0);
   const [duration, setDuration] = useState(0);
   const [dataLoaded, setDataLoaded] = useState(false);
+  const [floorOffset, setFloorOffset] = useState(0);
+  const floorOffsetRef = useRef(0);
+
+  // Keep ref in sync with state for animation loop access
+  useEffect(() => { floorOffsetRef.current = floorOffset; }, [floorOffset]);
 
   // Load Tibia data files on mount
   useEffect(() => {
@@ -184,6 +190,15 @@ const TibiarcPlayer = ({ className }: TibiarcPlayerProps) => {
         setProgress(engine.curMs);
       }
 
+      // Update floor override from ref to stay in sync
+      const floorOffsetVal = floorOffsetRef.current;
+      if (floorOffsetVal !== 0) {
+        const targetZ = Math.max(0, Math.min(15, engine.gs.camZ + floorOffsetVal));
+        engine.renderer.floorOverride = targetZ;
+      } else {
+        engine.renderer.floorOverride = null;
+      }
+
       engine.renderer.incTick();
       engine.renderer.draw(canvas.width, canvas.height);
     };
@@ -239,6 +254,8 @@ const TibiarcPlayer = ({ className }: TibiarcPlayerProps) => {
       engine.cam = cam;
       engine.curFrame = 0;
       engine.curMs = 0;
+      engine.renderer.floorOverride = null;
+      setFloorOffset(0);
 
       // Apply first frames to get initial map
       applyTo(engine, 0);
@@ -291,6 +308,8 @@ const TibiarcPlayer = ({ className }: TibiarcPlayerProps) => {
     applyTo(engine, 0);
 
     setProgress(0);
+    setFloorOffset(0);
+    engine.renderer.floorOverride = null;
     setState('paused');
   };
 
@@ -465,6 +484,55 @@ const TibiarcPlayer = ({ className }: TibiarcPlayerProps) => {
               <FastForward className="w-3 h-3 mr-1" />
               {speed}x
             </Button>
+          </div>
+
+          {/* Floor controls */}
+          <div className="flex items-center gap-1.5">
+            <Layers className="w-3.5 h-3.5 text-muted-foreground" />
+            <Button
+              variant="outline"
+              size="icon"
+              className="border-border/50 h-8 w-8"
+              disabled={!hasRecording}
+              onClick={() => setFloorOffset(prev => {
+                const engine = engineRef.current;
+                if (!engine) return prev;
+                const newZ = engine.gs.camZ + prev - 1;
+                return newZ >= 0 ? prev - 1 : prev;
+              })}
+              title="Floor acima"
+            >
+              <ChevronUp className="w-3.5 h-3.5" />
+            </Button>
+            <Badge variant="outline" className="min-w-[70px] justify-center text-xs font-mono">
+              Floor {engineRef.current ? Math.max(0, Math.min(15, engineRef.current.gs.camZ + floorOffset)) : '?'}
+              {floorOffset !== 0 && ` (${floorOffset > 0 ? '+' : ''}${floorOffset})`}
+            </Badge>
+            <Button
+              variant="outline"
+              size="icon"
+              className="border-border/50 h-8 w-8"
+              disabled={!hasRecording}
+              onClick={() => setFloorOffset(prev => {
+                const engine = engineRef.current;
+                if (!engine) return prev;
+                const newZ = engine.gs.camZ + prev + 1;
+                return newZ <= 15 ? prev + 1 : prev;
+              })}
+              title="Floor abaixo"
+            >
+              <ChevronDown className="w-3.5 h-3.5" />
+            </Button>
+            {floorOffset !== 0 && (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-8 px-2 text-xs"
+                onClick={() => setFloorOffset(0)}
+              >
+                Reset
+              </Button>
+            )}
           </div>
 
           <div className="text-sm text-muted-foreground">
