@@ -74,24 +74,45 @@ export class PacketParser {
 
   process(payload: Uint8Array) {
     const r = new Buf(payload);
+
+    // Detect u16 length prefix (TCP framing)
+    if (payload.length >= 4) {
+      const prefixLen = r.peek16();
+      if (prefixLen === payload.length - 2) {
+        r.skip(2);
+      }
+    }
+
+    let consecutiveSkips = 0;
     while (!r.eof()) {
       const posBefore = r.pos;
       try {
         const t = r.u8();
         if (!this.dispatch(t, r)) {
-          r.pos = posBefore;
+          // Error recovery: skip 1 byte and retry instead of abandoning
+          r.pos = posBefore + 1;
+          consecutiveSkips++;
+          if (consecutiveSkips >= 3) {
+            if (this.unknownWarnCount < 20) {
+              this.unknownWarnCount++;
+              console.warn(`[PacketParser] 3 consecutive unknown opcodes near pos ${posBefore}, abandoning frame (${payload.length - r.pos} bytes left)`);
+            }
+            break;
+          }
+        } else {
+          consecutiveSkips = 0;
+        }
+      } catch (e) {
+        // Error recovery: skip past the failed opcode
+        r.pos = posBefore + 1;
+        consecutiveSkips++;
+        if (consecutiveSkips >= 3) {
           if (this.unknownWarnCount < 20) {
             this.unknownWarnCount++;
-            console.warn(`[PacketParser] unknown opcode 0x${t.toString(16)} at pos ${posBefore}, abandoning frame (${payload.length - posBefore} bytes left)`);
+            console.warn(`[PacketParser] parse errors near pos ${posBefore}, abandoning frame`, e);
           }
           break;
         }
-      } catch (e) {
-        if (this.unknownWarnCount < 20) {
-          this.unknownWarnCount++;
-          console.warn(`[PacketParser] parse error at pos ${posBefore}, abandoning frame`, e);
-        }
-        break;
       }
     }
   }
@@ -107,7 +128,10 @@ export class PacketParser {
     else if (t === 0x69) this.tileUpd(r);
     else if (t === 0x6a) this.addThing(r);
     else if (t === 0x6b) this.chgThing(r);
-    else if (t === 0x6c) this.delThing(r);
+    // Standalone creature opcodes (appear at top-level in some .cam frames)
+    else if (t === 0x61) this.standaloneCreatureFull(r);
+    else if (t === 0x62) this.standaloneCreatureKnown(r);
+    else if (t === 0x63) this.standaloneCreatureTurn(r);
     else if (t === 0x6d) this.moveCr(r);
     // Login
     else if (t === 0x0a) this.login(r);
@@ -431,6 +455,41 @@ export class PacketParser {
     if (msg.length >= 3) {
       const cols: Record<number, string> = { 18: '#ff4444', 19: '#ff4444', 20: '#ffff00', 22: '#ffffff' };
       this.gs.addMsg(msg, cols[mt] || '#aaaaaa');
+    }
+  }
+
+  // --- Standalone creature opcodes (top-level in .cam frames) ---
+
+  private standaloneCreatureFull(r: Buf) {
+    // Same as addThing with CR_FULL but position comes as pos3 before creature data
+    const [x, y, z] = this.pos3(r);
+    r.u8(); // stackPos
+    const marker = r.u16(); // should be 0x61
+    const c = this.readCreatureFull(r);
+    c.x = x; c.y = y; c.z = z;
+    const tile = this.gs.getTile(x, y, z);
+    tile.push(['cr', c.id]);
+    this.gs.setTile(x, y, z, tile);
+  }
+
+  private standaloneCreatureKnown(r: Buf) {
+    const [x, y, z] = this.pos3(r);
+    r.u8(); // stackPos
+    const marker = r.u16(); // should be 0x62
+    this.readCreatureKnown(r, x, y, z);
+  }
+
+  private standaloneCreatureTurn(r: Buf) {
+    // chgThing format: pos3 + stackPos + peek marker + creature turn data
+    const [x, y, z] = this.pos3(r);
+    const sp = r.u8();
+    const marker = r.u16(); // should be 0x63
+    const cid = r.u32();
+    const dir = r.u8();
+    const c = this.gs.creatures.get(cid);
+    if (c) {
+      c.direction = dir;
+      c.x = x; c.y = y; c.z = z;
     }
   }
 
