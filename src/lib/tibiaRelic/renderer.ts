@@ -1,6 +1,6 @@
 /**
  * Renderer Canvas - desenha o viewport do jogo
- * Suporte a multi-floor, elevation, dispX/dispY e stack priority
+ * Single-floor rendering with elevation, dispX/dispY and stack priority
  */
 import { SprLoader } from './sprLoader';
 import { DatLoader, type ItemType } from './datLoader';
@@ -13,6 +13,7 @@ const DIR_MAP: Record<number, number> = { 0: 0, 1: 1, 2: 2, 3: 3 };
 export class Renderer {
   private tick = 0;
   private spriteCanvasCache: Map<string, HTMLCanvasElement | null> = new Map();
+  private loggedCreature = false;
 
   constructor(
     private ctx: CanvasRenderingContext2D,
@@ -38,78 +39,68 @@ export class Renderer {
 
     const cx0 = g.camX - 8;
     const cy0 = g.camY - 6;
+    const z = g.camZ;
     const ph = (Math.floor(this.tick / 8)) % 4;
     const scale = tpx / TILE_PX;
 
-    // Determine visible floors
-    const floors: number[] = [];
-    if (g.camZ > 7) {
-      // Underground: current floor only (no multi-floor perspective)
-      floors.push(g.camZ);
-    } else {
-      // Ground/above: draw from current floor (7) then upper floors (6, 5, ..., 0)
-      for (let z = g.camZ; z >= 0; z--) {
-        floors.push(z);
-      }
-    }
+    // Draw only current floor tiles
+    for (let ty = 0; ty < VP_H + 3; ty++) {
+      for (let tx = 0; tx < VP_W + 3; tx++) {
+        const wx = cx0 + tx;
+        const wy = cy0 + ty;
+        const items = g.getTile(wx, wy, z);
+        if (items.length === 0) continue;
 
-    // Draw each floor, from current (bottom) to topmost (drawn on top)
-    for (const z of floors) {
-      const zOffset = g.camZ - z; // 0 for current floor, 1 for one above, etc.
+        const bx = tx * tpx;
+        const by = ty * tpx;
 
-      // Draw tile items for this floor
-      for (let ty = 0; ty < VP_H + 3; ty++) {
-        for (let tx = 0; tx < VP_W + 3; tx++) {
-          // World position: upper floors are shifted, so the world tile
-          // at screen position (tx, ty) on floor z is shifted by zOffset
-          const wx = cx0 + tx + zOffset;
-          const wy = cy0 + ty + zOffset;
-          const items = g.getTile(wx, wy, z);
-          if (items.length === 0) continue;
+        const sorted = this.sortByStackPrio(items);
+        let elevationOffset = 0;
 
-          const bx = tx * tpx;
-          const by = ty * tpx;
+        for (const item of sorted) {
+          if (item[0] === 'cr') {
+            // Draw creature inline with tile order
+            const c = g.creatures.get(item[1]);
+            if (c) {
+              this.drawCreature(c, bx, by - Math.round(elevationOffset * scale), tpx, scale);
+            }
+            continue;
+          }
 
-          const sorted = this.sortByStackPrio(items);
-          let elevationOffset = 0;
+          const it = this.dat.items.get(item[1]);
+          if (!it) continue;
 
-          for (const item of sorted) {
-            if (item[0] !== 'it') continue;
-            const it = this.dat.items.get(item[1]);
-            if (!it) continue;
+          const dispXPx = Math.round(it.dispX * scale);
+          const dispYPx = Math.round(it.dispY * scale);
 
-            const dispXPx = Math.round(it.dispX * scale);
-            const dispYPx = Math.round(it.dispY * scale);
-
-            for (let th = 0; th < it.height; th++) {
-              for (let tw = 0; tw < it.width; tw++) {
-                const sid = this.getSpriteIndex(it, ph, wx, wy, tw, th);
-                const sprCanvas = this.getSpriteCanvas(sid, tpx);
-                if (sprCanvas) {
-                  const dx = bx - tw * tpx + dispXPx;
-                  const dy = by - th * tpx + dispYPx - Math.round(elevationOffset * scale);
-                  if (dx > -tpx * 2 && dx < canvasWidth && dy > -tpx * 2 && dy < canvasHeight) {
-                    ctx.drawImage(sprCanvas, dx, dy);
-                  }
+          for (let th = 0; th < it.height; th++) {
+            for (let tw = 0; tw < it.width; tw++) {
+              const sid = this.getSpriteIndex(it, ph, wx, wy, tw, th);
+              const sprCanvas = this.getSpriteCanvas(sid, tpx);
+              if (sprCanvas) {
+                const dx = bx - tw * tpx + dispXPx;
+                const dy = by - th * tpx + dispYPx - Math.round(elevationOffset * scale);
+                if (dx > -tpx * 2 && dx < canvasWidth && dy > -tpx * 2 && dy < canvasHeight) {
+                  ctx.drawImage(sprCanvas, dx, dy);
                 }
               }
             }
+          }
 
-            if (it.elevation > 0) {
-              elevationOffset += it.elevation;
-            }
+          if (it.elevation > 0) {
+            elevationOffset += it.elevation;
           }
         }
       }
+    }
 
-      // Draw creatures on this floor
-      for (const c of g.creatures.values()) {
-        if (c.z !== z) continue;
-        const tx2 = c.x - cx0 - zOffset;
-        const ty2 = c.y - cy0 - zOffset;
-        if (tx2 < -1 || tx2 > VP_W + 3 || ty2 < -1 || ty2 > VP_H + 3) continue;
-
-        // Get elevation from tile items under creature
+    // Draw creature HUDs on top (separate pass)
+    for (const c of g.creatures.values()) {
+      if (c.z !== z) continue;
+      const tx2 = c.x - cx0;
+      const ty2 = c.y - cy0;
+      if (tx2 >= 0 && tx2 <= VP_W + 1 && ty2 >= 0 && ty2 <= VP_H + 1) {
+        // Get elevation
         const tileItems = g.getTile(c.x, c.y, z);
         let elev = 0;
         for (const ti of tileItems) {
@@ -118,20 +109,9 @@ export class Renderer {
             if (it && it.elevation > 0) elev += it.elevation;
           }
         }
-
         const sx = tx2 * tpx;
         const sy = ty2 * tpx - Math.round(elev * scale);
-        const phCr = (Math.floor(this.tick / 6)) % 3;
-        const sid = this.getOutfitSid(c, phCr);
-        const sprCanvas = this.getSpriteCanvas(sid, tpx);
-        if (sprCanvas && sx > -tpx * 2 && sx < canvasWidth && sy > -tpx * 2 && sy < canvasHeight) {
-          ctx.drawImage(sprCanvas, sx, sy);
-        }
-
-        // Draw HUD for creature
-        if (tx2 >= 0 && tx2 <= VP_W + 1 && ty2 >= 0 && ty2 <= VP_H + 1) {
-          this.drawCreatureHud(sx, sy, c, tpx);
-        }
+        this.drawCreatureHud(sx, sy, c, tpx);
       }
     }
 
@@ -141,6 +121,44 @@ export class Renderer {
     ctx.font = '7px Arial';
     ctx.textAlign = 'left';
     ctx.fillText(`cam=(${g.camX},${g.camY},${g.camZ}) crs=${g.creatures.size}`, 3, canvasHeight - 3);
+  }
+
+  private drawCreature(c: { outfit: number; direction: number; name: string; id: number; health: number }, bx: number, by: number, tpx: number, scale: number) {
+    const phCr = (Math.floor(this.tick / 6)) % 3;
+    const ot = this.dat.outfits.get(c.outfit);
+
+    if (!this.loggedCreature) {
+      this.loggedCreature = true;
+      console.log(`[Renderer] First creature: outfit=${c.outfit}, name=${c.name}, datHasOutfit=${!!ot}, spriteIds=${ot?.spriteIds?.slice(0, 8)}`);
+    }
+
+    if (ot && ot.spriteIds.length > 0) {
+      const xd = DIR_MAP[c.direction] ?? 0;
+      const A = Math.max(1, ot.anim), PZ = Math.max(1, ot.patZ), PY = Math.max(1, ot.patY);
+      const PX = Math.max(1, ot.patX), L = Math.max(1, ot.layers), H = ot.height, W = ot.width;
+      const a = phCr % A;
+
+      // Draw all height x width sprite cells for this outfit
+      for (let th = 0; th < H; th++) {
+        for (let tw = 0; tw < W; tw++) {
+          const idx = ((((((a * PZ + 0) * PY + 0) * PX + xd % PX) * L + 0) * H + th) * W + tw);
+          const sid = (idx < ot.spriteIds.length) ? ot.spriteIds[idx] : 0;
+          const sprCanvas = this.getSpriteCanvas(sid, tpx);
+          if (sprCanvas) {
+            const dx = bx - tw * tpx;
+            const dy = by - th * tpx;
+            this.ctx.drawImage(sprCanvas, dx, dy);
+          }
+        }
+      }
+    } else {
+      // Fallback: draw colored rectangle for creature
+      const isPlayer = c.id === this.gs.playerId;
+      this.ctx.fillStyle = isPlayer ? 'rgba(100,200,255,0.6)' : 'rgba(255,200,100,0.6)';
+      this.ctx.fillRect(bx + 4, by + 4, tpx - 8, tpx - 8);
+      this.ctx.strokeStyle = isPlayer ? '#64c8ff' : '#ffcc64';
+      this.ctx.strokeRect(bx + 4, by + 4, tpx - 8, tpx - 8);
+    }
   }
 
   private sortByStackPrio(items: TileItem[]): TileItem[] {
@@ -169,17 +187,6 @@ export class Renderer {
     const a = ph % A, z = 0, y = wy % PY, x = wx % PX, l = 0, h = th % H, w = tw % W;
     const idx = ((((((a * PZ + z) * PY + y) * PX + x) * L + l) * H + h) * W + w);
     return (it.spriteIds && idx < it.spriteIds.length) ? it.spriteIds[idx] : 0;
-  }
-
-  private getOutfitSid(c: { outfit: number; direction: number }, ph: number): number {
-    const xd = DIR_MAP[c.direction] ?? 0;
-    const ot = this.dat.outfits.get(c.outfit);
-    if (!ot || !ot.spriteIds.length) return 0;
-    const A = Math.max(1, ot.anim), PZ = Math.max(1, ot.patZ), PY = Math.max(1, ot.patY);
-    const PX = Math.max(1, ot.patX), L = Math.max(1, ot.layers), H = ot.height, W = ot.width;
-    const a = ph % A;
-    const idx = ((((((a * PZ + 0) * PY + 0) * PX + xd % PX) * L + 0) * H + 0) * W + 0);
-    return (idx < ot.spriteIds.length) ? ot.spriteIds[idx] : 0;
   }
 
   private getSpriteCanvas(sid: number, tpx: number): HTMLCanvasElement | null {
