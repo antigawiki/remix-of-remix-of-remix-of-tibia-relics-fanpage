@@ -1,36 +1,73 @@
 
 
-# Fix: Outfits transparentes de criaturas
+# Fix: Floors cobrindo interiores e transparencia de criaturas
 
-## Causa raiz
+## Diagnostico
 
-O problema esta no `sprLoader.ts`, linhas 36-37 e 56:
+### Problema 1: Interior de casas nao aparece (imagem 53)
+O console mostra `cam=(32482,31611,6)` - camera no z=6 (dentro de uma construcao). O `getVisibleFloors` retorna floors [7, 6, 5, 4], desenhando floors 5 e 4 (telhados) POR CIMA do interior do floor 6. Resultado: o telhado cobre tudo, incluindo o player e o chao da casa.
 
+Solucao: implementar deteccao de "first visible floor" igual ao OTClient. Verificar se ha tiles de chao (telhado) nos floors acima da camera. Se existirem, nao renderizar esses floors superiores.
+
+### Problema 2: Players e criaturas "transparentes" (imagem 52 e 53)
+Diretamente relacionado ao problema 1. Os tiles de telhado sendo desenhados por cima dos players criam a aparencia de transparencia. No floor 6, o player existe e tem outfit correto (console confirma looktypes validos: 128, 134, 138 com cores), mas os tiles de floors 5/4 cobrem visualmente.
+
+### Problema 3: Opcode 0x6c (remove thing) ausente
+O dispatch nao trata 0x6c (remover item/criatura de tile). Sem isso, tiles acumulam referencias antigas de criaturas, causando "fantasmas" e criaturas duplicadas.
+
+## Mudancas
+
+### A. `src/lib/tibiaRelic/renderer.ts` - Visibilidade de floors
+
+Substituir `getVisibleFloors` por logica do OTClient:
+
+1. Adicionar metodo `calcFirstVisibleFloor(z)`:
+   - Para underground (z > 7): retorna max(z - 2, 8)
+   - Para surface (z <= 7): 
+     - Verificar tiles em area 3x3 ao redor da camera
+     - Para cada floor acima (z-1, z-2, ...): checar se ha tiles de chao (telhado) tanto na posicao direta quanto na posicao com offset NW (diagonal -1,-1 por floor, como o `coveredUp` do OTClient)
+     - Se encontrar tile com chao, definir firstFloor = esse floor + 1
+
+2. Adicionar metodo `tileCoversFloor(items)`:
+   - Retorna true se o tile contem items com `isGround === true` (flag 0x00 do dat)
+
+3. Atualizar `getVisibleFloors`:
+   - Surface: retornar floors de 7 ate firstVisibleFloor
+   - Underground: manter logica atual
+
+Logica baseada no OTClient `calcFirstVisibleFloor`:
 ```text
-// Le 3 bytes como "chroma key"
-const ckR = raw[off], ckG = raw[off + 1], ckB = raw[off + 2];
-...
-// Filtra pixels que coincidem com o chroma key - tornando-os transparentes
-if (r !== ckR || g !== ckG || b !== ckB) {
-  px[i] = r; px[i+1] = g; px[i+2] = b; px[i+3] = 255;
-}
+Para surface (z <= 7):
+  firstFloor = 0
+  Para cada pos em area 3x3 ao redor de (camX, camY):
+    Para dz = 1 ate z:
+      checkZ = z - dz
+      // Posicao diretamente acima
+      tile = getTile(camX+ix, camY+iy, checkZ)
+      se tile tem ground -> firstFloor = max(firstFloor, checkZ + 1)
+      // Posicao com offset NW (covered up)
+      tile = getTile(camX+ix-dz, camY+iy-dz, checkZ)
+      se tile tem ground -> firstFloor = max(firstFloor, checkZ + 1)
 ```
 
-No formato .spr do Tibia 7.x, a transparencia ja e tratada pela codificacao RLE: cada bloco comeca com `u16 transparent_pixels` (pixels a pular) seguido de `u16 colored_pixels` (pixels opacos). Os 3 bytes iniciais do sprite (chamados "color key") sao um legado que nao deve ser usado para filtrar -- todos os pixels na secao "colored" sao opacos por definicao.
+### B. `src/lib/tibiaRelic/packetParser.ts` - Adicionar opcode 0x6c
 
-Quando o "chroma key" coincide com alguma cor presente no sprite (ex: preto 0,0,0 ou outra cor comum), esses pixels sao erroneamente tornados transparentes, causando o efeito "fantasma" em todas as criaturas.
+Adicionar handler para `delThing` (0x6c) no dispatch:
+- Le pos3 (5 bytes) + stackPos (1 byte)
+- Remove o item na posicao stackPos do tile correspondente
+- O metodo `delThing` ja existe na classe (linhas 294-302) mas nao esta no dispatch
 
-## Correcao
+### C. Diagnostico adicional no renderer
 
-### `src/lib/tibiaRelic/sprLoader.ts`
-- Remover a comparacao de chroma key no loop de pixels
-- Todos os pixels da secao "colored" do RLE devem receber alpha=255 incondicionalmente
-- Manter a leitura dos 3 bytes do offset (para manter o ponteiro correto), mas nao usa-los para filtrar
+Adicionar log temporario no primeiro frame renderizado para verificar:
+- Quantidade de outfits carregados no dat
+- Se os spriteIds referenciados existem no spr
+- Isso ajudara a diagnosticar problemas residuais de sprites errados
 
-### `src/lib/tibiaRelic/renderer.ts`
-- Corrigir o cache key do tint: `getSpriteCanvasKey` retorna `32x32` para TODOS os sprites, fazendo o cache de tint retornar o mesmo resultado para masks diferentes. Usar o sprite ID em vez das dimensoes do canvas.
+## Impacto esperado
 
-## Arquivos alterados
-- `src/lib/tibiaRelic/sprLoader.ts` (remover filtro chroma key)
-- `src/lib/tibiaRelic/renderer.ts` (corrigir tint cache key)
+1. Dentro de casas/construcoes, o telhado nao sera mais desenhado por cima do interior
+2. Players e NPCs deixarao de parecer transparentes quando estao sob teto
+3. Tiles serao limpos corretamente quando itens/criaturas sao removidos (0x6c)
+4. Na area aberta (sem telhado), o comportamento multi-floor continua normal
 
