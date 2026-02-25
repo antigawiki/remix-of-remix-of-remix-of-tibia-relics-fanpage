@@ -23,15 +23,21 @@ export class PacketParser {
   }
 
   private skipOutfit(r: Buf) {
-    const oid = r.u16();
+    const oid = r.u8();
     if (oid) r.skip(4);
     else r.u16();
   }
 
+  private outfitLogCount = 0;
+
   private readOutfit(r: Buf): { type: number; head: number; body: number; legs: number; feet: number } {
-    const oid = r.u16();
+    const oid = r.u8();
     if (oid === 0) { r.u16(); return { type: 0, head: 0, body: 0, legs: 0, feet: 0 }; }
     const h = r.u8(), b = r.u8(), l = r.u8(), f = r.u8();
+    if (this.outfitLogCount < 5) {
+      this.outfitLogCount++;
+      console.log(`[PacketParser] Outfit read: looktype=${oid}, head=${h}, body=${b}, legs=${l}, feet=${f}`);
+    }
     return { type: oid, head: h, body: b, legs: l, feet: f };
   }
 
@@ -306,7 +312,7 @@ export class PacketParser {
 
   private skipOutfitWindow(r: Buf) {
     this.skipOutfit(r);
-    r.u16(); r.u16(); // start/end outfit range
+    r.u8(); r.u8(); // start/end outfit range (u8 in 7.x protocol)
   }
 
   private floorUp(r: Buf) {
