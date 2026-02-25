@@ -150,9 +150,9 @@ export class PacketParser {
     // Player pos
     else if (t === 0x9a) { const [x, y, z] = this.pos3(r); g.camX = x; g.camY = y; g.camZ = z; }
     // Stats/skills/icons
-    else if (t === 0xa0) r.skip(20);
+    else if (t === 0xa0) this.readStats(r);
     else if (t === 0xa1) r.skip(14);
-    else if (t === 0xa2) r.u16();
+    else if (t === 0xa2) r.u8();
     else if (t === 0xa3) { /* cancelTarget */ }
     // Chat
     else if (t === 0xaa) this.talk(r);
@@ -312,7 +312,7 @@ export class PacketParser {
   private skipNpcTrade(r: Buf) {
     const n = r.u8();
     for (let i = 0; i < n; i++) {
-      r.u16(); r.u8(); r.str16(); r.u32(); r.u32(); r.u32();
+      r.u16(); r.u8(); r.str16(); r.u32(); r.u32();
     }
   }
 
@@ -398,9 +398,11 @@ export class PacketParser {
       r.u32();
       const name = r.str16();
       const tp = r.u8();
-      const POS_TYPES = new Set([0x01, 0x02, 0x03, 0x10, 0x11]);
-      const CHAN_TYPES = new Set([0x05, 0x0A, 0x0C, 0x0E]);
-      const TIME_TYPES = new Set([0x06]);
+      // 7.72 speak types (from tibiarc InitSpeakTypes)
+      const POS_TYPES = new Set([0x01, 0x02, 0x03, 0x0E, 0x10]); // Say, Whisper, Yell, MonsterSay, MonsterYell
+      const CHAN_TYPES = new Set([0x05, 0x0A, 0x0C]); // ChannelYellow, ChannelRed, ChannelOrange
+      const TIME_TYPES = new Set([0x06]); // RuleViolationChannel
+      // No-data: 0x04 PrivateIn, 0x07 RVAnswer, 0x08 RVContinue, 0x09 Broadcast, 0x0B GMToPlayer
       if (POS_TYPES.has(tp)) r.skip(5);
       else if (CHAN_TYPES.has(tp)) r.u16();
       else if (TIME_TYPES.has(tp)) r.u32();
@@ -408,10 +410,17 @@ export class PacketParser {
       if (msg.length >= 2) {
         const col = [0x01, 0x02, 0x03].includes(tp) ? '#ffffff'
           : CHAN_TYPES.has(tp) ? '#ffdd88'
-          : [0x10, 0x11].includes(tp) ? '#ff8888' : '#cccccc';
+          : [0x0E, 0x10].includes(tp) ? '#ff8888' : '#cccccc';
         this.gs.addMsg(name ? `${name}: ${msg}` : msg, col);
       }
     } catch { /* ignore */ }
+  }
+
+  private readStats(r: Buf) {
+    // 7.72 stats: hp(u16) + hpMax(u16) + cap(u16) + exp(u32) + level(u16) + levelPercent(u8)
+    // + mana(u16) + manaMax(u16) + magicLevel(u8) + magicLevelPercent(u8) + soul(u8)
+    // = 20 bytes total. Some custom servers add stamina(u16) = 22 bytes.
+    r.skip(20);
   }
 
   private textMsg(r: Buf) {
