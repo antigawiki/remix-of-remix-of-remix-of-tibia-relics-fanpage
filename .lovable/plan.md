@@ -1,73 +1,36 @@
 
-# Fix: Outfits de criaturas e remover mensagens
 
-## O que foi confirmado
-- Floor rendering esta perfeito (confirmado pelo usuario)
-- Console mostra `unknown opcode 0x63 at pos 6` repetidamente - frames inteiros sendo abandonados, perdendo dados de criaturas
-- Mensagens de chat cobrem a area de jogo e precisam ser removidas
+# Fix: Outfits transparentes de criaturas
 
-## Causa dos outfits errados
+## Causa raiz
 
-### Bug principal: Opcode 0x63 nao tratado
-O console mostra `unknown opcode 0x63` repetidamente. 0x63 e o marcador CR_OLD (creature turn) que normalmente aparece DENTRO de tile data. Porem, ele esta aparecendo como opcode de topo em frames do `.cam`. Quando isso acontece, o parser **abandona o frame inteiro** (incluindo centenas de bytes de dados de criaturas, movimentos e atualizacoes). Resultado: criaturas perdem dados de outfit, posicao, ou simplesmente nao aparecem.
+O problema esta no `sprLoader.ts`, linhas 36-37 e 56:
 
-A solucao: tratar 0x63 como standalone creature turn. Tambem tratar 0x61 e 0x62 (CR_FULL e CR_KNOWN) como standalone, pois podem aparecer da mesma forma.
-
-### Bug secundario: Payload com prefixo de tamanho
-Alguns frames do `.cam` podem incluir um prefixo `u16` de tamanho do pacote (padrao TCP do Tibia). Se os 2 primeiros bytes formam um u16 que iguala `payload.length - 2`, devemos pular esse prefixo. Isso explicaria o deslocamento consistente de 6 bytes (2 len + 4 checksum ou similar).
-
-## Mudancas
-
-### A. `src/lib/tibiaRelic/renderer.ts`
-1. **Remover `drawMessages`** - remover a chamada e o metodo inteiro
-2. **Remover texto de debug** no canto inferior (`cam=(x,y,z) crs=N`)
-
-### B. `src/lib/tibiaRelic/packetParser.ts`
-1. **Adicionar opcodes 0x61, 0x62, 0x63 no dispatch** como standalone creature handlers:
-   - 0x61 (CR_FULL standalone): ler como `readCreatureFull` (sem posicao, pois ja tem x/y/z do contexto anterior, ou usar posicao da criatura existente)
-   - 0x62 (CR_KNOWN standalone): ler como `readCreatureKnown` (sem adicionar a tile)
-   - 0x63 (CR_OLD standalone): ler `u32 creatureId + u8 direction` (creature turn simples, 5 bytes)
-2. **Adicionar deteccao de prefixo u16** no metodo `process()`: se `payload[0:2]` como u16 LE == `payload.length - 2`, pular 2 bytes antes de parsear opcodes
-3. **Melhorar recovery de erro**: ao encontrar opcode desconhecido, tentar pular 1 byte e continuar ao inves de abandonar o frame inteiro (com limite de tentativas para evitar loop infinito)
-
-### C. `src/lib/tibiaRelic/gameState.ts`
-Sem alteracoes necessarias.
-
-## Detalhes tecnicos
-
-### Opcodes standalone de criatura
-No dispatch, adicionar:
 ```text
-0x61: pos3(5) + readCreatureFull (mesma logica de addThing com CR_FULL, mas pos vem antes)
-0x62: pos3(5) + readCreatureKnown (mesma logica)
-0x63: pos3(5) + stackPos(1) + u16_marker(2) + u32_cid(4) + u8_dir(1)
-      OU formato simples: u32_cid(4) + u8_dir(1)
-```
-Como nao temos certeza do formato exato do TibiaRelic para estes opcodes standalone, vamos tentar o formato completo (com pos3+stackpos+marker) primeiro, e se falhar, o formato simples.
-
-Na pratica, a abordagem mais segura e tratar 0x63 como: ler os bytes restantes no padrao `chgThing` (pos3 + stackpos + peek creature marker + creature data), pois e o mesmo formato que 0x6B mas identificado com opcode diferente.
-
-### Deteccao de prefixo
-```text
-process(payload):
-  r = new Buf(payload)
-  // Check for u16 length prefix
-  if payload.length >= 4:
-    prefixLen = r.peek16()
-    if prefixLen == payload.length - 2:
-      r.skip(2)  // skip length prefix
+// Le 3 bytes como "chroma key"
+const ckR = raw[off], ckG = raw[off + 1], ckB = raw[off + 2];
+...
+// Filtra pixels que coincidem com o chroma key - tornando-os transparentes
+if (r !== ckR || g !== ckG || b !== ckB) {
+  px[i] = r; px[i+1] = g; px[i+2] = b; px[i+3] = 255;
+}
 ```
 
-### Error recovery
-```text
-Ao encontrar opcode desconhecido:
-  - Tentar pular 1 byte
-  - Continuar parseando
-  - Maximo 3 skips consecutivos antes de abandonar
-```
+No formato .spr do Tibia 7.x, a transparencia ja e tratada pela codificacao RLE: cada bloco comeca com `u16 transparent_pixels` (pixels a pular) seguido de `u16 colored_pixels` (pixels opacos). Os 3 bytes iniciais do sprite (chamados "color key") sao um legado que nao deve ser usado para filtrar -- todos os pixels na secao "colored" sao opacos por definicao.
 
-## Impacto esperado
-- Frames com creature turns (0x63) deixarao de ser abandonados, preservando todas as atualizacoes de criatura no frame
-- Criaturas manterao seus dados de outfit corretamente ao longo do tempo
-- Player deixara de "sumir" quando seus dados de atualizacao estavam em frames abandonados
-- Area de jogo limpa sem mensagens sobrepostas
+Quando o "chroma key" coincide com alguma cor presente no sprite (ex: preto 0,0,0 ou outra cor comum), esses pixels sao erroneamente tornados transparentes, causando o efeito "fantasma" em todas as criaturas.
+
+## Correcao
+
+### `src/lib/tibiaRelic/sprLoader.ts`
+- Remover a comparacao de chroma key no loop de pixels
+- Todos os pixels da secao "colored" do RLE devem receber alpha=255 incondicionalmente
+- Manter a leitura dos 3 bytes do offset (para manter o ponteiro correto), mas nao usa-los para filtrar
+
+### `src/lib/tibiaRelic/renderer.ts`
+- Corrigir o cache key do tint: `getSpriteCanvasKey` retorna `32x32` para TODOS os sprites, fazendo o cache de tint retornar o mesmo resultado para masks diferentes. Usar o sprite ID em vez das dimensoes do canvas.
+
+## Arquivos alterados
+- `src/lib/tibiaRelic/sprLoader.ts` (remover filtro chroma key)
+- `src/lib/tibiaRelic/renderer.ts` (corrigir tint cache key)
+
