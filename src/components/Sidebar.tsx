@@ -95,10 +95,7 @@ const Sidebar = ({ position }: SidebarProps) => {
               <Home className="w-4 h-4 text-gold" />
               {t('navigation.houses')}
             </Link>
-            <Link to="/cam-player" className="sidebar-menu-item flex items-center gap-2">
-              <Film className="w-4 h-4 text-gold" />
-              {t('navigation.camPlayer')}
-            </Link>
+            {/* Cam Player hidden until ready */}
             <Link to="/info" className="sidebar-menu-item flex items-center gap-2">
               <Info className="w-4 h-4 text-gold" />
               {t('navigation.info')}
