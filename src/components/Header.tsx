@@ -184,10 +184,7 @@ const Header = () => {
                 <Building className="w-4 h-4" />
                 {t('navigation.houses')}
               </Link>
-              <Link to="/cam-player" className="sidebar-menu-item flex items-center gap-2" onClick={() => setMobileMenuOpen(false)}>
-                <Film className="w-4 h-4" />
-                {t('navigation.camPlayer')}
-              </Link>
+              {/* Cam Player hidden until ready */}
               <Link to="/hunt-admin" className="sidebar-menu-item flex items-center gap-2" onClick={() => setMobileMenuOpen(false)}>
                 <Swords className="w-4 h-4" />
                 Hunt Admin
