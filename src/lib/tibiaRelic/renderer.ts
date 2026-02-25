@@ -298,9 +298,7 @@ export class Renderer {
       // Don't cache too aggressively - just draw it
     }
 
-    this.ctx.globalCompositeOperation = 'source-atop';
     this.ctx.drawImage(cached, dx, dy);
-    this.ctx.globalCompositeOperation = 'source-over';
   }
 
   private getSpriteCanvasKey(canvas: HTMLCanvasElement): string {

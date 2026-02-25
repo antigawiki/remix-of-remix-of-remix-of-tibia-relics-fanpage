@@ -349,28 +349,22 @@ export class PacketParser {
 
   private floorUp(r: Buf) {
     const g = this.gs;
-    const oldZ = g.camZ;
     g.camZ--;
 
     if (g.camZ === 7) {
       // Crossed from underground to surface: read floors 5 down to 0
-      // Must read BEFORE adjusting camX/camY
+      // OTClient: offset = 8 - nz, shared skip
       let skip = 0;
       for (let nz = 5; nz >= 0; nz--) {
-        const offset = g.camZ - nz;
+        const offset = 8 - nz;
         skip = this.readFloorArea(r, g.camX - 8, g.camY - 6, nz, 18, 14, offset, skip);
       }
     } else if (g.camZ > 7) {
-      // Underground going up: read floor z-2
+      // Underground going up: read floor z-2 with offset 3
       const nz = g.camZ - 2;
-      const offset = g.camZ - nz;
-      this.readFloorAreaWithOffset(r, g.camX - 8, g.camY - 6, nz, 18, 14, offset);
-    } else {
-      // Above ground going higher: read top visible floor
-      const nz = Math.max(0, g.camZ - 2);
-      const offset = g.camZ - nz;
-      this.readFloorAreaWithOffset(r, g.camX - 8, g.camY - 6, nz, 18, 14, offset);
+      this.readFloorAreaWithOffset(r, g.camX - 8, g.camY - 6, nz, 18, 14, 3);
     }
+    // NOTE: camZ < 7 (surface going higher) sends NO floor data per OTClient protocol
 
     // Apply NW shift AFTER reading
     g.camX++; g.camY++;
@@ -378,22 +372,21 @@ export class PacketParser {
 
   private floorDown(r: Buf) {
     const g = this.gs;
-    const oldZ = g.camZ;
     g.camZ++;
 
     if (g.camZ === 8) {
       // Crossed from surface to underground: read floors 8, 9, 10
-      // Must read BEFORE adjusting camX/camY
+      // OTClient: j starts at -1 decrementing → offsets -1, -2, -3
       let skip = 0;
+      let j = -1;
       for (let nz = g.camZ; nz <= Math.min(g.camZ + 2, 15); nz++) {
-        const offset = g.camZ - nz;
-        skip = this.readFloorArea(r, g.camX - 8, g.camY - 6, nz, 18, 14, offset, skip);
+        skip = this.readFloorArea(r, g.camX - 8, g.camY - 6, nz, 18, 14, j, skip);
+        j--;
       }
-    } else if (g.camZ <= 15) {
-      // Underground going deeper: read floor z+2
+    } else if (g.camZ > 8 && g.camZ < 14) {
+      // Underground going deeper: read floor z+2 with offset -3
       const nz = Math.min(g.camZ + 2, 15);
-      const offset = g.camZ - nz;
-      this.readFloorAreaWithOffset(r, g.camX - 8, g.camY - 6, nz, 18, 14, offset);
+      this.readFloorAreaWithOffset(r, g.camX - 8, g.camY - 6, nz, 18, 14, -3);
     }
 
     // Apply NW shift AFTER reading
