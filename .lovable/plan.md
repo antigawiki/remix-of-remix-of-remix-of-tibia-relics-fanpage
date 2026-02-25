@@ -1,80 +1,64 @@
 
+Objetivo: resolver de vez o problema de floor (camZ correto, visual errado) e dos outfits/sprites desalinhados, alinhando parser + renderer ao comportamento do tibiarc/OTClient 7.72.
 
-# Fix: Stream desync bugs causing wrong sprites and broken floor changes
+1) Diagnóstico consolidado (com base no que você reportou + leitura do código open source)
+- O sintoma que você mostrou (cam=33035,32433,6 mas render “parece z=7”) é compatível com ordem de desenho de andares invertida.
+- No nosso `renderer.ts`, `getVisibleFloors()` monta a lista e faz `reverse()`, o que acaba desenhando o andar base por cima dos andares superiores em vários casos.
+- No `packetParser.ts`, ainda existem opcodes com payload incorreto para 7.72 (não só os já corrigidos), o que pode causar desync intermitente e corromper leitura de outfit/tiles depois.
+- Comparando com tibiarc (`lib/parser.cpp`, `lib/versions.cpp`, `lib/renderer.cpp`), os pontos críticos restantes são:
+  - chat/channel opcodes 0xAB/0xAE/0xAF/0xB0
+  - 0x0F e 0x0B também divergentes
+  - alguns skips de payload ainda não seguem 7.72
+- Em sprite de criatura, ainda faltam detalhes de paridade visual (displacement e padrão de variação/addon), o que explica “monstro/player errado” mesmo quando o parse não quebra totalmente.
 
-## Root Cause
+2) Implementação proposta (próxima etapa)
+A. `src/lib/tibiaRelic/renderer.ts` — corrigir floor visível e ordem de pintura
+- Remover inversão indevida em `getVisibleFloors` (eliminar `reverse()` e garantir ordem igual ao tibiarc: bottom -> top no loop de desenho).
+- Ajustar cálculo de faixa visível:
+  - Surface: `bottomVisibleFloor=7`, `topVisibleFloor` dinâmico (equivalente ao `GetTopVisibleFloor`) para não desenhar andares que deveriam ficar ocultos.
+  - Underground: `bottom=min(z+2,15)`, `top=z`.
+- Manter offset NW por andar (`xyOffset = camZ - fz`) na mesma direção do tibiarc.
+- Resultado esperado: quando `camZ=6` ou `camZ=3`, o visual deixa de “colar” no floor 7.
 
-The floor change logic and sprite index formulas are actually correct (verified against both OTClient and tibiarc). The real problem is **byte-level stream desynchronization** caused by several opcodes reading the wrong number of bytes for protocol 7.72. Once any of these opcodes fires, every subsequent opcode in the frame reads corrupted data.
+B. `src/lib/tibiaRelic/packetParser.ts` — fechar gaps de desync 7.72
+- Alinhar opcodes ao mapeamento do tibiarc 7.72:
+  - `0x0F`: sem payload (hoje está `skip16`, incorreto).
+  - `0x0B`: GM actions com skip fixo de versão (7.72 = 32 bytes).
+  - `0xAB`: channel list (u8 count + [u16 + string]).
+  - `0xAC`: open public channel (u16 + string).
+  - `0xAD`: open private conversation (string).
+  - `0xAE` e `0xAF`: sem payload.
+  - `0xB0`: skip fixo de 2 bytes (não `skip16`).
+  - `0x7E`: mesmo payload de trade items (não “no data”).
+  - `0x87`: trappers (u8 count + count*u32).
+- Revisar `0x96` (open text window) para estrutura de 7.72 sem `skipItem()` ambíguo.
+- Manter os fixes já feitos (0xA2 u8, 0x7A sem weight, 0xAA speak mapping).
 
-## Bugs Found (confirmed via tibiarc `versions.cpp`)
+C. `src/components/TibiarcPlayer.tsx` — robustez de modo de parse
+- Para fluxo TibiaRelic 7.72, priorizar `looktypeU16` por padrão (com fallback manual/debug), para evitar falso positivo do auto-detect em arquivos com poucas criaturas no começo.
+- Expor indicador de modo ativo e contadores de desync (unknown opcode / parse error) para validação rápida.
 
-### Bug 1: Player Icons (0xA2) reads u16 instead of u8
+D. `src/lib/tibiaRelic/renderer.ts` — paridade de outfit de criatura
+- Aplicar displacement do tipo de outfit no desenho da criatura (equivalente ao tibiarc).
+- Ajustar seleção de padrões de outfit para direção/addon (`patX/patY`) ao invés de fixar `patY=0` em todos os casos.
+- Preservar tint no layer de máscara, mas com índice de sprite calculado na mesma lógica de framegroup usada no tibiarc.
 
-For protocol 7.72, `IconsU16` is only enabled from 7.80+. Our code reads `r.u16()` (2 bytes) but should read `r.u8()` (1 byte). Every icons update consumes 1 extra byte, desynchronizing the stream.
+3) Sequência de execução (para reduzir regressão)
+1. Corrigir ordem/filtro de floors no renderer (impacto visual imediato no seu caso).
+2. Corrigir opcodes restantes de desync no parser.
+3. Ajustar outfit displacement + pattern logic.
+4. Ajustar estratégia de parse mode (u16-first para 7.72).
+5. Rodar validação com seus dois cenários de screenshot e logs.
 
-### Bug 2: NPC Trade (0x7A) reads extra weight field
+4) Critérios de aceite (baseados no seu relato)
+- Cenário A: `cam=(33035,32433,6)` deve renderizar corretamente o andar superior, sem “voltar” visualmente ao base 7.
+- Cenário B: quando estiver em z=3, a cena deve refletir andares acima corretamente (sem aparência de floor base persistente).
+- Monstros e players devem aparecer com sprite/outfit consistente (não só nome/hp bar).
+- Console sem sequência de `unknown opcode`/`parse error` após chat/channel events e troca de andar.
 
-For 7.72, `NPCVendorWeight` is only from 8.30+. Our code reads `u16 + u8 + string + u32 + u32 + u32` per item, but should be `u16 + u8 + string + u32 + u32` (no weight). Every trade item consumes 4 extra bytes.
+5) Arquivos previstos para alteração
+- `src/lib/tibiaRelic/renderer.ts`
+- `src/lib/tibiaRelic/packetParser.ts`
+- `src/components/TibiarcPlayer.tsx`
 
-### Bug 3: Talk (0xAA) speak mode mapping wrong for 7.72
-
-The speak mode byte values for 7.72 differ from what our code assumes. Per tibiarc's `InitSpeakTypes` for 7.20-7.72:
-
-```text
-Type 14 (0x0E) = MonsterSay -> needs POSITION (5 bytes)
-   Our code: treats as CHAN_TYPE -> reads CHANNEL (2 bytes) = 3 bytes short!
-
-Type 9 (0x09) = Broadcast -> needs NO extra data
-   Our code: not in any set -> falls through correctly
-
-Type 11 (0x0B) = GMToPlayer -> needs NO extra data (not position)
-   Our code: not in any set -> correct
-```
-
-This is the most frequent desync source since monsters speak often.
-
-### Bug 4: Player Stats (0xA0) may have wrong size for custom server
-
-TibiaRelic (Nekiro TFS-1.5-Downgrades-7.72) might include Stamina (u16) in player stats. Our hardcoded `r.skip(20)` doesn't account for this possibility. If stamina is present, we're 2 bytes short. Need to verify with actual data or make it adaptive.
-
-## Fixes
-
-### A. `src/lib/tibiaRelic/packetParser.ts`
-
-1. **Fix 0xA2**: Change `r.u16()` to `r.u8()` for player icons (or make it version-aware)
-
-2. **Fix 0x7A**: Remove the third `r.u32()` (weight) from NPC trade item loop:
-   ```text
-   Before: r.u16(); r.u8(); r.str16(); r.u32(); r.u32(); r.u32();
-   After:  r.u16(); r.u8(); r.str16(); r.u32(); r.u32();
-   ```
-
-3. **Fix 0xAA talk**: Rewrite speak mode handling to match 7.72 protocol exactly:
-   ```text
-   Position types: 1,2,3,14,16 (Say, Whisper, Yell, MonsterSay, MonsterYell)
-   Channel types:  5,10,12     (ChannelYellow, ChannelRed, ChannelOrange)
-   Time types:     6           (RuleViolationChannel -> u32)
-   No-data types:  4,7,8,9,11 (PrivateIn, RVAnswer, RVContinue, Broadcast, GMToPlayer)
-   ```
-
-4. **Fix 0xA0 stats**: Since TibiaRelic is a custom server, try a safer approach: instead of hardcoded `skip(20)`, parse the known fields individually so mismatches cause a controlled error rather than silent desync. Or keep 20 if verified working, and add stamina (22 bytes) as a fallback.
-
-5. **Add defensive logging**: Log when creature outfits are parsed, showing the decoded looktype and colors, to help debug any remaining issues.
-
-### B. `src/lib/tibiaRelic/renderer.ts`
-
-No changes needed -- the rendering logic (sprite index formula, multi-floor drawing, outfit tinting) is correct. The visual bugs are entirely caused by the parser consuming wrong bytes.
-
-## Why this explains both symptoms
-
-- **"Floor changes don't work"**: After a MonsterSay message (which happens frequently), the parser is offset by 3 bytes. The next opcode read is garbage, causing frame abandonment. Floor change opcodes (0xBE/0xBF) in subsequent frames may also be affected.
-
-- **"Outfits are wrong"**: When creature data is read from a desynchronized stream, the looktype, head/body/legs/feet colors, and even the creature ID become garbage values, producing wrong or missing sprites.
-
-## Validation
-
-After these fixes:
-- Monster/NPC speech should no longer cause stream corruption
-- Floor transitions should work since the actual floor change code already matches OTClient/tibiarc
-- Creature outfits should render correctly since the looktype values will be read from properly synchronized data
-
+Se você aprovar, eu implemento exatamente nessa ordem para atacar primeiro o bug de floor que você acabou de comprovar nas imagens.
