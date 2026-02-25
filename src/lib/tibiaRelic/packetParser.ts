@@ -1,6 +1,6 @@
 /**
  * Parser de pacotes do protocolo Tibia 7.4 (OTHire/TibiaRelic)
- * Suporte a multi-floor map reading
+ * Multi-floor map reading with OTClient-compatible perspective offsets
  */
 import { Buf } from './buf';
 import { DatLoader } from './datLoader';
@@ -175,7 +175,7 @@ export class PacketParser {
     this.gs.mapLoaded = true;
 
     const { startz, endz, zstep } = this.getFloorRange(z);
-    this.readMultiFloorArea(r, x - 8, y - 6, 18, 14, startz, endz, zstep);
+    this.readMultiFloorArea(r, x - 8, y - 6, 18, 14, z, startz, endz, zstep);
 
     if (!this.loggedFirst) {
       this.loggedFirst = true;
@@ -189,10 +189,10 @@ export class PacketParser {
 
     const { startz, endz, zstep } = this.getFloorRange(g.camZ);
 
-    if (dx === 1) this.readMultiFloorArea(r, g.camX + 9, g.camY - 6, 1, 14, startz, endz, zstep);
-    else if (dx === -1) this.readMultiFloorArea(r, g.camX - 8, g.camY - 6, 1, 14, startz, endz, zstep);
-    else if (dy === 1) this.readMultiFloorArea(r, g.camX - 8, g.camY + 7, 18, 1, startz, endz, zstep);
-    else if (dy === -1) this.readMultiFloorArea(r, g.camX - 8, g.camY - 6, 18, 1, startz, endz, zstep);
+    if (dx === 1) this.readMultiFloorArea(r, g.camX + 9, g.camY - 6, 1, 14, g.camZ, startz, endz, zstep);
+    else if (dx === -1) this.readMultiFloorArea(r, g.camX - 8, g.camY - 6, 1, 14, g.camZ, startz, endz, zstep);
+    else if (dy === 1) this.readMultiFloorArea(r, g.camX - 8, g.camY + 7, 18, 1, g.camZ, startz, endz, zstep);
+    else if (dy === -1) this.readMultiFloorArea(r, g.camX - 8, g.camY - 6, 18, 1, g.camZ, startz, endz, zstep);
   }
 
   private tileUpd(r: Buf) {
@@ -288,7 +288,7 @@ export class PacketParser {
   private skipNpcTrade(r: Buf) {
     const n = r.u8();
     for (let i = 0; i < n; i++) {
-      r.u16(); r.u8(); r.skip16(); r.u32(); r.u32(); r.u32();
+      r.u16(); r.u8(); r.str16(); r.u32(); r.u32(); r.u32();
     }
   }
 
@@ -315,17 +315,17 @@ export class PacketParser {
     g.camX++; g.camY++;
 
     if (g.camZ === 7) {
-      // Going from underground to ground: read floors 5 down to 0
+      // Crossed sea level going up: read floors 5 down to 0 with proper offsets
       let skip = 0;
-      for (let z = 5; z >= 0; z--) {
-        skip = this.readFloorArea(r, g.camX - 8, g.camY - 6, z, 18, 14, skip);
+      for (let i = 5; i >= 0; i--) {
+        skip = this.readFloorArea(r, g.camX - 8, g.camY - 6, i, 18, 14, g.camZ - i, skip);
       }
     } else if (g.camZ > 7) {
       // Underground: read one floor above (z-2)
-      this.readSingleFloorArea(r, g.camX - 8, g.camY - 6, g.camZ - 2, 18, 14);
+      this.readFloorAreaWithOffset(r, g.camX - 8, g.camY - 6, g.camZ - 2, 18, 14, 3);
     } else {
-      // Above ground: read top floor
-      this.readSingleFloorArea(r, g.camX - 8, g.camY - 6, g.camZ - 2, 18, 14);
+      // Above ground: read top visible floor
+      this.readFloorAreaWithOffset(r, g.camX - 8, g.camY - 6, g.camZ - 2, 18, 14, g.camZ - (g.camZ - 2));
     }
   }
 
@@ -335,16 +335,18 @@ export class PacketParser {
     g.camX--; g.camY--;
 
     if (g.camZ === 8) {
-      // Going from ground to underground: read floors 8, 9, 10
+      // Crossed sea level going down: read floors 8, 9, 10
       let skip = 0;
+      let j = -1;
       for (let z = g.camZ; z <= Math.min(g.camZ + 2, 15); z++) {
-        skip = this.readFloorArea(r, g.camX - 8, g.camY - 6, z, 18, 14, skip);
+        skip = this.readFloorArea(r, g.camX - 8, g.camY - 6, z, 18, 14, j, skip);
+        j--;
       }
     } else if (g.camZ > 8 && g.camZ < 14) {
       // Underground: read one floor below (z+2)
-      this.readSingleFloorArea(r, g.camX - 8, g.camY - 6, g.camZ + 2, 18, 14);
+      this.readFloorAreaWithOffset(r, g.camX - 8, g.camY - 6, g.camZ + 2, 18, 14, -3);
     } else {
-      this.readSingleFloorArea(r, g.camX - 8, g.camY - 6, g.camZ + 2, 18, 14);
+      this.readFloorAreaWithOffset(r, g.camX - 8, g.camY - 6, g.camZ + 2, 18, 14, -3);
     }
   }
 
@@ -472,24 +474,37 @@ export class PacketParser {
     }
   }
 
-  /** Read one floor and return the remaining skip count (for multi-floor chaining) */
-  private readFloorArea(r: Buf, ox: number, oy: number, z: number, W: number, H: number, skip: number): number {
+  /** Read one floor with perspective offset and return the remaining skip count */
+  private readFloorArea(r: Buf, ox: number, oy: number, z: number, W: number, H: number, offset: number, skip: number): number {
     const total = W * H;
     for (let tileIdx = 0; tileIdx < total && r.left() >= 2; tileIdx++) {
       if (skip > 0) { skip--; continue; }
       const tx = tileIdx % W;
       const ty = Math.floor(tileIdx / W);
-      skip = this.readTileItems(r, ox + tx, oy + ty, z);
+      skip = this.readTileItems(r, ox + tx + offset, oy + ty + offset, z);
     }
     return skip;
   }
 
-  /** Read map area across multiple floors with shared skip counter */
-  private readMultiFloorArea(r: Buf, ox: number, oy: number, W: number, H: number, startz: number, endz: number, zstep: number) {
+  /** Read a single floor with offset (no skip chaining) */
+  private readFloorAreaWithOffset(r: Buf, ox: number, oy: number, z: number, W: number, H: number, offset: number) {
     let skip = 0;
-    for (let z = startz; z !== endz + zstep; z += zstep) {
+    const total = W * H;
+    for (let tileIdx = 0; tileIdx < total && r.left() >= 2; tileIdx++) {
+      if (skip > 0) { skip--; continue; }
+      const tx = tileIdx % W;
+      const ty = Math.floor(tileIdx / W);
+      skip = this.readTileItems(r, ox + tx + offset, oy + ty + offset, z);
+    }
+  }
+
+  /** Read map area across multiple floors with shared skip counter and per-floor offsets */
+  private readMultiFloorArea(r: Buf, ox: number, oy: number, W: number, H: number, camZ: number, startz: number, endz: number, zstep: number) {
+    let skip = 0;
+    for (let nz = startz; nz !== endz + zstep; nz += zstep) {
       if (r.left() < 2) break;
-      skip = this.readFloorArea(r, ox, oy, z, W, H, skip);
+      const offset = camZ - nz;
+      skip = this.readFloorArea(r, ox, oy, nz, W, H, offset, skip);
     }
   }
 }
