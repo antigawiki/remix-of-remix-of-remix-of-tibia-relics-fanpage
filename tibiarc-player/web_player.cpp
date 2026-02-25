@@ -56,6 +56,10 @@ static void MainLoop();
 // --- Exported JS functions ---
 extern "C" {
 
+// Forward declare so load_recording can call it
+int load_recording_with_version(const uint8_t *buf, int len, const char *filename,
+                                 int ver_major, int ver_minor, int ver_patch);
+
 EMSCRIPTEN_KEEPALIVE
 int load_data_files(const uint8_t *picBuf, int picLen,
                     const uint8_t *sprBuf, int sprLen,
@@ -76,6 +80,12 @@ int load_data_files(const uint8_t *picBuf, int picLen,
 
 EMSCRIPTEN_KEEPALIVE
 int load_recording(const uint8_t *buf, int len, const char *filename) {
+    return load_recording_with_version(buf, len, filename, 0, 0, 0);
+}
+
+EMSCRIPTEN_KEEPALIVE
+int load_recording_with_version(const uint8_t *buf, int len, const char *filename,
+                                 int ver_major, int ver_minor, int ver_patch) {
     try {
         if (g_picData.empty() || g_sprData.empty() || g_datData.empty()) {
             printf("[tibiarc] Data files not loaded yet\n");
@@ -87,15 +97,23 @@ int load_recording(const uint8_t *buf, int len, const char *filename) {
         // Guess format from filename
         auto format = Recordings::GuessFormat(filename, reader);
 
-        // Query version from the recording
         VersionTriplet triplet;
-        if (!Recordings::QueryTibiaVersion(format, reader, triplet)) {
-            printf("[tibiarc] Could not determine recording version\n");
-            return 0;
-        }
+        bool hasManualVersion = (ver_major > 0);
 
-        printf("[tibiarc] Detected version: %s\n",
-               static_cast<std::string>(triplet).c_str());
+        if (hasManualVersion) {
+            triplet = VersionTriplet(ver_major, ver_minor, ver_patch);
+            printf("[tibiarc] Using manual version: %d.%d.%d\n",
+                   ver_major, ver_minor, ver_patch);
+        } else {
+            // Try to auto-detect version from the recording
+            if (!Recordings::QueryTibiaVersion(format, reader, triplet)) {
+                printf("[tibiarc] Could not determine recording version. "
+                       "Please specify the version manually.\n");
+                return -1;  // -1 = version detection failed
+            }
+            printf("[tibiarc] Detected version: %s\n",
+                   static_cast<std::string>(triplet).c_str());
+        }
 
         // Create version with data files
         DataReader picReader(g_picData.size(), g_picData.data());

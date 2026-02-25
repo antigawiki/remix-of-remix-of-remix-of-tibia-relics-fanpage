@@ -2,9 +2,31 @@ import { useRef, useState, useCallback, useEffect } from 'react';
 import { Upload, Play, Pause, FastForward, RotateCcw, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Slider } from '@/components/ui/slider';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useTranslation } from '@/i18n';
 
-type PlayerState = 'idle' | 'loading-wasm' | 'ready' | 'loading-cam' | 'playing' | 'paused' | 'error';
+type PlayerState = 'idle' | 'loading-wasm' | 'ready' | 'loading-cam' | 'playing' | 'paused' | 'error' | 'need-version';
+
+const TIBIA_VERSIONS = [
+  { label: 'Auto-detect', value: '0.0.0' },
+  { label: '7.1', value: '7.1.0' },
+  { label: '7.2', value: '7.2.0' },
+  { label: '7.3', value: '7.3.0' },
+  { label: '7.4', value: '7.4.0' },
+  { label: '7.5', value: '7.5.0' },
+  { label: '7.6', value: '7.6.0' },
+  { label: '7.7', value: '7.7.0' },
+  { label: '7.72', value: '7.72.0' },
+  { label: '7.8', value: '7.8.0' },
+  { label: '7.9', value: '7.9.0' },
+  { label: '7.92', value: '7.92.0' },
+  { label: '8.0', value: '8.0.0' },
+  { label: '8.1', value: '8.1.0' },
+  { label: '8.2', value: '8.2.0' },
+  { label: '8.4', value: '8.4.0' },
+  { label: '8.5', value: '8.5.0' },
+  { label: '8.6', value: '8.6.0' },
+];
 
 interface WasmModule {
   ccall: (name: string, returnType: string, argTypes: string[], args: unknown[]) => unknown;
@@ -24,6 +46,7 @@ const TibiarcPlayer = ({ className }: TibiarcPlayerProps) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const moduleRef = useRef<WasmModule | null>(null);
   const progressIntervalRef = useRef<number | null>(null);
+  const pendingFileRef = useRef<{ data: Uint8Array; name: string } | null>(null);
 
   const [state, setState] = useState<PlayerState>('idle');
   const [speed, setSpeed] = useState(1);
@@ -32,6 +55,7 @@ const TibiarcPlayer = ({ className }: TibiarcPlayerProps) => {
   const [progress, setProgress] = useState(0);
   const [duration, setDuration] = useState(0);
   const [wasmAvailable, setWasmAvailable] = useState<boolean | null>(null);
+  const [selectedVersion, setSelectedVersion] = useState('0.0.0');
 
   // Check WASM availability
   useEffect(() => {
@@ -67,7 +91,6 @@ const TibiarcPlayer = ({ className }: TibiarcPlayerProps) => {
 
     setState('loading-wasm');
 
-    // Dynamically load the WASM module
     const script = document.createElement('script');
     script.src = '/tibiarc/tibiarc_player.js';
 
@@ -107,7 +130,6 @@ const TibiarcPlayer = ({ className }: TibiarcPlayerProps) => {
           const sprArr = new Uint8Array(spr);
           const datArr = new Uint8Array(dat);
 
-          // Copy to WASM memory
           const picPtr = mod._malloc(picArr.length);
           const sprPtr = mod._malloc(sprArr.length);
           const datPtr = mod._malloc(datArr.length);
@@ -141,6 +163,59 @@ const TibiarcPlayer = ({ className }: TibiarcPlayerProps) => {
     });
   }, []);
 
+  const loadRecordingWithVersion = useCallback(async (data: Uint8Array, name: string, version: string) => {
+    const mod = moduleRef.current;
+    if (!mod) return;
+
+    setState('loading-cam');
+
+    const ptr = mod._malloc(data.length);
+    mod.HEAPU8.set(data, ptr);
+
+    const encoder = new TextEncoder();
+    const nameBytes = encoder.encode(name + '\0');
+    const namePtr = mod._malloc(nameBytes.length);
+    mod.HEAPU8.set(nameBytes, namePtr);
+
+    const [major, minor, patch] = version.split('.').map(Number);
+
+    // Try load_recording_with_version first, fallback to load_recording
+    let durationMs: number;
+    try {
+      durationMs = mod.ccall('load_recording_with_version', 'number',
+        ['number', 'number', 'number', 'number', 'number', 'number'],
+        [ptr, data.length, namePtr, major, minor, patch]
+      ) as number;
+    } catch {
+      // Fallback: old WASM without load_recording_with_version
+      console.log('[TibiarcPlayer] load_recording_with_version not available, using load_recording');
+      durationMs = mod.ccall('load_recording', 'number',
+        ['number', 'number', 'number'],
+        [ptr, data.length, namePtr]
+      ) as number;
+    }
+
+    mod._free(ptr);
+    mod._free(namePtr);
+
+    if (durationMs === -1) {
+      // Version detection failed, ask user
+      pendingFileRef.current = { data, name };
+      setState('need-version');
+      return;
+    }
+
+    if (!durationMs) {
+      setErrorMsg(t('camPlayer.loadError'));
+      setState('error');
+      return;
+    }
+
+    setDuration(durationMs);
+    setProgress(0);
+    setState('paused');
+  }, [t]);
+
   const handleFileSelect = useCallback(async (file: File) => {
     const validExtensions = ['.cam', '.rec', '.tmv2', '.trp', '.ttm', '.yatc', '.recording'];
     const ext = '.' + file.name.split('.').pop()?.toLowerCase();
@@ -155,44 +230,29 @@ const TibiarcPlayer = ({ className }: TibiarcPlayerProps) => {
     setErrorMsg('');
 
     try {
-      const mod = await loadWasmModule();
-      setState('loading-cam');
-
+      await loadWasmModule();
       const buffer = await file.arrayBuffer();
       const data = new Uint8Array(buffer);
-
-      const ptr = mod._malloc(data.length);
-      mod.HEAPU8.set(data, ptr);
-
-      // Allocate string for filename
-      const encoder = new TextEncoder();
-      const nameBytes = encoder.encode(file.name + '\0');
-      const namePtr = mod._malloc(nameBytes.length);
-      mod.HEAPU8.set(nameBytes, namePtr);
-
-      const durationMs = mod.ccall('load_recording', 'number',
-        ['number', 'number', 'number'],
-        [ptr, data.length, namePtr]
-      ) as number;
-
-      mod._free(ptr);
-      mod._free(namePtr);
-
-      if (!durationMs) {
-        setErrorMsg(t('camPlayer.loadError'));
-        setState('error');
-        return;
-      }
-
-      setDuration(durationMs);
-      setProgress(0);
-      setState('paused');
+      await loadRecordingWithVersion(data, file.name, selectedVersion);
     } catch (err) {
       console.error('Failed to load recording:', err);
       setErrorMsg(err instanceof Error ? err.message : t('camPlayer.loadError'));
       setState('error');
     }
-  }, [loadWasmModule, t]);
+  }, [loadWasmModule, loadRecordingWithVersion, selectedVersion, t]);
+
+  const handleRetryWithVersion = useCallback(async () => {
+    const pending = pendingFileRef.current;
+    if (!pending || selectedVersion === '0.0.0') return;
+
+    try {
+      await loadRecordingWithVersion(pending.data, pending.name, selectedVersion);
+    } catch (err) {
+      console.error('Failed to load recording:', err);
+      setErrorMsg(err instanceof Error ? err.message : t('camPlayer.loadError'));
+      setState('error');
+    }
+  }, [selectedVersion, loadRecordingWithVersion, t]);
 
   const handleDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault();
@@ -255,6 +315,21 @@ const TibiarcPlayer = ({ className }: TibiarcPlayerProps) => {
 
   return (
     <div className={`flex flex-col gap-4 ${className}`}>
+      {/* Version selector */}
+      <div className="max-w-[800px] mx-auto w-full flex items-center gap-3">
+        <label className="text-sm text-muted-foreground whitespace-nowrap">Tibia Version:</label>
+        <Select value={selectedVersion} onValueChange={setSelectedVersion}>
+          <SelectTrigger className="w-[160px] border-border/50">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {TIBIA_VERSIONS.map(v => (
+              <SelectItem key={v.value} value={v.value}>{v.label}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+
       {/* Canvas / Upload Area */}
       <div
         className="relative w-full aspect-[4/3] max-w-[800px] mx-auto bg-black rounded-sm overflow-hidden border-2 border-border/50"
@@ -308,6 +383,28 @@ const TibiarcPlayer = ({ className }: TibiarcPlayerProps) => {
                 if (file) handleFileSelect(file);
               }}
             />
+          </div>
+        )}
+
+        {/* Need version overlay */}
+        {state === 'need-version' && (
+          <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/80 gap-4">
+            <div className="text-center space-y-3 max-w-md">
+              <p className="text-gold font-heading text-lg">
+                Versão não detectada
+              </p>
+              <p className="text-muted-foreground text-sm">
+                Não foi possível detectar a versão do Tibia automaticamente. Selecione a versão acima e clique em "Carregar".
+              </p>
+              <Button
+                variant="outline"
+                className="mt-2 border-gold/50 text-gold hover:bg-gold/10"
+                onClick={handleRetryWithVersion}
+                disabled={selectedVersion === '0.0.0'}
+              >
+                Carregar com versão {selectedVersion !== '0.0.0' ? TIBIA_VERSIONS.find(v => v.value === selectedVersion)?.label : '...'}
+              </Button>
+            </div>
           </div>
         )}
 
@@ -388,6 +485,7 @@ const TibiarcPlayer = ({ className }: TibiarcPlayerProps) => {
             {state === 'playing' && t('camPlayer.playing')}
             {state === 'paused' && t('camPlayer.paused')}
             {state === 'error' && t('camPlayer.loadError')}
+            {state === 'need-version' && 'Selecione a versão'}
           </div>
         </div>
       </div>
