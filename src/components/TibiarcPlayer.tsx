@@ -505,8 +505,12 @@ const TibiarcPlayer = ({ className }: TibiarcPlayerProps) => {
               <ChevronUp className="w-3.5 h-3.5" />
             </Button>
             <Badge variant="outline" className="min-w-[70px] justify-center text-xs font-mono">
-              Floor {engineRef.current ? Math.max(0, Math.min(15, engineRef.current.gs.camZ + floorOffset)) : '?'}
-              {floorOffset !== 0 && ` (${floorOffset > 0 ? '+' : ''}${floorOffset})`}
+              {(() => {
+                const realZ = engineRef.current ? Math.max(0, Math.min(15, engineRef.current.gs.camZ + floorOffset)) : null;
+                if (realZ === null) return 'Floor ?';
+                const display = 7 - realZ;
+                return `Floor ${display > 0 ? '+' : ''}${display}`;
+              })()}
             </Badge>
             <Button
               variant="outline"
