@@ -460,37 +460,78 @@ export class PacketParser {
   }
 
   // --- Standalone creature opcodes (top-level in .cam frames) ---
+  // These are defensive: validate marker bytes and rollback on mismatch
 
   private standaloneCreatureFull(r: Buf) {
-    // Same as addThing with CR_FULL but position comes as pos3 before creature data
-    const [x, y, z] = this.pos3(r);
-    r.u8(); // stackPos
-    const marker = r.u16(); // should be 0x61
-    const c = this.readCreatureFull(r);
-    c.x = x; c.y = y; c.z = z;
-    const tile = this.gs.getTile(x, y, z);
-    tile.push(['cr', c.id]);
-    this.gs.setTile(x, y, z, tile);
+    const savedPos = r.pos;
+    try {
+      const [x, y, z] = this.pos3(r);
+      r.u8(); // stackPos
+      const marker = r.u16();
+      if (marker !== CR_FULL) {
+        // Marker mismatch — rollback and let error recovery handle it
+        r.pos = savedPos;
+        return;
+      }
+      const c = this.readCreatureFull(r);
+      if (!c || !this.dat.outfits.has(c.outfit) && c.outfit > 0) {
+        // Sanity: invalid looktype, creature still stored but log it
+        if (this.unknownWarnCount < 20) {
+          this.unknownWarnCount++;
+          console.warn(`[PacketParser] standaloneCreatureFull: invalid outfit ${c?.outfit} for ${c?.name}`);
+        }
+      }
+      if (c) {
+        c.x = x; c.y = y; c.z = z;
+        const tile = this.gs.getTile(x, y, z);
+        tile.push(['cr', c.id]);
+        this.gs.setTile(x, y, z, tile);
+      }
+    } catch {
+      r.pos = savedPos + 1; // skip 1 byte for recovery
+    }
   }
 
   private standaloneCreatureKnown(r: Buf) {
-    const [x, y, z] = this.pos3(r);
-    r.u8(); // stackPos
-    const marker = r.u16(); // should be 0x62
-    this.readCreatureKnown(r, x, y, z);
+    const savedPos = r.pos;
+    try {
+      const [x, y, z] = this.pos3(r);
+      r.u8(); // stackPos
+      const marker = r.u16();
+      if (marker !== CR_KNOWN) {
+        r.pos = savedPos;
+        return;
+      }
+      this.readCreatureKnown(r, x, y, z);
+    } catch {
+      r.pos = savedPos + 1;
+    }
   }
 
   private standaloneCreatureTurn(r: Buf) {
-    // chgThing format: pos3 + stackPos + peek marker + creature turn data
-    const [x, y, z] = this.pos3(r);
-    const sp = r.u8();
-    const marker = r.u16(); // should be 0x63
-    const cid = r.u32();
-    const dir = r.u8();
-    const c = this.gs.creatures.get(cid);
-    if (c) {
-      c.direction = dir;
-      c.x = x; c.y = y; c.z = z;
+    const savedPos = r.pos;
+    try {
+      const [x, y, z] = this.pos3(r);
+      const sp = r.u8();
+      const marker = r.u16();
+      if (marker !== CR_OLD) {
+        r.pos = savedPos;
+        return;
+      }
+      const cid = r.u32();
+      const dir = r.u8();
+      if (dir > 3) {
+        // Invalid direction — likely parse misalignment
+        r.pos = savedPos;
+        return;
+      }
+      const c = this.gs.creatures.get(cid);
+      if (c) {
+        c.direction = dir;
+        c.x = x; c.y = y; c.z = z;
+      }
+    } catch {
+      r.pos = savedPos + 1;
     }
   }
 

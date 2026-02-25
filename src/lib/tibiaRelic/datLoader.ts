@@ -21,6 +21,7 @@ export interface ItemType {
   isHangable: boolean;
   isVertical: boolean;
   isHorizontal: boolean;
+  dontHide: boolean;
   speed: number;
   elevation: number;
   dispX: number;
@@ -36,6 +37,7 @@ function createItemType(): ItemType {
     isGround: false, isBlocking: false,
     isStackable: false, isFluid: false, isSplash: false,
     isHangable: false, isVertical: false, isHorizontal: false,
+    dontHide: false,
     speed: 0, elevation: 0, dispX: 0, dispY: 0, stackPrio: 5,
   };
 }
@@ -124,7 +126,7 @@ export class DatLoader {
       else if (flag === 0x13) { it.isHorizontal = true; }
       else if (flag === 0x14) { /* rotateable */ }
       else if (flag === 0x15) { p += 4; /* light u16+u16 */ }
-      else if (flag === 0x16) { /* dontHide */ }
+      else if (flag === 0x16) { it.dontHide = true; }
       else if (flag === 0x17) { /* translucent */ }
       else if (flag === 0x18) {
         it.dispX = view.getUint16(p, true); it.dispY = view.getUint16(p + 2, true); p += 4;

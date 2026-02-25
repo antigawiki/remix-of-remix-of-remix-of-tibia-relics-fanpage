@@ -1,6 +1,8 @@
 /**
  * Renderer Canvas - draws game viewport
  * Multi-floor rendering with NW perspective offset, elevation, stack priority passes, and outfit tinting
+ * Color system: 8-bit color conversion matching tibiarc/OTClient (6x6x6 RGB cube)
+ * Mask channels: Head=Yellow, Body=Red, Legs=Green, Feet=Blue (OTClient standard)
  */
 import { SprLoader } from './sprLoader';
 import { DatLoader, type ItemType } from './datLoader';
@@ -10,27 +12,16 @@ const VP_W = 15, VP_H = 11;
 const TILE_PX = 32;
 const DIR_MAP: Record<number, number> = { 0: 0, 1: 1, 2: 2, 3: 3 };
 
-// Tibia outfit color palette (HSL-based, 133 colors indexed 0-132)
-const OUTFIT_COLORS: [number, number, number][] = buildOutfitColorTable();
-
-function buildOutfitColorTable(): [number, number, number][] {
-  // Standard Tibia color palette - 19 hues x 7 shades = 133 colors
-  const table: [number, number, number][] = [];
-  const hues = [0, 15, 27, 38, 52, 66, 80, 95, 114, 135, 160, 186, 210, 230, 248, 268, 285, 303, 330];
-  const saturations = [100, 100, 80, 60, 100, 80, 50];
-  const lightnesses = [20, 35, 50, 65, 80, 90, 95];
-
-  for (let h = 0; h < 19; h++) {
-    for (let s = 0; s < 7; s++) {
-      table.push([hues[h], saturations[s], lightnesses[s]]);
-    }
-  }
-  return table;
-}
-
-function getOutfitColor(index: number): [number, number, number] {
-  if (index < 0 || index >= OUTFIT_COLORS.length) return [0, 0, 50];
-  return OUTFIT_COLORS[index];
+/**
+ * Convert 8-bit Tibia outfit color index to RGB.
+ * Matches tibiarc's Convert8BitColor: 6x6x6 RGB cube (0-215) + grayscale fallback.
+ */
+function convert8BitColor(color: number): [number, number, number] {
+  if (color < 0 || color > 215) return [128, 128, 128];
+  const r = Math.floor(color / 36);
+  const g = Math.floor((color % 36) / 6);
+  const b = color % 6;
+  return [r * 51, g * 51, b * 51];
 }
 
 export class Renderer {
@@ -142,8 +133,6 @@ export class Renderer {
         this.drawCreatureHud(sx, sy, c, tpx);
       }
     }
-
-    // Messages and debug text removed per user request
   }
 
   private getVisibleFloors(z: number): number[] {
@@ -166,9 +155,9 @@ export class Renderer {
   }
 
   /**
-   * OTClient-style first visible floor detection.
-   * Checks if there are roof/ground tiles on floors above the camera.
-   * If a roof is found, we stop rendering floors above it to avoid covering interiors.
+   * OTClient/tibiarc-style first visible floor detection.
+   * Checks tiles above the camera for roof/ground coverage.
+   * Also considers NW diagonal offset (covered-up perspective) and dontHide flag.
    */
   private calcFirstVisibleFloor(z: number): number {
     if (z > 7) return Math.max(z - 2, 8);
@@ -200,12 +189,17 @@ export class Renderer {
     return firstFloor;
   }
 
-  /** Check if a tile contains a ground item (roof) that would cover floors below */
+  /**
+   * Check if a tile covers floors below (acts as roof/ceiling).
+   * Considers ground tiles and stack priority 2 items, but respects dontHide flag.
+   */
   private tileCoversFloor(items: TileItem[]): boolean {
     for (const item of items) {
       if (item[0] !== 'it') continue;
       const it = this.dat.items.get(item[1]);
-      if (it && it.isGround) return true;
+      if (!it) continue;
+      if (it.dontHide) continue;
+      if (it.isGround || it.stackPrio === 2) return true;
     }
     return false;
   }
@@ -250,30 +244,37 @@ export class Renderer {
       const dispXPx = Math.round(ot.dispX * scale);
       const dispYPx = Math.round(ot.dispY * scale);
 
-      // Draw all layers (layer 0 = base, layer 1 = mask for tinting)
-      for (let layer = 0; layer < L; layer++) {
+      // Draw base layer (layer 0) first
+      for (let th = 0; th < H; th++) {
+        for (let tw = 0; tw < W; tw++) {
+          const patX = xd % PX;
+          const patY = 0;
+          const idx = ((((((a * PZ + 0) * PY + patY) * PX + patX) * L + 0) * H + th) * W + tw);
+          const sid = (idx < ot.spriteIds.length) ? ot.spriteIds[idx] : 0;
+          const sprCanvas = this.getSpriteCanvas(sid, tpx);
+          if (sprCanvas) {
+            const dx = bx - tw * tpx + dispXPx;
+            const dy = by - th * tpx + dispYPx;
+            this.ctx.drawImage(sprCanvas, dx, dy);
+            rendered = true;
+          }
+        }
+      }
+
+      // Draw tinted mask layer (layer 1) if outfit has 2+ layers
+      if (L >= 2) {
         for (let th = 0; th < H; th++) {
           for (let tw = 0; tw < W; tw++) {
-            // patX = direction, patY = addon (0=base, 1=first addon, 2=second addon)
             const patX = xd % PX;
-            const patY = 0; // base outfit, no addons for now
-            const idx = ((((((a * PZ + 0) * PY + patY) * PX + patX) * L + layer) * H + th) * W + tw);
+            const patY = 0;
+            const idx = ((((((a * PZ + 0) * PY + patY) * PX + patX) * L + 1) * H + th) * W + tw);
             const sid = (idx < ot.spriteIds.length) ? ot.spriteIds[idx] : 0;
-
-            if (layer === 0) {
-              const sprCanvas = this.getSpriteCanvas(sid, tpx);
-              if (sprCanvas) {
-                const dx = bx - tw * tpx + dispXPx;
-                const dy = by - th * tpx + dispYPx;
-                this.ctx.drawImage(sprCanvas, dx, dy);
-                rendered = true;
-              }
-            } else if (layer === 1 && L >= 2) {
-              const sprCanvas = this.getSpriteCanvas(sid, tpx);
-              if (sprCanvas) {
-                this.drawTintedLayer(sprCanvas, bx - tw * tpx + dispXPx, by - th * tpx + dispYPx, tpx, c, sid);
-                rendered = true;
-              }
+            const sprCanvas = this.getSpriteCanvas(sid, tpx);
+            if (sprCanvas) {
+              const dx = bx - tw * tpx + dispXPx;
+              const dy = by - th * tpx + dispYPx;
+              this.drawTintedLayer(sprCanvas, dx, dy, tpx, c, sid);
+              rendered = true;
             }
           }
         }
@@ -290,15 +291,18 @@ export class Renderer {
   }
 
   /**
-   * Draw tinted outfit mask layer.
-   * The mask sprite uses specific color channels to indicate which body part to tint:
-   * - Red channel → head color
-   * - Green channel → body color
-   * - Blue channel → legs color
-   * - Yellow (R+G) → feet color
+   * Draw tinted outfit mask layer using multiplicative tinting.
+   * OTClient/tibiarc standard mask channel mapping:
+   * - Yellow (R+G high, B low) → Head color
+   * - Red (R high, G+B low) → Body color
+   * - Green (G high, R+B low) → Legs color
+   * - Blue (B high, R+G low) → Feet color
+   * 
+   * Uses multiplicative blending: output = maskIntensity * tintColor
+   * This preserves shading/anti-aliasing instead of flat color replacement.
    */
   private drawTintedLayer(maskCanvas: HTMLCanvasElement, dx: number, dy: number, tpx: number, c: Creature, spriteId?: number) {
-    const cacheKey = `tint_${spriteId ?? 'unk'}_${c.head}_${c.body}_${c.legs}_${c.feet}`;
+    const cacheKey = `tint_${spriteId ?? 'unk'}_${c.head}_${c.body}_${c.legs}_${c.feet}_${tpx}`;
 
     let cached = this.tintCache.get(cacheKey);
     if (cached === undefined) {
@@ -311,31 +315,46 @@ export class Renderer {
       const imgData = tmpCtx.getImageData(0, 0, tpx, tpx);
       const data = imgData.data;
 
-      const headColor = getOutfitColor(c.head);
-      const bodyColor = getOutfitColor(c.body);
-      const legsColor = getOutfitColor(c.legs);
-      const feetColor = getOutfitColor(c.feet);
+      const headColor = convert8BitColor(c.head);
+      const bodyColor = convert8BitColor(c.body);
+      const legsColor = convert8BitColor(c.legs);
+      const feetColor = convert8BitColor(c.feet);
 
       for (let i = 0; i < data.length; i += 4) {
         const r = data[i], g = data[i + 1], b = data[i + 2], a = data[i + 3];
         if (a === 0) continue;
 
+        // Determine which body part this pixel belongs to based on dominant channel
+        // and compute the intensity from the mask pixel
         let color: [number, number, number] | null = null;
-        if (r > 128 && g < 64 && b < 64) color = headColor;       // Red → head
-        else if (g > 128 && r < 64 && b < 64) color = bodyColor;   // Green → body
-        else if (b > 128 && r < 64 && g < 64) color = legsColor;   // Blue → legs
-        else if (r > 128 && g > 128 && b < 64) color = feetColor;  // Yellow → feet
+        let intensity = 0;
+
+        if (r > 1 && g > 1 && b < r / 2 && b < g / 2) {
+          // Yellow (R+G high, B low) → Head
+          color = headColor;
+          intensity = (r + g) / (2 * 255);
+        } else if (r > 1 && g < r / 2 && b < r / 2) {
+          // Red dominant → Body
+          color = bodyColor;
+          intensity = r / 255;
+        } else if (g > 1 && r < g / 2 && b < g / 2) {
+          // Green dominant → Legs
+          color = legsColor;
+          intensity = g / 255;
+        } else if (b > 1 && r < b / 2 && g < b / 2) {
+          // Blue dominant → Feet
+          color = feetColor;
+          intensity = b / 255;
+        }
 
         if (color) {
-          const [h, s, l] = color;
-          const rgb = hslToRgb(h / 360, s / 100, l / 100);
-          data[i] = rgb[0];
-          data[i + 1] = rgb[1];
-          data[i + 2] = rgb[2];
+          // Multiplicative tint: preserve shading from mask intensity
+          data[i] = Math.min(255, Math.round(color[0] * intensity));
+          data[i + 1] = Math.min(255, Math.round(color[1] * intensity));
+          data[i + 2] = Math.min(255, Math.round(color[2] * intensity));
           // Keep original alpha
         } else {
-          // Non-matching pixels in the mask must be fully transparent
-          // Otherwise they overlay the base sprite causing ghostly appearance
+          // Non-matching pixels: make transparent (not part of any body region)
           data[i + 3] = 0;
         }
       }
@@ -410,7 +429,6 @@ export class Renderer {
     const nameColor = isPlayer ? '#00FF00' : '#64c8ff';
     ctx.font = `bold ${fs}px Arial`;
     ctx.textAlign = 'center';
-    // Draw text outline for readability
     ctx.strokeStyle = '#000000';
     ctx.lineWidth = 2;
     ctx.strokeText(c.name.substring(0, 16), px + tpx / 2, py - 7);
@@ -418,32 +436,8 @@ export class Renderer {
     ctx.fillText(c.name.substring(0, 16), px + tpx / 2, py - 7);
   }
 
-
   clearCache() {
     this.spriteCanvasCache.clear();
     this.tintCache.clear();
   }
-}
-
-/** Convert HSL to RGB */
-function hslToRgb(h: number, s: number, l: number): [number, number, number] {
-  let r: number, g: number, b: number;
-  if (s === 0) {
-    r = g = b = l;
-  } else {
-    const hue2rgb = (p: number, q: number, t: number) => {
-      if (t < 0) t += 1;
-      if (t > 1) t -= 1;
-      if (t < 1 / 6) return p + (q - p) * 6 * t;
-      if (t < 1 / 2) return q;
-      if (t < 2 / 3) return p + (q - p) * (2 / 3 - t) * 6;
-      return p;
-    };
-    const q = l < 0.5 ? l * (1 + s) : l + s - l * s;
-    const p = 2 * l - q;
-    r = hue2rgb(p, q, h + 1 / 3);
-    g = hue2rgb(p, q, h);
-    b = hue2rgb(p, q, h - 1 / 3);
-  }
-  return [Math.round(r * 255), Math.round(g * 255), Math.round(b * 255)];
 }
