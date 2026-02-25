@@ -1,5 +1,5 @@
 /**
- * Parser de pacotes do protocolo Tibia 7.72 (OTHire/TibiaRelic)
+ * Parser de pacotes do protocolo Tibia 7.4 (OTHire/TibiaRelic)
  */
 import { Buf } from './buf';
 import { DatLoader } from './datLoader';
@@ -39,6 +39,7 @@ export class PacketParser {
   }
 
   private loggedFirst = false;
+  private unknownWarnCount = 0;
 
   process(payload: Uint8Array) {
     const r = new Buf(payload);
@@ -46,15 +47,29 @@ export class PacketParser {
       const posBefore = r.pos;
       try {
         const t = r.u8();
-        this.dispatch(t, r);
+        if (!this.dispatch(t, r)) {
+          // Unknown opcode — stop processing this frame entirely.
+          // Byte-walking would only corrupt subsequent data.
+          r.pos = posBefore; // restore position for logging
+          if (this.unknownWarnCount < 20) {
+            this.unknownWarnCount++;
+            console.warn(`[PacketParser] unknown opcode 0x${t.toString(16)} at pos ${posBefore}, abandoning frame (${payload.length - posBefore} bytes left)`);
+          }
+          break;
+        }
       } catch (e) {
-        // On error, skip this byte and continue — don't lose sync
-        r.pos = posBefore + 1;
+        // Parse error — stop processing this frame to prevent cascading corruption
+        if (this.unknownWarnCount < 20) {
+          this.unknownWarnCount++;
+          console.warn(`[PacketParser] parse error at pos ${posBefore}, abandoning frame (${payload.length - posBefore} bytes left)`, e);
+        }
+        break;
       }
     }
   }
 
-  private dispatch(t: number, r: Buf) {
+  /** Returns true if opcode was handled, false if unknown */
+  private dispatch(t: number, r: Buf): boolean {
     const g = this.gs;
     // Map
     if (t === 0x64) this.mapDesc(r);
@@ -69,6 +84,8 @@ export class PacketParser {
     else if (t === 0x6d) this.moveCr(r);
     // Login
     else if (t === 0x0a) this.login(r);
+    else if (t === 0x0b) { /* GM actions - no data in 7.4 cam recordings */ }
+    else if (t === 0x0f) r.skip16(); // FYI message (str16)
     else if (t === 0x1e) { /* ping */ }
     // Container
     else if (t === 0x6e) this.openCont(r);
@@ -79,50 +96,65 @@ export class PacketParser {
     // Inventory
     else if (t === 0x78) { r.u8(); this.skipItem(r); }
     else if (t === 0x79) r.u8();
-    // Trade
+    // NPC Trade
+    else if (t === 0x7a) this.skipNpcTrade(r);
+    else if (t === 0x7b) this.skipNpcTradeAck(r);
+    else if (t === 0x7c) { /* close npc trade - no data */ }
+    // Player Trade
     else if (t === 0x7d) this.skipTrade(r);
     else if (t === 0x7e || t === 0x7f) { /* no data */ }
-    // Effects/light
+    // World light
     else if (t === 0x82) { r.u8(); r.u8(); }
-    else if (t === 0x83) { r.skip(5); r.u8(); }
-    else if (t === 0x84) { r.skip(5); r.u8(); r.skip16(); }
-    else if (t === 0x85) { r.skip(5); r.skip(5); r.u8(); }
+    // Effects/projectiles
+    else if (t === 0x83) { r.skip(5); r.u8(); } // magic effect
+    else if (t === 0x84) { r.skip(5); r.u8(); r.skip16(); } // animated text
+    else if (t === 0x85) { r.skip(5); r.skip(5); r.u8(); } // distance shot
     // Creature updates
-    else if (t === 0x86) { r.u32(); r.u8(); }
+    else if (t === 0x86) { r.u32(); r.u8(); } // creature square
     else if (t === 0x8c) { const cid = r.u32(); const hp = r.u8(); const c = g.creatures.get(cid); if (c) c.health = hp; }
-    else if (t === 0x8d) { r.u32(); r.u8(); r.u8(); }
-    else if (t === 0x8e) { r.u32(); this.skipOutfit(r); }
-    else if (t === 0x8f) { r.u32(); r.u16(); }
-    else if (t === 0x90) { r.u32(); r.u8(); r.u8(); }
-    else if (t === 0x91) { r.u32(); r.u8(); }
-    // Text
+    else if (t === 0x8d) { r.u32(); r.u8(); r.u8(); } // creature light
+    else if (t === 0x8e) { r.u32(); this.skipOutfit(r); } // creature outfit
+    else if (t === 0x8f) { r.u32(); r.u16(); } // creature speed
+    else if (t === 0x90) { r.u32(); r.u8(); } // creature skull
+    else if (t === 0x91) { r.u32(); r.u8(); } // creature shield
+    // Text windows
     else if (t === 0x96) { r.u32(); this.skipItem(r); r.u16(); r.skip16(); r.u16(); r.skip16(); }
     else if (t === 0x97) { r.u8(); r.u32(); r.skip16(); }
-    else if (t === 0xa0) r.skip(20);
-    else if (t === 0xa1) r.skip(14);
-    else if (t === 0xa2) r.u16();
+    // Player pos
+    else if (t === 0x9a) { const [x, y, z] = this.pos3(r); g.camX = x; g.camY = y; g.camZ = z; }
+    // Player stats / skills / icons
+    else if (t === 0xa0) r.skip(20); // stats
+    else if (t === 0xa1) r.skip(14); // skills
+    else if (t === 0xa2) r.u16(); // player icons/conditions
     else if (t === 0xa3) { /* cancelTarget */ }
+    // Chat / Channels
     else if (t === 0xaa) this.talk(r);
-    else if (t === 0xab) { r.u32(); r.u8(); r.skip16(); }
-    else if (t === 0xac) { r.u16(); r.skip16(); }
-    else if (t === 0xad) r.skip16();
-    else if (t === 0xae) { r.u16(); r.skip16(); r.skip16(); r.u32(); }
-    else if (t === 0xaf) r.skip16();
-    else if (t === 0xb0) r.skip16();
+    else if (t === 0xab) { r.u32(); r.u8(); r.skip16(); } // channel event
+    else if (t === 0xac) { r.u16(); r.skip16(); } // open channel
+    else if (t === 0xad) r.skip16(); // open private channel
+    else if (t === 0xae) { r.u16(); r.skip16(); r.skip16(); r.u32(); } // rule violation
+    else if (t === 0xaf) r.skip16(); // rule violation
+    else if (t === 0xb0) r.skip16(); // rule violation
     else if (t === 0xb1) { /* lockViolation */ }
     else if (t === 0xb2) { r.u16(); r.skip16(); }
     else if (t === 0xb3) r.u16();
     else if (t === 0xb4) this.textMsg(r);
-    else if (t === 0xb5) r.u8();
-    else if (t === 0xc8) this.skipOutfit(r);
+    else if (t === 0xb5) r.u8(); // cancel walk
+    // Floor change
+    else if (t === 0xbe) this.floorUp(r);
+    else if (t === 0xbf) this.floorDown(r);
+    // Outfit dialog
+    else if (t === 0xc8) this.skipOutfitWindow(r);
+    // VIP
     else if (t === 0xd2) { r.u32(); r.skip16(); r.u8(); }
     else if (t === 0xd3) r.u32();
     else if (t === 0xd4) r.u32();
-    // Player pos/floor
-    else if (t === 0x9a) { const [x, y, z] = this.pos3(r); g.camX = x; g.camY = y; g.camZ = z; }
-    else if (t === 0xbe || t === 0xbf) { /* moveUp/Down */ }
+    // Tutorial/quest
+    else if (t === 0xdc) r.u8(); // tutorial hint
+    // Error/MOTD
     else if (t === 0x14) { r.u16(); r.skip16(); }
-    else { console.warn(`[PacketParser] unknown opcode 0x${t.toString(16)} at pos ${r.pos}`); throw new Error('unknown'); }
+    else return false; // unknown opcode
+    return true;
   }
 
   // --- Handlers ---
@@ -136,32 +168,25 @@ export class PacketParser {
     this.gs.camX = x; this.gs.camY = y; this.gs.camZ = z;
     this.gs.mapLoaded = true;
     const posBefore = r.pos;
-    this.readBlock(r, x - 8, y - 6, z, 18, 14);
+    this.readArea(r, x - 8, y - 6, z, 18, 14);
     if (!this.loggedFirst) {
       this.loggedFirst = true;
       console.log(`[PacketParser] First mapDesc: cam=(${x},${y},${z}), bytes consumed=${r.pos - posBefore}`);
-      // Log first few tiles for debugging
-      for (let dy = 0; dy < 3; dy++) {
-        for (let dx = 0; dx < 3; dx++) {
-          const tile = this.gs.getTile(x - 8 + dx, y - 6 + dy, z);
-          console.log(`  tile(${dx},${dy}): ${JSON.stringify(tile.slice(0, 5))}`);
-        }
-      }
     }
   }
 
   private scroll(r: Buf, dx: number, dy: number) {
     const g = this.gs;
     g.camX += dx; g.camY += dy;
-    if (dx === 1) this.readBlock(r, g.camX + 9, g.camY - 6, g.camZ, 1, 14);
-    else if (dx === -1) this.readBlock(r, g.camX - 8, g.camY - 6, g.camZ, 1, 14);
-    else if (dy === 1) this.readBlock(r, g.camX - 8, g.camY + 7, g.camZ, 18, 1);
-    else if (dy === -1) this.readBlock(r, g.camX - 8, g.camY - 6, g.camZ, 18, 1);
+    if (dx === 1) this.readArea(r, g.camX + 9, g.camY - 6, g.camZ, 1, 14);
+    else if (dx === -1) this.readArea(r, g.camX - 8, g.camY - 6, g.camZ, 1, 14);
+    else if (dy === 1) this.readArea(r, g.camX - 8, g.camY + 7, g.camZ, 18, 1);
+    else if (dy === -1) this.readArea(r, g.camX - 8, g.camY - 6, g.camZ, 18, 1);
   }
 
   private tileUpd(r: Buf) {
     const [x, y, z] = this.pos3(r);
-    this.readBlock(r, x, y, z, 1, 1);
+    this.readArea(r, x, y, z, 1, 1);
   }
 
   private addThing(r: Buf) {
@@ -253,10 +278,80 @@ export class PacketParser {
     for (let i = 0; i < n; i++) this.skipItem(r);
   }
 
+  private skipNpcTrade(r: Buf) {
+    const n = r.u8(); // item count (u8 in 7.4)
+    for (let i = 0; i < n; i++) {
+      r.u16(); // item id
+      r.u8();  // subtype
+      r.skip16(); // name
+      r.u32(); // weight
+      r.u32(); // buy price
+      r.u32(); // sell price
+    }
+  }
+
+  private skipNpcTradeAck(r: Buf) {
+    r.u32(); // money
+    // Items the player has for sale
+    const n = r.u8();
+    for (let i = 0; i < n; i++) {
+      r.u16(); // item id
+      r.u16(); // count
+    }
+  }
+
   private skipTrade(r: Buf) {
     r.skip16(); // player name
     const n = r.u8();
     for (let i = 0; i < n; i++) this.skipItem(r);
+  }
+
+  private skipOutfitWindow(r: Buf) {
+    // Current outfit
+    this.skipOutfit(r);
+    // Available outfits list (in 7.4: just start+end outfit id)
+    const start = r.u16();
+    const end = r.u16();
+    // Some versions have extended outfit list, but 7.4 just has start/end range
+    void start; void end;
+  }
+
+  private floorUp(r: Buf) {
+    const g = this.gs;
+    g.camZ--;
+    if (g.camZ === 7) {
+      // Going from underground to ground level
+      // Read 3 floors: 7, 6, 5 (ground + 2 above)
+      for (let z = 5; z >= 0; z--) {
+        // Each floor shifts the camera
+        this.readArea(r, g.camX - 8, g.camY - 6, z, 18, 14);
+      }
+    } else if (g.camZ > 7) {
+      // Underground floor change
+      this.readArea(r, g.camX - 8, g.camY - 6, g.camZ - 2, 18, 14);
+    } else {
+      // Above ground floor change
+      this.readArea(r, g.camX - 8, g.camY - 6, g.camZ - 2, 18, 14);
+    }
+    // After floor change, also update position
+    g.camX++; g.camY++;
+  }
+
+  private floorDown(r: Buf) {
+    const g = this.gs;
+    g.camZ++;
+    if (g.camZ === 8) {
+      // Going from ground to underground
+      for (let z = g.camZ; z <= g.camZ + 2 && z <= 15; z++) {
+        this.readArea(r, g.camX - 8, g.camY - 6, z, 18, 14);
+      }
+    } else if (g.camZ > 8 && g.camZ < 14) {
+      // Underground floor down
+      this.readArea(r, g.camX - 8, g.camY - 6, g.camZ + 2, 18, 14);
+    } else {
+      this.readArea(r, g.camX - 8, g.camY - 6, g.camZ + 2, 18, 14);
+    }
+    g.camX--; g.camY--;
   }
 
   private talk(r: Buf) {
@@ -371,7 +466,7 @@ export class PacketParser {
     return 0;
   }
 
-  private readBlock(r: Buf, ox: number, oy: number, z: number, W: number, H: number) {
+  private readArea(r: Buf, ox: number, oy: number, z: number, W: number, H: number) {
     let tileIdx = 0;
     const total = W * H;
     while (tileIdx < total && r.left() >= 2) {
@@ -379,9 +474,6 @@ export class PacketParser {
       const ty = Math.floor(tileIdx / W);
       const extra = this.readTileItems(r, ox + tx, oy + ty, z);
       tileIdx += 1 + extra;
-    }
-    if (!this.loggedFirst && tileIdx < total) {
-      console.warn(`[PacketParser] readBlock incomplete: read ${tileIdx}/${total} tiles`);
     }
   }
 }
