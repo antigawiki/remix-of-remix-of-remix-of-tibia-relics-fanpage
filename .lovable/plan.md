@@ -1,78 +1,84 @@
 
-# Fix: Sprites de criaturas trocados no Cam Player
+Objetivo: corrigir dois problemas que ainda aparecem em algumas .cam (como a que você enviou):  
+1) floor/câmera “derivando” depois de alguns minutos (área escura subindo),  
+2) outfit de monstros inconsistentes.
 
-## Problema identificado
+Diagnóstico consolidado (com base no código atual + referência OT/tibiacast):
+- A lógica de mudança de andar (0xBE/0xBF) no projeto está muito próxima da referência; o comportamento visual indica mais “dessincronização do stream” do que fórmula de floor errada.
+- O parser atual tem mecanismos agressivos que podem introduzir drift:
+  - fallback dinâmico de looktype u8/u16 por criatura,
+  - troca automática de modo em runtime,
+  - recuperação por “pular 1 byte e continuar” em opcodes desconhecidos.
+- Na referência (tibiacast/OT-like), leitura de outfit é determinística por versão:
+  - para 7.72, looktype é u16;
+  - não há troca adaptativa de largura no meio da sessão.
+- Sobre DAT: na referência, ZDiv (patZ) é feature de versão (>=7.55), aplicada nas categorias do type file; isso sugere que o caminho “patZ para tudo” não é, por si só, a causa principal do bug atual.
+- As imagens enviadas (faixa escura subindo + borda lateral repetida) são compatíveis com drift de posição/camZ após parsing desalinhado.
 
-O DAT loader usa o metodo `readItem` para parsear TODAS as categorias (items, outfits, efeitos, distancia). Esse metodo le um campo extra `patZ` (byte adicional do TibiaRelic) para todas as entradas. Porem, e muito provavel que o campo `patZ` so exista para **items**, nao para outfits/efeitos/distancia.
+Plano de implementação
 
-Quando o parser le um byte `patZ` que nao existe para outfits:
-1. O byte que deveria ser `anim` e lido como `patZ`
-2. O primeiro byte do primeiro sprite ID e lido como `anim`
-3. A contagem de sprites fica errada
-4. A posicao de leitura desloca, e TODOS os outfits subsequentes sao lidos da posicao errada
-5. Resultado: outfit do rotworm contem sprite IDs do tigre, outfit do elf NPC contem sprite IDs de outra criatura
+1) Fixar protocolo de outfit para TibiaRelic (determinístico)
+- Arquivo: `src/components/TibiarcPlayer.tsx`
+- Remover a detecção heurística de modo u8/u16 para .cam TibiaRelic.
+- Inicializar `PacketParser` sempre em modo u16 para looktype/outfit-window nesse player.
+- Resultado esperado: elimina leitura intermitente de looktype com largura errada.
 
-Isso explica porque:
-- **Corpos mortos** (items) renderizam corretamente: items tem patZ e sao parseados primeiro
-- **Criaturas vivas** mostram sprites errados: outfits nao tem patZ mas o parser le um byte extra, causando drift cascateante
+2) Simplificar `readOutfit` no parser (sem fallback adaptativo)
+- Arquivo: `src/lib/tibiaRelic/packetParser.ts`
+- Remover:
+  - fallback alternando u8/u16 por criatura,
+  - contadores/hits e auto-swap de modo.
+- Manter leitura estrita:
+  - `outfitId` no formato fixo do protocolo da sessão,
+  - `id===0` trata outfit por item,
+  - 4 cores em sequência.
+- Resultado esperado: evitar consumo de bytes inconsistente dentro de updates de criatura (principal fonte de outfit “trocado”).
 
-## Plano de implementacao
+3) Tornar leitura de buffer estrita (falha rápida, sem lixo silencioso)
+- Arquivo: `src/lib/tibiaRelic/buf.ts`
+- Adicionar checagem de limites em `u8/u16/u32/str16` e lançar erro com contexto (posição/tamanho restante) quando faltar dado.
+- Hoje `u8` fora de faixa pode retornar valor inválido sem exceção; isso favorece drift silencioso.
+- Resultado esperado: erro controlado em frame ruim, sem contaminar estado global.
 
-### 1. Separar leitura de dimensoes com/sem patZ no DatLoader
+4) Mudar estratégia de recuperação de erro para nível de pacote/frame (não byte a byte)
+- Arquivo: `src/lib/tibiaRelic/packetParser.ts`
+- Substituir recuperação por “skip 1 byte” em loop por abordagem mais segura:
+  - ao detectar opcode inválido/erro de bounds, abortar o restante do pacote/frame atual;
+  - retomar no próximo frame normalmente.
+- Manter logging diagnóstico com limite para não poluir console.
+- Resultado esperado: evitar que um erro local se transforme em sequência de opcodes falsos (incluindo floor up/down fantasma).
 
-Modificar `datLoader.ts` para aceitar um parametro indicando se deve ler patZ:
-- `readItem(bytes, view, p, hasPatZ)` - adicionar parametro booleano
-- Items: `hasPatZ = true`
-- Outfits, efeitos, distancia: `hasPatZ = false`
+5) Guard-rails de câmera/floor para impedir estado impossível
+- Arquivo: `src/lib/tibiaRelic/packetParser.ts`
+- Em `floorUp/floorDown` e opcode de posição (`0x9A`), aplicar clamp de `camZ` para [0..15].
+- Se ocorrer tentativa de ultrapassar limite, registrar warning e ignorar ajuste inválido.
+- Resultado esperado: mesmo com frame ruim, não deixa `camZ` escapar e “arrastar” renderização inteira.
 
-Quando `hasPatZ = false`, pular a leitura do byte patZ e usar patZ=1 como padrao.
+6) Verificação específica do problema reportado + outfit de monstros
+- Testar primeiro com `Exploração_Ank.cam` e `2026-02-20-07-31-15-2.cam`:
+  - ponto crítico após ~03:00 e trecho ~05:20 (onde começa a faixa escura),
+  - confirmar que o floor não deriva e não vira valor impossível.
+- Confirmar outfits:
+  - checar logs de looktype/cores em criaturas visíveis,
+  - validar que o ID lido corresponde a outfit existente no DAT sem fallback “mágico”.
+- Se restar divergência pontual:
+  - adicionar log temporário de “último opcode válido + posição no payload” para identificar pacote específico que quebra.
 
-### 2. Adicionar verificacao de outfits no DatLoader
+Sequenciamento recomendado
+1. Fixar modo u16 no player e remover auto-swap/fallback de outfit.  
+2. Endurecer `Buf` com bounds checks.  
+3. Trocar recuperação de erro para abortar pacote/frame.  
+4. Adicionar clamps/guard-rails de `camZ`.  
+5. Rodar validação com as cams problemáticas e ajustar logs temporários.
 
-Adicionar ao metodo `verify()` checagens para outfits conhecidos, similar ao que ja existe para items. Logar os primeiros sprite IDs de alguns outfits para validacao visual no console.
+Riscos e mitigação
+- Risco: abortar frame em erro pode causar pequenos “saltos” visuais em gravações corrompidas.
+  - Mitigação: melhor salto pontual do que drift progressivo que destrói a cena inteira.
+- Risco: algumas .cam fora do perfil TibiaRelic dependerem de heurística antiga.
+  - Mitigação: manter esse player explicitamente focado em TibiaRelic 7.72; se necessário, criar modo alternativo manual no futuro.
+- Risco: regressão em arquivo que hoje “funciona por sorte”.
+  - Mitigação: validar em lote com cams conhecidas (boas e ruins) antes de encerrar.
 
-### 3. Remover fallback `resolveOutfit` do Renderer
-
-O metodo `resolveOutfit` que busca outfits proximos (+-10 IDs) mascara o problema real e pode mapear para criaturas completamente erradas. Remover esse fallback - se um outfit nao tem sprites, mostrar o placeholder colorido em vez de uma criatura errada.
-
-### 4. Adicionar log diagnostico temporario
-
-Adicionar log no renderer para os primeiros creatures renderizados, mostrando: looktype, spriteIds do DAT, dimensoes do outfit. Isso confirma que o fix funcionou.
-
----
-
-### Detalhes tecnicos
-
-**datLoader.ts** - Mudanca principal:
-
-```typescript
-// No load(), passar hasPatZ para cada categoria:
-for (let i = 0; i < nItems; i++) {
-  const [it, np] = this.readItem(bytes, view, p, true);  // items TEM patZ
-  ...
-}
-for (let i = 0; i < nOutfits; i++) {
-  const [it, np] = this.readItem(bytes, view, p, false); // outfits NAO tem patZ
-  ...
-}
-// fx e dist tambem sem patZ
-```
-
-```typescript
-// Na leitura de dimensoes:
-it.patY = Math.max(1, Math.min(bytes[p], 8)); p++;
-if (hasPatZ) {
-  it.patZ = Math.max(1, Math.min(bytes[p], 8)); p++;
-} else {
-  it.patZ = 1; // padrao
-}
-it.anim = Math.max(1, Math.min(bytes[p], 32)); p++;
-```
-
-**renderer.ts** - Remover resolveOutfit:
-
-```typescript
-// Voltar a usar lookup direto
-const ot = this.dat.outfits.get(c.outfit);
-// Em vez de: const ot = this.resolveOutfit(c.outfit);
-```
+Detalhe técnico importante da sua suspeita (“talvez o ID esteja trocado”)
+- Pela referência de parser OT/tibiacast, não há tabela de “ID trocado” para monstros nesse ponto; o problema típico é largura de leitura (u8 vs u16) e consumo incorreto de bytes.  
+- Portanto, o foco correto é estabilizar o parsing de aparência/pacotes, não aplicar offset manual de IDs de outfit.
