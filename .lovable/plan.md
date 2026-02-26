@@ -1,67 +1,68 @@
 
 
-## Fix: Complete Creature Sprite Rendering
+## Diagnosticar e Corrigir Sprites de Criaturas Cortados
 
-### Root Cause
+### Problema
+Algumas criaturas (Stone Golems) aparecem completas, mas outras (Deer, Jon, Aelane) aparecem cortadas/parciais. Monstros mortos (itens) renderizam corretamente, o problema e apenas nos vivos (outfits).
 
-Two problems remain in how creatures are rendered:
+### Diagnostico
+O padrao observado (2x2 corretos, 1x1 cortados) sugere uma de duas causas:
 
-**1. Missing patZ layers (addon/overlay parts)**
+1. **Off-by-1 no item count** - Se `itemCount` esta errado por 1, todos os outfits ficam deslocados, mostrando sprites do looktype adjacente
+2. **Byte extra `exact_size` para outfits** - Se TibiaRelic inclui `exact_size` mesmo para outfits 1x1, o parser nao le esse byte, desalinhando tudo para 1x1 mas nao para 2x2 (que ja leem o byte)
+3. **`hasPatZ` incorreto para outfits** - Se outfits nao tem patZ no DAT, cada outfit le 1 byte a mais, corrompendo dims e sprites
 
-In OTClient/tibiarc, creature outfits can have multiple `patZ` layers that together compose the full creature appearance. For example, a creature with `patZ=2` has:
-- z=0: base body
-- z=1: overlay part (e.g., armor, accessories, extra body parts)
+### Plano de Implementacao
 
-Our renderer **hardcodes `patZ = 0`**, only drawing the base layer. Any creature whose outfit has `patZ > 1` will appear incomplete -- missing parts of its body.
+**1. Adicionar verificacao detalhada no DatLoader (datLoader.ts)**
+- Expandir `verify()` com mais outfits conhecidos e dimensoes esperadas:
+  - Looktype 1 (citizen): esperado 1x1, layers=2, patX=4, anim=2-3
+  - Looktype 36 (rotworm): esperado 1x1, layers=1, patX=4, anim=2-3
+  - Looktype 128 (player): esperado 1x1, layers=2, patX=4
+  - Looktype ~67 (stone golem): esperado 2x2, layers=1, patX=4
+- Logar dimensoes REAIS vs ESPERADAS para detectar shifts
 
-The fix: iterate through ALL `patZ` levels when drawing creatures, drawing each one on top of the previous. For each patZ level, both layer 0 (base) and layer 1 (tint mask) must be drawn.
+**2. Adicionar log diagnostico no renderer (renderer.ts)**
+- Nos primeiros 30 criaturas renderizadas, logar:
+  - nome, looktype, dims do outfit no DAT, spriteIds[0..3]
+  - Se dims nao batem com esperado (ex: deer com layers!=1 ou patX!=4), flaggar como suspeito
 
-**2. Item-based creature appearances (looktype = 0)**
+**3. Testar hipotese de `hasPatZ` para outfits (datLoader.ts)**
+- Separar o parametro `hasPatZ` entre items e outfits
+- Carregar outfits com `hasPatZ = false` como teste
+- Se os sprites ficarem corretos, confirma a hipotese
 
-When a creature has `looktype = 0`, the protocol sends a u16 item ID instead of outfit colors. This creature should be rendered using the **item sprite** from the items DAT section (like a corpse or object). Our code currently discards this item ID and falls back to default outfit 128, making these creatures show as generic citizens.
+**4. Testar hipotese de item count off-by-1 (datLoader.ts)**
+- Adicionar log comparando: ler com `itemMaxId - 100 + 1` vs `itemMaxId - 100`
+- Verificar se outfit 1 com count-1 tem sprites mais plausíveis
 
-The fix: store the item-based looktype in the Creature struct and render it using `drawItem` logic when `outfit = 0`.
+**5. Correcao baseada nos resultados**
+- Aplicar o fix que resolver o desalinhamento (provavelmente patZ ou count)
+- Validar que Stone Golems continuam corretos apos a mudanca
 
-### Changes
+### Detalhe Tecnico
 
-**File: `src/lib/tibiaRelic/gameState.ts`**
-- Add `outfitItem: number` field to the `Creature` interface and `createCreature()` function
-- This stores the item ID when a creature uses looktype=0
-
-**File: `src/lib/tibiaRelic/packetParser.ts`**
-- Update `readOutfit` to return the item ID when looktype=0
-- Update `updateCreatureCommon` to store the item ID in `c.outfitItem`
-
-**File: `src/lib/tibiaRelic/renderer.ts`**
-- **drawCreature**: Iterate through ALL patZ levels (z=0 to PZ-1), drawing both base layer and tint mask for each level
-- **drawCreature**: When `c.outfit === 0 && c.outfitItem > 0`, render the creature using the item's sprite data from `this.dat.items` instead of the outfit data
-- Current code (simplified):
-```text
-// Only draws patZ=0
-idx = ((((((a * PZ + 0) * PY + 0) * PX + patX) * L + layer) * H + th) * W + tw)
-```
-- Fixed code (simplified):
-```text
-// Draw ALL patZ levels
-for (let pz = 0; pz < PZ; pz++) {
-  idx = ((((((a * PZ + pz) * PY + 0) * PX + patX) * L + layer) * H + th) * W + tw)
-  // draw base layer (l=0)
-  // draw tint mask layer (l=1) if layers >= 2
-}
-```
-
-### Summary of rendering loop (after fix)
+O ponto chave e que `readEntry` e compartilhado entre items e outfits:
 
 ```text
-For each creature:
-  if outfit == 0 and outfitItem > 0:
-    draw as item sprite (same as ground items)
-  else if outfit found in DAT:
-    for each patZ level (z=0..PZ-1):
-      for each tile part (th, tw):
-        draw base sprite (layer 0)
-        draw tinted mask (layer 1, if exists)
-  else:
-    draw colored rectangle fallback
+readEntry(bytes, view, p, hasPatZ=true)
+  -> flags... 0xFF
+  -> width, height
+  -> [exact_size if w>1 or h>1]
+  -> layers, patX, patY
+  -> [patZ if hasPatZ]
+  -> anim
+  -> sprite IDs
 ```
+
+Se `hasPatZ` estiver errado para outfits, cada outfit consome 1 byte a mais, e:
+- patZ = valor real do anim
+- anim = primeiro byte do primeiro sprite ID
+- Sprites completamente errados
+
+Isso explicaria por que 2x2 (stone golem) pode parecer correto por coincidencia (o byte extra alinha diferente com exact_size) enquanto 1x1 fica cortado.
+
+### Arquivos a Modificar
+- `src/lib/tibiaRelic/datLoader.ts` - Diagnosticos + fix de hasPatZ/count
+- `src/lib/tibiaRelic/renderer.ts` - Log diagnostico de criaturas renderizadas
 
