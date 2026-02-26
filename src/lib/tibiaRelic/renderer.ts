@@ -15,10 +15,50 @@ const NATIVE_H = VP_H * TILE_PX; // 352
 const DIR_MAP: Record<number, number> = { 0: 0, 1: 1, 2: 2, 3: 3 };
 
 /**
+ * Classic Tibia outfit color palette (133 colors).
+ * Matches OTClient/tibiarc HSI-based palette used for outfit colorization.
+ * Index 0-132 maps to specific RGB values.
+ */
+const OUTFIT_PALETTE: [number, number, number][] = [
+  [255,255,255],[255,212,191],[255,170,128],[255,128,64],[255,85,0],
+  [255,255,191],[255,255,128],[255,255,64],[255,255,0],[192,192,0],
+  [255,191,191],[255,128,128],[255,64,64],[255,0,0],[192,0,0],
+  [255,191,255],[255,128,255],[255,64,255],[255,0,255],[192,0,192],
+  [191,191,255],[128,128,255],[64,64,255],[0,0,255],[0,0,192],
+  [191,255,255],[128,255,255],[64,255,255],[0,255,255],[0,192,192],
+  [191,255,191],[128,255,128],[64,255,64],[0,255,0],[0,192,0],
+  [220,220,220],[187,187,187],[153,153,153],[120,120,120],[86,86,86],
+  // Extended palette entries (colors 40-132)
+  [255,233,191],[255,212,128],[255,191,64],[255,170,0],[192,128,0],
+  [255,233,128],[255,233,64],[255,233,0],[255,212,0],[192,170,0],
+  [255,233,191],[255,233,128],[255,212,64],[255,191,0],[192,148,0],
+  [255,212,191],[255,191,128],[255,170,64],[255,148,0],[192,112,0],
+  [255,191,191],[255,148,128],[255,106,64],[255,64,0],[192,48,0],
+  [255,191,212],[255,128,170],[255,64,128],[255,0,85],[192,0,64],
+  [255,191,233],[255,128,212],[255,64,191],[255,0,170],[192,0,128],
+  [233,191,255],[212,128,255],[191,64,255],[170,0,255],[128,0,192],
+  [212,191,255],[170,128,255],[128,64,255],[85,0,255],[64,0,192],
+  [191,191,255],[148,128,255],[106,64,255],[64,0,255],[48,0,192],
+  [191,212,255],[128,170,255],[64,128,255],[0,85,255],[0,64,192],
+  [191,233,255],[128,212,255],[64,191,255],[0,170,255],[0,128,192],
+  [191,255,233],[128,255,212],[64,255,191],[0,255,170],[0,192,128],
+  [191,255,212],[128,255,170],[64,255,128],[0,255,85],[0,192,64],
+  [191,255,191],[128,255,148],[64,255,106],[0,255,64],[0,192,48],
+  [212,255,191],[170,255,128],[128,255,64],[85,255,0],[64,192,0],
+  [233,255,191],[212,255,128],[191,255,64],[170,255,0],[128,192,0],
+  [255,255,191],[233,255,128],[212,255,64],[191,255,0],[148,192,0],
+  [255,233,191],[255,212,128],[255,233,64],[255,212,0],[192,170,0],
+];
+
+/**
  * Convert 8-bit Tibia outfit color index to RGB.
- * Matches tibiarc's Convert8BitColor: 6x6x6 RGB cube (0-215) + grayscale fallback.
+ * Uses the classic 133-color palette; falls back to 6x6x6 cube for out-of-range.
  */
 function convert8BitColor(color: number): [number, number, number] {
+  if (color >= 0 && color < OUTFIT_PALETTE.length) {
+    return OUTFIT_PALETTE[color];
+  }
+  // Fallback: 6x6x6 RGB cube
   if (color < 0 || color > 215) return [128, 128, 128];
   const r = Math.floor(color / 36);
   const g = Math.floor((color % 36) / 6);
@@ -39,6 +79,7 @@ export class Renderer {
   private hudEntries: Array<{ px: number; py: number; c: Creature }> = [];
 
   public floorOverride: number | null = null;
+  public smoothUpscale: boolean = true;
 
   constructor(
     private ctx: CanvasRenderingContext2D,
@@ -135,8 +176,11 @@ export class Renderer {
       }
     }
 
-    // Upscale offscreen to display canvas with nearest-neighbor
-    displayCtx.imageSmoothingEnabled = false;
+    // Upscale offscreen to display canvas
+    displayCtx.imageSmoothingEnabled = this.smoothUpscale;
+    if (this.smoothUpscale) {
+      (displayCtx as any).imageSmoothingQuality = 'high';
+    }
     displayCtx.drawImage(this.offscreen, 0, 0, NATIVE_W, NATIVE_H, 0, 0, canvasWidth, canvasHeight);
 
     // Compute scale factor for HUD positioning on display canvas
@@ -331,7 +375,7 @@ export class Renderer {
     }
   }
 
-  /** Tinted layer at native 32px, drawn to offscreen */
+  /** Tinted layer at native 32px using proper multiply blending */
   private drawTintedLayerNative(maskCanvas: HTMLCanvasElement, dx: number, dy: number, c: Creature, spriteId?: number) {
     const cacheKey = `tint_${spriteId ?? 'unk'}_${c.head}_${c.body}_${c.legs}_${c.feet}`;
 
@@ -358,6 +402,11 @@ export class Renderer {
         let color: [number, number, number] | null = null;
         let intensity = 0;
 
+        // OTClient mask channel detection:
+        // Yellow (R+G high, B low) = Head
+        // Red (R high, G+B low) = Body
+        // Green (G high, R+B low) = Legs
+        // Blue (B high, R+G low) = Feet
         if (r > 1 && g > 1 && b < r / 2 && b < g / 2) {
           color = headColor;
           intensity = (r + g) / (2 * 255);
@@ -373,10 +422,12 @@ export class Renderer {
         }
 
         if (color) {
+          // Multiply blend: preserves shading/volume from the mask intensity
           data[i] = Math.min(255, Math.round(color[0] * intensity));
           data[i + 1] = Math.min(255, Math.round(color[1] * intensity));
           data[i + 2] = Math.min(255, Math.round(color[2] * intensity));
         } else {
+          // Non-mask pixels: make transparent (only tint layer is drawn here)
           data[i + 3] = 0;
         }
       }

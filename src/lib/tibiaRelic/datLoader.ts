@@ -63,7 +63,7 @@ export class DatLoader {
     const effectCount = effectMaxId;
     const missileCount = missileMaxId;
 
-    console.log(`[DatLoader] maxIds: items=${itemMaxId} outfits=${outfitMaxId} fx=${effectMaxId} dist=${missileMaxId} | counts: items=${itemCount} outfits=${outfitCount} fx=${effectCount} dist=${missileCount}`);
+    // Counts derived from maxIds
 
     for (let i = 0; i < itemCount; i++) {
       const [it, np] = this.readEntry(bytes, view, p, true);
@@ -87,43 +87,15 @@ export class DatLoader {
   }
 
   private verify() {
+    // Silent verification — only warn on mismatches
     const itemChecks: [number, number | null][] = [[102, 42], [408, 39], [870, 559]];
     for (const [id, expectedSpr] of itemChecks) {
       const it = this.items.get(id);
-      if (!it) { console.warn(`[DatLoader] MISSING item ${id}`); continue; }
+      if (!it) continue;
       const spr0 = it.spriteIds[0] ?? -1;
       if (expectedSpr !== null && spr0 !== expectedSpr) {
-        console.warn(`[DatLoader] item ${id}: sprite[0]=${spr0}, expected=${expectedSpr} — flags may be wrong`);
-      } else {
-        console.log(`[DatLoader] item ${id}: sprite[0]=${spr0} ✓`);
+        console.warn(`[DatLoader] item ${id}: sprite[0]=${spr0}, expected=${expectedSpr}`);
       }
-    }
-
-    // Extended outfit verification with EXPECTED dimensions
-    // Format: [id, name, expectedWidth, expectedHeight, expectedLayers, expectedPatX]
-    const outfitChecks: [number, string, number, number, number, number][] = [
-      [1,   'Citizen (first)',   1, 1, 2, 4],
-      [36,  'Rotworm',           1, 1, 1, 4],
-      [67,  'Stone Golem',       2, 2, 1, 4],
-      [128, 'Player outfit',     1, 1, 2, 4],
-      [2,   'Outfit 2',          1, 1, 2, 4],
-      [10,  'Outfit 10',         1, 1, -1, 4],
-      [50,  'Outfit 50',         1, 1, -1, 4],
-    ];
-    for (const [id, name, ew, eh, el, epx] of outfitChecks) {
-      const ot = this.outfits.get(id);
-      if (!ot) { console.warn(`[DatLoader] MISSING outfit ${id} (${name})`); continue; }
-      const dimsMatch = (ot.width === ew && ot.height === eh && (el === -1 || ot.layers === el) && ot.patX === epx);
-      const tag = dimsMatch ? '✓' : '⚠ MISMATCH';
-      console.log(`[DatLoader] outfit ${id} (${name}) ${tag}: dims=${ot.width}x${ot.height} (exp ${ew}x${eh}), layers=${ot.layers} (exp ${el}), patX=${ot.patX} (exp ${epx}), patY=${ot.patY}, patZ=${ot.patZ}, anim=${ot.anim}, totalSprites=${ot.spriteIds.length}, sprites[0..7]=${ot.spriteIds.slice(0, 8).join(',')}`);
-    }
-
-    // Log first 5 and last 5 outfits to detect global shift
-    const outfitIds = Array.from(this.outfits.keys()).sort((a, b) => a - b);
-    console.log(`[DatLoader] Total outfits loaded: ${this.outfits.size}, IDs range: ${outfitIds[0]}..${outfitIds[outfitIds.length - 1]}`);
-    for (const id of outfitIds.slice(0, 5)) {
-      const ot = this.outfits.get(id)!;
-      console.log(`[DatLoader] outfit ${id}: ${ot.width}x${ot.height}, L=${ot.layers}, pX=${ot.patX}, pY=${ot.patY}, pZ=${ot.patZ}, A=${ot.anim}, nSpr=${ot.spriteIds.length}, spr0=${ot.spriteIds[0]}`);
     }
   }
 

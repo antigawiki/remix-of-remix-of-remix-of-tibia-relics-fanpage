@@ -1,5 +1,5 @@
 import { useRef, useState, useCallback, useEffect } from 'react';
-import { Upload, Play, Pause, FastForward, RotateCcw, Loader2, ChevronUp, ChevronDown, Layers } from 'lucide-react';
+import { Upload, Play, Pause, FastForward, RotateCcw, Loader2, ChevronUp, ChevronDown, Layers, Sparkles, Monitor } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Slider } from '@/components/ui/slider';
 import { useTranslation } from '@/i18n';
@@ -54,11 +54,14 @@ const TibiarcPlayer = ({ className }: TibiarcPlayerProps) => {
   const [duration, setDuration] = useState(0);
   const [dataLoaded, setDataLoaded] = useState(false);
   const [floorOffset, setFloorOffset] = useState(0);
+  const [qualityMode, setQualityMode] = useState<'classic' | 'enhanced'>('enhanced');
   const floorOffsetRef = useRef(0);
   const containerRef = useRef<HTMLDivElement>(null);
 
   // Keep ref in sync with state for animation loop access
   useEffect(() => { floorOffsetRef.current = floorOffset; }, [floorOffset]);
+  const qualityModeRef = useRef(qualityMode);
+  useEffect(() => { qualityModeRef.current = qualityMode; }, [qualityMode]);
 
   // Dynamic canvas sizing via ResizeObserver
   useEffect(() => {
@@ -172,6 +175,7 @@ const TibiarcPlayer = ({ className }: TibiarcPlayerProps) => {
         engine.renderer.floorOverride = null;
       }
 
+      engine.renderer.smoothUpscale = qualityModeRef.current === 'enhanced';
       engine.renderer.incTick();
       engine.renderer.draw(canvas.width, canvas.height);
     };
@@ -347,7 +351,7 @@ const TibiarcPlayer = ({ className }: TibiarcPlayerProps) => {
         <canvas
           ref={canvasRef}
           className="w-full h-full"
-          style={{ imageRendering: 'pixelated' }}
+          style={{ imageRendering: qualityMode === 'classic' ? 'pixelated' : 'auto' }}
         />
 
         {/* Hidden file input - always in DOM */}
@@ -513,6 +517,20 @@ const TibiarcPlayer = ({ className }: TibiarcPlayerProps) => {
           </div>
 
           <div className="flex items-center gap-2">
+            {/* Quality toggle */}
+            <Button
+              variant="outline"
+              size="sm"
+              className="border-border/50 min-w-[90px]"
+              onClick={() => setQualityMode(prev => prev === 'classic' ? 'enhanced' : 'classic')}
+              title={qualityMode === 'classic' ? 'Modo Clássico (DX5)' : 'Modo Enhanced (DX9)'}
+            >
+              {qualityMode === 'classic' ? (
+                <><Monitor className="w-3 h-3 mr-1" />Classic</>
+              ) : (
+                <><Sparkles className="w-3 h-3 mr-1" />Enhanced</>
+              )}
+            </Button>
             {hasRecording && (
               <Button
                 variant="outline"
