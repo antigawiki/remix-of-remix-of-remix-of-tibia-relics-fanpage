@@ -382,18 +382,29 @@ export class Renderer {
           for (let th = 0; th < H; th++) {
             for (let tw = 0; tw < W; tw++) {
               const patX = xd % PX;
-              const idx = ((((((a * PZ + 0) * PY + py) * PX + patX) * L + 1) * H + th) * W + tw);
-              let sid = (idx < ot.spriteIds.length) ? ot.spriteIds[idx] : 0;
-              let sprCanvas = this.getNativeSprite(sid);
-              if (!sprCanvas && a > 0) {
-                const idx0 = ((((((0 * PZ + 0) * PY + py) * PX + patX) * L + 1) * H + th) * W + tw);
-                const sid0 = (idx0 < ot.spriteIds.length) ? ot.spriteIds[idx0] : 0;
-                sprCanvas = this.getNativeSprite(sid0);
+              // Get mask sprite (layer 1)
+              const maskIdx = ((((((a * PZ + 0) * PY + py) * PX + patX) * L + 1) * H + th) * W + tw);
+              let maskSid = (maskIdx < ot.spriteIds.length) ? ot.spriteIds[maskIdx] : 0;
+              let maskCanvas = this.getNativeSprite(maskSid);
+              if (!maskCanvas && a > 0) {
+                const maskIdx0 = ((((((0 * PZ + 0) * PY + py) * PX + patX) * L + 1) * H + th) * W + tw);
+                const maskSid0 = (maskIdx0 < ot.spriteIds.length) ? ot.spriteIds[maskIdx0] : 0;
+                maskCanvas = this.getNativeSprite(maskSid0);
+                if (maskCanvas) maskSid = maskSid0;
               }
-              if (sprCanvas) {
+              // Get base sprite (layer 0) for luminance/shading
+              const baseIdx = ((((((a * PZ + 0) * PY + py) * PX + patX) * L + 0) * H + th) * W + tw);
+              let baseSid = (baseIdx < ot.spriteIds.length) ? ot.spriteIds[baseIdx] : 0;
+              let baseCanvas = this.getNativeSprite(baseSid);
+              if (!baseCanvas && a > 0) {
+                const baseIdx0 = ((((((0 * PZ + 0) * PY + py) * PX + patX) * L + 0) * H + th) * W + tw);
+                const baseSid0 = (baseIdx0 < ot.spriteIds.length) ? ot.spriteIds[baseIdx0] : 0;
+                baseCanvas = this.getNativeSprite(baseSid0);
+              }
+              if (maskCanvas) {
                 const dx = bx - tw * TILE_PX - ot.dispX;
                 const dy = by - th * TILE_PX - ot.dispY;
-                this.drawTintedLayerNative(sprCanvas, dx, dy, c, sid);
+                this.drawTintedLayerNative(maskCanvas, dx, dy, c, maskSid, baseCanvas);
                 rendered = true;
               }
             }
@@ -419,9 +430,14 @@ export class Renderer {
     }
   }
 
-  /** Tinted layer at native 32px using proper multiply blending */
-  private drawTintedLayerNative(maskCanvas: HTMLCanvasElement, dx: number, dy: number, c: Creature, spriteId?: number) {
-    const cacheKey = `tint_${spriteId ?? 'unk'}_${c.head}_${c.body}_${c.legs}_${c.feet}`;
+  /**
+   * OTClient-style outfit tinting: mask (layer 1) determines body region,
+   * base sprite (layer 0) provides luminance/shading for 3D detail.
+   * Result = outfitColor * baseLuminance, preserving volume and shadows.
+   */
+  private drawTintedLayerNative(maskCanvas: HTMLCanvasElement, dx: number, dy: number, c: Creature, spriteId?: number, baseCanvas?: HTMLCanvasElement | null) {
+    const baseSuffix = baseCanvas ? `_b${(baseCanvas as any).__sid ?? 'y'}` : '_nb';
+    const cacheKey = `tint2_${spriteId ?? 'unk'}_${c.head}_${c.body}_${c.legs}_${c.feet}${baseSuffix}`;
 
     let cached = this.tintCache.get(cacheKey);
     if (cached === undefined) {
@@ -430,55 +446,66 @@ export class Renderer {
       tmpCanvas.height = TILE_PX;
       const tmpCtx = tmpCanvas.getContext('2d')!;
 
+      // Read mask pixels
       tmpCtx.drawImage(maskCanvas, 0, 0);
-      const imgData = tmpCtx.getImageData(0, 0, TILE_PX, TILE_PX);
-      const data = imgData.data;
+      const maskData = tmpCtx.getImageData(0, 0, TILE_PX, TILE_PX);
+      const mask = maskData.data;
+
+      // Read base pixels for luminance (if available)
+      let base: Uint8ClampedArray | null = null;
+      if (baseCanvas) {
+        const baseCtx = document.createElement('canvas');
+        baseCtx.width = TILE_PX;
+        baseCtx.height = TILE_PX;
+        const bCtx = baseCtx.getContext('2d')!;
+        bCtx.drawImage(baseCanvas, 0, 0);
+        base = bCtx.getImageData(0, 0, TILE_PX, TILE_PX).data;
+      }
 
       const headColor = getOutfitColor(c.head);
       const bodyColor = getOutfitColor(c.body);
       const legsColor = getOutfitColor(c.legs);
       const feetColor = getOutfitColor(c.feet);
 
-      for (let i = 0; i < data.length; i += 4) {
-        const r = data[i], g = data[i + 1], b = data[i + 2], a = data[i + 3];
+      for (let i = 0; i < mask.length; i += 4) {
+        const r = mask[i], g = mask[i + 1], b = mask[i + 2], a = mask[i + 3];
         if (a === 0) continue;
 
         let color: [number, number, number] | null = null;
-        let intensity = 0;
 
-        // Relaxed mask channel detection with lower thresholds:
-        // Yellow (R+G present, B low) = Head
-        // Red (R dominant) = Body
-        // Green (G dominant) = Legs
-        // Blue (B dominant) = Feet
+        // Detect mask channel: Yellow=Head, Red=Body, Green=Legs, Blue=Feet
         const maxC = Math.max(r, g, b);
-        if (maxC < 2) { data[i + 3] = 0; continue; }
+        if (maxC < 2) { mask[i + 3] = 0; continue; }
 
         if (r > 2 && g > 2 && b <= Math.min(r, g) * 0.75) {
           color = headColor;
-          intensity = (r + g) / (2 * 255);
         } else if (r > 2 && r >= g * 1.5 && r >= b * 1.5) {
           color = bodyColor;
-          intensity = r / 255;
         } else if (g > 2 && g >= r * 1.5 && g >= b * 1.5) {
           color = legsColor;
-          intensity = g / 255;
         } else if (b > 2 && b >= r * 1.5 && b >= g * 1.5) {
           color = feetColor;
-          intensity = b / 255;
         } else {
-          // Ambiguous pixel: treat as body (most common channel)
           color = bodyColor;
-          intensity = maxC / 255;
         }
 
-        // Multiply blend: preserves shading/volume from the mask intensity
-        data[i] = Math.min(255, Math.round(color[0] * intensity));
-        data[i + 1] = Math.min(255, Math.round(color[1] * intensity));
-        data[i + 2] = Math.min(255, Math.round(color[2] * intensity));
+        // Get luminance from base sprite for 3D shading, fallback to mask intensity
+        let lum: number;
+        if (base && base[i + 3] > 0) {
+          // Use base sprite grayscale luminance (Rec. 709)
+          lum = (0.2126 * base[i] + 0.7152 * base[i + 1] + 0.0722 * base[i + 2]) / 255;
+        } else {
+          // Fallback: use mask channel intensity
+          lum = maxC / 255;
+        }
+
+        // Multiply: outfit color * base luminance = colored with 3D shading
+        mask[i] = Math.min(255, Math.round(color[0] * lum));
+        mask[i + 1] = Math.min(255, Math.round(color[1] * lum));
+        mask[i + 2] = Math.min(255, Math.round(color[2] * lum));
       }
 
-      tmpCtx.putImageData(imgData, 0, 0);
+      tmpCtx.putImageData(maskData, 0, 0);
       this.tintCache.set(cacheKey, tmpCanvas);
       cached = tmpCanvas;
     }
