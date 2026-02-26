@@ -386,6 +386,19 @@ const TibiarcPlayer = ({ className }: TibiarcPlayerProps) => {
           style={{ imageRendering: 'pixelated' }}
         />
 
+        {/* Hidden file input - always in DOM */}
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept=".cam"
+          className="hidden"
+          onChange={(e) => {
+            const file = e.target.files?.[0];
+            if (file) handleFileSelect(file);
+            if (e.target) e.target.value = '';
+          }}
+        />
+
         {/* Idle overlay */}
         {(state === 'idle' || state === 'error') && dataLoaded && (
           <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/80 gap-4">
@@ -408,16 +421,6 @@ const TibiarcPlayer = ({ className }: TibiarcPlayerProps) => {
             >
               {t('camPlayer.selectFile')}
             </Button>
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept=".cam"
-              className="hidden"
-              onChange={(e) => {
-                const file = e.target.files?.[0];
-                if (file) handleFileSelect(file);
-              }}
-            />
           </div>
         )}
 
