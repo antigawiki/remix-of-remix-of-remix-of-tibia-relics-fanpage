@@ -44,6 +44,10 @@ export class PacketParser {
   }
 
   private outfitLogCount = 0;
+  private u8Hits = 0;
+  private u16Hits = 0;
+  private outfitChecks = 0;
+  private modeSwapCount = 0;
 
   private isValidOutfitColors(h: number, b: number, l: number, f: number): boolean {
     return h <= 132 && b <= 132 && l <= 132 && f <= 132;
@@ -54,31 +58,68 @@ export class PacketParser {
     return this.dat.outfits.has(oid) && this.isValidOutfitColors(h, b, l, f);
   }
 
-  /**
-   * Parse outfit in strict mode to avoid byte drift.
-   * Looktype width (u8/u16) is fixed by parser configuration for the loaded .cam.
-   */
   private readOutfit(r: Buf): { type: number; head: number; body: number; legs: number; feet: number } {
+    const savedPos = r.pos;
     const oid = this.readLooktype(r);
-    if (oid === 0) {
-      r.u16();
-      return { type: 0, head: 0, body: 0, legs: 0, feet: 0 };
+    if (oid === 0) { r.u16(); return { type: 0, head: 0, body: 0, legs: 0, feet: 0 }; }
+    const h = r.u8(), b = r.u8(), l = r.u8(), f = r.u8();
+
+    // Validate current read
+    if (this.isValidOutfit(oid, h, b, l, f)) {
+      if (this.looktypeU16) this.u16Hits++; else this.u8Hits++;
+      this.outfitChecks++;
+      this.maybeSwapMode();
+      if (this.outfitLogCount < 5) {
+        this.outfitLogCount++;
+        console.log(`[PacketParser] Outfit OK: mode=${this.looktypeU16 ? 'u16' : 'u8'}, looktype=${oid}, h=${h} b=${b} l=${l} f=${f}`);
+      }
+      return { type: oid, head: h, body: b, legs: l, feet: f };
     }
 
-    const h = r.u8();
-    const b = r.u8();
-    const l = r.u8();
-    const f = r.u8();
+    // Try alternate mode
+    r.pos = savedPos;
+    const altU16 = !this.looktypeU16;
+    const altOid = altU16 ? r.u16() : r.u8();
+    if (altOid === 0) {
+      r.pos = savedPos;
+      this.readLooktype(r);
+      r.skip(4);
+      return { type: oid, head: h, body: b, legs: l, feet: f };
+    }
+    const ah = r.u8(), ab = r.u8(), al = r.u8(), af = r.u8();
 
-    if (this.outfitLogCount < 12) {
-      this.outfitLogCount++;
-      const valid = this.isValidOutfit(oid, h, b, l, f);
-      console.log(
-        `[PacketParser] Outfit ${valid ? 'OK' : 'SUSPECT'}: mode=${this.looktypeU16 ? 'u16' : 'u8'}, looktype=${oid}, h=${h} b=${b} l=${l} f=${f}, datHasOutfit=${this.dat.outfits.has(oid)}`
-      );
+    if (this.isValidOutfit(altOid, ah, ab, al, af)) {
+      if (altU16) this.u16Hits++; else this.u8Hits++;
+      this.outfitChecks++;
+      this.maybeSwapMode();
+      if (this.outfitLogCount < 10) {
+        this.outfitLogCount++;
+        console.log(`[PacketParser] Outfit FALLBACK: ${this.looktypeU16 ? 'u16' : 'u8'}->${altU16 ? 'u16' : 'u8'}, looktype=${altOid}, h=${ah} b=${ab} l=${al} f=${af}`);
+      }
+      return { type: altOid, head: ah, body: ab, legs: al, feet: af };
     }
 
+    // Neither mode valid — keep original parse
+    r.pos = savedPos;
+    this.readLooktype(r);
+    r.skip(4);
+    this.outfitChecks++;
     return { type: oid, head: h, body: b, legs: l, feet: f };
+  }
+
+  private maybeSwapMode() {
+    if (this.outfitChecks > 0 && this.outfitChecks % 20 === 0 && this.modeSwapCount < 3) {
+      const currentHits = this.looktypeU16 ? this.u16Hits : this.u8Hits;
+      const altHits = this.looktypeU16 ? this.u8Hits : this.u16Hits;
+      if (altHits > currentHits * 1.5 && altHits >= 5) {
+        this.looktypeU16 = !this.looktypeU16;
+        this.outfitWindowRangeU16 = this.looktypeU16;
+        this.modeSwapCount++;
+        console.log(`[PacketParser] Mode SWAP -> ${this.looktypeU16 ? 'u16' : 'u8'} (u8Hits=${this.u8Hits}, u16Hits=${this.u16Hits})`);
+        this.u8Hits = 0;
+        this.u16Hits = 0;
+      }
+    }
   }
 
   private pos3(r: Buf): [number, number, number] {
@@ -108,23 +149,34 @@ export class PacketParser {
       }
     }
 
+    let consecutiveSkips = 0;
     while (!r.eof()) {
       const posBefore = r.pos;
       try {
         const t = r.u8();
         if (!this.dispatch(t, r)) {
+          r.pos = posBefore + 1;
+          consecutiveSkips++;
+          if (consecutiveSkips >= 3) {
+            if (this.unknownWarnCount < 20) {
+              this.unknownWarnCount++;
+              console.warn(`[PacketParser] 3 consecutive unknown opcodes near pos ${posBefore}, abandoning frame (${payload.length - r.pos} bytes left)`);
+            }
+            break;
+          }
+        } else {
+          consecutiveSkips = 0;
+        }
+      } catch (e) {
+        r.pos = posBefore + 1;
+        consecutiveSkips++;
+        if (consecutiveSkips >= 3) {
           if (this.unknownWarnCount < 20) {
             this.unknownWarnCount++;
-            console.warn(`[PacketParser] unknown opcode 0x${t.toString(16)} at pos ${posBefore}, aborting frame`);
+            console.warn(`[PacketParser] parse errors near pos ${posBefore}, abandoning frame`, e);
           }
           break;
         }
-      } catch (e) {
-        if (this.unknownWarnCount < 20) {
-          this.unknownWarnCount++;
-          console.warn(`[PacketParser] parse error at pos ${posBefore}, aborting frame`, e);
-        }
-        break;
       }
     }
   }
