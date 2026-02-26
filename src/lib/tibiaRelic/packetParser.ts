@@ -47,14 +47,14 @@ export class PacketParser {
   }
 
   /** Deterministic outfit read — no adaptive fallback */
-  private readOutfit(r: Buf): { type: number; head: number; body: number; legs: number; feet: number } {
+  private readOutfit(r: Buf): { type: number; itemId: number; head: number; body: number; legs: number; feet: number } {
     const oid = this.readLooktype(r);
     if (oid === 0) {
-      r.u16(); // item looktype
-      return { type: 0, head: 0, body: 0, legs: 0, feet: 0 };
+      const itemId = r.u16();
+      return { type: 0, itemId, head: 0, body: 0, legs: 0, feet: 0 };
     }
     const h = r.u8(), b = r.u8(), l = r.u8(), f = r.u8();
-    return { type: oid, head: h, body: b, legs: l, feet: f };
+    return { type: oid, itemId: 0, head: h, body: b, legs: l, feet: f };
   }
 
   private pos3(r: Buf): [number, number, number] {
@@ -514,11 +514,10 @@ export class PacketParser {
     r.u8(); r.u8(); // light
     c.speed = r.u16();
     r.u8(); r.u8(); // skull+shield
-    if (outfit.type) {
-      c.outfit = outfit.type;
-      c.head = outfit.head; c.body = outfit.body;
-      c.legs = outfit.legs; c.feet = outfit.feet;
-    }
+    c.outfit = outfit.type;
+    c.outfitItem = outfit.itemId;
+    c.head = outfit.head; c.body = outfit.body;
+    c.legs = outfit.legs; c.feet = outfit.feet;
   }
 
   private readCreatureFull(r: Buf): Creature {
