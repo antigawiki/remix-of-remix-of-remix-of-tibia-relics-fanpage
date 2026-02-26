@@ -60,19 +60,19 @@ export class DatLoader {
     console.log(`[DatLoader] items=${nItems} outfits=${nOutfits} fx=${nFx} dist=${nDist}`);
 
     for (let i = 0; i < nItems; i++) {
-      const [it, np] = this.readItem(bytes, view, p);
+      const [it, np] = this.readItem(bytes, view, p, true);  // items TEM patZ
       it.id = 100 + i;
       this.items.set(it.id, it);
       p = np;
     }
     for (let i = 0; i < nOutfits; i++) {
-      const [it, np] = this.readItem(bytes, view, p);
+      const [it, np] = this.readItem(bytes, view, p, false); // outfits NAO tem patZ
       it.id = 1 + i;
       this.outfits.set(it.id, it);
       p = np;
     }
     for (let i = 0; i < nFx + nDist; i++) {
-      const [, np] = this.readItem(bytes, view, p);
+      const [, np] = this.readItem(bytes, view, p, false); // fx/dist NAO tem patZ
       p = np;
     }
 
@@ -81,8 +81,8 @@ export class DatLoader {
   }
 
   private verify() {
-    const checks: [number, number | null][] = [[102, 42], [408, 39], [870, 559]];
-    for (const [id, expectedSpr] of checks) {
+    const itemChecks: [number, number | null][] = [[102, 42], [408, 39], [870, 559]];
+    for (const [id, expectedSpr] of itemChecks) {
       const it = this.items.get(id);
       if (!it) { console.warn(`[DatLoader] MISSING item ${id}`); continue; }
       const spr0 = it.spriteIds[0] ?? -1;
@@ -92,9 +92,17 @@ export class DatLoader {
         console.log(`[DatLoader] item ${id}: sprite[0]=${spr0} ✓`);
       }
     }
+
+    // Verify known outfits — Rotworm looktype ~36 should have sprites around 2962-2965
+    const outfitChecks: [number, string][] = [[36, 'Rotworm'], [1, 'First outfit']];
+    for (const [id, name] of outfitChecks) {
+      const ot = this.outfits.get(id);
+      if (!ot) { console.warn(`[DatLoader] MISSING outfit ${id} (${name})`); continue; }
+      console.log(`[DatLoader] outfit ${id} (${name}): sprites=${ot.spriteIds.slice(0, 8).join(',')}, dims=${ot.width}x${ot.height}, layers=${ot.layers}, patX=${ot.patX}, patY=${ot.patY}, patZ=${ot.patZ}, anim=${ot.anim}`);
+    }
   }
 
-  private readItem(bytes: Uint8Array, view: DataView, p: number): [ItemType, number] {
+  private readItem(bytes: Uint8Array, view: DataView, p: number, hasPatZ: boolean): [ItemType, number] {
     const it = createItemType();
 
     for (let iter = 0; iter < 100; iter++) {
@@ -149,7 +157,11 @@ export class DatLoader {
     it.layers = Math.max(1, Math.min(bytes[p], 8)); p++;
     it.patX = Math.max(1, Math.min(bytes[p], 8)); p++;
     it.patY = Math.max(1, Math.min(bytes[p], 8)); p++;
-    it.patZ = Math.max(1, Math.min(bytes[p], 8)); p++; // extra TibiaRelic field
+    if (hasPatZ) {
+      it.patZ = Math.max(1, Math.min(bytes[p], 8)); p++; // extra TibiaRelic field (items only)
+    } else {
+      it.patZ = 1; // outfits/fx/dist don't have patZ
+    }
     it.anim = Math.max(1, Math.min(bytes[p], 32)); p++;
 
     let n = it.anim * it.patZ * it.patY * it.patX * it.layers * it.height * it.width;
