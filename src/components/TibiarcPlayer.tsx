@@ -541,13 +541,26 @@ const TibiarcPlayer = ({ className }: TibiarcPlayerProps) => {
             )}
           </div>
 
-          <div className="text-sm text-muted-foreground">
-            {state === 'idle' && !dataLoaded && 'Inicializando...'}
-            {state === 'idle' && dataLoaded && t('camPlayer.noFileLoaded')}
-            {isLoading && t('common.loading')}
-            {state === 'playing' && t('camPlayer.playing')}
-            {state === 'paused' && t('camPlayer.paused')}
-            {state === 'error' && t('camPlayer.loadError')}
+          <div className="flex items-center gap-2">
+            {hasRecording && (
+              <Button
+                variant="outline"
+                size="sm"
+                className="border-border/50"
+                onClick={() => fileInputRef.current?.click()}
+              >
+                <Upload className="w-3 h-3 mr-1" />
+                Outra .cam
+              </Button>
+            )}
+            <span className="text-sm text-muted-foreground">
+              {state === 'idle' && !dataLoaded && 'Inicializando...'}
+              {state === 'idle' && dataLoaded && t('camPlayer.noFileLoaded')}
+              {isLoading && t('common.loading')}
+              {state === 'playing' && t('camPlayer.playing')}
+              {state === 'paused' && t('camPlayer.paused')}
+              {state === 'error' && t('camPlayer.loadError')}
+            </span>
           </div>
         </div>
       </div>
