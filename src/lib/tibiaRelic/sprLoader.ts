@@ -15,40 +15,11 @@ export class SprLoader {
   load(data: ArrayBuffer) {
     this.raw = new Uint8Array(data);
     this.view = new DataView(data);
-
-    // Try u16 count first (standard 7.x), then u32 (some custom servers)
-    const countU16 = this.view.getUint16(4, true);
-    const countU32 = this.view.getUint32(4, true);
-
-    // Heuristic: if u32 count makes sense (header + offsets fit in file), prefer it
-    // u16 header: 4 (sig) + 2 (count) + count*4 (offsets)
-    // u32 header: 4 (sig) + 4 (count) + count*4 (offsets)
-    const u16HeaderEnd = 6 + countU16 * 4;
-    const u32HeaderEnd = 8 + countU32 * 4;
-
-    let useU32 = false;
-    if (countU32 > countU16 && u32HeaderEnd < data.byteLength && countU32 < 200000) {
-      // Validate: first few u32-based offsets should point within the file
-      const testOff = this.view.getUint32(8, true);
-      if (testOff > u32HeaderEnd && testOff < data.byteLength) {
-        useU32 = true;
-      }
-    }
-
-    if (useU32) {
-      this.count = countU32;
-      this.offsets = [];
-      for (let i = 0; i < this.count; i++) {
-        this.offsets.push(this.view.getUint32(8 + i * 4, true));
-      }
-      console.log(`[SprLoader] u32 count=${this.count}, offsets start at 8`);
-    } else {
-      this.count = countU16;
-      this.offsets = [];
-      for (let i = 0; i < this.count; i++) {
-        this.offsets.push(this.view.getUint32(6 + i * 4, true));
-      }
-      console.log(`[SprLoader] u16 count=${this.count}, offsets start at 6`);
+    // signature at 0 (4 bytes), count at 4 (2 bytes)
+    this.count = this.view.getUint16(4, true);
+    this.offsets = [];
+    for (let i = 0; i < this.count; i++) {
+      this.offsets.push(this.view.getUint32(6 + i * 4, true));
     }
   }
 
