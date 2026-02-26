@@ -66,13 +66,13 @@ export class DatLoader {
       p = np;
     }
     for (let i = 0; i < nOutfits; i++) {
-      const [it, np] = this.readEntry(bytes, view, p, false);
+      const [it, np] = this.readEntry(bytes, view, p, true);
       it.id = 1 + i;
       this.outfits.set(it.id, it);
       p = np;
     }
     for (let i = 0; i < nFx + nDist; i++) {
-      const [, np] = this.readEntry(bytes, view, p, false);
+      const [, np] = this.readEntry(bytes, view, p, true);
       p = np;
     }
 
