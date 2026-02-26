@@ -52,26 +52,31 @@ export class DatLoader {
     let p = 0;
 
     /* const sig = */ view.getUint32(p, true); p += 4;
-    const nItems = view.getUint16(p, true); p += 2;
-    const nOutfits = view.getUint16(p, true); p += 2;
-    const nFx = view.getUint16(p, true); p += 2;
-    const nDist = view.getUint16(p, true); p += 2;
+    const itemMaxId = view.getUint16(p, true); p += 2;
+    const outfitMaxId = view.getUint16(p, true); p += 2;
+    const effectMaxId = view.getUint16(p, true); p += 2;
+    const missileMaxId = view.getUint16(p, true); p += 2;
 
-    console.log(`[DatLoader] items=${nItems} outfits=${nOutfits} fx=${nFx} dist=${nDist}`);
+    const itemCount = itemMaxId - 100 + 1;
+    const outfitCount = outfitMaxId;
+    const effectCount = effectMaxId;
+    const missileCount = missileMaxId;
 
-    for (let i = 0; i < nItems; i++) {
+    console.log(`[DatLoader] maxIds: items=${itemMaxId} outfits=${outfitMaxId} fx=${effectMaxId} dist=${missileMaxId} | counts: items=${itemCount} outfits=${outfitCount} fx=${effectCount} dist=${missileCount}`);
+
+    for (let i = 0; i < itemCount; i++) {
       const [it, np] = this.readEntry(bytes, view, p, true);
       it.id = 100 + i;
       this.items.set(it.id, it);
       p = np;
     }
-    for (let i = 0; i < nOutfits; i++) {
+    for (let i = 0; i < outfitCount; i++) {
       const [it, np] = this.readEntry(bytes, view, p, true);
       it.id = 1 + i;
       this.outfits.set(it.id, it);
       p = np;
     }
-    for (let i = 0; i < nFx + nDist; i++) {
+    for (let i = 0; i < effectCount + missileCount; i++) {
       const [, np] = this.readEntry(bytes, view, p, true);
       p = np;
     }
