@@ -22,6 +22,7 @@ export interface ItemType {
   isVertical: boolean;
   isHorizontal: boolean;
   dontHide: boolean;
+  animateIdle: boolean;
   speed: number;
   elevation: number;
   dispX: number;
@@ -37,7 +38,7 @@ function createItemType(): ItemType {
     isGround: false, isBlocking: false,
     isStackable: false, isFluid: false, isSplash: false,
     isHangable: false, isVertical: false, isHorizontal: false,
-    dontHide: false,
+    dontHide: false, animateIdle: false,
     speed: 0, elevation: 0, dispX: 0, dispY: 0, stackPrio: 5,
   };
 }
@@ -172,7 +173,7 @@ export class DatLoader {
       }
       else if (flag === 0x19) { if (p + 1 >= bytes.length) break; it.elevation = view.getUint16(p, true); p += 2; }
       else if (flag === 0x1A) { /* redrawNearbyTop */ }
-      else if (flag === 0x1B) { /* animateIdle */ }
+      else if (flag === 0x1B) { it.animateIdle = true; }
       else if (flag === 0x1C) { if (p + 1 >= bytes.length) break; p += 2; }
       else if (flag === 0x1D) { if (p + 1 >= bytes.length) break; p += 2; }
       else if (flag === 0x1E) { /* walkable */ }

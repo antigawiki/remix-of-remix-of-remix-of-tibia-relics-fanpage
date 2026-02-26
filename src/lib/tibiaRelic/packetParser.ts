@@ -335,6 +335,10 @@ export class PacketParser {
         else if (dx === 0 && dy > 0) c.direction = DIR_S;
         else if (dx < 0) c.direction = DIR_W;
         c.x = tx; c.y = ty; c.z = tz;
+        // Mark creature as walking; duration based on speed
+        c.walking = true;
+        const walkDuration = c.speed > 0 ? Math.max(100, Math.floor(1000 / (c.speed / 220))) : 300;
+        c.walkEndTick = performance.now() + walkDuration;
         const tile = this.gs.getTile(tx, ty, tz);
         tile.push(['cr', cid]);
         this.gs.setTile(tx, ty, tz, tile);

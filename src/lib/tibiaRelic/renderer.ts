@@ -28,7 +28,6 @@ export class Renderer {
   private tick = 0;
   private spriteCanvasCache: Map<string, HTMLCanvasElement | null> = new Map();
   private tintCache: Map<string, HTMLCanvasElement | null> = new Map();
-  private creatureLoggedOnce = false;
 
   public floorOverride: number | null = null;
 
@@ -225,26 +224,22 @@ export class Renderer {
     }
   }
 
-  private creatureLogCount = 0;
-
   private drawCreature(c: Creature, bx: number, by: number, tpx: number, scale: number) {
-    const phCr = (Math.floor(this.tick / 6)) % 3;
+    // Update walking state based on time
+    if (c.walking && performance.now() > c.walkEndTick) {
+      c.walking = false;
+    }
 
     // Item-based looktype (looktype = 0, uses item sprite)
     if (c.outfit === 0 && c.outfitItem > 0) {
       const it = this.dat.items.get(c.outfitItem);
       if (it) {
-        this.drawItem(it, bx, by, 0, scale, tpx, phCr, c.x, c.y, this.ctx.canvas.width, this.ctx.canvas.height);
+        this.drawItem(it, bx, by, 0, scale, tpx, 0, c.x, c.y, this.ctx.canvas.width, this.ctx.canvas.height);
         return;
       }
     }
 
     const ot = this.dat.outfits.get(c.outfit);
-
-    if (this.creatureLogCount < 10) {
-      this.creatureLogCount++;
-      console.log(`[Renderer] Creature #${this.creatureLogCount}: name="${c.name}", looktype=${c.outfit}, dims=${ot?.width}x${ot?.height}, L=${ot?.layers}, pX=${ot?.patX}, A=${ot?.anim}, nSpr=${ot?.spriteIds?.length}`);
-    }
 
     let rendered = false;
 
@@ -252,24 +247,37 @@ export class Renderer {
       const xd = DIR_MAP[c.direction] ?? 0;
       const A = Math.max(1, ot.anim), PZ = Math.max(1, ot.patZ), PY = Math.max(1, ot.patY);
       const PX = Math.max(1, ot.patX), L = Math.max(1, ot.layers), H = ot.height, W = ot.width;
-      const a = phCr % A;
 
-      // Apply outfit displacement (like tibiarc/OTClient)
+      // Animation frame selection (tibiarc logic)
+      let a: number;
+      if (ot.animateIdle) {
+        a = Math.floor(this.tick / 8) % A;
+      } else if (c.walking) {
+        if (A <= 2) {
+          a = Math.floor(this.tick / 6) % A;
+        } else {
+          a = (Math.floor(this.tick / 6) % (A - 1)) + 1; // skip idle frame 0
+        }
+      } else {
+        a = 0; // idle pose
+      }
+
+      // Displacement: subtract (tibiarc shifts sprites left/up)
       const dispXPx = Math.round(ot.dispX * scale);
       const dispYPx = Math.round(ot.dispY * scale);
 
-      // Draw ALL patZ levels (base body + overlays/addons)
-      for (let pz = 0; pz < PZ; pz++) {
+      // Iterate addon layers (patY) with patZ=0 (no mount)
+      for (let py = 0; py < PY; py++) {
         // Draw base layer (layer 0)
         for (let th = 0; th < H; th++) {
           for (let tw = 0; tw < W; tw++) {
             const patX = xd % PX;
-            const idx = ((((((a * PZ + pz) * PY + 0) * PX + patX) * L + 0) * H + th) * W + tw);
+            const idx = ((((((a * PZ + 0) * PY + py) * PX + patX) * L + 0) * H + th) * W + tw);
             const sid = (idx < ot.spriteIds.length) ? ot.spriteIds[idx] : 0;
             const sprCanvas = this.getSpriteCanvas(sid, tpx);
             if (sprCanvas) {
-              const dx = bx - tw * tpx + dispXPx;
-              const dy = by - th * tpx + dispYPx;
+              const dx = bx - tw * tpx - dispXPx;
+              const dy = by - th * tpx - dispYPx;
               this.ctx.drawImage(sprCanvas, dx, dy);
               rendered = true;
             }
@@ -281,12 +289,12 @@ export class Renderer {
           for (let th = 0; th < H; th++) {
             for (let tw = 0; tw < W; tw++) {
               const patX = xd % PX;
-              const idx = ((((((a * PZ + pz) * PY + 0) * PX + patX) * L + 1) * H + th) * W + tw);
+              const idx = ((((((a * PZ + 0) * PY + py) * PX + patX) * L + 1) * H + th) * W + tw);
               const sid = (idx < ot.spriteIds.length) ? ot.spriteIds[idx] : 0;
               const sprCanvas = this.getSpriteCanvas(sid, tpx);
               if (sprCanvas) {
-                const dx = bx - tw * tpx + dispXPx;
-                const dy = by - th * tpx + dispYPx;
+                const dx = bx - tw * tpx - dispXPx;
+                const dy = by - th * tpx - dispYPx;
                 this.drawTintedLayer(sprCanvas, dx, dy, tpx, c, sid);
                 rendered = true;
               }
@@ -428,17 +436,32 @@ export class Renderer {
     return canvas;
   }
 
-  private drawCreatureHud(px: number, py: number, c: { name: string; health: number; id: number }, tpx: number) {
+  private drawCreatureHud(px: number, py: number, c: { name: string; health: number; id: number; outfit?: number }, tpx: number) {
     const ctx = this.ctx;
     const isPlayer = c.id === this.gs.playerId;
-    const bw = tpx - 2;
+
+    // For multi-tile creatures, center HUD over full creature area
+    let hudX = px;
+    let hudY = py;
+    let hudW = tpx;
+    if (c.outfit) {
+      const ot = this.dat.outfits.get(c.outfit);
+      if (ot && (ot.width > 1 || ot.height > 1)) {
+        hudX = px - (ot.width - 1) * tpx / 2;
+        hudY = py - (ot.height - 1) * tpx;
+        hudW = ot.width * tpx;
+      }
+    }
+
+    const bw = Math.min(hudW - 2, tpx * 2);
     const fw = Math.max(1, Math.floor(bw * c.health / 100));
     const hc = c.health > 50 ? '#00c800' : (c.health > 25 ? '#c8c800' : '#c80000');
+    const barX = hudX + (hudW - bw) / 2;
 
     ctx.fillStyle = '#500000';
-    ctx.fillRect(px + 1, py - 6, bw, 4);
+    ctx.fillRect(barX, hudY - 6, bw, 4);
     ctx.fillStyle = hc;
-    ctx.fillRect(px + 1, py - 6, fw, 4);
+    ctx.fillRect(barX, hudY - 6, fw, 4);
 
     const fs = Math.max(7, Math.min(10, Math.floor(tpx / 4)));
     const nameColor = isPlayer ? '#00FF00' : '#64c8ff';
@@ -446,9 +469,9 @@ export class Renderer {
     ctx.textAlign = 'center';
     ctx.strokeStyle = '#000000';
     ctx.lineWidth = 2;
-    ctx.strokeText(c.name.substring(0, 16), px + tpx / 2, py - 7);
+    ctx.strokeText(c.name.substring(0, 16), hudX + hudW / 2, hudY - 7);
     ctx.fillStyle = nameColor;
-    ctx.fillText(c.name.substring(0, 16), px + tpx / 2, py - 7);
+    ctx.fillText(c.name.substring(0, 16), hudX + hudW / 2, hudY - 7);
   }
 
   clearCache() {
