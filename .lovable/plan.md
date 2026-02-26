@@ -1,95 +1,77 @@
 
-Objetivo: fazer o player sair do “look DX5” (pixel duro) e aproximar do visual “DX9/OpenGL” (bordas/outfits mais suaves), sem quebrar a fidelidade de posição/frames que já está correta.
 
-Diagnóstico do que está acontecendo agora
-1) O problema não é o parsing do `.cam` em si  
-- O parser decide “o que desenhar” (tiles, criaturas, direção, frame, etc.).  
-- A diferença visual que você descreveu está no “como desenhar” (pipeline de renderização e tint de outfit).
+## Corrigir Outfits Ausentes e Cores Erradas
 
-2) Hoje o pipeline está forçando visual retro
-- `src/components/TibiarcPlayer.tsx`: canvas com `style={{ imageRendering: 'pixelated' }}`.
-- `src/lib/tibiaRelic/renderer.ts`: upscale final com `displayCtx.imageSmoothingEnabled = false`.
-- Resultado: nearest-neighbor obrigatório (estilo “None/DX5”), mesmo em tela HiDPI.
+### Problema 1: Paleta de Cores Totalmente Errada
 
-3) Tint de outfit ainda não está no mesmo modelo do tibiarc/OTClient
-- No OTClient/tibiarc, máscaras de outfit são aplicadas com multiplicação sobre a base (preserva shading/bordas).
-- Nosso algoritmo atual usa heurística por canal/intensidade e “pinta por cima”, o que tende a piorar bordas e aparência do outfit.
+A paleta de cores no codigo (`OUTFIT_PALETTE`) foi escrita manualmente com valores incorretos. O Tibia usa um algoritmo HSI-to-RGB com 133 cores (19 matizes x 7 niveis), documentado no codigo fonte do OTClient (`outfit.cpp`).
 
-4) Mapa de cores de outfit pode estar divergente
-- No código do tibiarc (Canvas::Tint) existe tabela de paleta clássica.
-- Nosso `convert8BitColor` usa cubo 6x6x6 puro; isso pode desalinhar tons e contraste dos outfits.
+**Exemplo da diferenca:**
+- Nosso indice 1: `[255,212,191]` (um tom de pele)
+- OTClient indice 1: HSI com hue=1/18, sat=0.25, int=1.0 -> `[255,239,191]` (tom levemente amarelado)
 
-Plano de implementação (ordem recomendada)
+A paleta inteira esta desalinhada porque o layout e linear por grupos de 19 (cada coluna de matiz), nao por grupos de 5.
 
-Fase 1 — Garantir que a mudança visual seja perceptível imediatamente
-Arquivos:
-- `src/components/TibiarcPlayer.tsx`
-- `src/lib/tibiaRelic/renderer.ts`
+**Correcao:** Substituir a tabela fixa pela funcao `getOutfitColor(index)` que implementa o **mesmo algoritmo HSI** do OTClient:
+- `HSI_H_STEPS = 19` (matizes por grupo)
+- `HSI_SI_VALUES = 7` (niveis de saturacao/intensidade)
+- Indices multiplos de 19: escala de cinza
+- Demais: conversao HSI -> RGB com 6 faixas de matiz
 
-Ações:
-1. Remover o hard-force de pixelização CSS do canvas (`imageRendering: 'pixelated'`).
-2. Introduzir “modo de qualidade” no player (controle visível):
-   - `Classic` (visual atual / nearest)
-   - `Enhanced` (smoothing moderno)
-3. No renderer, aplicar upscale final por modo:
-   - Classic: `imageSmoothingEnabled = false`
-   - Enhanced: `imageSmoothingEnabled = true` + `imageSmoothingQuality = 'high'`
-4. Manter DPR atual (já está correto), mas com smoothing opcional no passo final.
+### Problema 2: Outfits Nao Aparecem em Algumas Criaturas
 
-Resultado esperado:
-- Você verá diferença real ao alternar modo (sem depender de “parece que não mudou”).
+Analise das screenshots mostra criaturas com nome/barra de vida mas sem sprite visivel (Vermonth, scarab). O retangulo de fallback (colorido semi-transparente) pode estar se confundindo com o fundo de areia.
 
-Fase 2 — Corrigir tint de outfit para ficar próximo do tibiarc/OTClient
-Arquivo:
-- `src/lib/tibiaRelic/renderer.ts`
+**Causas identificadas:**
+1. O looktype da criatura pode nao existir no DAT (ID fora do range de outfits carregados). `this.dat.outfits.get(c.outfit)` retorna `undefined`, pula renderizacao.
+2. O sprite ID calculado pode ser 0 para certas combinacoes de direcao/frame, fazendo `getNativeSprite(0)` retornar null.
+3. O fallback visual (retangulo rgba 0.6) e quase invisivel contra fundos claros como areia.
 
-Ações:
-1. Substituir a estratégia atual de tint por pipeline de multiplicação:
-   - Base layer desenhada normalmente.
-   - Máscara de outfit aplicada com composição tipo multiply no mesmo retângulo.
-2. Trocar detecção heurística por mapeamento explícito das máscaras:
-   - amarelo=head, vermelho=body, verde=legs, azul=feet
-3. Preservar transparência e contorno do sprite (sem “chapar” cor).
+**Correcoes:**
+1. **Fallback mais visivel**: Trocar retangulo semi-transparente por um contorno solido + X dentro, visivel contra qualquer fundo.
+2. **Log de diagnostico**: Quando outfit nao e encontrado no DAT, logar uma vez por outfit ID para ajudar a diagnosticar.
+3. **Bounds checking**: Quando sprite index ultrapassa o array, tentar frame 0 como fallback antes de desistir.
 
-Resultado esperado:
-- Outfits com sombra/volume mais naturais, bordas menos “duras” e menos artefatos.
+### Problema 3: Tint pode falhar silenciosamente
 
-Fase 3 — Alinhar paleta de cor de outfit com cliente de referência
-Arquivo:
-- `src/lib/tibiaRelic/renderer.ts`
+O algoritmo de tint atual usa heuristica de "canal dominante" (amarelo=head, vermelho=body, verde=legs, azul=feet). Se a mascara tiver pixels com cores mistas ou baixa intensidade, o pixel e descartado (alpha=0). Isso pode "apagar" partes do outfit colorido.
 
-Ações:
-1. Implementar paleta clássica compatível com tibiarc para índices de outfit.
-2. Fallback controlado para índices fora da faixa esperada.
-3. Centralizar isso em utilitária única (sem lógica duplicada em tint).
+**Correcao:** Relaxar os thresholds de deteccao de canal para aceitar mais pixels como parte da mascara, e tratar pixels ambiguos como "body" (canal mais comum) em vez de descarta-los.
 
-Resultado esperado:
-- Tons de outfit mais fiéis ao cliente original.
+### Mudancas por Arquivo
 
-Fase 4 — Limpeza e verificação objetiva
-Arquivos:
-- `src/lib/tibiaRelic/datLoader.ts` (remover logs de debug ruidosos)
-- (opcional) `src/i18n/translations/*.ts` e `src/i18n/types.ts` para labels do seletor de qualidade
+**`src/lib/tibiaRelic/renderer.ts`**
+1. Substituir `OUTFIT_PALETTE` + `convert8BitColor()` pela funcao `getOutfitColor(color)` baseada no algoritmo HSI do OTClient
+2. Melhorar fallback visual para criaturas sem sprite
+3. Adicionar fallback de frame (tentar frame 0 se frame atual nao tem sprite)
+4. Relaxar thresholds do tint para melhor cobertura de mascara
+5. Log de warning (limitado) quando outfit ID nao encontrado no DAT
 
-Ações:
-1. Remover logs de diagnóstico que poluem console.
-2. Validar com o mesmo `.cam` que você enviou em 3 checkpoints:
-   - screenshot no modo Classic
-   - screenshot no modo Enhanced
-   - close-up de criatura com outfit colorido
+### Detalhes Tecnicos do Algoritmo HSI
 
-Critérios de aceite
-1) Alternar Classic/Enhanced muda o visual de forma clara.  
-2) No Enhanced, bordas e outfits ficam mais “lisas” e menos serrilhadas/estouradas.  
-3) Não reintroduzir corte de criaturas nem desalinhamento de HUD.  
-4) Performance permanece estável no replay normal.
+```text
+HSI_H_STEPS = 19
+HSI_SI_VALUES = 7
 
-Riscos e mitigação
-- Risco: blur excessivo em alguns monitores no Enhanced.  
-  Mitigação: manter modo Classic disponível e fácil de trocar.
-- Risco: custo de CPU ao aplicar tint por multiplicação.  
-  Mitigação: cache agressivo por sprite+cores e invalidação mínima.
+getOutfitColor(color):
+  if color >= 133: color = 0
+  
+  if color % 19 == 0:     // Grayscale
+    intensity = 1 - (color/19) / 7
+    return RGB(intensity*255, intensity*255, intensity*255)
+  
+  hue = (color % 19) / 18.0
+  group = floor(color / 19)
+  
+  // Saturacao e intensidade por grupo:
+  // 0: sat=0.25, int=1.00  (mais claro, menos saturado)
+  // 1: sat=0.25, int=0.75
+  // 2: sat=0.50, int=0.75
+  // 3: sat=0.667, int=0.75
+  // 4: sat=1.00, int=1.00  (vivo)
+  // 5: sat=1.00, int=0.75
+  // 6: sat=1.00, int=0.50  (mais escuro)
+  
+  // HSI -> RGB com 6 faixas de matiz (padrao)
+```
 
-Resumo prático
-O motivo de “nada mudou” é que o pipeline ainda estava essencialmente travado no visual retro (nearest + pixelated), e o tint de outfit ainda não segue o mesmo modelo do tibiarc/OTClient.  
-Com esse plano, a diferença visual aparece de imediato (Fase 1) e depois a fidelidade de outfits/bordas sobe de verdade (Fases 2 e 3).
