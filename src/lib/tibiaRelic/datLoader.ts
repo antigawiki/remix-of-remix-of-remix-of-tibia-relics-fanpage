@@ -60,19 +60,19 @@ export class DatLoader {
     console.log(`[DatLoader] items=${nItems} outfits=${nOutfits} fx=${nFx} dist=${nDist}`);
 
     for (let i = 0; i < nItems; i++) {
-      const [it, np] = this.readItem(bytes, view, p);
+      const [it, np] = this.readEntry(bytes, view, p, true);
       it.id = 100 + i;
       this.items.set(it.id, it);
       p = np;
     }
     for (let i = 0; i < nOutfits; i++) {
-      const [it, np] = this.readItem(bytes, view, p);
+      const [it, np] = this.readEntry(bytes, view, p, false);
       it.id = 1 + i;
       this.outfits.set(it.id, it);
       p = np;
     }
     for (let i = 0; i < nFx + nDist; i++) {
-      const [, np] = this.readItem(bytes, view, p);
+      const [, np] = this.readEntry(bytes, view, p, false);
       p = np;
     }
 
@@ -102,9 +102,14 @@ export class DatLoader {
     }
   }
 
-  private readItem(bytes: Uint8Array, view: DataView, p: number): [ItemType, number] {
+  /**
+   * Read a single DAT entry (item, outfit, effect, or distance).
+   * @param hasPatZ - true for items (TibiaRelic extra field), false for outfits/fx/dist
+   */
+  private readEntry(bytes: Uint8Array, view: DataView, p: number, hasPatZ: boolean): [ItemType, number] {
     const it = createItemType();
 
+    // Parse flags
     for (let iter = 0; iter < 100; iter++) {
       if (p >= bytes.length) break;
       const flag = bytes[p]; p++;
@@ -112,6 +117,7 @@ export class DatLoader {
 
       if (flag === 0x00) {
         it.isGround = true; it.stackPrio = 0;
+        if (p + 1 >= bytes.length) break;
         it.speed = view.getUint16(p, true); p += 2;
       } else if (flag === 0x01) { it.stackPrio = 1; }
       else if (flag === 0x02) { it.stackPrio = 2; }
@@ -120,8 +126,8 @@ export class DatLoader {
       else if (flag === 0x05) { it.isStackable = true; }
       else if (flag === 0x06) { /* multiuse */ }
       else if (flag === 0x07) { /* boolean */ }
-      else if (flag === 0x08) { p += 2; /* write u16 */ }
-      else if (flag === 0x09) { p += 2; /* writeOnce u16 */ }
+      else if (flag === 0x08) { if (p + 1 >= bytes.length) break; p += 2; }
+      else if (flag === 0x09) { if (p + 1 >= bytes.length) break; p += 2; }
       else if (flag === 0x0A) { it.isFluid = true; }
       else if (flag === 0x0B) { it.isSplash = true; }
       else if (flag === 0x0C) { it.isBlocking = true; }
@@ -133,23 +139,26 @@ export class DatLoader {
       else if (flag === 0x12) { it.isVertical = true; }
       else if (flag === 0x13) { it.isHorizontal = true; }
       else if (flag === 0x14) { /* rotateable */ }
-      else if (flag === 0x15) { p += 4; /* light u16+u16 */ }
+      else if (flag === 0x15) { if (p + 3 >= bytes.length) break; p += 4; }
       else if (flag === 0x16) { it.dontHide = true; }
       else if (flag === 0x17) { /* translucent */ }
       else if (flag === 0x18) {
+        if (p + 3 >= bytes.length) break;
         it.dispX = view.getUint16(p, true); it.dispY = view.getUint16(p + 2, true); p += 4;
       }
-      else if (flag === 0x19) { it.elevation = view.getUint16(p, true); p += 2; }
+      else if (flag === 0x19) { if (p + 1 >= bytes.length) break; it.elevation = view.getUint16(p, true); p += 2; }
       else if (flag === 0x1A) { /* redrawNearbyTop */ }
       else if (flag === 0x1B) { /* animateIdle */ }
-      else if (flag === 0x1C) { p += 2; /* automap u16 */ }
-      else if (flag === 0x1D) { p += 2; /* lensHelp u16 */ }
+      else if (flag === 0x1C) { if (p + 1 >= bytes.length) break; p += 2; }
+      else if (flag === 0x1D) { if (p + 1 >= bytes.length) break; p += 2; }
       else if (flag === 0x1E) { /* walkable */ }
       else if (flag >= 0x1F && flag <= 0x28) { /* boolean flags */ }
       else { p--; break; /* unknown flag */ }
     }
 
-    if (p + 7 >= bytes.length) return [it, p];
+    // Read dimensions — need at least 6 bytes (w,h,layers,patX,patY,anim) or 7 with patZ
+    const minBytes = hasPatZ ? 8 : 7;
+    if (p + minBytes > bytes.length) return [it, p];
 
     it.width = Math.max(1, Math.min(bytes[p], 8)); p++;
     it.height = Math.max(1, Math.min(bytes[p], 8)); p++;
@@ -157,7 +166,11 @@ export class DatLoader {
     it.layers = Math.max(1, Math.min(bytes[p], 8)); p++;
     it.patX = Math.max(1, Math.min(bytes[p], 8)); p++;
     it.patY = Math.max(1, Math.min(bytes[p], 8)); p++;
-    it.patZ = Math.max(1, Math.min(bytes[p], 8)); p++; // TibiaRelic extra field
+    if (hasPatZ) {
+      it.patZ = Math.max(1, Math.min(bytes[p], 8)); p++;
+    } else {
+      it.patZ = 1;
+    }
     it.anim = Math.max(1, Math.min(bytes[p], 32)); p++;
 
     let n = it.anim * it.patZ * it.patY * it.patX * it.layers * it.height * it.width;
