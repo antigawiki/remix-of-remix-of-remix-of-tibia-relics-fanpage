@@ -3,7 +3,7 @@ import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { HashRouter, Routes, Route } from "react-router-dom";
+import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { ThemeProvider } from "@/contexts/ThemeContext";
 import { LanguageProvider } from "@/i18n";
 import Index from "./pages/Index";
@@ -50,7 +50,7 @@ const App = () => (
         <TooltipProvider>
           <Toaster />
           <Sonner />
-          <HashRouter>
+          <BrowserRouter>
             <Routes>
               <Route path="/" element={<Index />} />
               <Route path="/admin" element={<AdminPage />} />
@@ -87,11 +87,11 @@ const App = () => (
               <Route path="/xp-activity" element={<XpActivityPage />} />
               <Route path="/kill-statistics" element={<KillStatisticsPage />} />
               <Route path="/houses" element={<HousesPage />} />
-              <Route path="/cam-player" element={<CamPlayerPage />} />
+              <Route path="/a3e7c9b1f2d8e4a6" element={<CamPlayerPage />} />
               {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
               <Route path="*" element={<NotFound />} />
             </Routes>
-          </HashRouter>
+          </BrowserRouter>
         </TooltipProvider>
       </LanguageProvider>
     </ThemeProvider>
