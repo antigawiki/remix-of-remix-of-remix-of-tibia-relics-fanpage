@@ -241,9 +241,10 @@ export class Renderer {
 
     const ot = this.dat.outfits.get(c.outfit);
 
-    if (this.creatureLogCount < 15) {
+    if (this.creatureLogCount < 30) {
       this.creatureLogCount++;
-      console.log(`[Renderer] Creature: name=${c.name}, looktype=${c.outfit}, outfitItem=${c.outfitItem}, datHasOutfit=${!!ot}, layers=${ot?.layers}, dims=${ot?.width}x${ot?.height}, patX=${ot?.patX}, patY=${ot?.patY}, patZ=${ot?.patZ}, anim=${ot?.anim}, sprites[0..7]=${ot?.spriteIds?.slice(0, 8)}`);
+      const suspect = ot && (ot.patX !== 4 || (ot.width === 1 && ot.height === 1 && ot.layers > 4));
+      console.log(`[Renderer] Creature #${this.creatureLogCount}: name="${c.name}", looktype=${c.outfit}, outfitItem=${c.outfitItem}, found=${!!ot}${ot ? `, dims=${ot.width}x${ot.height}, L=${ot.layers}, pX=${ot.patX}, pY=${ot.patY}, pZ=${ot.patZ}, A=${ot.anim}, nSpr=${ot.spriteIds.length}, spr[0..3]=${ot.spriteIds.slice(0, 4)}` : ''}${suspect ? ' ⚠ SUSPECT' : ''}`);
     }
 
     let rendered = false;

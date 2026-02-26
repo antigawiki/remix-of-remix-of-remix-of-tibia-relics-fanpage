@@ -98,12 +98,31 @@ export class DatLoader {
       }
     }
 
-    // Verify known outfits — Rotworm looktype ~36 should have sprites around 2962-2965
-    const outfitChecks: [number, string][] = [[36, 'Rotworm'], [1, 'First outfit']];
-    for (const [id, name] of outfitChecks) {
+    // Extended outfit verification with EXPECTED dimensions
+    // Format: [id, name, expectedWidth, expectedHeight, expectedLayers, expectedPatX]
+    const outfitChecks: [number, string, number, number, number, number][] = [
+      [1,   'Citizen (first)',   1, 1, 2, 4],
+      [36,  'Rotworm',           1, 1, 1, 4],
+      [67,  'Stone Golem',       2, 2, 1, 4],
+      [128, 'Player outfit',     1, 1, 2, 4],
+      [2,   'Outfit 2',          1, 1, 2, 4],
+      [10,  'Outfit 10',         1, 1, -1, 4],
+      [50,  'Outfit 50',         1, 1, -1, 4],
+    ];
+    for (const [id, name, ew, eh, el, epx] of outfitChecks) {
       const ot = this.outfits.get(id);
       if (!ot) { console.warn(`[DatLoader] MISSING outfit ${id} (${name})`); continue; }
-      console.log(`[DatLoader] outfit ${id} (${name}): sprites=${ot.spriteIds.slice(0, 8).join(',')}, dims=${ot.width}x${ot.height}, layers=${ot.layers}, patX=${ot.patX}, patY=${ot.patY}, patZ=${ot.patZ}, anim=${ot.anim}`);
+      const dimsMatch = (ot.width === ew && ot.height === eh && (el === -1 || ot.layers === el) && ot.patX === epx);
+      const tag = dimsMatch ? '✓' : '⚠ MISMATCH';
+      console.log(`[DatLoader] outfit ${id} (${name}) ${tag}: dims=${ot.width}x${ot.height} (exp ${ew}x${eh}), layers=${ot.layers} (exp ${el}), patX=${ot.patX} (exp ${epx}), patY=${ot.patY}, patZ=${ot.patZ}, anim=${ot.anim}, totalSprites=${ot.spriteIds.length}, sprites[0..7]=${ot.spriteIds.slice(0, 8).join(',')}`);
+    }
+
+    // Log first 5 and last 5 outfits to detect global shift
+    const outfitIds = Array.from(this.outfits.keys()).sort((a, b) => a - b);
+    console.log(`[DatLoader] Total outfits loaded: ${this.outfits.size}, IDs range: ${outfitIds[0]}..${outfitIds[outfitIds.length - 1]}`);
+    for (const id of outfitIds.slice(0, 5)) {
+      const ot = this.outfits.get(id)!;
+      console.log(`[DatLoader] outfit ${id}: ${ot.width}x${ot.height}, L=${ot.layers}, pX=${ot.patX}, pY=${ot.patY}, pZ=${ot.patZ}, A=${ot.anim}, nSpr=${ot.spriteIds.length}, spr0=${ot.spriteIds[0]}`);
     }
   }
 
