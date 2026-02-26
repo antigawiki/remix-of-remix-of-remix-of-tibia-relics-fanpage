@@ -67,8 +67,8 @@ const evaluateParseMode = (cam: CamFile, dat: DatLoader, mode: ParseProtocolMode
 const detectParseProtocolMode = (cam: CamFile, dat: DatLoader): ParseProtocolMode => {
   const u8 = evaluateParseMode(cam, dat, 'u8');
   const u16 = evaluateParseMode(cam, dat, 'u16');
-  // Default to u16 for 7.72 TibiaRelic - only pick u8 if it scores significantly higher
-  const selected = u8.score > u16.score + 5 ? 'u8' : 'u16';
+  // TibiaRelic 7.72 always uses u16 - only pick u8 if it scores dramatically higher
+  const selected = u8.score > u16.score + 15 ? 'u8' : 'u16';
 
   console.log(
     `[TibiarcPlayer] Parser mode detection: u8(score=${u8.score.toFixed(1)}, known=${u8.knownOutfits}, unknown=${u8.unknownOutfits}, badColors=${u8.badColors}) ` +

@@ -179,8 +179,8 @@ export class Renderer {
             firstFloor = Math.max(firstFloor, checkZ + 1);
           }
 
-          // NW offset position (covered up perspective)
-          const tile2 = g.getTile(g.camX + ix - dz, g.camY + iy - dz, checkZ);
+          // NW offset position (covered up perspective) — tibiarc uses +dz offset
+          const tile2 = g.getTile(g.camX + ix + dz, g.camY + iy + dz, checkZ);
           if (this.tileCoversFloor(tile2)) {
             firstFloor = Math.max(firstFloor, checkZ + 1);
           }
@@ -225,9 +225,28 @@ export class Renderer {
     }
   }
 
+  /**
+   * Resolve an outfit ID to a valid DAT entry.
+   * If the exact ID has no sprites, search nearby IDs for the closest valid outfit.
+   */
+  private resolveOutfit(outfitId: number): ItemType | undefined {
+    const exact = this.dat.outfits.get(outfitId);
+    if (exact && exact.spriteIds.length > 0 && exact.spriteIds[0] > 0) return exact;
+
+    // Search nearby IDs (±10) for closest valid outfit
+    for (let delta = 1; delta <= 10; delta++) {
+      for (const candidate of [outfitId - delta, outfitId + delta]) {
+        if (candidate <= 0) continue;
+        const ot = this.dat.outfits.get(candidate);
+        if (ot && ot.spriteIds.length > 0 && ot.spriteIds[0] > 0) return ot;
+      }
+    }
+    return undefined;
+  }
+
   private drawCreature(c: Creature, bx: number, by: number, tpx: number, scale: number) {
     const phCr = (Math.floor(this.tick / 6)) % 3;
-    const ot = this.dat.outfits.get(c.outfit);
+    const ot = this.resolveOutfit(c.outfit);
 
     if (!this.loggedCreature) {
       this.loggedCreature = true;
