@@ -19,6 +19,8 @@ export interface Creature {
   y: number;
   z: number;
   speed: number;
+  walking: boolean;
+  walkEndTick: number;
 }
 
 export function createCreature(): Creature {
@@ -26,6 +28,7 @@ export function createCreature(): Creature {
     id: 0, name: '', health: 100, direction: DIR_S,
     outfit: 128, outfitItem: 0, head: 0, body: 0, legs: 0, feet: 0,
     x: 0, y: 0, z: 0, speed: 200,
+    walking: false, walkEndTick: 0,
   };
 }
 
