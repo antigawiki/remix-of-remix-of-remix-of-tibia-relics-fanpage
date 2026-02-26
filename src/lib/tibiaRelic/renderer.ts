@@ -15,56 +15,76 @@ const NATIVE_H = VP_H * TILE_PX; // 352
 const DIR_MAP: Record<number, number> = { 0: 0, 1: 1, 2: 2, 3: 3 };
 
 /**
- * Classic Tibia outfit color palette (133 colors).
- * Matches OTClient/tibiarc HSI-based palette used for outfit colorization.
- * Index 0-132 maps to specific RGB values.
+ * OTClient/tibiarc HSI-to-RGB outfit color algorithm.
+ * 133 colors: 19 hue steps × 7 saturation/intensity levels.
+ * Indices that are multiples of 19 are grayscale.
  */
-const OUTFIT_PALETTE: [number, number, number][] = [
-  [255,255,255],[255,212,191],[255,170,128],[255,128,64],[255,85,0],
-  [255,255,191],[255,255,128],[255,255,64],[255,255,0],[192,192,0],
-  [255,191,191],[255,128,128],[255,64,64],[255,0,0],[192,0,0],
-  [255,191,255],[255,128,255],[255,64,255],[255,0,255],[192,0,192],
-  [191,191,255],[128,128,255],[64,64,255],[0,0,255],[0,0,192],
-  [191,255,255],[128,255,255],[64,255,255],[0,255,255],[0,192,192],
-  [191,255,191],[128,255,128],[64,255,64],[0,255,0],[0,192,0],
-  [220,220,220],[187,187,187],[153,153,153],[120,120,120],[86,86,86],
-  // Extended palette entries (colors 40-132)
-  [255,233,191],[255,212,128],[255,191,64],[255,170,0],[192,128,0],
-  [255,233,128],[255,233,64],[255,233,0],[255,212,0],[192,170,0],
-  [255,233,191],[255,233,128],[255,212,64],[255,191,0],[192,148,0],
-  [255,212,191],[255,191,128],[255,170,64],[255,148,0],[192,112,0],
-  [255,191,191],[255,148,128],[255,106,64],[255,64,0],[192,48,0],
-  [255,191,212],[255,128,170],[255,64,128],[255,0,85],[192,0,64],
-  [255,191,233],[255,128,212],[255,64,191],[255,0,170],[192,0,128],
-  [233,191,255],[212,128,255],[191,64,255],[170,0,255],[128,0,192],
-  [212,191,255],[170,128,255],[128,64,255],[85,0,255],[64,0,192],
-  [191,191,255],[148,128,255],[106,64,255],[64,0,255],[48,0,192],
-  [191,212,255],[128,170,255],[64,128,255],[0,85,255],[0,64,192],
-  [191,233,255],[128,212,255],[64,191,255],[0,170,255],[0,128,192],
-  [191,255,233],[128,255,212],[64,255,191],[0,255,170],[0,192,128],
-  [191,255,212],[128,255,170],[64,255,128],[0,255,85],[0,192,64],
-  [191,255,191],[128,255,148],[64,255,106],[0,255,64],[0,192,48],
-  [212,255,191],[170,255,128],[128,255,64],[85,255,0],[64,192,0],
-  [233,255,191],[212,255,128],[191,255,64],[170,255,0],[128,192,0],
-  [255,255,191],[233,255,128],[212,255,64],[191,255,0],[148,192,0],
-  [255,233,191],[255,212,128],[255,233,64],[255,212,0],[192,170,0],
+const HSI_H_STEPS = 19;
+const HSI_SI_VALUES = 7;
+const HSI_SI_PAIRS: [number, number][] = [
+  [0.25, 1.00],  // group 0: light, low saturation
+  [0.25, 0.75],  // group 1
+  [0.50, 0.75],  // group 2
+  [0.667, 0.75], // group 3
+  [1.00, 1.00],  // group 4: vivid
+  [1.00, 0.75],  // group 5
+  [1.00, 0.50],  // group 6: dark
 ];
 
-/**
- * Convert 8-bit Tibia outfit color index to RGB.
- * Uses the classic 133-color palette; falls back to 6x6x6 cube for out-of-range.
- */
-function convert8BitColor(color: number): [number, number, number] {
-  if (color >= 0 && color < OUTFIT_PALETTE.length) {
-    return OUTFIT_PALETTE[color];
+function hsiToRgb(h: number, s: number, i: number): [number, number, number] {
+  // h in [0,1), s in [0,1], i in [0,1]
+  const hDeg = h * 360;
+  let r: number, g: number, b: number;
+
+  if (hDeg < 120) {
+    const hRad = (hDeg * Math.PI) / 180;
+    const cos60 = Math.cos(((60 - hDeg) * Math.PI) / 180);
+    const cosH = Math.cos(hRad);
+    b = i * (1 - s);
+    r = i * (1 + (s * cos60) / Math.cos(((60 * Math.PI) / 180) - hRad));
+    g = 3 * i - (r + b);
+  } else if (hDeg < 240) {
+    const hShift = hDeg - 120;
+    const hRad = (hShift * Math.PI) / 180;
+    r = i * (1 - s);
+    g = i * (1 + (s * Math.cos(((60 - hShift) * Math.PI) / 180)) / Math.cos(((60 * Math.PI) / 180) - hRad));
+    b = 3 * i - (r + g);
+  } else {
+    const hShift = hDeg - 240;
+    const hRad = (hShift * Math.PI) / 180;
+    g = i * (1 - s);
+    b = i * (1 + (s * Math.cos(((60 - hShift) * Math.PI) / 180)) / Math.cos(((60 * Math.PI) / 180) - hRad));
+    r = 3 * i - (g + b);
   }
-  // Fallback: 6x6x6 RGB cube
-  if (color < 0 || color > 215) return [128, 128, 128];
-  const r = Math.floor(color / 36);
-  const g = Math.floor((color % 36) / 6);
-  const b = color % 6;
-  return [r * 51, g * 51, b * 51];
+
+  return [
+    Math.max(0, Math.min(255, Math.round(r * 255))),
+    Math.max(0, Math.min(255, Math.round(g * 255))),
+    Math.max(0, Math.min(255, Math.round(b * 255))),
+  ];
 }
+
+function getOutfitColor(color: number): [number, number, number] {
+  if (color < 0 || color >= HSI_H_STEPS * HSI_SI_VALUES) return [255, 255, 255];
+
+  if (color % HSI_H_STEPS === 0) {
+    // Grayscale
+    const groupIndex = color / HSI_H_STEPS;
+    const intensity = 1.0 - groupIndex / HSI_SI_VALUES;
+    const v = Math.max(0, Math.min(255, Math.round(intensity * 255)));
+    return [v, v, v];
+  }
+
+  const group = Math.floor(color / HSI_H_STEPS);
+  const hueIndex = color % HSI_H_STEPS;
+  const hue = (hueIndex - 1) / (HSI_H_STEPS - 1);
+  const [sat, int] = HSI_SI_PAIRS[group];
+
+  return hsiToRgb(hue, sat, int);
+}
+
+/** Logged outfit IDs that were not found in DAT (log once per ID) */
+const _missingOutfitWarned = new Set<number>();
 
 export class Renderer {
   private tick = 0;
@@ -313,6 +333,11 @@ export class Renderer {
     const oc = this.offCtx;
     let rendered = false;
 
+    if (!ot && c.outfit > 0 && !_missingOutfitWarned.has(c.outfit)) {
+      _missingOutfitWarned.add(c.outfit);
+      console.warn(`[Renderer] Outfit ID ${c.outfit} not found in DAT (creature: ${c.name})`);
+    }
+
     if (ot && ot.spriteIds.length > 0) {
       const xd = DIR_MAP[c.direction] ?? 0;
       const A = Math.max(1, ot.anim), PZ = Math.max(1, ot.patZ), PY = Math.max(1, ot.patY);
@@ -336,8 +361,14 @@ export class Renderer {
           for (let tw = 0; tw < W; tw++) {
             const patX = xd % PX;
             const idx = ((((((a * PZ + 0) * PY + py) * PX + patX) * L + 0) * H + th) * W + tw);
-            const sid = (idx < ot.spriteIds.length) ? ot.spriteIds[idx] : 0;
-            const sprCanvas = this.getNativeSprite(sid);
+            let sid = (idx < ot.spriteIds.length) ? ot.spriteIds[idx] : 0;
+            let sprCanvas = this.getNativeSprite(sid);
+            // Frame 0 fallback if current animation frame has no sprite
+            if (!sprCanvas && a > 0) {
+              const idx0 = ((((((0 * PZ + 0) * PY + py) * PX + patX) * L + 0) * H + th) * W + tw);
+              const sid0 = (idx0 < ot.spriteIds.length) ? ot.spriteIds[idx0] : 0;
+              sprCanvas = this.getNativeSprite(sid0);
+            }
             if (sprCanvas) {
               const dx = bx - tw * TILE_PX - ot.dispX;
               const dy = by - th * TILE_PX - ot.dispY;
@@ -352,8 +383,13 @@ export class Renderer {
             for (let tw = 0; tw < W; tw++) {
               const patX = xd % PX;
               const idx = ((((((a * PZ + 0) * PY + py) * PX + patX) * L + 1) * H + th) * W + tw);
-              const sid = (idx < ot.spriteIds.length) ? ot.spriteIds[idx] : 0;
-              const sprCanvas = this.getNativeSprite(sid);
+              let sid = (idx < ot.spriteIds.length) ? ot.spriteIds[idx] : 0;
+              let sprCanvas = this.getNativeSprite(sid);
+              if (!sprCanvas && a > 0) {
+                const idx0 = ((((((0 * PZ + 0) * PY + py) * PX + patX) * L + 1) * H + th) * W + tw);
+                const sid0 = (idx0 < ot.spriteIds.length) ? ot.spriteIds[idx0] : 0;
+                sprCanvas = this.getNativeSprite(sid0);
+              }
               if (sprCanvas) {
                 const dx = bx - tw * TILE_PX - ot.dispX;
                 const dy = by - th * TILE_PX - ot.dispY;
@@ -368,10 +404,18 @@ export class Renderer {
 
     if (!rendered) {
       const isPlayer = c.id === this.gs.playerId;
-      oc.fillStyle = isPlayer ? 'rgba(100,200,255,0.6)' : 'rgba(255,200,100,0.6)';
-      oc.fillRect(bx + 4, by + 4, TILE_PX - 8, TILE_PX - 8);
-      oc.strokeStyle = isPlayer ? '#64c8ff' : '#ffcc64';
+      // Highly visible fallback: solid outline + X
+      const color = isPlayer ? '#64c8ff' : '#ffcc64';
+      oc.strokeStyle = color;
+      oc.lineWidth = 2;
       oc.strokeRect(bx + 4, by + 4, TILE_PX - 8, TILE_PX - 8);
+      oc.beginPath();
+      oc.moveTo(bx + 6, by + 6);
+      oc.lineTo(bx + TILE_PX - 6, by + TILE_PX - 6);
+      oc.moveTo(bx + TILE_PX - 6, by + 6);
+      oc.lineTo(bx + 6, by + TILE_PX - 6);
+      oc.stroke();
+      oc.lineWidth = 1;
     }
   }
 
@@ -390,10 +434,10 @@ export class Renderer {
       const imgData = tmpCtx.getImageData(0, 0, TILE_PX, TILE_PX);
       const data = imgData.data;
 
-      const headColor = convert8BitColor(c.head);
-      const bodyColor = convert8BitColor(c.body);
-      const legsColor = convert8BitColor(c.legs);
-      const feetColor = convert8BitColor(c.feet);
+      const headColor = getOutfitColor(c.head);
+      const bodyColor = getOutfitColor(c.body);
+      const legsColor = getOutfitColor(c.legs);
+      const feetColor = getOutfitColor(c.feet);
 
       for (let i = 0; i < data.length; i += 4) {
         const r = data[i], g = data[i + 1], b = data[i + 2], a = data[i + 3];
@@ -402,34 +446,36 @@ export class Renderer {
         let color: [number, number, number] | null = null;
         let intensity = 0;
 
-        // OTClient mask channel detection:
-        // Yellow (R+G high, B low) = Head
-        // Red (R high, G+B low) = Body
-        // Green (G high, R+B low) = Legs
-        // Blue (B high, R+G low) = Feet
-        if (r > 1 && g > 1 && b < r / 2 && b < g / 2) {
+        // Relaxed mask channel detection with lower thresholds:
+        // Yellow (R+G present, B low) = Head
+        // Red (R dominant) = Body
+        // Green (G dominant) = Legs
+        // Blue (B dominant) = Feet
+        const maxC = Math.max(r, g, b);
+        if (maxC < 2) { data[i + 3] = 0; continue; }
+
+        if (r > 2 && g > 2 && b <= Math.min(r, g) * 0.75) {
           color = headColor;
           intensity = (r + g) / (2 * 255);
-        } else if (r > 1 && g < r / 2 && b < r / 2) {
+        } else if (r > 2 && r >= g * 1.5 && r >= b * 1.5) {
           color = bodyColor;
           intensity = r / 255;
-        } else if (g > 1 && r < g / 2 && b < g / 2) {
+        } else if (g > 2 && g >= r * 1.5 && g >= b * 1.5) {
           color = legsColor;
           intensity = g / 255;
-        } else if (b > 1 && r < b / 2 && g < b / 2) {
+        } else if (b > 2 && b >= r * 1.5 && b >= g * 1.5) {
           color = feetColor;
           intensity = b / 255;
+        } else {
+          // Ambiguous pixel: treat as body (most common channel)
+          color = bodyColor;
+          intensity = maxC / 255;
         }
 
-        if (color) {
-          // Multiply blend: preserves shading/volume from the mask intensity
-          data[i] = Math.min(255, Math.round(color[0] * intensity));
-          data[i + 1] = Math.min(255, Math.round(color[1] * intensity));
-          data[i + 2] = Math.min(255, Math.round(color[2] * intensity));
-        } else {
-          // Non-mask pixels: make transparent (only tint layer is drawn here)
-          data[i + 3] = 0;
-        }
+        // Multiply blend: preserves shading/volume from the mask intensity
+        data[i] = Math.min(255, Math.round(color[0] * intensity));
+        data[i + 1] = Math.min(255, Math.round(color[1] * intensity));
+        data[i + 2] = Math.min(255, Math.round(color[2] * intensity));
       }
 
       tmpCtx.putImageData(imgData, 0, 0);
