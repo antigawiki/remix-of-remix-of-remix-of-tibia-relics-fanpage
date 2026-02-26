@@ -140,10 +140,6 @@ export class PacketParser {
     else if (t === 0x6a) this.addThing(r);
     else if (t === 0x6b) this.chgThing(r);
     else if (t === 0x6c) this.delThing(r);
-    // Standalone creature opcodes
-    else if (t === 0x61) this.standaloneCreatureFull(r);
-    else if (t === 0x62) this.standaloneCreatureKnown(r);
-    else if (t === 0x63) this.standaloneCreatureTurn(r);
     else if (t === 0x6d) this.moveCr(r);
     // Login
     else if (t === 0x0a) this.login(r);
@@ -463,47 +459,6 @@ export class PacketParser {
     }
   }
 
-  // --- Standalone creature opcodes ---
-
-  private standaloneCreatureFull(r: Buf) {
-    const [x, y, z] = this.pos3(r);
-    r.u8(); // stackPos
-    const marker = r.u16();
-    if (marker !== CR_FULL) {
-      throw new Error(`standaloneCreatureFull: bad marker 0x${marker.toString(16)}`);
-    }
-    const c = this.readCreatureFull(r);
-    c.x = x; c.y = y; c.z = z;
-    const tile = this.gs.getTile(x, y, z);
-    tile.push(['cr', c.id]);
-    this.gs.setTile(x, y, z, tile);
-  }
-
-  private standaloneCreatureKnown(r: Buf) {
-    const [x, y, z] = this.pos3(r);
-    r.u8(); // stackPos
-    const marker = r.u16();
-    if (marker !== CR_KNOWN) {
-      throw new Error(`standaloneCreatureKnown: bad marker 0x${marker.toString(16)}`);
-    }
-    this.readCreatureKnown(r, x, y, z);
-  }
-
-  private standaloneCreatureTurn(r: Buf) {
-    const [x, y, z] = this.pos3(r);
-    r.u8(); // stackPos
-    const marker = r.u16();
-    if (marker !== CR_OLD) {
-      throw new Error(`standaloneCreatureTurn: bad marker 0x${marker.toString(16)}`);
-    }
-    const cid = r.u32();
-    const dir = r.u8();
-    const c = this.gs.creatures.get(cid);
-    if (c) {
-      c.direction = dir;
-      c.x = x; c.y = y; c.z = z;
-    }
-  }
 
   // --- Creature readers ---
 
