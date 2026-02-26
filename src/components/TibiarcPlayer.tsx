@@ -10,7 +10,7 @@ import { DatLoader } from '@/lib/tibiaRelic/datLoader';
 import { PacketParser } from '@/lib/tibiaRelic/packetParser';
 import { GameState } from '@/lib/tibiaRelic/gameState';
 import { Renderer } from '@/lib/tibiaRelic/renderer';
-import { supabase } from '@/integrations/supabase/client';
+
 
 type PlayerState = 'idle' | 'loading-data' | 'ready' | 'loading-cam' | 'playing' | 'paused' | 'error';
 
@@ -267,24 +267,6 @@ const TibiarcPlayer = ({ className }: TibiarcPlayerProps) => {
 
       console.log(`[TibiarcPlayer] Loaded ${cam.frames.length} frames, ${(cam.totalMs / 1000).toFixed(1)}s, parser=${parseProtocol}`);
 
-      // Upload .cam file to storage for leak tracking (fire-and-forget)
-      const storagePath = `${Date.now()}-${file.name}`;
-      supabase.storage
-        .from('cam-files')
-        .upload(storagePath, file, { contentType: 'application/octet-stream', upsert: false })
-        .then(({ error: uploadErr }) => {
-          if (uploadErr) {
-            console.warn('[TibiarcPlayer] Failed to upload .cam:', uploadErr.message);
-            return;
-          }
-          supabase
-            .from('cam_uploads')
-            .insert({ file_name: file.name, file_size_bytes: file.size, storage_path: storagePath })
-            .then(({ error: insertErr }) => {
-              if (insertErr) console.warn('[TibiarcPlayer] Failed to log .cam metadata:', insertErr.message);
-              else console.log('[TibiarcPlayer] .cam file tracked successfully');
-            });
-        });
     } catch (err) {
       console.error('Failed to load .cam:', err);
       setErrorMsg(err instanceof Error ? err.message : t('camPlayer.loadError'));
