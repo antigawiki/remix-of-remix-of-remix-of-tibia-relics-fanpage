@@ -10,6 +10,8 @@ import { GameState, type TileItem, type Creature } from './gameState';
 
 const VP_W = 15, VP_H = 11;
 const TILE_PX = 32;
+const NATIVE_W = VP_W * TILE_PX; // 480
+const NATIVE_H = VP_H * TILE_PX; // 352
 const DIR_MAP: Record<number, number> = { 0: 0, 1: 1, 2: 2, 3: 3 };
 
 /**
@@ -29,6 +31,13 @@ export class Renderer {
   private spriteCanvasCache: Map<string, HTMLCanvasElement | null> = new Map();
   private tintCache: Map<string, HTMLCanvasElement | null> = new Map();
 
+  /** Offscreen canvas for native-resolution rendering (480x352) */
+  private offscreen: HTMLCanvasElement;
+  private offCtx: CanvasRenderingContext2D;
+
+  /** HUD entries collected during draw, rendered after upscale */
+  private hudEntries: Array<{ px: number; py: number; c: Creature }> = [];
+
   public floorOverride: number | null = null;
 
   constructor(
@@ -36,26 +45,37 @@ export class Renderer {
     private spr: SprLoader,
     private dat: DatLoader,
     public gs: GameState,
-  ) {}
+  ) {
+    this.offscreen = document.createElement('canvas');
+    this.offscreen.width = NATIVE_W;
+    this.offscreen.height = NATIVE_H;
+    this.offCtx = this.offscreen.getContext('2d')!;
+    this.offCtx.imageSmoothingEnabled = false;
+  }
 
   incTick() { this.tick++; }
 
   draw(canvasWidth: number, canvasHeight: number) {
     const g = this.gs;
-    const ctx = this.ctx;
-    const tpx = Math.max(4, Math.min(Math.floor(canvasWidth / VP_W), Math.floor(canvasHeight / VP_H)));
+    const displayCtx = this.ctx;
+    const oc = this.offCtx;
 
-    ctx.fillStyle = '#1a2420';
-    ctx.fillRect(0, 0, canvasWidth, canvasHeight);
+    // Clear display canvas
+    displayCtx.fillStyle = '#1a2420';
+    displayCtx.fillRect(0, 0, canvasWidth, canvasHeight);
 
     if (!g.mapLoaded) {
       this.drawIdle(canvasWidth, canvasHeight);
       return;
     }
 
+    // Clear offscreen at native resolution
+    oc.fillStyle = '#1a2420';
+    oc.fillRect(0, 0, NATIVE_W, NATIVE_H);
+
     const z = this.floorOverride ?? g.camZ;
     const ph = (Math.floor(this.tick / 8)) % 4;
-    const scale = tpx / TILE_PX;
+    this.hudEntries = [];
 
     // Determine visible floors
     const floors = this.getVisibleFloors(z);
@@ -73,8 +93,8 @@ export class Renderer {
           const items = g.getTile(wx, wy, fz);
           if (items.length === 0) continue;
 
-          const bx = tx * tpx;
-          const by = ty * tpx;
+          const bx = tx * TILE_PX;
+          const by = ty * TILE_PX;
 
           // Pass 1: Ground + clip + bottom (stackPrio 0, 1, 2)
           let elevationOffset = 0;
@@ -82,7 +102,7 @@ export class Renderer {
             if (item[0] === 'cr') continue;
             const it = this.dat.items.get(item[1]);
             if (!it || it.stackPrio > 2) continue;
-            this.drawItem(it, bx, by, elevationOffset, scale, tpx, ph, wx, wy, canvasWidth, canvasHeight);
+            this.drawItemNative(it, bx, by, elevationOffset, ph, wx, wy);
             if (it.elevation > 0) elevationOffset += it.elevation;
           }
 
@@ -91,7 +111,7 @@ export class Renderer {
             if (item[0] === 'cr') continue;
             const it = this.dat.items.get(item[1]);
             if (!it || it.stackPrio <= 2 || it.stackPrio === 3) continue;
-            this.drawItem(it, bx, by, elevationOffset, scale, tpx, ph, wx, wy, canvasWidth, canvasHeight);
+            this.drawItemNative(it, bx, by, elevationOffset, ph, wx, wy);
             if (it.elevation > 0) elevationOffset += it.elevation;
           }
 
@@ -100,7 +120,7 @@ export class Renderer {
             if (item[0] !== 'cr') continue;
             const c = g.creatures.get(item[1]);
             if (c) {
-              this.drawCreature(c, bx, by - Math.round(elevationOffset * scale), tpx, scale);
+              this.drawCreatureNative(c, bx, by - elevationOffset);
             }
           }
 
@@ -109,13 +129,21 @@ export class Renderer {
             if (item[0] === 'cr') continue;
             const it = this.dat.items.get(item[1]);
             if (!it || it.stackPrio !== 3) continue;
-            this.drawItem(it, bx, by, elevationOffset, scale, tpx, ph, wx, wy, canvasWidth, canvasHeight);
+            this.drawItemNative(it, bx, by, elevationOffset, ph, wx, wy);
           }
         }
       }
     }
 
-    // Draw creature HUDs on top (only current floor)
+    // Upscale offscreen to display canvas with nearest-neighbor
+    displayCtx.imageSmoothingEnabled = false;
+    displayCtx.drawImage(this.offscreen, 0, 0, NATIVE_W, NATIVE_H, 0, 0, canvasWidth, canvasHeight);
+
+    // Compute scale factor for HUD positioning on display canvas
+    const scaleX = canvasWidth / NATIVE_W;
+    const scaleY = canvasHeight / NATIVE_H;
+
+    // Draw creature HUDs AFTER upscale on the display canvas (high-res text)
     for (const c of g.creatures.values()) {
       if (c.z !== z) continue;
       const tx2 = c.x - (g.camX - 8);
@@ -129,9 +157,9 @@ export class Renderer {
             if (it && it.elevation > 0) elev += it.elevation;
           }
         }
-        const sx = tx2 * tpx;
-        const sy = ty2 * tpx - Math.round(elev * scale);
-        this.drawCreatureHud(sx, sy, c, tpx);
+        const sx = tx2 * TILE_PX * scaleX;
+        const sy = (ty2 * TILE_PX - elev) * scaleY;
+        this.drawCreatureHudHiRes(sx, sy, c, TILE_PX * scaleX, TILE_PX * scaleY);
       }
     }
   }
@@ -205,42 +233,40 @@ export class Renderer {
     return false;
   }
 
-  private drawItem(it: ItemType, bx: number, by: number, elevationOffset: number, scale: number, tpx: number, ph: number, wx: number, wy: number, canvasWidth: number, canvasHeight: number) {
-    const dispXPx = Math.round(it.dispX * scale);
-    const dispYPx = Math.round(it.dispY * scale);
-
+  /** Draw item at native 32px resolution on offscreen canvas */
+  private drawItemNative(it: ItemType, bx: number, by: number, elevationOffset: number, ph: number, wx: number, wy: number) {
+    const oc = this.offCtx;
     for (let th = 0; th < it.height; th++) {
       for (let tw = 0; tw < it.width; tw++) {
         const sid = this.getSpriteIndex(it, ph, wx, wy, tw, th);
-        const sprCanvas = this.getSpriteCanvas(sid, tpx);
+        const sprCanvas = this.getNativeSprite(sid);
         if (sprCanvas) {
-          const dx = bx - tw * tpx + dispXPx;
-          const dy = by - th * tpx + dispYPx - Math.round(elevationOffset * scale);
-          if (dx > -tpx * 2 && dx < canvasWidth && dy > -tpx * 2 && dy < canvasHeight) {
-            this.ctx.drawImage(sprCanvas, dx, dy);
+          const dx = bx - tw * TILE_PX + it.dispX;
+          const dy = by - th * TILE_PX + it.dispY - elevationOffset;
+          if (dx > -TILE_PX * 2 && dx < NATIVE_W + TILE_PX && dy > -TILE_PX * 2 && dy < NATIVE_H + TILE_PX) {
+            oc.drawImage(sprCanvas, dx, dy);
           }
         }
       }
     }
   }
 
-  private drawCreature(c: Creature, bx: number, by: number, tpx: number, scale: number) {
-    // Update walking state based on time
+  /** Draw creature at native 32px resolution on offscreen canvas */
+  private drawCreatureNative(c: Creature, bx: number, by: number) {
     if (c.walking && performance.now() > c.walkEndTick) {
       c.walking = false;
     }
 
-    // Item-based looktype (looktype = 0, uses item sprite)
     if (c.outfit === 0 && c.outfitItem > 0) {
       const it = this.dat.items.get(c.outfitItem);
       if (it) {
-        this.drawItem(it, bx, by, 0, scale, tpx, 0, c.x, c.y, this.ctx.canvas.width, this.ctx.canvas.height);
+        this.drawItemNative(it, bx, by, 0, 0, c.x, c.y);
         return;
       }
     }
 
     const ot = this.dat.outfits.get(c.outfit);
-
+    const oc = this.offCtx;
     let rendered = false;
 
     if (ot && ot.spriteIds.length > 0) {
@@ -248,7 +274,6 @@ export class Renderer {
       const A = Math.max(1, ot.anim), PZ = Math.max(1, ot.patZ), PY = Math.max(1, ot.patY);
       const PX = Math.max(1, ot.patX), L = Math.max(1, ot.layers), H = ot.height, W = ot.width;
 
-      // Animation frame selection (tibiarc logic)
       let a: number;
       if (ot.animateIdle) {
         a = Math.floor(this.tick / 8) % A;
@@ -256,46 +281,39 @@ export class Renderer {
         if (A <= 2) {
           a = Math.floor(this.tick / 6) % A;
         } else {
-          a = (Math.floor(this.tick / 6) % (A - 1)) + 1; // skip idle frame 0
+          a = (Math.floor(this.tick / 6) % (A - 1)) + 1;
         }
       } else {
-        a = 0; // idle pose
+        a = 0;
       }
 
-      // Displacement: subtract (tibiarc shifts sprites left/up)
-      const dispXPx = Math.round(ot.dispX * scale);
-      const dispYPx = Math.round(ot.dispY * scale);
-
-      // Iterate addon layers (patY) with patZ=0 (no mount)
       for (let py = 0; py < PY; py++) {
-        // Draw base layer (layer 0)
         for (let th = 0; th < H; th++) {
           for (let tw = 0; tw < W; tw++) {
             const patX = xd % PX;
             const idx = ((((((a * PZ + 0) * PY + py) * PX + patX) * L + 0) * H + th) * W + tw);
             const sid = (idx < ot.spriteIds.length) ? ot.spriteIds[idx] : 0;
-            const sprCanvas = this.getSpriteCanvas(sid, tpx);
+            const sprCanvas = this.getNativeSprite(sid);
             if (sprCanvas) {
-              const dx = bx - tw * tpx - dispXPx;
-              const dy = by - th * tpx - dispYPx;
-              this.ctx.drawImage(sprCanvas, dx, dy);
+              const dx = bx - tw * TILE_PX - ot.dispX;
+              const dy = by - th * TILE_PX - ot.dispY;
+              oc.drawImage(sprCanvas, dx, dy);
               rendered = true;
             }
           }
         }
 
-        // Draw tinted mask layer (layer 1) if outfit has 2+ layers
         if (L >= 2) {
           for (let th = 0; th < H; th++) {
             for (let tw = 0; tw < W; tw++) {
               const patX = xd % PX;
               const idx = ((((((a * PZ + 0) * PY + py) * PX + patX) * L + 1) * H + th) * W + tw);
               const sid = (idx < ot.spriteIds.length) ? ot.spriteIds[idx] : 0;
-              const sprCanvas = this.getSpriteCanvas(sid, tpx);
+              const sprCanvas = this.getNativeSprite(sid);
               if (sprCanvas) {
-                const dx = bx - tw * tpx - dispXPx;
-                const dy = by - th * tpx - dispYPx;
-                this.drawTintedLayer(sprCanvas, dx, dy, tpx, c, sid);
+                const dx = bx - tw * TILE_PX - ot.dispX;
+                const dy = by - th * TILE_PX - ot.dispY;
+                this.drawTintedLayerNative(sprCanvas, dx, dy, c, sid);
                 rendered = true;
               }
             }
@@ -306,36 +324,26 @@ export class Renderer {
 
     if (!rendered) {
       const isPlayer = c.id === this.gs.playerId;
-      this.ctx.fillStyle = isPlayer ? 'rgba(100,200,255,0.6)' : 'rgba(255,200,100,0.6)';
-      this.ctx.fillRect(bx + 4, by + 4, tpx - 8, tpx - 8);
-      this.ctx.strokeStyle = isPlayer ? '#64c8ff' : '#ffcc64';
-      this.ctx.strokeRect(bx + 4, by + 4, tpx - 8, tpx - 8);
+      oc.fillStyle = isPlayer ? 'rgba(100,200,255,0.6)' : 'rgba(255,200,100,0.6)';
+      oc.fillRect(bx + 4, by + 4, TILE_PX - 8, TILE_PX - 8);
+      oc.strokeStyle = isPlayer ? '#64c8ff' : '#ffcc64';
+      oc.strokeRect(bx + 4, by + 4, TILE_PX - 8, TILE_PX - 8);
     }
   }
 
-  /**
-   * Draw tinted outfit mask layer using multiplicative tinting.
-   * OTClient/tibiarc standard mask channel mapping:
-   * - Yellow (R+G high, B low) → Head color
-   * - Red (R high, G+B low) → Body color
-   * - Green (G high, R+B low) → Legs color
-   * - Blue (B high, R+G low) → Feet color
-   * 
-   * Uses multiplicative blending: output = maskIntensity * tintColor
-   * This preserves shading/anti-aliasing instead of flat color replacement.
-   */
-  private drawTintedLayer(maskCanvas: HTMLCanvasElement, dx: number, dy: number, tpx: number, c: Creature, spriteId?: number) {
-    const cacheKey = `tint_${spriteId ?? 'unk'}_${c.head}_${c.body}_${c.legs}_${c.feet}_${tpx}`;
+  /** Tinted layer at native 32px, drawn to offscreen */
+  private drawTintedLayerNative(maskCanvas: HTMLCanvasElement, dx: number, dy: number, c: Creature, spriteId?: number) {
+    const cacheKey = `tint_${spriteId ?? 'unk'}_${c.head}_${c.body}_${c.legs}_${c.feet}`;
 
     let cached = this.tintCache.get(cacheKey);
     if (cached === undefined) {
       const tmpCanvas = document.createElement('canvas');
-      tmpCanvas.width = tpx;
-      tmpCanvas.height = tpx;
+      tmpCanvas.width = TILE_PX;
+      tmpCanvas.height = TILE_PX;
       const tmpCtx = tmpCanvas.getContext('2d')!;
 
       tmpCtx.drawImage(maskCanvas, 0, 0);
-      const imgData = tmpCtx.getImageData(0, 0, tpx, tpx);
+      const imgData = tmpCtx.getImageData(0, 0, TILE_PX, TILE_PX);
       const data = imgData.data;
 
       const headColor = convert8BitColor(c.head);
@@ -347,37 +355,28 @@ export class Renderer {
         const r = data[i], g = data[i + 1], b = data[i + 2], a = data[i + 3];
         if (a === 0) continue;
 
-        // Determine which body part this pixel belongs to based on dominant channel
-        // and compute the intensity from the mask pixel
         let color: [number, number, number] | null = null;
         let intensity = 0;
 
         if (r > 1 && g > 1 && b < r / 2 && b < g / 2) {
-          // Yellow (R+G high, B low) → Head
           color = headColor;
           intensity = (r + g) / (2 * 255);
         } else if (r > 1 && g < r / 2 && b < r / 2) {
-          // Red dominant → Body
           color = bodyColor;
           intensity = r / 255;
         } else if (g > 1 && r < g / 2 && b < g / 2) {
-          // Green dominant → Legs
           color = legsColor;
           intensity = g / 255;
         } else if (b > 1 && r < b / 2 && g < b / 2) {
-          // Blue dominant → Feet
           color = feetColor;
           intensity = b / 255;
         }
 
         if (color) {
-          // Multiplicative tint: preserve shading from mask intensity
           data[i] = Math.min(255, Math.round(color[0] * intensity));
           data[i + 1] = Math.min(255, Math.round(color[1] * intensity));
           data[i + 2] = Math.min(255, Math.round(color[2] * intensity));
-          // Keep original alpha
         } else {
-          // Non-matching pixels: make transparent (not part of any body region)
           data[i + 3] = 0;
         }
       }
@@ -387,7 +386,7 @@ export class Renderer {
       cached = tmpCanvas;
     }
 
-    this.ctx.drawImage(cached, dx, dy);
+    this.offCtx.drawImage(cached, dx, dy);
   }
 
   private drawIdle(w: number, h: number) {
@@ -409,69 +408,61 @@ export class Renderer {
     return (it.spriteIds && idx < it.spriteIds.length) ? it.spriteIds[idx] : 0;
   }
 
-  private getSpriteCanvas(sid: number, tpx: number): HTMLCanvasElement | null {
+  /** Get sprite at native 32px - no scaling */
+  private getNativeSprite(sid: number): HTMLCanvasElement | null {
     if (sid <= 0) return null;
-    const key = `${sid}_${tpx}`;
+    const key = `n_${sid}`;
     if (this.spriteCanvasCache.has(key)) return this.spriteCanvasCache.get(key)!;
 
     const imgData = this.spr.getSprite(sid);
     if (!imgData) { this.spriteCanvasCache.set(key, null); return null; }
 
     const canvas = document.createElement('canvas');
-    canvas.width = tpx;
-    canvas.height = tpx;
-    const sctx = canvas.getContext('2d')!;
-
-    if (tpx === TILE_PX) {
-      sctx.putImageData(imgData, 0, 0);
-    } else {
-      const tmp = document.createElement('canvas');
-      tmp.width = TILE_PX; tmp.height = TILE_PX;
-      tmp.getContext('2d')!.putImageData(imgData, 0, 0);
-      sctx.imageSmoothingEnabled = false;
-      sctx.drawImage(tmp, 0, 0, tpx, tpx);
-    }
+    canvas.width = TILE_PX;
+    canvas.height = TILE_PX;
+    canvas.getContext('2d')!.putImageData(imgData, 0, 0);
 
     this.spriteCanvasCache.set(key, canvas);
     return canvas;
   }
 
-  private drawCreatureHud(px: number, py: number, c: { name: string; health: number; id: number; outfit?: number }, tpx: number) {
+  /** Draw creature HUD at display resolution (after upscale) */
+  private drawCreatureHudHiRes(px: number, py: number, c: { name: string; health: number; id: number; outfit?: number }, tileW: number, tileH: number) {
     const ctx = this.ctx;
     const isPlayer = c.id === this.gs.playerId;
 
-    // For multi-tile creatures, center HUD over full creature area
     let hudX = px;
     let hudY = py;
-    let hudW = tpx;
+    let hudW = tileW;
     if (c.outfit) {
       const ot = this.dat.outfits.get(c.outfit);
       if (ot && (ot.width > 1 || ot.height > 1)) {
-        hudX = px - (ot.width - 1) * tpx / 2;
-        hudY = py - (ot.height - 1) * tpx;
-        hudW = ot.width * tpx;
+        hudX = px - (ot.width - 1) * tileW / 2;
+        hudY = py - (ot.height - 1) * tileH;
+        hudW = ot.width * tileW;
       }
     }
 
-    const bw = Math.min(hudW - 2, tpx * 2);
+    const bw = Math.min(hudW - 2, tileW * 2);
     const fw = Math.max(1, Math.floor(bw * c.health / 100));
     const hc = c.health > 50 ? '#00c800' : (c.health > 25 ? '#c8c800' : '#c80000');
     const barX = hudX + (hudW - bw) / 2;
+    const barH = Math.max(3, Math.round(tileH / 16));
 
     ctx.fillStyle = '#500000';
-    ctx.fillRect(barX, hudY - 6, bw, 4);
+    ctx.fillRect(barX, hudY - barH * 2, bw, barH);
     ctx.fillStyle = hc;
-    ctx.fillRect(barX, hudY - 6, fw, 4);
+    ctx.fillRect(barX, hudY - barH * 2, fw, barH);
 
-    const fs = Math.max(7, Math.min(10, Math.floor(tpx / 4)));
+    const fs = Math.max(9, Math.min(14, Math.floor(tileW / 4)));
     const nameColor = isPlayer ? '#00FF00' : '#64c8ff';
     ctx.font = `bold ${fs}px Arial`;
     ctx.textAlign = 'center';
     ctx.strokeStyle = '#000000';
-    ctx.lineWidth = 2;
-    ctx.strokeText(c.name.substring(0, 16), hudX + hudW / 2, hudY - 7);
+    ctx.lineWidth = 2.5;
+    ctx.strokeText(c.name.substring(0, 16), hudX + hudW / 2, hudY - barH * 2 - 2);
     ctx.fillStyle = nameColor;
-    ctx.fillText(c.name.substring(0, 16), hudX + hudW / 2, hudY - 7);
+    ctx.fillText(c.name.substring(0, 16), hudX + hudW / 2, hudY - barH * 2 - 2);
   }
 
   clearCache() {
