@@ -69,8 +69,9 @@ const TibiarcPlayer = ({ className }: TibiarcPlayerProps) => {
     const ro = new ResizeObserver((entries) => {
       for (const entry of entries) {
         const { width, height } = entry.contentRect;
-        const w = Math.round(width);
-        const h = Math.round(height);
+        const dpr = window.devicePixelRatio || 1;
+        const w = Math.round(width * dpr);
+        const h = Math.round(height * dpr);
         if (w > 0 && h > 0 && (canvas.width !== w || canvas.height !== h)) {
           canvas.width = w;
           canvas.height = h;
