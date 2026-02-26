@@ -29,17 +29,17 @@ const CamPlayerPage = () => {
 
       {/* Description */}
       <div className="px-4 py-3 bg-card/50 border-b border-border/30">
-        <p className="text-sm text-muted-foreground max-w-[800px] mx-auto text-center">
+        <p className="text-sm text-muted-foreground max-w-[960px] mx-auto text-center">
           {t('camPlayer.description')}
         </p>
       </div>
 
       {/* Player */}
       <div className="flex-1 flex flex-col items-center p-4 pt-6 gap-6">
-        <TibiarcPlayer className="w-full max-w-[850px]" />
+        <TibiarcPlayer className="w-full max-w-[960px]" />
 
         {/* Info box */}
-        <div className="w-full max-w-[800px] bg-card border border-border/50 rounded-sm p-4 space-y-2">
+        <div className="w-full max-w-[960px] bg-card border border-border/50 rounded-sm p-4 space-y-2">
           <div className="flex items-center gap-2 text-gold">
             <Info className="w-4 h-4" />
             <h2 className="font-heading text-sm">{t('camPlayer.aboutTitle')}</h2>

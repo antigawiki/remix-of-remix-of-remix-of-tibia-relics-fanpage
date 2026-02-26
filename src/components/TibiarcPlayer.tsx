@@ -55,9 +55,31 @@ const TibiarcPlayer = ({ className }: TibiarcPlayerProps) => {
   const [dataLoaded, setDataLoaded] = useState(false);
   const [floorOffset, setFloorOffset] = useState(0);
   const floorOffsetRef = useRef(0);
+  const containerRef = useRef<HTMLDivElement>(null);
 
   // Keep ref in sync with state for animation loop access
   useEffect(() => { floorOffsetRef.current = floorOffset; }, [floorOffset]);
+
+  // Dynamic canvas sizing via ResizeObserver
+  useEffect(() => {
+    const container = containerRef.current;
+    const canvas = canvasRef.current;
+    if (!container || !canvas) return;
+
+    const ro = new ResizeObserver((entries) => {
+      for (const entry of entries) {
+        const { width, height } = entry.contentRect;
+        const w = Math.round(width);
+        const h = Math.round(height);
+        if (w > 0 && h > 0 && (canvas.width !== w || canvas.height !== h)) {
+          canvas.width = w;
+          canvas.height = h;
+        }
+      }
+    });
+    ro.observe(container);
+    return () => ro.disconnect();
+  }, []);
 
   // Load Tibia data files on mount
   useEffect(() => {
@@ -316,14 +338,13 @@ const TibiarcPlayer = ({ className }: TibiarcPlayerProps) => {
     <div className={`flex flex-col gap-4 ${className}`}>
       {/* Canvas / Upload Area */}
       <div
-        className="relative w-full aspect-[4/3] max-w-[800px] mx-auto bg-black rounded-sm overflow-hidden border-2 border-border/50"
+        ref={containerRef}
+        className="relative w-full aspect-[15/11] max-w-[960px] mx-auto bg-black rounded-sm overflow-hidden border-2 border-border/50"
         onDrop={handleDrop}
         onDragOver={(e) => e.preventDefault()}
       >
         <canvas
           ref={canvasRef}
-          width={480}
-          height={352}
           className="w-full h-full"
           style={{ imageRendering: 'pixelated' }}
         />
@@ -385,7 +406,7 @@ const TibiarcPlayer = ({ className }: TibiarcPlayerProps) => {
       </div>
 
       {/* Controls */}
-      <div className="max-w-[800px] mx-auto w-full space-y-3">
+      <div className="max-w-[960px] mx-auto w-full space-y-3">
         {/* Progress bar */}
         <div className="flex items-center gap-3">
           <span className="text-xs text-muted-foreground min-w-[40px]">
