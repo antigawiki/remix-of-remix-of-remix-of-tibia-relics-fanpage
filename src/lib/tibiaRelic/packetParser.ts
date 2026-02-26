@@ -1,8 +1,11 @@
 /**
  * Parser de pacotes do protocolo Tibia 7.4 (OTHire/TibiaRelic)
  * Multi-floor map reading with OTClient-compatible perspective offsets
+ * 
+ * Deterministic u16 looktype for TibiaRelic 7.72 — no adaptive fallback.
+ * Frame-level error recovery: abort current frame on error, resume next.
  */
-import { Buf } from './buf';
+import { Buf, BufOverflowError } from './buf';
 import { DatLoader } from './datLoader';
 import { GameState, createCreature, DIR_N, DIR_E, DIR_S, DIR_W, type Creature, type TileItem } from './gameState';
 
@@ -43,83 +46,15 @@ export class PacketParser {
     else r.u16();
   }
 
-  private outfitLogCount = 0;
-  private u8Hits = 0;
-  private u16Hits = 0;
-  private outfitChecks = 0;
-  private modeSwapCount = 0;
-
-  private isValidOutfitColors(h: number, b: number, l: number, f: number): boolean {
-    return h <= 132 && b <= 132 && l <= 132 && f <= 132;
-  }
-
-  private isValidOutfit(oid: number, h: number, b: number, l: number, f: number): boolean {
-    if (oid <= 0) return false;
-    return this.dat.outfits.has(oid) && this.isValidOutfitColors(h, b, l, f);
-  }
-
+  /** Deterministic outfit read — no adaptive fallback */
   private readOutfit(r: Buf): { type: number; head: number; body: number; legs: number; feet: number } {
-    const savedPos = r.pos;
     const oid = this.readLooktype(r);
-    if (oid === 0) { r.u16(); return { type: 0, head: 0, body: 0, legs: 0, feet: 0 }; }
+    if (oid === 0) {
+      r.u16(); // item looktype
+      return { type: 0, head: 0, body: 0, legs: 0, feet: 0 };
+    }
     const h = r.u8(), b = r.u8(), l = r.u8(), f = r.u8();
-
-    // Validate current read
-    if (this.isValidOutfit(oid, h, b, l, f)) {
-      if (this.looktypeU16) this.u16Hits++; else this.u8Hits++;
-      this.outfitChecks++;
-      this.maybeSwapMode();
-      if (this.outfitLogCount < 5) {
-        this.outfitLogCount++;
-        console.log(`[PacketParser] Outfit OK: mode=${this.looktypeU16 ? 'u16' : 'u8'}, looktype=${oid}, h=${h} b=${b} l=${l} f=${f}`);
-      }
-      return { type: oid, head: h, body: b, legs: l, feet: f };
-    }
-
-    // Try alternate mode
-    r.pos = savedPos;
-    const altU16 = !this.looktypeU16;
-    const altOid = altU16 ? r.u16() : r.u8();
-    if (altOid === 0) {
-      r.pos = savedPos;
-      this.readLooktype(r);
-      r.skip(4);
-      return { type: oid, head: h, body: b, legs: l, feet: f };
-    }
-    const ah = r.u8(), ab = r.u8(), al = r.u8(), af = r.u8();
-
-    if (this.isValidOutfit(altOid, ah, ab, al, af)) {
-      if (altU16) this.u16Hits++; else this.u8Hits++;
-      this.outfitChecks++;
-      this.maybeSwapMode();
-      if (this.outfitLogCount < 10) {
-        this.outfitLogCount++;
-        console.log(`[PacketParser] Outfit FALLBACK: ${this.looktypeU16 ? 'u16' : 'u8'}->${altU16 ? 'u16' : 'u8'}, looktype=${altOid}, h=${ah} b=${ab} l=${al} f=${af}`);
-      }
-      return { type: altOid, head: ah, body: ab, legs: al, feet: af };
-    }
-
-    // Neither mode valid — keep original parse
-    r.pos = savedPos;
-    this.readLooktype(r);
-    r.skip(4);
-    this.outfitChecks++;
     return { type: oid, head: h, body: b, legs: l, feet: f };
-  }
-
-  private maybeSwapMode() {
-    if (this.outfitChecks > 0 && this.outfitChecks % 20 === 0 && this.modeSwapCount < 3) {
-      const currentHits = this.looktypeU16 ? this.u16Hits : this.u8Hits;
-      const altHits = this.looktypeU16 ? this.u8Hits : this.u16Hits;
-      if (altHits > currentHits * 1.5 && altHits >= 5) {
-        this.looktypeU16 = !this.looktypeU16;
-        this.outfitWindowRangeU16 = this.looktypeU16;
-        this.modeSwapCount++;
-        console.log(`[PacketParser] Mode SWAP -> ${this.looktypeU16 ? 'u16' : 'u8'} (u8Hits=${this.u8Hits}, u16Hits=${this.u16Hits})`);
-        this.u8Hits = 0;
-        this.u16Hits = 0;
-      }
-    }
   }
 
   private pos3(r: Buf): [number, number, number] {
@@ -128,6 +63,7 @@ export class PacketParser {
 
   private loggedFirst = false;
   private unknownWarnCount = 0;
+  private frameErrorCount = 0;
 
   /** Get the floor range for multi-floor reading */
   private getFloorRange(z: number): { startz: number; endz: number; zstep: number } {
@@ -135,6 +71,23 @@ export class PacketParser {
       return { startz: z - 2, endz: Math.min(z + 2, 15), zstep: 1 };
     } else {
       return { startz: 7, endz: 0, zstep: -1 };
+    }
+  }
+
+  /** Clamp camZ to valid range [0..15] */
+  private clampCamZ() {
+    if (this.gs.camZ < 0) {
+      if (this.unknownWarnCount < 20) {
+        this.unknownWarnCount++;
+        console.warn(`[PacketParser] camZ clamped from ${this.gs.camZ} to 0`);
+      }
+      this.gs.camZ = 0;
+    } else if (this.gs.camZ > 15) {
+      if (this.unknownWarnCount < 20) {
+        this.unknownWarnCount++;
+        console.warn(`[PacketParser] camZ clamped from ${this.gs.camZ} to 15`);
+      }
+      this.gs.camZ = 15;
     }
   }
 
@@ -149,34 +102,28 @@ export class PacketParser {
       }
     }
 
-    let consecutiveSkips = 0;
     while (!r.eof()) {
-      const posBefore = r.pos;
       try {
         const t = r.u8();
         if (!this.dispatch(t, r)) {
-          r.pos = posBefore + 1;
-          consecutiveSkips++;
-          if (consecutiveSkips >= 3) {
-            if (this.unknownWarnCount < 20) {
-              this.unknownWarnCount++;
-              console.warn(`[PacketParser] 3 consecutive unknown opcodes near pos ${posBefore}, abandoning frame (${payload.length - r.pos} bytes left)`);
-            }
-            break;
-          }
-        } else {
-          consecutiveSkips = 0;
-        }
-      } catch (e) {
-        r.pos = posBefore + 1;
-        consecutiveSkips++;
-        if (consecutiveSkips >= 3) {
-          if (this.unknownWarnCount < 20) {
-            this.unknownWarnCount++;
-            console.warn(`[PacketParser] parse errors near pos ${posBefore}, abandoning frame`, e);
+          // Unknown opcode — abort this frame entirely
+          if (this.frameErrorCount < 30) {
+            this.frameErrorCount++;
+            console.warn(`[PacketParser] Unknown opcode 0x${t.toString(16)} at pos ${r.pos - 1}, abandoning frame (${r.left()} bytes left)`);
           }
           break;
         }
+      } catch (e) {
+        // Any parse error (including BufOverflow) — abort frame
+        if (this.frameErrorCount < 30) {
+          this.frameErrorCount++;
+          if (e instanceof BufOverflowError) {
+            console.warn(`[PacketParser] Buffer overflow, abandoning frame: ${e.message}`);
+          } else {
+            console.warn(`[PacketParser] Parse error, abandoning frame:`, e);
+          }
+        }
+        break;
       }
     }
   }
@@ -193,15 +140,15 @@ export class PacketParser {
     else if (t === 0x6a) this.addThing(r);
     else if (t === 0x6b) this.chgThing(r);
     else if (t === 0x6c) this.delThing(r);
-    // Standalone creature opcodes (appear at top-level in some .cam frames)
+    // Standalone creature opcodes
     else if (t === 0x61) this.standaloneCreatureFull(r);
     else if (t === 0x62) this.standaloneCreatureKnown(r);
     else if (t === 0x63) this.standaloneCreatureTurn(r);
     else if (t === 0x6d) this.moveCr(r);
     // Login
     else if (t === 0x0a) this.login(r);
-    else if (t === 0x0b) { /* GM actions - no payload in 7.72 */ }
-    else if (t === 0x0f) { /* FYI token - no payload in 7.72 */ }
+    else if (t === 0x0b) { /* GM actions */ }
+    else if (t === 0x0f) { /* FYI token */ }
     else if (t === 0x1e) { /* ping */ }
     // Container
     else if (t === 0x6e) this.openCont(r);
@@ -219,7 +166,7 @@ export class PacketParser {
     // Player Trade
     else if (t === 0x7d) this.skipTrade(r);
     else if (t === 0x7e) { r.skip16(); const n2 = r.u8(); for (let i = 0; i < n2; i++) this.skipItem(r); }
-    else if (t === 0x7f) { /* close trade - no data */ }
+    else if (t === 0x7f) { /* close trade */ }
     // World light
     else if (t === 0x82) { r.u8(); r.u8(); }
     // Effects
@@ -228,7 +175,7 @@ export class PacketParser {
     else if (t === 0x85) { r.skip(5); r.skip(5); r.u8(); }
     // Creature updates
     else if (t === 0x86) { r.u32(); r.u8(); }
-    else if (t === 0x87) { const nt = r.u8(); for (let i = 0; i < nt; i++) r.u32(); } // trappers
+    else if (t === 0x87) { const nt = r.u8(); for (let i = 0; i < nt; i++) r.u32(); }
     else if (t === 0x8c) { const cid = r.u32(); const hp = r.u8(); const c = g.creatures.get(cid); if (c) c.health = hp; }
     else if (t === 0x8d) { r.u32(); r.u8(); r.u8(); }
     else if (t === 0x8e) { r.u32(); this.skipOutfit(r); }
@@ -239,7 +186,11 @@ export class PacketParser {
     else if (t === 0x96) { r.u32(); r.u16(); r.u16(); r.skip16(); }
     else if (t === 0x97) { r.u8(); r.u32(); r.skip16(); }
     // Player pos
-    else if (t === 0x9a) { const [x, y, z] = this.pos3(r); g.camX = x; g.camY = y; g.camZ = z; }
+    else if (t === 0x9a) {
+      const [x, y, z] = this.pos3(r);
+      g.camX = x; g.camY = y; g.camZ = z;
+      this.clampCamZ();
+    }
     // Stats/skills/icons
     else if (t === 0xa0) this.readStats(r);
     else if (t === 0xa1) r.skip(14);
@@ -250,8 +201,8 @@ export class PacketParser {
     else if (t === 0xab) { const nc = r.u8(); for (let i = 0; i < nc; i++) { r.u16(); r.str16(); } }
     else if (t === 0xac) { r.u16(); r.str16(); }
     else if (t === 0xad) r.str16();
-    else if (t === 0xae) { /* close channel - no payload in 7.72 */ }
-    else if (t === 0xaf) { /* close channel - no payload in 7.72 */ }
+    else if (t === 0xae) { /* close channel */ }
+    else if (t === 0xaf) { /* close channel */ }
     else if (t === 0xb0) r.skip(2);
     else if (t === 0xb1) { /* lockViolation */ }
     else if (t === 0xb2) { r.u16(); r.skip16(); }
@@ -287,6 +238,7 @@ export class PacketParser {
   private mapDesc(r: Buf) {
     const [x, y, z] = this.pos3(r);
     this.gs.camX = x; this.gs.camY = y; this.gs.camZ = z;
+    this.clampCamZ();
     this.gs.mapLoaded = true;
 
     const { startz, endz, zstep } = this.getFloorRange(z);
@@ -422,9 +374,9 @@ export class PacketParser {
   private skipOutfitWindow(r: Buf) {
     this.skipOutfit(r);
     if (this.outfitWindowRangeU16) {
-      r.u16(); r.u16(); // start/end outfit range
+      r.u16(); r.u16();
     } else {
-      r.u8(); r.u8(); // start/end outfit range (legacy 7.x)
+      r.u8(); r.u8();
     }
   }
 
@@ -441,33 +393,28 @@ export class PacketParser {
   private floorUp(r: Buf) {
     const g = this.gs;
     g.camZ--;
+    this.clampCamZ();
 
     if (g.camZ === 7) {
-      // Crossed from underground to surface: read floors 5 down to 0
-      // OTClient: offset = 8 - nz, shared skip
       let skip = 0;
       for (let nz = 5; nz >= 0; nz--) {
         const offset = 8 - nz;
         skip = this.readFloorArea(r, g.camX - 8, g.camY - 6, nz, 18, 14, offset, skip);
       }
     } else if (g.camZ > 7) {
-      // Underground going up: read floor z-2 with offset 3
       const nz = g.camZ - 2;
       this.readFloorAreaWithOffset(r, g.camX - 8, g.camY - 6, nz, 18, 14, 3);
     }
-    // NOTE: camZ < 7 (surface going higher) sends NO floor data per OTClient protocol
 
-    // Apply NW shift AFTER reading
     g.camX++; g.camY++;
   }
 
   private floorDown(r: Buf) {
     const g = this.gs;
     g.camZ++;
+    this.clampCamZ();
 
     if (g.camZ === 8) {
-      // Crossed from surface to underground: read floors 8, 9, 10
-      // OTClient: j starts at -1 decrementing → offsets -1, -2, -3
       let skip = 0;
       let j = -1;
       for (let nz = g.camZ; nz <= Math.min(g.camZ + 2, 15); nz++) {
@@ -475,12 +422,10 @@ export class PacketParser {
         j--;
       }
     } else if (g.camZ > 8 && g.camZ < 14) {
-      // Underground going deeper: read floor z+2 with offset -3
       const nz = Math.min(g.camZ + 2, 15);
       this.readFloorAreaWithOffset(r, g.camX - 8, g.camY - 6, nz, 18, 14, -3);
     }
 
-    // Apply NW shift AFTER reading
     g.camX--; g.camY--;
   }
 
@@ -489,11 +434,9 @@ export class PacketParser {
       r.u32();
       const name = r.str16();
       const tp = r.u8();
-      // 7.72 speak types (from tibiarc InitSpeakTypes)
-      const POS_TYPES = new Set([0x01, 0x02, 0x03, 0x0E, 0x10]); // Say, Whisper, Yell, MonsterSay, MonsterYell
-      const CHAN_TYPES = new Set([0x05, 0x0A, 0x0C]); // ChannelYellow, ChannelRed, ChannelOrange
-      const TIME_TYPES = new Set([0x06]); // RuleViolationChannel
-      // No-data: 0x04 PrivateIn, 0x07 RVAnswer, 0x08 RVContinue, 0x09 Broadcast, 0x0B GMToPlayer
+      const POS_TYPES = new Set([0x01, 0x02, 0x03, 0x0E, 0x10]);
+      const CHAN_TYPES = new Set([0x05, 0x0A, 0x0C]);
+      const TIME_TYPES = new Set([0x06]);
       if (POS_TYPES.has(tp)) r.skip(5);
       else if (CHAN_TYPES.has(tp)) r.u16();
       else if (TIME_TYPES.has(tp)) r.u32();
@@ -508,9 +451,6 @@ export class PacketParser {
   }
 
   private readStats(r: Buf) {
-    // 7.72 stats: hp(u16) + hpMax(u16) + cap(u16) + exp(u32) + level(u16) + levelPercent(u8)
-    // + mana(u16) + manaMax(u16) + magicLevel(u8) + magicLevelPercent(u8) + soul(u8)
-    // = 20 bytes total. Some custom servers add stamina(u16) = 22 bytes.
     r.skip(20);
   }
 
@@ -523,79 +463,45 @@ export class PacketParser {
     }
   }
 
-  // --- Standalone creature opcodes (top-level in .cam frames) ---
-  // These are defensive: validate marker bytes and rollback on mismatch
+  // --- Standalone creature opcodes ---
 
   private standaloneCreatureFull(r: Buf) {
-    const savedPos = r.pos;
-    try {
-      const [x, y, z] = this.pos3(r);
-      r.u8(); // stackPos
-      const marker = r.u16();
-      if (marker !== CR_FULL) {
-        // Marker mismatch — rollback and let error recovery handle it
-        r.pos = savedPos;
-        return;
-      }
-      const c = this.readCreatureFull(r);
-      if (!c || !this.dat.outfits.has(c.outfit) && c.outfit > 0) {
-        // Sanity: invalid looktype, creature still stored but log it
-        if (this.unknownWarnCount < 20) {
-          this.unknownWarnCount++;
-          console.warn(`[PacketParser] standaloneCreatureFull: invalid outfit ${c?.outfit} for ${c?.name}`);
-        }
-      }
-      if (c) {
-        c.x = x; c.y = y; c.z = z;
-        const tile = this.gs.getTile(x, y, z);
-        tile.push(['cr', c.id]);
-        this.gs.setTile(x, y, z, tile);
-      }
-    } catch {
-      r.pos = savedPos + 1; // skip 1 byte for recovery
+    const [x, y, z] = this.pos3(r);
+    r.u8(); // stackPos
+    const marker = r.u16();
+    if (marker !== CR_FULL) {
+      throw new Error(`standaloneCreatureFull: bad marker 0x${marker.toString(16)}`);
     }
+    const c = this.readCreatureFull(r);
+    c.x = x; c.y = y; c.z = z;
+    const tile = this.gs.getTile(x, y, z);
+    tile.push(['cr', c.id]);
+    this.gs.setTile(x, y, z, tile);
   }
 
   private standaloneCreatureKnown(r: Buf) {
-    const savedPos = r.pos;
-    try {
-      const [x, y, z] = this.pos3(r);
-      r.u8(); // stackPos
-      const marker = r.u16();
-      if (marker !== CR_KNOWN) {
-        r.pos = savedPos;
-        return;
-      }
-      this.readCreatureKnown(r, x, y, z);
-    } catch {
-      r.pos = savedPos + 1;
+    const [x, y, z] = this.pos3(r);
+    r.u8(); // stackPos
+    const marker = r.u16();
+    if (marker !== CR_KNOWN) {
+      throw new Error(`standaloneCreatureKnown: bad marker 0x${marker.toString(16)}`);
     }
+    this.readCreatureKnown(r, x, y, z);
   }
 
   private standaloneCreatureTurn(r: Buf) {
-    const savedPos = r.pos;
-    try {
-      const [x, y, z] = this.pos3(r);
-      const sp = r.u8();
-      const marker = r.u16();
-      if (marker !== CR_OLD) {
-        r.pos = savedPos;
-        return;
-      }
-      const cid = r.u32();
-      const dir = r.u8();
-      if (dir > 3) {
-        // Invalid direction — likely parse misalignment
-        r.pos = savedPos;
-        return;
-      }
-      const c = this.gs.creatures.get(cid);
-      if (c) {
-        c.direction = dir;
-        c.x = x; c.y = y; c.z = z;
-      }
-    } catch {
-      r.pos = savedPos + 1;
+    const [x, y, z] = this.pos3(r);
+    r.u8(); // stackPos
+    const marker = r.u16();
+    if (marker !== CR_OLD) {
+      throw new Error(`standaloneCreatureTurn: bad marker 0x${marker.toString(16)}`);
+    }
+    const cid = r.u32();
+    const dir = r.u8();
+    const c = this.gs.creatures.get(cid);
+    if (c) {
+      c.direction = dir;
+      c.x = x; c.y = y; c.z = z;
     }
   }
 
@@ -681,7 +587,6 @@ export class PacketParser {
     return 0;
   }
 
-  /** Read a single floor area (no skip carry-over) - column-major (X outer, Y inner) */
   private readSingleFloorArea(r: Buf, ox: number, oy: number, z: number, W: number, H: number) {
     let skip = 0;
     for (let tx = 0; tx < W; tx++) {
@@ -697,7 +602,6 @@ export class PacketParser {
     }
   }
 
-  /** Read one floor with perspective offset and return the remaining skip count - column-major */
   private readFloorArea(r: Buf, ox: number, oy: number, z: number, W: number, H: number, offset: number, skip: number): number {
     for (let tx = 0; tx < W; tx++) {
       for (let ty = 0; ty < H; ty++) {
@@ -713,7 +617,6 @@ export class PacketParser {
     return skip;
   }
 
-  /** Read a single floor with offset (no skip chaining) - column-major */
   private readFloorAreaWithOffset(r: Buf, ox: number, oy: number, z: number, W: number, H: number, offset: number) {
     let skip = 0;
     for (let tx = 0; tx < W; tx++) {
@@ -729,7 +632,6 @@ export class PacketParser {
     }
   }
 
-  /** Read map area across multiple floors with shared skip counter and per-floor offsets - column-major */
   private readMultiFloorArea(r: Buf, ox: number, oy: number, W: number, H: number, camZ: number, startz: number, endz: number, zstep: number) {
     let skip = 0;
     for (let nz = startz; nz !== endz + zstep; nz += zstep) {
