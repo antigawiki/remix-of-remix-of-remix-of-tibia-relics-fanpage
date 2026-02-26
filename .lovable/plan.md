@@ -1,59 +1,78 @@
 
+# Fix: Sprites de criaturas trocados no Cam Player
 
-# Melhoria na Detecao de Looktype e Auto-Correcao de Outfits
+## Problema identificado
 
-## Problema
-1. A deteccao u8/u16 e feita apenas uma vez no inicio da cam, mas algumas cams podem ter frames onde o modo escolhido gera outfits invalidos
-2. Criaturas com outfits que nao existem no .dat sao renderizadas com sprites errados em vez de serem corrigidas
+O DAT loader usa o metodo `readItem` para parsear TODAS as categorias (items, outfits, efeitos, distancia). Esse metodo le um campo extra `patZ` (byte adicional do TibiaRelic) para todas as entradas. Porem, e muito provavel que o campo `patZ` so exista para **items**, nao para outfits/efeitos/distancia.
 
-## Solucao
+Quando o parser le um byte `patZ` que nao existe para outfits:
+1. O byte que deveria ser `anim` e lido como `patZ`
+2. O primeiro byte do primeiro sprite ID e lido como `anim`
+3. A contagem de sprites fica errada
+4. A posicao de leitura desloca, e TODOS os outfits subsequentes sao lidos da posicao errada
+5. Resultado: outfit do rotworm contem sprite IDs do tigre, outfit do elf NPC contem sprite IDs de outra criatura
 
-### 1. Validacao per-frame com auto-correcao no PacketParser (`src/lib/tibiaRelic/packetParser.ts`)
+Isso explica porque:
+- **Corpos mortos** (items) renderizam corretamente: items tem patZ e sao parseados primeiro
+- **Criaturas vivas** mostram sprites errados: outfits nao tem patZ mas o parser le um byte extra, causando drift cascateante
 
-Adicionar logica de auto-correcao diretamente no `readOutfit`:
-- Apos ler um outfit, verificar se o looktype existe no `dat.outfits`
-- Se nao existir e o valor for plausivel no modo alternativo, fazer rollback do buffer e re-ler com o outro modo (u8 em vez de u16 ou vice-versa)
-- Manter contadores de acertos/erros por modo para ajustar dinamicamente
+## Plano de implementacao
 
-Mudancas:
-- Adicionar metodo `tryReadOutfitWithFallback(r: Buf)` que tenta ler no modo atual, e se o outfit nao existir no .dat, faz rollback e tenta no modo alternativo
-- Adicionar contadores `u8Hits`, `u16Hits` para rastrear qual modo acerta mais
-- A cada N criaturas (ex: 20), se o modo alternativo tiver mais acertos, trocar o modo padrao (`this.looktypeU16`) automaticamente
+### 1. Separar leitura de dimensoes com/sem patZ no DatLoader
 
-### 2. Deteccao inicial mais robusta (`src/components/TibiarcPlayer.tsx`)
+Modificar `datLoader.ts` para aceitar um parametro indicando se deve ler patZ:
+- `readItem(bytes, view, p, hasPatZ)` - adicionar parametro booleano
+- Items: `hasPatZ = true`
+- Outfits, efeitos, distancia: `hasPatZ = false`
 
-Melhorar `evaluateParseMode`:
-- Aumentar o peso de outfits validos vs invalidos no scoring
-- Adicionar verificacao de sanidade nos valores de head/body/legs/feet (devem ser 0-132 para cores validas do Tibia 7.x)
-- Penalizar mais fortemente outfits com valores de cor fora do range
+Quando `hasPatZ = false`, pular a leitura do byte patZ e usar patZ=1 como padrao.
 
-### Detalhes Tecnicos
+### 2. Adicionar verificacao de outfits no DatLoader
 
-**`packetParser.ts` - Novo metodo `tryReadOutfitWithFallback`:**
-```text
-readOutfit(r) {
-  savedPos = r.pos - (looktypeU16 ? 2 : 1)  // antes do looktype
-  oid = readLooktype(r)  // modo atual
-  if oid == 0: r.u16(); return zero outfit
-  h,b,l,f = r.u8() x4
+Adicionar ao metodo `verify()` checagens para outfits conhecidos, similar ao que ja existe para items. Logar os primeiros sprite IDs de alguns outfits para validacao visual no console.
 
-  // Validacao: outfit existe no .dat e cores sao validas?
-  if oid > 0 && (!dat.outfits.has(oid) || h > 132 || b > 132 || l > 132 || f > 132):
-    // Tentar modo alternativo
-    r.pos = savedPos
-    altOid = ler com modo inverso (u8 se era u16, u16 se era u8)
-    if altOid > 0 && dat.outfits.has(altOid):
-      altH,altB,altL,altF = r.u8() x4
-      if cores validas: usar este resultado, incrementar altHits
-    else:
-      restaurar pos original apos leitura normal, incrementar currentHits
+### 3. Remover fallback `resolveOutfit` do Renderer
 
-  // A cada 20 criaturas, avaliar se deve trocar modo
-  if totalChecks % 20 == 0 && altHits > currentHits * 1.5:
-    trocar this.looktypeU16
+O metodo `resolveOutfit` que busca outfits proximos (+-10 IDs) mascara o problema real e pode mapear para criaturas completamente erradas. Remover esse fallback - se um outfit nao tem sprites, mostrar o placeholder colorido em vez de uma criatura errada.
+
+### 4. Adicionar log diagnostico temporario
+
+Adicionar log no renderer para os primeiros creatures renderizados, mostrando: looktype, spriteIds do DAT, dimensoes do outfit. Isso confirma que o fix funcionou.
+
+---
+
+### Detalhes tecnicos
+
+**datLoader.ts** - Mudanca principal:
+
+```typescript
+// No load(), passar hasPatZ para cada categoria:
+for (let i = 0; i < nItems; i++) {
+  const [it, np] = this.readItem(bytes, view, p, true);  // items TEM patZ
+  ...
+}
+for (let i = 0; i < nOutfits; i++) {
+  const [it, np] = this.readItem(bytes, view, p, false); // outfits NAO tem patZ
+  ...
+}
+// fx e dist tambem sem patZ
 ```
 
-**Arquivos modificados:**
-- `src/lib/tibiaRelic/packetParser.ts` - Adicionar fallback com re-parse e contadores adaptativos
-- `src/components/TibiarcPlayer.tsx` - Melhorar scoring da deteccao inicial com validacao de cores
+```typescript
+// Na leitura de dimensoes:
+it.patY = Math.max(1, Math.min(bytes[p], 8)); p++;
+if (hasPatZ) {
+  it.patZ = Math.max(1, Math.min(bytes[p], 8)); p++;
+} else {
+  it.patZ = 1; // padrao
+}
+it.anim = Math.max(1, Math.min(bytes[p], 32)); p++;
+```
 
+**renderer.ts** - Remover resolveOutfit:
+
+```typescript
+// Voltar a usar lookup direto
+const ot = this.dat.outfits.get(c.outfit);
+// Em vez de: const ot = this.resolveOutfit(c.outfit);
+```
