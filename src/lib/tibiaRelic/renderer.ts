@@ -179,8 +179,8 @@ export class Renderer {
             firstFloor = Math.max(firstFloor, checkZ + 1);
           }
 
-          // NW offset position (covered up perspective) — tibiarc uses +dz offset
-          const tile2 = g.getTile(g.camX + ix + dz, g.camY + iy + dz, checkZ);
+          // NW offset position (covered up perspective)
+          const tile2 = g.getTile(g.camX + ix - dz, g.camY + iy - dz, checkZ);
           if (this.tileCoversFloor(tile2)) {
             firstFloor = Math.max(firstFloor, checkZ + 1);
           }
