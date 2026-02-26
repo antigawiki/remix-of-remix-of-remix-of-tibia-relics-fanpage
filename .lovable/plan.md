@@ -1,90 +1,60 @@
 
 
-## Fix: Creature Rendering Based on tibiarc Reference
+## Melhorar Qualidade Grafica do Cam Player
 
-### Root Cause Analysis
+### Problema Identificado
 
-After studying the tibiarc C++ source code (renderer.cpp, types.cpp, versions.cpp), I identified several rendering differences between our implementation and the reference that explain the "cut" creature sprites:
+Comparando as screenshots do player original vs o nosso, ha 3 causas principais de diferenca visual:
 
-### Problem 1: Wrong Animation Frame Selection (Main Cause)
+### 1. devicePixelRatio ignorado (causa principal de "blur")
 
-Our renderer cycles all creatures through animation frames 0-1-2 constantly (`phCr = (tick/6) % 3`), regardless of whether the creature is walking or standing still.
+Em telas retina/HiDPI (a maioria dos monitores modernos tem devicePixelRatio = 2), o canvas tem 960 pixels internos mas ocupa 1920 pixels fisicos. O browser faz upscale 2x, deixando tudo embaçado. O tibiarc/OTClient renderizam na resolucao nativa do dispositivo.
 
-In tibiarc, standing creatures use frame 0 (idle pose). Only walking creatures cycle through frames. This means our renderer shows mid-step walk poses on creatures that should be standing still, making them look "cut" or awkward compared to the reference player.
+**Fix**: Multiplicar a resolucao do canvas por `window.devicePixelRatio` no ResizeObserver.
 
-tibiarc's logic:
-```text
-if (AnimateIdle):
-    frame = (tick / 500) % frameCount
-else if (walking):
-    if frameCount <= 2: cycle all frames
-    if frameCount >= 3: frame = (tick/100) % (frameCount-1) + 1  (skip idle frame 0)
-else (standing still):
-    frame = 0  (idle pose)
-```
+### 2. Sprites escalados individualmente em vez de viewport inteiro
 
-### Problem 2: Displacement Direction Inverted
+Cada sprite e pre-escalado de 32px para `tpx` (ex: 64px) individualmente via `drawImage` com `imageSmoothingEnabled = false`. Quando `tpx` nao e multiplo exato de 32 (ex: canvas 940px / 15 = 62.6, floor = 62), ha arredondamento que causa gaps de 1px entre tiles e bordas irregulares.
 
-Our renderer adds displacement (bx + dispX), which shifts sprites right/down. tibiarc subtracts displacement (rightX -= DisplacementX), shifting sprites left/up. This shifts multi-tile and displaced creatures to wrong positions.
+**Fix**: Renderizar tudo em um offscreen canvas de resolucao nativa (15*32=480 x 11*32=352) e depois escalar o resultado inteiro para o canvas de display. Isso garante sprites pixel-perfect e alinhamento perfeito entre tiles.
 
-### Problem 3: patY/patZ Semantics Wrong
+### 3. Texto do HUD com fonte e tamanho inadequados
 
-tibiarc uses:
-- patX (XDiv) = direction (0-3)
-- **patY (YDiv) = addon layer** (0=base, 1+=addons)
-- **patZ (ZDiv) = mount** (0=unmounted, 1=mounted)
+O nome e barra de vida das criaturas usa fonte Arial em tamanhos muito pequenos (7-10px) que nao renderiza bem em pixel art. O cliente original usa bitmap fonts de tamanho fixo.
 
-Our code iterates patZ for "addons" and hardcodes patY=0. While this doesn't matter for TibiaRelic 7.72 (all outfits have patY=1, patZ=1), it's semantically wrong.
+**Fix**: Renderizar o HUD depois do upscale (no canvas final, nao no offscreen), para que texto use a resolucao completa do display.
 
-### Problem 4: HUD Positioning for Multi-tile Creatures
+### Plano de Implementacao
 
-The name and health bar for 2x2+ creatures is positioned above the anchor tile (bottom-right) instead of centered over the full creature area.
+**Arquivo: `src/lib/tibiaRelic/renderer.ts`**
 
-### Changes
+1. Alterar `draw()` para sempre renderizar na resolucao nativa (480x352) em um offscreen canvas interno
+2. Depois, copiar o offscreen canvas para o canvas real com scale up e `imageSmoothingEnabled = false`
+3. Separar o desenho do HUD (nomes/barras) para acontecer APOS o upscale, no canvas final em resolucao nativa do display
+4. Remover toda logica de `tpx` variavel e `scale` - sprites sempre em 32px
 
-**File: `src/lib/tibiaRelic/renderer.ts`**
+**Arquivo: `src/components/TibiarcPlayer.tsx`**
 
-1. **Fix animation frame selection in drawCreature**:
-   - Standing creatures (not walking): always use frame 0
-   - Walking creatures with 3+ frames: use `(tick/100) % (frameCount-1) + 1` (skip idle frame)
-   - Walking creatures with <=2 frames: cycle normally
-   - AnimateIdle creatures: `(tick/500) % frameCount`
-   - Add walking state check using creature speed and tick
+1. Atualizar ResizeObserver para considerar `devicePixelRatio` na resolucao do canvas
+2. O canvas CSS continua em `aspect-[15/11]`, mas a resolucao interna sera `width * dpr` x `height * dpr`
 
-2. **Fix displacement direction**:
-   - Change `bx + dispXPx` to `bx - dispXPx` for creatures
-   - Change `by + dispYPx` to `by - dispYPx` for creatures
-   - Items keep current direction (displacement semantics differ for items)
-
-3. **Fix patY addon iteration**:
-   - Iterate `patY` (0 to PY-1) for addon layers instead of patZ
-   - Use patZ=0 (no mount) as constant
-   - For each patY level, draw base layer (l=0) and tint mask (l=1)
-
-4. **Fix HUD positioning for multi-tile creatures**:
-   - For creatures with outfit width/height > 1, center the name and health bar over the full creature area, not just the anchor tile
-
-5. **Remove diagnostic logs** added in previous iterations (creatureLogCount, verify hex dumps)
-
-### Rendering Loop After Fix
+### Resultado Esperado
 
 ```text
-For each creature:
-  Get outfit from DAT
-  Determine animation frame:
-    if creature is idle -> frame = 0
-    if creature is walking -> frame = cycle through walk frames
-    if outfit has AnimateIdle flag -> frame = (tick/500) % frameCount
+Antes:
+  Canvas: 960x704 pixels internos
+  Sprites: 32px -> 64px (escala individual, possivel fracao)
+  Tela retina: browser upscale 2x -> borrado
 
-  For each addon layer (patY = 0..PY-1):
-    Draw base sprite (layer 0) with corrected displacement
-    Draw tinted mask (layer 1) if layers >= 2
-
-  Draw HUD centered over full creature width/height
+Depois:
+  Offscreen: 480x352 fixo (sprites em 32px nativo)
+  Canvas: 1920x1408 em retina (960*2 x 704*2)
+  Um unico drawImage escala 480->1920 com nearest-neighbor
+  HUD (texto) renderizado apos upscale na resolucao do display
+  -> pixel-perfect, crisp, sem gaps entre tiles
 ```
 
-### Files to Modify
-- `src/lib/tibiaRelic/renderer.ts` - All rendering fixes
-- `src/lib/tibiaRelic/gameState.ts` - Add `walking: boolean` and `walkEndTick: number` to Creature (needed for animation state)
-- `src/lib/tibiaRelic/packetParser.ts` - Track walking state when creatures move
+### Arquivos a Modificar
+- `src/lib/tibiaRelic/renderer.ts` - Offscreen canvas + separar HUD
+- `src/components/TibiarcPlayer.tsx` - devicePixelRatio no ResizeObserver
 
