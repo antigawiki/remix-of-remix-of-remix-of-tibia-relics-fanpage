@@ -42,19 +42,23 @@ const evaluateParseMode = (cam: CamFile, dat: DatLoader, mode: ParseProtocolMode
   const knownOutfits = creatures.filter(c => c.outfit > 0 && dat.outfits.has(c.outfit)).length;
   const unknownOutfits = creatures.filter(c => c.outfit > 0 && !dat.outfits.has(c.outfit)).length;
   const hugeOutfits = creatures.filter(c => c.outfit > dat.outfits.size).length;
+  // Check color sanity (Tibia 7.x valid colors: 0-132)
+  const badColors = creatures.filter(c => c.outfit > 0 && (c.head > 132 || c.body > 132 || c.legs > 132 || c.feet > 132)).length;
 
   let score = 0;
   if (gs.mapLoaded) score += 20;
   score += Math.min(gs.tiles.size, 300) * 0.05;
-  score += knownOutfits * 2;
-  score -= unknownOutfits * 3;
-  score -= hugeOutfits * 5;
+  score += knownOutfits * 5;       // increased weight for valid outfits
+  score -= unknownOutfits * 8;     // heavy penalty for invalid outfits
+  score -= hugeOutfits * 10;       // very heavy penalty for impossible outfits
+  score -= badColors * 6;          // penalty for invalid color values
 
   return {
     score,
     knownOutfits,
     unknownOutfits,
     hugeOutfits,
+    badColors,
     creatures: creatures.length,
     tiles: gs.tiles.size,
   };
@@ -67,8 +71,8 @@ const detectParseProtocolMode = (cam: CamFile, dat: DatLoader): ParseProtocolMod
   const selected = u8.score > u16.score + 5 ? 'u8' : 'u16';
 
   console.log(
-    `[TibiarcPlayer] Parser mode detection: u8(score=${u8.score.toFixed(1)}, known=${u8.knownOutfits}, unknown=${u8.unknownOutfits}) ` +
-    `u16(score=${u16.score.toFixed(1)}, known=${u16.knownOutfits}, unknown=${u16.unknownOutfits}) -> ${selected}`
+    `[TibiarcPlayer] Parser mode detection: u8(score=${u8.score.toFixed(1)}, known=${u8.knownOutfits}, unknown=${u8.unknownOutfits}, badColors=${u8.badColors}) ` +
+    `u16(score=${u16.score.toFixed(1)}, known=${u16.knownOutfits}, unknown=${u16.unknownOutfits}, badColors=${u16.badColors}) -> ${selected}`
   );
 
   return selected;
