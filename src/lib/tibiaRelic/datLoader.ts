@@ -60,19 +60,19 @@ export class DatLoader {
     console.log(`[DatLoader] items=${nItems} outfits=${nOutfits} fx=${nFx} dist=${nDist}`);
 
     for (let i = 0; i < nItems; i++) {
-      const [it, np] = this.readItem(bytes, view, p, true);  // items TEM patZ
+      const [it, np] = this.readItem(bytes, view, p);
       it.id = 100 + i;
       this.items.set(it.id, it);
       p = np;
     }
     for (let i = 0; i < nOutfits; i++) {
-      const [it, np] = this.readItem(bytes, view, p, false); // outfits NAO tem patZ
+      const [it, np] = this.readItem(bytes, view, p);
       it.id = 1 + i;
       this.outfits.set(it.id, it);
       p = np;
     }
     for (let i = 0; i < nFx + nDist; i++) {
-      const [, np] = this.readItem(bytes, view, p, false); // fx/dist NAO tem patZ
+      const [, np] = this.readItem(bytes, view, p);
       p = np;
     }
 
@@ -102,7 +102,7 @@ export class DatLoader {
     }
   }
 
-  private readItem(bytes: Uint8Array, view: DataView, p: number, hasPatZ: boolean): [ItemType, number] {
+  private readItem(bytes: Uint8Array, view: DataView, p: number): [ItemType, number] {
     const it = createItemType();
 
     for (let iter = 0; iter < 100; iter++) {
@@ -157,11 +157,7 @@ export class DatLoader {
     it.layers = Math.max(1, Math.min(bytes[p], 8)); p++;
     it.patX = Math.max(1, Math.min(bytes[p], 8)); p++;
     it.patY = Math.max(1, Math.min(bytes[p], 8)); p++;
-    if (hasPatZ) {
-      it.patZ = Math.max(1, Math.min(bytes[p], 8)); p++; // extra TibiaRelic field (items only)
-    } else {
-      it.patZ = 1; // outfits/fx/dist don't have patZ
-    }
+    it.patZ = Math.max(1, Math.min(bytes[p], 8)); p++; // TibiaRelic extra field
     it.anim = Math.max(1, Math.min(bytes[p], 32)); p++;
 
     let n = it.anim * it.patZ * it.patY * it.patX * it.layers * it.height * it.width;

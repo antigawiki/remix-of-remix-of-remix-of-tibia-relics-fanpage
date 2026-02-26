@@ -28,7 +28,7 @@ export class Renderer {
   private tick = 0;
   private spriteCanvasCache: Map<string, HTMLCanvasElement | null> = new Map();
   private tintCache: Map<string, HTMLCanvasElement | null> = new Map();
-  private loggedCreature = false;
+  private creatureLoggedOnce = false;
 
   public floorOverride: number | null = null;
 
@@ -225,15 +225,15 @@ export class Renderer {
     }
   }
 
-  
+  private creatureLogCount = 0;
 
   private drawCreature(c: Creature, bx: number, by: number, tpx: number, scale: number) {
     const phCr = (Math.floor(this.tick / 6)) % 3;
     const ot = this.dat.outfits.get(c.outfit);
 
-    if (!this.loggedCreature) {
-      this.loggedCreature = true;
-      console.log(`[Renderer] First creature: outfit=${c.outfit}, name=${c.name}, datHasOutfit=${!!ot}, layers=${ot?.layers}, spriteIds=${ot?.spriteIds?.slice(0, 8)}`);
+    if (this.creatureLogCount < 15) {
+      this.creatureLogCount++;
+      console.log(`[Renderer] Creature: name=${c.name}, looktype=${c.outfit}, datHasOutfit=${!!ot}, layers=${ot?.layers}, dims=${ot?.width}x${ot?.height}, patX=${ot?.patX}, patY=${ot?.patY}, patZ=${ot?.patZ}, anim=${ot?.anim}, sprites[0..7]=${ot?.spriteIds?.slice(0, 8)}`);
     }
 
     let rendered = false;
