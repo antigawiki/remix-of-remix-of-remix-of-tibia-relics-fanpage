@@ -10,6 +10,7 @@ export interface Creature {
   health: number;
   direction: number;
   outfit: number;
+  outfitItem: number;
   head: number;
   body: number;
   legs: number;
@@ -23,7 +24,7 @@ export interface Creature {
 export function createCreature(): Creature {
   return {
     id: 0, name: '', health: 100, direction: DIR_S,
-    outfit: 128, head: 0, body: 0, legs: 0, feet: 0,
+    outfit: 128, outfitItem: 0, head: 0, body: 0, legs: 0, feet: 0,
     x: 0, y: 0, z: 0, speed: 200,
   };
 }

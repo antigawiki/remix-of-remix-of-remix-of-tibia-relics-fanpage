@@ -229,11 +229,21 @@ export class Renderer {
 
   private drawCreature(c: Creature, bx: number, by: number, tpx: number, scale: number) {
     const phCr = (Math.floor(this.tick / 6)) % 3;
+
+    // Item-based looktype (looktype = 0, uses item sprite)
+    if (c.outfit === 0 && c.outfitItem > 0) {
+      const it = this.dat.items.get(c.outfitItem);
+      if (it) {
+        this.drawItem(it, bx, by, 0, scale, tpx, phCr, c.x, c.y, this.ctx.canvas.width, this.ctx.canvas.height);
+        return;
+      }
+    }
+
     const ot = this.dat.outfits.get(c.outfit);
 
     if (this.creatureLogCount < 15) {
       this.creatureLogCount++;
-      console.log(`[Renderer] Creature: name=${c.name}, looktype=${c.outfit}, datHasOutfit=${!!ot}, layers=${ot?.layers}, dims=${ot?.width}x${ot?.height}, patX=${ot?.patX}, patY=${ot?.patY}, patZ=${ot?.patZ}, anim=${ot?.anim}, sprites[0..7]=${ot?.spriteIds?.slice(0, 8)}`);
+      console.log(`[Renderer] Creature: name=${c.name}, looktype=${c.outfit}, outfitItem=${c.outfitItem}, datHasOutfit=${!!ot}, layers=${ot?.layers}, dims=${ot?.width}x${ot?.height}, patX=${ot?.patX}, patY=${ot?.patY}, patZ=${ot?.patZ}, anim=${ot?.anim}, sprites[0..7]=${ot?.spriteIds?.slice(0, 8)}`);
     }
 
     let rendered = false;
@@ -248,37 +258,38 @@ export class Renderer {
       const dispXPx = Math.round(ot.dispX * scale);
       const dispYPx = Math.round(ot.dispY * scale);
 
-      // Draw base layer (layer 0) first
-      for (let th = 0; th < H; th++) {
-        for (let tw = 0; tw < W; tw++) {
-          const patX = xd % PX;
-          const patY = 0;
-          const idx = ((((((a * PZ + 0) * PY + patY) * PX + patX) * L + 0) * H + th) * W + tw);
-          const sid = (idx < ot.spriteIds.length) ? ot.spriteIds[idx] : 0;
-          const sprCanvas = this.getSpriteCanvas(sid, tpx);
-          if (sprCanvas) {
-            const dx = bx - tw * tpx + dispXPx;
-            const dy = by - th * tpx + dispYPx;
-            this.ctx.drawImage(sprCanvas, dx, dy);
-            rendered = true;
-          }
-        }
-      }
-
-      // Draw tinted mask layer (layer 1) if outfit has 2+ layers
-      if (L >= 2) {
+      // Draw ALL patZ levels (base body + overlays/addons)
+      for (let pz = 0; pz < PZ; pz++) {
+        // Draw base layer (layer 0)
         for (let th = 0; th < H; th++) {
           for (let tw = 0; tw < W; tw++) {
             const patX = xd % PX;
-            const patY = 0;
-            const idx = ((((((a * PZ + 0) * PY + patY) * PX + patX) * L + 1) * H + th) * W + tw);
+            const idx = ((((((a * PZ + pz) * PY + 0) * PX + patX) * L + 0) * H + th) * W + tw);
             const sid = (idx < ot.spriteIds.length) ? ot.spriteIds[idx] : 0;
             const sprCanvas = this.getSpriteCanvas(sid, tpx);
             if (sprCanvas) {
               const dx = bx - tw * tpx + dispXPx;
               const dy = by - th * tpx + dispYPx;
-              this.drawTintedLayer(sprCanvas, dx, dy, tpx, c, sid);
+              this.ctx.drawImage(sprCanvas, dx, dy);
               rendered = true;
+            }
+          }
+        }
+
+        // Draw tinted mask layer (layer 1) if outfit has 2+ layers
+        if (L >= 2) {
+          for (let th = 0; th < H; th++) {
+            for (let tw = 0; tw < W; tw++) {
+              const patX = xd % PX;
+              const idx = ((((((a * PZ + pz) * PY + 0) * PX + patX) * L + 1) * H + th) * W + tw);
+              const sid = (idx < ot.spriteIds.length) ? ot.spriteIds[idx] : 0;
+              const sprCanvas = this.getSpriteCanvas(sid, tpx);
+              if (sprCanvas) {
+                const dx = bx - tw * tpx + dispXPx;
+                const dy = by - th * tpx + dispYPx;
+                this.drawTintedLayer(sprCanvas, dx, dy, tpx, c, sid);
+                rendered = true;
+              }
             }
           }
         }
