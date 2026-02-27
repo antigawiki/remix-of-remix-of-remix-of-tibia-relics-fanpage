@@ -291,7 +291,6 @@ const TibiarcPlayer = ({ className }: TibiarcPlayerProps) => {
     engine.gs.reset();
     engine.parser = createPacketParser(engine.gs, engine.dat);
     engine.renderer.gs = engine.gs;
-    engine.renderer.clearCache();
     engine.curFrame = 0;
     engine.curMs = 0;
     applyTo(engine, 0, true);
@@ -327,7 +326,6 @@ const TibiarcPlayer = ({ className }: TibiarcPlayerProps) => {
     engine.gs.reset();
     engine.parser = createPacketParser(engine.gs, engine.dat);
     engine.renderer.gs = engine.gs;
-    engine.renderer.clearCache();
     engine.curFrame = 0;
     engine.curMs = 0;
     applyTo(engine, ms, true);

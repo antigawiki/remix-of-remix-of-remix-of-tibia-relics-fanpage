@@ -45,6 +45,27 @@ export interface ChatMessage {
   expireAt: number; // performance.now() + duration
 }
 
+export interface ActiveEffect {
+  x: number;
+  y: number;
+  z: number;
+  effectId: number;
+  startTick: number;
+  duration: number;
+}
+
+export interface ActiveProjectile {
+  fromX: number;
+  fromY: number;
+  fromZ: number;
+  toX: number;
+  toY: number;
+  toZ: number;
+  missileId: number;
+  startTick: number;
+  duration: number;
+}
+
 export class GameState {
   tiles: Map<string, TileItem[]> = new Map();
   creatures: Map<number, Creature> = new Map();
@@ -54,6 +75,8 @@ export class GameState {
   playerId = 0;
   mapLoaded = false;
   messages: ChatMessage[] = [];
+  effects: ActiveEffect[] = [];
+  projectiles: ActiveProjectile[] = [];
 
   tileKey(x: number, y: number, z: number): string {
     return `${x},${y},${z}`;
@@ -73,6 +96,15 @@ export class GameState {
     this.messages = this.messages.filter(m => m.expireAt > now);
   }
 
+  pruneEffects(now: number) {
+    if (this.effects.length > 0) {
+      this.effects = this.effects.filter(e => now - e.startTick < e.duration);
+    }
+    if (this.projectiles.length > 0) {
+      this.projectiles = this.projectiles.filter(p => now - p.startTick < p.duration);
+    }
+  }
+
   reset() {
     this.tiles.clear();
     this.creatures.clear();
@@ -82,5 +114,7 @@ export class GameState {
     this.playerId = 0;
     this.mapLoaded = false;
     this.messages = [];
+    this.effects = [];
+    this.projectiles = [];
   }
 }

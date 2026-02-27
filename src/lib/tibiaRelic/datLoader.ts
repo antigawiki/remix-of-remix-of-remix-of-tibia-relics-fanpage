@@ -46,6 +46,8 @@ function createItemType(): ItemType {
 export class DatLoader {
   items: Map<number, ItemType> = new Map();
   outfits: Map<number, ItemType> = new Map();
+  effects: Map<number, ItemType> = new Map();
+  missiles: Map<number, ItemType> = new Map();
 
   load(data: ArrayBuffer) {
     const bytes = new Uint8Array(data);
@@ -63,8 +65,6 @@ export class DatLoader {
     const effectCount = effectMaxId;
     const missileCount = missileMaxId;
 
-    // Counts derived from maxIds
-
     for (let i = 0; i < itemCount; i++) {
       const [it, np] = this.readEntry(bytes, view, p, true);
       it.id = 100 + i;
@@ -77,8 +77,16 @@ export class DatLoader {
       this.outfits.set(it.id, it);
       p = np;
     }
-    for (let i = 0; i < effectCount + missileCount; i++) {
-      const [, np] = this.readEntry(bytes, view, p, true);
+    for (let i = 0; i < effectCount; i++) {
+      const [it, np] = this.readEntry(bytes, view, p, false);
+      it.id = 1 + i;
+      this.effects.set(it.id, it);
+      p = np;
+    }
+    for (let i = 0; i < missileCount; i++) {
+      const [it, np] = this.readEntry(bytes, view, p, false);
+      it.id = 1 + i;
+      this.missiles.set(it.id, it);
       p = np;
     }
 
