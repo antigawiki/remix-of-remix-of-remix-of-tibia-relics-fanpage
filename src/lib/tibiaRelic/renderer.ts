@@ -138,14 +138,11 @@ export class Renderer {
     oc.fillStyle = '#1a2420';
     oc.fillRect(0, 0, NATIVE_W, NATIVE_H);
 
-    const z = this.floorOverride ?? g.camZ;
+    let camOffX = 0, camOffY = 0;
+    const player = g.playerId ? g.creatures.get(g.playerId) : undefined;
     const now = this.lastDrawTime || performance.now();
     const ph = Math.floor(now / 200) % 4; // time-based animation: 200ms per frame
     this.hudEntries = [];
-
-    // Smooth camera follow: NEGATE player's walk offset to shift viewport
-    let camOffX = 0, camOffY = 0;
-    const player = g.playerId ? g.creatures.get(g.playerId) : undefined;
 
     // Safety net: if player exists but is NOT on their tile, re-insert at player's stored position
     if (player) {
@@ -158,6 +155,13 @@ export class Renderer {
       }
     }
 
+    // Derive render camera from player's actual position (OTClient "followed creature" approach)
+    // This prevents camera desync during floor transitions, teleports, or missed packets
+    const renderCamX = player ? player.x : g.camX;
+    const renderCamY = player ? player.y : g.camY;
+    const renderCamZ = player ? player.z : g.camZ;
+    const z = this.floorOverride ?? renderCamZ;
+
     // Only apply walk offset to camera when player is actively walking
     if (player && player.walking && now < player.walkEndTick) {
       const progress = Math.min(1, (now - player.walkStartTick) / player.walkDuration);
@@ -166,7 +170,7 @@ export class Renderer {
     }
 
     // Determine visible floors
-    const floors = this.getVisibleFloors(z);
+    const floors = this.getVisibleFloors(z, renderCamX, renderCamY);
 
     // Global rendering passes (OTClient-style) to prevent tiles drawing over creatures
     const GRID_W = VP_W + 4; // -1 to VP_W+2
@@ -174,8 +178,8 @@ export class Renderer {
 
     for (const fz of floors) {
       const offset = z - fz;
-      const cx0 = g.camX - 8 + offset;
-      const cy0 = g.camY - 6 + offset;
+      const cx0 = renderCamX - 8 + offset;
+      const cy0 = renderCamY - 6 + offset;
 
       // Elevation map for this floor (indexed by grid position)
       const elevMap = new Float32Array(GRID_W * GRID_H);
@@ -284,8 +288,8 @@ export class Renderer {
     // Use same negated camera offset for HUD positioning
     for (const c of g.creatures.values()) {
       if (c.z !== z) continue;
-      const tx2 = c.x - (g.camX - 8);
-      const ty2 = c.y - (g.camY - 6);
+      const tx2 = c.x - (renderCamX - 8);
+      const ty2 = c.y - (renderCamY - 6);
       if (tx2 >= -2 && tx2 <= VP_W + 3 && ty2 >= -2 && ty2 <= VP_H + 3) {
         const tileItems = g.getTile(c.x, c.y, z);
         let elev = 0;
@@ -309,9 +313,9 @@ export class Renderer {
     }
   }
 
-  private getVisibleFloors(z: number): number[] {
+  private getVisibleFloors(z: number, centerX?: number, centerY?: number): number[] {
     if (z <= 7) {
-      const firstFloor = this.calcFirstVisibleFloor(z);
+      const firstFloor = this.calcFirstVisibleFloor(z, centerX, centerY);
       const floors: number[] = [];
       for (let fz = 7; fz >= firstFloor; fz--) {
         floors.push(fz);
@@ -333,11 +337,13 @@ export class Renderer {
    * Checks tiles above the camera for roof/ground coverage.
    * Also considers NW diagonal offset (covered-up perspective) and dontHide flag.
    */
-  private calcFirstVisibleFloor(z: number): number {
+  private calcFirstVisibleFloor(z: number, centerX?: number, centerY?: number): number {
     if (z > 7) return Math.max(z - 2, 8);
 
     let firstFloor = 0;
     const g = this.gs;
+    const cx = centerX ?? g.camX;
+    const cy = centerY ?? g.camY;
 
     // Check a 3x3 area around camera position
     for (let ix = -1; ix <= 1; ix++) {
@@ -346,13 +352,13 @@ export class Renderer {
           const checkZ = z - dz;
 
           // Direct position above
-          const tile1 = g.getTile(g.camX + ix, g.camY + iy, checkZ);
+          const tile1 = g.getTile(cx + ix, cy + iy, checkZ);
           if (this.tileCoversFloor(tile1)) {
             firstFloor = Math.max(firstFloor, checkZ + 1);
           }
 
           // NW offset position (covered up perspective)
-          const tile2 = g.getTile(g.camX + ix - dz, g.camY + iy - dz, checkZ);
+          const tile2 = g.getTile(cx + ix - dz, cy + iy - dz, checkZ);
           if (this.tileCoversFloor(tile2)) {
             firstFloor = Math.max(firstFloor, checkZ + 1);
           }
@@ -662,26 +668,30 @@ export class Renderer {
       }
     }
 
-    const bw = Math.min(hudW - 2, tileW * 2);
+    // Fixed native-resolution sizes scaled to display (OTClient: 27px bar at 32px tiles)
+    const scale = tileW / TILE_PX; // display pixels per native pixel
+    const bw = Math.round(27 * scale); // health bar: fixed 27px native
     const fw = Math.max(1, Math.floor(bw * c.health / 100));
     const hc = c.health > 50 ? '#00c800' : (c.health > 25 ? '#c8c800' : '#c80000');
     const barX = hudX + (hudW - bw) / 2;
-    const barH = Math.max(3, Math.round(tileH / 16));
+    const barH = Math.max(2, Math.round(4 * scale)); // ~4px native
 
     ctx.fillStyle = '#500000';
-    ctx.fillRect(barX, hudY - barH * 2, bw, barH);
+    ctx.fillRect(barX, hudY - barH - Math.round(2 * scale), bw, barH);
     ctx.fillStyle = hc;
-    ctx.fillRect(barX, hudY - barH * 2, fw, barH);
+    ctx.fillRect(barX, hudY - barH - Math.round(2 * scale), fw, barH);
 
-    const fs = Math.max(9, Math.min(14, Math.floor(tileW / 4)));
+    // Font: ~11px at native resolution, scaled to display
+    const fs = Math.max(10, Math.min(13, Math.round(11 * scale)));
     const nameColor = isPlayer ? '#00FF00' : '#64c8ff';
     ctx.font = `bold ${fs}px Arial`;
     ctx.textAlign = 'center';
     ctx.strokeStyle = '#000000';
-    ctx.lineWidth = 2.5;
-    ctx.strokeText(c.name.substring(0, 16), hudX + hudW / 2, hudY - barH * 2 - 2);
+    ctx.lineWidth = 2;
+    const nameY = hudY - barH - Math.round(4 * scale);
+    ctx.strokeText(c.name, hudX + hudW / 2, nameY);
     ctx.fillStyle = nameColor;
-    ctx.fillText(c.name.substring(0, 16), hudX + hudW / 2, hudY - barH * 2 - 2);
+    ctx.fillText(c.name, hudX + hudW / 2, nameY);
   }
 
   clearCache() {
