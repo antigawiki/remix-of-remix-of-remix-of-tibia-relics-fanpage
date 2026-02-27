@@ -1,61 +1,57 @@
 
 
-## Fix Camera Freezing: Player Position Desync
+## Fix Seek Bugs + Add Magic Effects/Projectile Rendering
 
-### Root Cause (Critical)
+### Issue 1: Seek Causes Visual Bugs
 
-The renderer derives the camera position from `player.x / player.y` (the player creature's stored coordinates), NOT from `gs.camX / gs.camY`:
+**Root Cause**: `handleSeek` in TibiarcPlayer.tsx calls `engine.renderer.clearCache()` which destroys ALL cached sprite canvases and tint canvases. After seek, every visible sprite must be recreated from scratch (hundreds of `document.createElement('canvas')` calls in the first few frames), causing massive stuttering and visual "bugs" as the renderer struggles to rebuild.
 
-```text
-const renderCamX = player ? player.x : g.camX;   // line 183
-const renderCamY = player ? player.y : g.camY;   // line 184
-```
+The sprite cache and tint cache are keyed by sprite ID and outfit colors -- they do NOT depend on game state or position, so clearing them during seek is unnecessary and harmful.
 
-However, **multiple opcodes update `gs.camX/Y/Z` without updating the player creature's position**:
+**Fix** (`src/components/TibiarcPlayer.tsx`):
+- In `handleSeek`: Remove the `engine.renderer.clearCache()` call. Only clear cache when loading a NEW .cam file (which is already done in `handleFileSelect`).
+- In `resetPlayback`: Same -- remove `clearCache()` since we're replaying the same recording with the same sprites.
 
-1. **Opcode 0x9a (Player Position / Cancel Walk)** -- Updates `gs.camX/Y/Z` only. This fires during teleports, cancel-walk corrections, and repositions.
-2. **Opcodes 0x65-0x68 (Map Scroll)** -- Increment `gs.camX/Y` but never touch `player.x/y`. In the Tibia protocol, scroll packets fire when the player walks, alongside a `moveCr` packet that updates the creature. But if the `moveCr` parse fails (or is in a different frame), the camera stays stuck.
-3. **Opcodes 0xbe/0xbf (Floor Up/Down)** -- Update `gs.camX/Y/Z` (including the diagonal offset `camX++/camY++`) but never update the player creature's floor or position.
-4. **Opcode 0x64 (Full Map Description)** -- Updates `gs.camX/Y/Z`. The player creature IS in the tile data and gets repositioned via `readTileItems`, BUT if the tile read encounters a parse error and aborts, the player creature retains its old position while `gs.camX/Y/Z` has already jumped.
+### Issue 2: Magic Effects and Projectiles Not Rendered
 
-This means any time the camera position diverges from the player creature's stored position (which happens frequently during teleports, floor changes, or parse errors), the renderer shows a stale view -- the "frozen camera" the user sees.
+Currently, opcodes 0x83 (magic effect) and 0x85 (distance shot/projectile) are parsed but immediately discarded. The DatLoader also reads effect and missile definitions from Tibia.dat but throws them away.
 
-### Solution: Sync Player Position After Camera Updates
+**Changes needed across 4 files:**
 
-Add a `syncPlayerToCamera()` helper method that updates the player creature's x/y/z to match `gs.camX/Y/Z`. Call it after every opcode that modifies camera coordinates.
+#### A. `src/lib/tibiaRelic/datLoader.ts` -- Store effects and missiles
+- Add `effects: Map<number, ItemType>` and `missiles: Map<number, ItemType>` to DatLoader
+- In the `load()` method, store effect entries (IDs 1..effectMaxId) and missile entries (IDs 1..missileMaxId) instead of discarding them
+- Note: effects and missiles do NOT have patZ (pass `false` for hasPatZ)
 
-This matches OTClient behavior where the "followed creature" position and camera position are always kept in sync by the protocol handler.
+#### B. `src/lib/tibiaRelic/gameState.ts` -- Add effect/projectile state
+- Add `ActiveEffect` interface: `{ x, y, z, effectId, startTick, duration }`
+- Add `ActiveProjectile` interface: `{ fromX, fromY, fromZ, toX, toY, toZ, missileId, startTick, duration }`
+- Add `effects: ActiveEffect[]` and `projectiles: ActiveProjectile[]` arrays to GameState
+- Add `pruneEffects(now)` method that removes expired effects/projectiles
+- Clear these arrays in `reset()`
+
+#### C. `src/lib/tibiaRelic/packetParser.ts` -- Parse and store effects
+- **Opcode 0x83** (magic effect): Parse position (u16 x, u16 y, u8 z) + u8 effectType. Create an `ActiveEffect` with ~600ms duration, push to `gs.effects`
+- **Opcode 0x85** (projectile): Parse fromPos(5 bytes) + toPos(5 bytes) + u8 missileType. Create an `ActiveProjectile` with duration based on distance (~150ms per tile), push to `gs.projectiles`
+- Opcode 0x84 (animated text) can remain skipped for now
+
+#### D. `src/lib/tibiaRelic/renderer.ts` -- Render effects and projectiles
+- Add a new render pass (Pass 3.5, after creatures but before top items) that draws active effects:
+  - For each `ActiveEffect`: look up sprite from `dat.effects`, compute animation frame from elapsed time, draw at world position using `drawItemNative` logic
+  - For each `ActiveProjectile`: look up sprite from `dat.missiles`, interpolate position from source to destination based on elapsed time, draw at interpolated position
+- Call `gs.pruneEffects(now)` at the start of `draw()` to remove expired ones
+- The effect sprites use the same `getNativeSprite()` cache as items, so no new caching needed
 
 ### Files to Edit
-
-**`src/lib/tibiaRelic/packetParser.ts`**:
-
-1. Add `syncPlayerToCamera()` method:
-   - Gets the player creature from `gs.creatures.get(gs.playerId)`
-   - Removes it from its old tile
-   - Updates `player.x/y/z` to `gs.camX/Y/Z`
-   - Places it on the new tile
-
-2. Call `syncPlayerToCamera()` at the end of:
-   - `mapDesc` (0x64) -- after reading all tile data
-   - `scroll` (0x65-0x68) -- after successful map edge read
-   - `floorUp` (0xbe) -- after camera position adjustment
-   - `floorDown` (0xbf) -- after camera position adjustment
-   - Opcode 0x9a handler -- after setting camX/Y/Z
-
-### Why This Fixes the Freezing
-
-The user's screenshots show: at timestamp ~58:00, the player's HP changes (combat is happening) but the view is stuck on an empty jungle. Meanwhile the real game (attachment 4) shows the player in a town with other players. This means:
-- The server sent a teleport (mapDesc 0x64 or position update 0x9a) moving the player to the town
-- `gs.camX/Y` was updated to the town coordinates
-- But `player.x/y` stayed at the old jungle coordinates
-- The renderer kept showing the jungle because it follows `player.x/y`
-- HP updates (0x8c) still work because they reference creature ID, not position
-
-After this fix, any camera update immediately repositions the player creature, so the renderer always shows the correct location.
+1. **`src/components/TibiarcPlayer.tsx`** -- Remove unnecessary cache clears on seek/reset
+2. **`src/lib/tibiaRelic/datLoader.ts`** -- Store effect and missile definitions
+3. **`src/lib/tibiaRelic/gameState.ts`** -- Add effect/projectile arrays and pruning
+4. **`src/lib/tibiaRelic/packetParser.ts`** -- Parse opcodes 0x83 and 0x85 into game state
+5. **`src/lib/tibiaRelic/renderer.ts`** -- Render active effects and projectiles
 
 ### Expected Results
-- Camera immediately follows teleports, floor changes, and walk corrections
-- No more "frozen" view while HP bars change
-- Smooth transitions between different map areas
+- Seeking via slider no longer causes stuttering or visual corruption
+- Magic effects (explosion, fire, healing, etc.) appear at the correct position and animate
+- Projectiles (arrows, bolts, spells) fly from source to destination
+- Effects automatically expire after their animation completes
 
