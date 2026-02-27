@@ -407,7 +407,7 @@ export class Renderer {
       if (!crTile.some(i => i[0] === 'cr' && i[1] === c.id)) continue;
       const tx2 = c.x - (renderCamX - 8);
       const ty2 = c.y - (renderCamY - 6);
-      if (tx2 >= -2 && tx2 <= VP_W + 3 && ty2 >= -2 && ty2 <= VP_H + 3) {
+      if (tx2 >= -1 && tx2 <= VP_W + 2 && ty2 >= -1 && ty2 <= VP_H + 2) {
         const tileItems = g.getTile(c.x, c.y, z);
         let elev = 0;
         for (const ti of tileItems) {
