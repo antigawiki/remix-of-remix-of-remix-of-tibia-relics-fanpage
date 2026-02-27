@@ -91,6 +91,22 @@ export class PacketParser {
     }
   }
 
+  /**
+   * Remove creature `cid` from the tile at (x,y,z).
+   * Defensive: scans all entries and removes all matches.
+   */
+  private removeCreatureFromTile(cid: number, x: number, y: number, z: number) {
+    const key = this.gs.tileKey(x, y, z);
+    const tile = this.gs.tiles.get(key);
+    if (!tile) return;
+    let i = tile.length;
+    while (i-- > 0) {
+      if (tile[i][0] === 'cr' && tile[i][1] === cid) {
+        tile.splice(i, 1);
+      }
+    }
+  }
+
   process(payload: Uint8Array) {
     const r = new Buf(payload);
 
@@ -147,6 +163,7 @@ export class PacketParser {
     else if (t === 0x0a) this.login(r);
     else if (t === 0x0b) { /* GM actions */ }
     else if (t === 0x0f) { /* FYI token */ }
+    else if (t === 0x1d) { /* pingback (7.72) */ }
     else if (t === 0x1e) { /* ping */ }
     // Container
     else if (t === 0x6e) this.openCont(r);
@@ -207,6 +224,10 @@ export class PacketParser {
     else if (t === 0xb3) r.u16();
     else if (t === 0xb4) this.textMsg(r);
     else if (t === 0xb5) r.u8();
+    // Walk cancel / move delay (7.72 tibiarc parity)
+    else if (t === 0xb6) { /* walk cancel — no payload beyond opcode */ }
+    else if (t === 0xb7) { /* unused / reserved */ }
+    else if (t === 0xb8) { /* unused / reserved */ }
     // Floor change
     else if (t === 0xbe) this.floorUp(r);
     else if (t === 0xbf) this.floorDown(r);
@@ -216,8 +237,9 @@ export class PacketParser {
     else if (t === 0xd2) { r.u32(); r.skip16(); r.u8(); }
     else if (t === 0xd3) r.u32();
     else if (t === 0xd4) r.u32();
-    // Tutorial
+    // Tutorial / minimap mark (7.72)
     else if (t === 0xdc) r.u8();
+    else if (t === 0xdd) { r.skip(5); r.u8(); r.skip16(); }
     // Quest dialog
     else if (t === 0xf0) this.skipQuestLog(r);
     else if (t === 0xf1) this.skipQuestLine(r);
@@ -250,14 +272,22 @@ export class PacketParser {
 
   private scroll(r: Buf, dx: number, dy: number) {
     const g = this.gs;
+    // Transactional: save old cam, update, read map, revert on failure
+    const oldX = g.camX, oldY = g.camY;
     g.camX += dx; g.camY += dy;
 
     const { startz, endz, zstep } = this.getFloorRange(g.camZ);
 
-    if (dx === 1) this.readMultiFloorArea(r, g.camX + 9, g.camY - 6, 1, 14, g.camZ, startz, endz, zstep);
-    else if (dx === -1) this.readMultiFloorArea(r, g.camX - 8, g.camY - 6, 1, 14, g.camZ, startz, endz, zstep);
-    else if (dy === 1) this.readMultiFloorArea(r, g.camX - 8, g.camY + 7, 18, 1, g.camZ, startz, endz, zstep);
-    else if (dy === -1) this.readMultiFloorArea(r, g.camX - 8, g.camY - 6, 18, 1, g.camZ, startz, endz, zstep);
+    try {
+      if (dx === 1) this.readMultiFloorArea(r, g.camX + 9, g.camY - 6, 1, 14, g.camZ, startz, endz, zstep);
+      else if (dx === -1) this.readMultiFloorArea(r, g.camX - 8, g.camY - 6, 1, 14, g.camZ, startz, endz, zstep);
+      else if (dy === 1) this.readMultiFloorArea(r, g.camX - 8, g.camY + 7, 18, 1, g.camZ, startz, endz, zstep);
+      else if (dy === -1) this.readMultiFloorArea(r, g.camX - 8, g.camY - 6, 18, 1, g.camZ, startz, endz, zstep);
+    } catch (e) {
+      // Revert camera on parse failure
+      g.camX = oldX; g.camY = oldY;
+      throw e;
+    }
   }
 
   private tileUpd(r: Buf) {
@@ -271,13 +301,11 @@ export class PacketParser {
     if (word === CR_FULL) {
       r.skip(2);
       const c = this.readCreatureFull(r);
-      c.x = x; c.y = y; c.z = z;
-      const tile = this.gs.getTile(x, y, z);
-      tile.push(['cr', c.id]);
-      this.gs.setTile(x, y, z, tile);
+      this.placeCreatureOnTile(c, x, y, z);
     } else if (word === CR_KNOWN) {
       r.skip(2);
-      this.readCreatureKnown(r, x, y, z);
+      const c = this.readCreatureKnown(r);
+      this.placeCreatureOnTile(c, x, y, z);
     } else if (word >= 100 && word <= 9999) {
       const iid = this.skipItem(r);
       const tile = this.gs.getTile(x, y, z);
@@ -316,30 +344,65 @@ export class PacketParser {
     }
   }
 
+  /**
+   * Move creature — supports two formats (OTClient/tibiarc-aligned):
+   * A) fromPos(x,y,z) + stackpos + toPos(x,y,z)   — normal tile move
+   * B) 0xFFFF as x → next u16 is creatureId high/low → move by creature ID
+   *    In 7.x protocol: pos3 reads x=0xFFFF, y and z are ignored;
+   *    stackpos byte is read; then toPos is read.
+   *    We find the creature by scanning known creatures or use the ID embedded.
+   */
   private moveCr(r: Buf) {
     const [fx, fy, fz] = this.pos3(r);
     const sp = r.u8();
     const [tx, ty, tz] = this.pos3(r);
 
     let cid: number | null = null;
+    let fromX: number, fromY: number, fromZ: number;
 
-    // Support 0xFFFF format (creature referenced by ID, not position)
     if (fx === 0xFFFF) {
-      // fx=0xFFFF means fy=creatureId (packed in fy/fz/sp)
-      // Actually in 7.x protocol, 0xFFFF position means lookup by creature id
-      // The "sp" already read is part of the creature reference
-      // Find creature by scanning all creatures at that position
-      for (const c of this.gs.creatures.values()) {
-        if (c.x === tx && c.y === ty) { cid = c.id; break; }
+      // Format B: creature referenced by ID, not by tile position
+      // In the 7.x wire format, when x=0xFFFF the "y" field was actually
+      // used to encode the creature ID (or part of it). We combine fy as
+      // the creature ID (it's a u16 from pos3, but creature IDs fit).
+      // However, the real OTClient approach: when x==0xFFFF, it uses
+      // y | (z << 16) or just y as creature-id lookup. For 7.x with 32-bit
+      // creature IDs, the server typically sends the full pos3 + stack even
+      // for "known" moves. The 0xFFFF case is rare but we handle it:
+      // Try fy as creature ID first, then scan.
+      const candidateId = fy;
+      let c = this.gs.creatures.get(candidateId);
+      if (c) {
+        cid = candidateId;
+        fromX = c.x; fromY = c.y; fromZ = c.z;
+      } else {
+        // Fallback: find any creature that is at the destination
+        // (server may have already moved it logically)
+        for (const cr of this.gs.creatures.values()) {
+          if (cr.x === tx && cr.y === ty && cr.z === tz) {
+            cid = cr.id;
+            fromX = cr.x; fromY = cr.y; fromZ = cr.z;
+            break;
+          }
+        }
+        if (cid === null) {
+          // Last resort: ignore this move
+          return;
+        }
       }
+      // Remove from old tile
+      this.removeCreatureFromTile(cid, fromX!, fromY!, fromZ!);
     } else {
-      const ft = [...this.gs.getTile(fx, fy, fz)];
+      // Format A: normal tile-based move
+      fromX = fx; fromY = fy; fromZ = fz;
+      const ft = this.gs.getTile(fx, fy, fz);
+      // Try exact stackpos first
       if (sp >= 0 && sp < ft.length && ft[sp][0] === 'cr') {
         cid = ft[sp][1];
         ft.splice(sp, 1);
         this.gs.setTile(fx, fy, fz, ft);
       } else {
-        // Fallback: stackpos mismatch — search tile for any creature
+        // Fallback: search tile for any creature
         for (let i = 0; i < ft.length; i++) {
           if (ft[i][0] === 'cr') {
             cid = ft[i][1];
@@ -350,18 +413,21 @@ export class PacketParser {
         }
       }
     }
+
     if (cid !== null) {
       const c = this.gs.creatures.get(cid);
       if (c) {
-        const dx = tx - fx, dy = ty - fy;
+        // Use REAL from position for direction/offset (never 0xFFFF)
+        const dx = tx - fromX!, dy = ty - fromY!;
         if (dx === 0 && dy < 0) c.direction = DIR_N;
         else if (dx > 0) c.direction = DIR_E;
         else if (dx === 0 && dy > 0) c.direction = DIR_S;
         else if (dx < 0) c.direction = DIR_W;
+
         c.x = tx; c.y = ty; c.z = tz;
-        // Smooth walking: set pixel offset from previous tile
+
+        // Smooth walking
         c.walking = true;
-        // Visual step duration: no diagonal penalty for interpolation (matches OTClient getStepDuration(true))
         const groundSpeed = 150;
         const walkDuration = c.speed > 0 ? Math.max(100, Math.floor(groundSpeed * 1000 / Math.max(1, c.speed))) : 300;
         c.walkDuration = walkDuration;
@@ -369,11 +435,30 @@ export class PacketParser {
         c.walkEndTick = c.walkStartTick + walkDuration;
         c.walkOffsetX = -dx * 32;
         c.walkOffsetY = -dy * 32;
+
+        // Place on destination tile (defensive: remove duplicates first)
+        this.removeCreatureFromTile(cid, tx, ty, tz);
         const tile = this.gs.getTile(tx, ty, tz);
         tile.push(['cr', cid]);
         this.gs.setTile(tx, ty, tz, tile);
       }
     }
+  }
+
+  /**
+   * Place creature on tile, removing it from any previous tile first.
+   */
+  private placeCreatureOnTile(c: Creature, x: number, y: number, z: number) {
+    // Remove from old position if different
+    if (c.x !== 0 || c.y !== 0 || c.z !== 0) {
+      this.removeCreatureFromTile(c.id, c.x, c.y, c.z);
+    }
+    // Remove any duplicate at destination
+    this.removeCreatureFromTile(c.id, x, y, z);
+    c.x = x; c.y = y; c.z = z;
+    const tile = this.gs.getTile(x, y, z);
+    tile.push(['cr', c.id]);
+    this.gs.setTile(x, y, z, tile);
   }
 
   private openCont(r: Buf) {
@@ -422,41 +507,55 @@ export class PacketParser {
 
   private floorUp(r: Buf) {
     const g = this.gs;
+    const oldZ = g.camZ, oldX = g.camX, oldY = g.camY;
     g.camZ--;
     this.clampCamZ();
 
-    if (g.camZ === 7) {
-      let skip = 0;
-      for (let nz = 5; nz >= 0; nz--) {
-        const offset = 8 - nz;
-        skip = this.readFloorArea(r, g.camX - 8, g.camY - 6, nz, 18, 14, offset, skip);
+    try {
+      if (g.camZ === 7) {
+        let skip = 0;
+        for (let nz = 5; nz >= 0; nz--) {
+          const offset = 8 - nz;
+          skip = this.readFloorArea(r, g.camX - 8, g.camY - 6, nz, 18, 14, offset, skip);
+        }
+      } else if (g.camZ > 7) {
+        const nz = g.camZ - 2;
+        this.readFloorAreaWithOffset(r, g.camX - 8, g.camY - 6, nz, 18, 14, 3);
       }
-    } else if (g.camZ > 7) {
-      const nz = g.camZ - 2;
-      this.readFloorAreaWithOffset(r, g.camX - 8, g.camY - 6, nz, 18, 14, 3);
-    }
 
-    g.camX++; g.camY++;
+      g.camX++; g.camY++;
+    } catch (e) {
+      // Revert camera on failure
+      g.camZ = oldZ; g.camX = oldX; g.camY = oldY;
+      throw e;
+    }
   }
 
   private floorDown(r: Buf) {
     const g = this.gs;
+    const oldZ = g.camZ, oldX = g.camX, oldY = g.camY;
     g.camZ++;
     this.clampCamZ();
 
-    if (g.camZ === 8) {
-      let skip = 0;
-      let j = -1;
-      for (let nz = g.camZ; nz <= Math.min(g.camZ + 2, 15); nz++) {
-        skip = this.readFloorArea(r, g.camX - 8, g.camY - 6, nz, 18, 14, j, skip);
-        j--;
+    try {
+      if (g.camZ === 8) {
+        let skip = 0;
+        let j = -1;
+        for (let nz = g.camZ; nz <= Math.min(g.camZ + 2, 15); nz++) {
+          skip = this.readFloorArea(r, g.camX - 8, g.camY - 6, nz, 18, 14, j, skip);
+          j--;
+        }
+      } else if (g.camZ > 8 && g.camZ < 14) {
+        const nz = Math.min(g.camZ + 2, 15);
+        this.readFloorAreaWithOffset(r, g.camX - 8, g.camY - 6, nz, 18, 14, -3);
       }
-    } else if (g.camZ > 8 && g.camZ < 14) {
-      const nz = Math.min(g.camZ + 2, 15);
-      this.readFloorAreaWithOffset(r, g.camX - 8, g.camY - 6, nz, 18, 14, -3);
-    }
 
-    g.camX--; g.camY--;
+      g.camX--; g.camY--;
+    } catch (e) {
+      // Revert camera on failure
+      g.camZ = oldZ; g.camX = oldX; g.camY = oldY;
+      throw e;
+    }
   }
 
   private talk(r: Buf) {
@@ -522,18 +621,12 @@ export class PacketParser {
     return c;
   }
 
-  private readCreatureKnown(r: Buf, x?: number, y?: number, z?: number): Creature {
+  private readCreatureKnown(r: Buf): Creature {
     const cid = r.u32();
     let c = this.gs.creatures.get(cid);
     if (!c) { c = createCreature(); c.id = cid; }
     this.gs.creatures.set(cid, c);
     this.updateCreatureCommon(r, c);
-    if (x !== undefined && y !== undefined && z !== undefined) {
-      c.x = x; c.y = y; c.z = z;
-      const tile = this.gs.getTile(x, y, z);
-      tile.push(['cr', cid]);
-      this.gs.setTile(x, y, z, tile);
-    }
     return c;
   }
 
