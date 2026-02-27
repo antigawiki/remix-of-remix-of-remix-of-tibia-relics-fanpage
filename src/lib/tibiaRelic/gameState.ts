@@ -105,6 +105,49 @@ export class GameState {
     }
   }
 
+  /** Create a serializable snapshot of the full game state */
+  snapshot(): GameStateSnapshot {
+    // Deep clone tiles
+    const tilesObj: Record<string, TileItem[]> = {};
+    for (const [k, v] of this.tiles.entries()) {
+      tilesObj[k] = v.map(i => [...i] as TileItem);
+    }
+    // Deep clone creatures
+    const creaturesObj: Record<number, Creature> = {};
+    for (const [k, v] of this.creatures.entries()) {
+      creaturesObj[k] = { ...v };
+    }
+    return {
+      tiles: tilesObj,
+      creatures: creaturesObj,
+      camX: this.camX,
+      camY: this.camY,
+      camZ: this.camZ,
+      playerId: this.playerId,
+      mapLoaded: this.mapLoaded,
+    };
+  }
+
+  /** Restore state from a snapshot */
+  restore(snap: GameStateSnapshot) {
+    this.tiles.clear();
+    for (const k in snap.tiles) {
+      this.tiles.set(k, snap.tiles[k].map(i => [...i] as TileItem));
+    }
+    this.creatures.clear();
+    for (const k in snap.creatures) {
+      this.creatures.set(Number(k), { ...snap.creatures[k] });
+    }
+    this.camX = snap.camX;
+    this.camY = snap.camY;
+    this.camZ = snap.camZ;
+    this.playerId = snap.playerId;
+    this.mapLoaded = snap.mapLoaded;
+    this.messages = [];
+    this.effects = [];
+    this.projectiles = [];
+  }
+
   reset() {
     this.tiles.clear();
     this.creatures.clear();
@@ -117,4 +160,14 @@ export class GameState {
     this.effects = [];
     this.projectiles = [];
   }
+}
+
+export interface GameStateSnapshot {
+  tiles: Record<string, TileItem[]>;
+  creatures: Record<number, Creature>;
+  camX: number;
+  camY: number;
+  camZ: number;
+  playerId: number;
+  mapLoaded: boolean;
 }

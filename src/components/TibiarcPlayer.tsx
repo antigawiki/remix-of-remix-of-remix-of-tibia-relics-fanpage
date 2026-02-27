@@ -8,7 +8,7 @@ import { parseCamFile, type CamFile } from '@/lib/tibiaRelic/camParser';
 import { SprLoader } from '@/lib/tibiaRelic/sprLoader';
 import { DatLoader } from '@/lib/tibiaRelic/datLoader';
 import { PacketParser } from '@/lib/tibiaRelic/packetParser';
-import { GameState } from '@/lib/tibiaRelic/gameState';
+import { GameState, type GameStateSnapshot } from '@/lib/tibiaRelic/gameState';
 import { Renderer } from '@/lib/tibiaRelic/renderer';
 
 
@@ -45,6 +45,8 @@ const TibiarcPlayer = ({ className }: TibiarcPlayerProps) => {
     playing: boolean;
     rafId: number | null;
     _lastProgressUpdate: number;
+    keyframes: { ms: number; frameIdx: number; snap: GameStateSnapshot }[];
+    lastKeyframeMs: number;
   } | null>(null);
 
   const [state, setState] = useState<PlayerState>('idle');
@@ -119,6 +121,7 @@ const TibiarcPlayer = ({ className }: TibiarcPlayerProps) => {
           cam: null, curFrame: 0, curMs: 0,
           wallT0: 0, camT0Ms: 0, speed: 1,
           playing: false, rafId: null, _lastProgressUpdate: 0,
+          keyframes: [], lastKeyframeMs: -Infinity,
         };
 
         setDataLoaded(true);
@@ -191,27 +194,41 @@ const TibiarcPlayer = ({ className }: TibiarcPlayerProps) => {
   const applyTo = (engine: NonNullable<typeof engineRef.current>, targetMs: number, isSeek = false) => {
     if (!engine.cam) return;
     if (isSeek) engine.parser.seekMode = true;
+    
+    const KEYFRAME_INTERVAL = 30000; // 30s
+    
     while (engine.curFrame < engine.cam.frames.length) {
       const frame = engine.cam.frames[engine.curFrame];
       if (frame.timestamp > targetMs) break;
       try { engine.parser.process(frame.payload); } catch { /* skip */ }
       engine.curFrame++;
+      
+      // Save keyframes every 30s during normal (non-seek) playback
+      if (!isSeek && frame.timestamp - engine.lastKeyframeMs >= KEYFRAME_INTERVAL) {
+        engine.keyframes.push({
+          ms: frame.timestamp,
+          frameIdx: engine.curFrame,
+          snap: engine.gs.snapshot(),
+        });
+        engine.lastKeyframeMs = frame.timestamp;
+      }
     }
     engine.curMs = targetMs;
     if (isSeek) {
       engine.parser.seekMode = false;
-      // Clear all walk animations after seek to prevent ghost offsets
-      for (const c of engine.gs.creatures.values()) {
+      // Clear walk animations and prune stale creatures
+      for (const [cid, c] of engine.gs.creatures.entries()) {
         c.walking = false;
         c.walkOffsetX = 0;
         c.walkOffsetY = 0;
-      }
-      // Prune orphaned creatures: remove any not present on their claimed tile
-      for (const [cid, c] of engine.gs.creatures.entries()) {
+        // Remove dead or orphaned creatures (except player)
         if (cid === engine.gs.playerId) continue;
+        if (c.health <= 0) {
+          engine.gs.creatures.delete(cid);
+          continue;
+        }
         const tile = engine.gs.getTile(c.x, c.y, c.z);
-        const onTile = tile.some(i => i[0] === 'cr' && i[1] === cid);
-        if (!onTile) {
+        if (!tile.some(i => i[0] === 'cr' && i[1] === cid)) {
           engine.gs.creatures.delete(cid);
         }
       }
@@ -251,6 +268,8 @@ const TibiarcPlayer = ({ className }: TibiarcPlayerProps) => {
       engine.cam = cam;
       engine.curFrame = 0;
       engine.curMs = 0;
+      engine.keyframes = [];
+      engine.lastKeyframeMs = -Infinity;
       engine.renderer.floorOverride = null;
       setFloorOffset(0);
 
@@ -302,6 +321,8 @@ const TibiarcPlayer = ({ className }: TibiarcPlayerProps) => {
     engine.renderer.gs = engine.gs;
     engine.curFrame = 0;
     engine.curMs = 0;
+    engine.keyframes = [];
+    engine.lastKeyframeMs = -Infinity;
     applyTo(engine, 0, true);
 
     setProgress(0);
@@ -331,14 +352,30 @@ const TibiarcPlayer = ({ className }: TibiarcPlayerProps) => {
     const wasPlaying = engine.playing;
     engine.playing = false;
 
-    // Reset and replay to target
-    engine.gs.reset();
-    engine.parser = createPacketParser(engine.gs, engine.dat);
-    engine.renderer.gs = engine.gs;
-    engine.curFrame = 0;
-    engine.curMs = 0;
-    applyTo(engine, ms, true);
+    // Find nearest keyframe before target
+    let bestKf: (typeof engine.keyframes)[number] | null = null;
+    for (const kf of engine.keyframes) {
+      if (kf.ms <= ms) bestKf = kf;
+      else break;
+    }
 
+    if (bestKf) {
+      // Restore from keyframe instead of replaying from 0
+      engine.gs.restore(bestKf.snap);
+      engine.parser = createPacketParser(engine.gs, engine.dat);
+      engine.renderer.gs = engine.gs;
+      engine.curFrame = bestKf.frameIdx;
+      engine.curMs = bestKf.ms;
+    } else {
+      // No keyframe available — replay from start
+      engine.gs.reset();
+      engine.parser = createPacketParser(engine.gs, engine.dat);
+      engine.renderer.gs = engine.gs;
+      engine.curFrame = 0;
+      engine.curMs = 0;
+    }
+
+    applyTo(engine, ms, true);
     setProgress(ms);
 
     if (wasPlaying) {

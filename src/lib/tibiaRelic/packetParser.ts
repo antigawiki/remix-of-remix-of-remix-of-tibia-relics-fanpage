@@ -228,7 +228,7 @@ export class PacketParser {
       const [ex, ey, ez] = this.pos3(r);
       const effectType = r.u8();
       if (!this.seekMode) {
-        g.effects.push({ x: ex, y: ey, z: ez, effectId: effectType + 1, startTick: performance.now(), duration: 600 });
+        g.effects.push({ x: ex, y: ey, z: ez, effectId: effectType, startTick: performance.now(), duration: 600 });
       }
     }
     else if (t === 0x84) { r.skip(5); r.u8(); r.skip16(); }
@@ -239,7 +239,7 @@ export class PacketParser {
       if (!this.seekMode) {
         const dist = Math.max(Math.abs(tx2 - fx2), Math.abs(ty2 - fy2));
         const dur = Math.max(150, dist * 150);
-        g.projectiles.push({ fromX: fx2, fromY: fy2, fromZ: fz2, toX: tx2, toY: ty2, toZ: tz2, missileId: missileType + 1, startTick: performance.now(), duration: dur });
+        g.projectiles.push({ fromX: fx2, fromY: fy2, fromZ: fz2, toX: tx2, toY: ty2, toZ: tz2, missileId: missileType, startTick: performance.now(), duration: dur });
       }
     }
     // Creature updates
@@ -385,6 +385,11 @@ export class PacketParser {
       const iid = this.skipItem(r);
       const tile = [...this.gs.getTile(x, y, z)];
       if (sp >= 0 && sp < tile.length) {
+        // If replacing a creature (e.g. with corpse), remove from gs.creatures
+        const old = tile[sp];
+        if (old[0] === 'cr' && old[1] !== this.gs.playerId) {
+          this.gs.creatures.delete(old[1]);
+        }
         tile[sp] = ['it', iid];
         this.gs.setTile(x, y, z, tile);
       }
