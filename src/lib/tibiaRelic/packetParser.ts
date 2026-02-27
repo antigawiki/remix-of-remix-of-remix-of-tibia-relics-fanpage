@@ -228,7 +228,7 @@ export class PacketParser {
       const [ex, ey, ez] = this.pos3(r);
       const effectType = r.u8();
       if (!this.seekMode) {
-        g.effects.push({ x: ex, y: ey, z: ez, effectId: effectType + 1, startTick: performance.now(), duration: 600 });
+        g.effects.push({ x: ex, y: ey, z: ez, effectId: effectType, startTick: performance.now(), duration: 600 });
       }
     }
     else if (t === 0x84) {
@@ -248,7 +248,7 @@ export class PacketParser {
       if (!this.seekMode) {
         const dist = Math.max(Math.abs(tx2 - fx2), Math.abs(ty2 - fy2));
         const dur = Math.max(150, dist * 150);
-        g.projectiles.push({ fromX: fx2, fromY: fy2, fromZ: fz2, toX: tx2, toY: ty2, toZ: tz2, missileId: missileType + 1, startTick: performance.now(), duration: dur });
+        g.projectiles.push({ fromX: fx2, fromY: fy2, fromZ: fz2, toX: tx2, toY: ty2, toZ: tz2, missileId: missileType, startTick: performance.now(), duration: dur });
       }
     }
     // Creature updates
@@ -832,27 +832,7 @@ export class PacketParser {
    * Uses the same 216-color cube (6x6x6) as the client.
    */
   private protocolColorToHex(c: number): string {
-    // Tibia animated text colors: mapped from protocol color index
-    // Common values: 180=red, 30=white, 210=orange, 120=green, 35=yellow, 215=blue
-    const colorMap: Record<number, string> = {
-      0: '#000000',
-      30: '#ffffff',
-      35: '#ffff00',
-      66: '#00ff00',
-      95: '#00ffff',
-      108: '#ff8800',
-      120: '#00ff00',
-      129: '#ffff00',
-      144: '#ff0000',
-      150: '#ff6600',
-      154: '#ff4444',
-      180: '#cc0000',
-      194: '#ff00ff',
-      210: '#ff8800',
-      215: '#5555ff',
-    };
-    if (colorMap[c]) return colorMap[c];
-    // Fallback: 6x6x6 RGB cube
+    // Tibia 6x6x6 RGB cube (216 colors): color 215=white, 180=red, etc.
     const r = Math.floor(c / 36) % 6;
     const g = Math.floor(c / 6) % 6;
     const b = c % 6;
