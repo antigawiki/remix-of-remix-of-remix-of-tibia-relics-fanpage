@@ -275,6 +275,10 @@ export class PacketParser {
     else if (t === 0xa1) r.skip(14);
     else if (t === 0xa2) r.u8();
     else if (t === 0xa3) { /* cancelTarget */ }
+    else if (t === 0xa4) { r.skip(2); /* spellCooldown: u16 spellId */ }
+    else if (t === 0xa5) { r.skip(5); /* spellGroupCooldown: u8 groupId + u32 delay */ }
+    else if (t === 0xa7) { r.skip(3); /* setPlayerModes: u8 fight + u8 chase + u8 safe */ }
+    else if (t === 0xa8) { r.skip(5); /* creatureSquare: u32 creatureId + u8 color */ }
     // Chat
     else if (t === 0xaa) this.talk(r);
     else if (t === 0xab) { const nc = r.u8(); for (let i = 0; i < nc; i++) { r.u16(); r.str16(); } }

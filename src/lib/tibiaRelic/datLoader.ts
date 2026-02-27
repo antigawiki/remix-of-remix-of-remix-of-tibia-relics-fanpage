@@ -78,13 +78,13 @@ export class DatLoader {
       p = np;
     }
     for (let i = 0; i < effectCount; i++) {
-      const [it, np] = this.readEntry(bytes, view, p, false);
+      const [it, np] = this.readEntry(bytes, view, p, true);
       it.id = 1 + i;
       this.effects.set(it.id, it);
       p = np;
     }
     for (let i = 0; i < missileCount; i++) {
-      const [it, np] = this.readEntry(bytes, view, p, false);
+      const [it, np] = this.readEntry(bytes, view, p, true);
       it.id = 1 + i;
       this.missiles.set(it.id, it);
       p = np;
@@ -109,7 +109,7 @@ export class DatLoader {
 
   /**
    * Read a single DAT entry (item, outfit, effect, or distance).
-   * @param hasPatZ - true for items (TibiaRelic extra field), false for outfits/fx/dist
+   * @param hasPatZ - true for all types in version >= 7.55 (items, outfits, effects, missiles)
    */
   private readEntry(bytes: Uint8Array, view: DataView, p: number, hasPatZ: boolean): [ItemType, number] {
     const it = createItemType();
