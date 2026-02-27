@@ -1,84 +1,64 @@
 
+## Fix Outfit Colors + Rendering Issues
 
-## Fix Outfit Colors, Item Displacement, and Name/HP Rendering
+### Bug 1: Color Algorithm is COMPLETELY Wrong (Critical)
 
-### Bug 1: HSI Color Formula (RED appears PINK) -- Critical
+The current code uses an HSI-to-RGB formula with cosine functions in 3 sectors. The **actual OTClient source code** (outfit.cpp) uses a completely different algorithm: a 6-sector linear HSV-like interpolation with NO cosine functions at all.
 
-**Root Cause**: The `hsiToRgb` function in renderer.ts has a mathematical error in ALL THREE sectors. The numerator of the HSI-to-RGB conversion uses `cos(60 - H')` when the standard formula requires `cos(H')`.
-
-Example trace for color index 94 (should be vivid red):
-- Sector 3, hShift = 100 degrees
-- **Wrong** (current): numerator = cos(-40deg) = 0.766, denominator = cos(-40deg) = 0.766, ratio = 1.0
-- B = 1*(1+1) = 2.0 -> clamped 255, R = 255 -> produces (255, 0, 255) = MAGENTA
-- **Correct**: numerator = cos(100deg) = -0.174, denominator = cos(-40deg) = 0.766, ratio = -0.227
-- B = 0.773, R = 2.227 -> clamped 255 -> produces (255, 0, 197) = RED-ISH
-
-This affects ALL outfit colors that aren't at sector boundaries (0deg, 120deg, 240deg), causing systematic color shifts across the entire palette -- reds become pink, oranges become yellow, etc.
-
-**Fix**: In `hsiToRgb`, change the numerator in each sector from `cos((60-H')*PI/180)` to `cos(H'*PI/180)`:
-
+**OTClient's actual algorithm** (from outfit.cpp):
 ```text
-Sector 1 (H < 120):
-  r = I * (1 + S * cos(H_rad) / cos(PI/3 - H_rad))
-  
-Sector 2 (120 <= H < 240):
-  H' = H - 120
-  g = I * (1 + S * cos(H'_rad) / cos(PI/3 - H'_rad))
+loc1 = hue [0..1)
+loc2 = saturation
+loc3 = value
 
-Sector 3 (240 <= H < 360):
-  H' = H - 240
-  b = I * (1 + S * cos(H'_rad) / cos(PI/3 - H'_rad))
+6 sectors based on hue:
+  hue < 1/6: red=V, blue=V*(1-S), green=blue+(V-blue)*6*hue
+  hue < 2/6: green=V, blue=V*(1-S), red=green-(V-blue)*(6*hue-1)
+  hue < 3/6: green=V, red=V*(1-S), blue=red+(V-red)*(6*hue-2)
+  hue < 4/6: blue=V, red=V*(1-S), green=blue-(V-red)*(6*hue-3)
+  hue < 5/6: blue=V, green=V*(1-S), red=green+(V-green)*(6*hue-4)
+  else:      red=V, green=V*(1-S), blue=red-(V-green)*(6*hue-5)
 ```
 
-### Bug 2: Item Displacement Sign (sprites mispositioned)
+Our code uses `cos()` based HSI formula in 3 sectors -- this produces fundamentally different color values. That's why red appears as pink/magenta.
 
-**Root Cause**: In `drawItemNative`, item displacement is ADDED (`+ it.dispX`, `+ it.dispY`), but OTClient SUBTRACTS displacement for all types (`dest -= displacement`). Our outfit code already subtracts correctly (`- ot.dispX`), but items are wrong.
+**Second bug in hue**: We compute hue as `(hueIndex - 1) / 18` but OTClient uses `hueIndex / 18.0` (where hueIndex = `color % 19`). This shifts every color by one step.
 
-This causes items with displacement (signs, wall decorations, furniture) to be drawn shifted right/down instead of up/left, explaining sprites appearing out of position.
+**Fix**: Replace `hsiToRgb` and `getOutfitColor` entirely with OTClient's exact algorithm from outfit.cpp.
 
-**Fix**: Change line 395-396 from:
-```text
-const dx = bx - tw * TILE_PX + it.dispX;
-const dy = by - th * TILE_PX + it.dispY - elevationOffset;
-```
-to:
-```text
-const dx = bx - tw * TILE_PX - it.dispX;
-const dy = by - th * TILE_PX - it.dispY - elevationOffset;
-```
+### Bug 2: Grayscale Colors Wrong
 
-### Bug 3: Name/HP Bar Style (doesn't match original Tibia)
+OTClient's grayscale case:
+- `loc2 = 0`, `loc3 = 1 - color / 19 / 7`
+- Then goes through the if(loc2==0) path returning `(loc3*255, loc3*255, loc3*255)`
 
-Comparing the screenshots: the original Tibia client renders creature names with:
-- A 1px black outline (stroke), tight around each character
-- Font size approximately 8-9px at native 32px tile resolution (smaller than our current ~11px)
-- Health bar narrower (about 27px native), with a thin 1px dark border
-- Name positioned closer to the health bar
-- Background behind names is semi-transparent black, not just stroke
+Our code computes intensity differently: `1.0 - groupIndex / 7` which is equivalent. But the early-return at loc3==0 and loc2==0 is missing, which could cause edge cases.
 
-**Fix**: Adjust `drawCreatureHudHiRes` to use:
-- Smaller font size (~8px native scaled to display) 
-- Thinner stroke (lineWidth 1.5 instead of 2)
-- Tighter spacing between name and health bar
-- 1px border outline on health bar (matching original)
+**Fix**: Match OTClient's exact flow including early returns for black and grayscale.
 
-### Bug 4: "Frozen Screen" During Playback
+### Bug 3: Stuttering in Cities
 
-The user reports the screen appears frozen while HP bars update. This is largely EXPECTED behavior: when the player stands still fighting monsters, creatures take damage (HP decreases) but nobody moves. Since we don't render spell effects or hit animations (not implemented), the screen looks static.
+Dense city tiles have many unique sprites. Each `getNativeSprite()` call that misses cache creates a new canvas element synchronously, causing frame drops. Additionally, the tint cache grows unbounded.
 
-However, there is a real optimization needed: stale creatures that are no longer visible accumulate in `gs.creatures` forever, causing the HUD loop (`for (const c of g.creatures.values())`) to iterate over hundreds of invisible creatures each frame.
+**Fix**: 
+- Add periodic cache size limits (evict oldest entries when cache exceeds threshold)
+- This won't fully eliminate stutter but will prevent memory growth
 
-**Fix**: In the HUD draw loop, add early-out checks before computing creature positions, and periodically cull creatures that haven't been updated (tiles they were on no longer exist in the viewport).
+### Bug 4: Screen Appears "Frozen" During Combat
+
+This is largely expected -- when creatures fight in place, without spell effects or damage numbers rendered, nothing visually changes except HP bars. The protocol sends effect opcodes (0x83, 0x84, 0x85) but we skip them.
+
+No code change for this in this iteration -- effect rendering would be a separate feature.
 
 ### Files to Edit
 
 **`src/lib/tibiaRelic/renderer.ts`**:
-1. Fix `hsiToRgb` function -- correct numerator in all 3 sectors
-2. Fix `drawItemNative` -- subtract displacement instead of add
-3. Adjust `drawCreatureHudHiRes` -- smaller font, tighter spacing, health bar border
+1. Replace `hsiToRgb` function with OTClient's exact 6-sector algorithm (no cosines)
+2. Replace `getOutfitColor` to use `hueIndex / 18.0` instead of `(hueIndex-1) / 18`
+3. Match OTClient's exact grayscale and early-return logic
+4. Add cache size limiting to prevent unbounded memory growth
 
 ### Expected Results
-- Outfit colors match the original Tibia client (reds are red, not pink)
-- Items positioned correctly (trees, signs, furniture aligned properly)
-- Name/HP bars closer to original Tibia visual style
-
+- All outfit colors match the original Tibia client exactly (red is red, not pink)
+- Reduced memory usage from cache management
+- No regression in rendering or animation
