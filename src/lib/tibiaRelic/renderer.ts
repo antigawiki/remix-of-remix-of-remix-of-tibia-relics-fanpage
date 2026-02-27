@@ -268,7 +268,7 @@ export class Renderer {
           for (const item of items) {
             if (item[0] !== 'cr') continue;
             const c = g.creatures.get(item[1]);
-            if (c && c.health > 0) {
+            if (c) {
               this.drawCreatureNative(c, bx, by - elevationOffset);
             }
           }
