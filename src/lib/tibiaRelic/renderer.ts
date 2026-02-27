@@ -6,7 +6,7 @@
  */
 import { SprLoader } from './sprLoader';
 import { DatLoader, type ItemType } from './datLoader';
-import { GameState, type TileItem, type Creature, type ActiveEffect, type ActiveProjectile } from './gameState';
+import { GameState, type TileItem, type Creature, type ActiveEffect, type ActiveProjectile, type AnimatedText } from './gameState';
 
 const VP_W = 15, VP_H = 11;
 const TILE_PX = 32;
@@ -339,6 +339,28 @@ export class Renderer {
         }
       }
 
+      // Pass 3.7: Animated text (damage numbers)
+      for (const at of g.animatedTexts) {
+        if (at.z !== fz) continue;
+        const atx = at.x - cx0;
+        const aty = at.y - cy0;
+        if (atx < -2 || atx > VP_W + 3 || aty < -2 || aty > VP_H + 3) continue;
+        const elapsed = now - at.startTick;
+        const progress = Math.min(1, elapsed / at.duration);
+        const floatY = progress * 20; // float upward 20px
+        const alpha = 1 - progress; // fade out
+        const px = atx * TILE_PX + camOffX + TILE_PX / 2;
+        const py = aty * TILE_PX + camOffY + TILE_PX / 2 - floatY;
+        oc.save();
+        oc.globalAlpha = alpha;
+        oc.font = 'bold 8px monospace';
+        oc.textAlign = 'center';
+        oc.fillStyle = '#000000';
+        oc.fillText(at.text, px + 1, py + 1);
+        oc.fillStyle = at.color;
+        oc.fillText(at.text, px, py);
+        oc.restore();
+      }
       // Pass 4: Top items (stackPrio 3 — drawn over creatures)
       for (let ty = -1; ty < VP_H + 3; ty++) {
         for (let tx = -1; tx < VP_W + 3; tx++) {

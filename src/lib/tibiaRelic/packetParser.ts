@@ -228,10 +228,19 @@ export class PacketParser {
       const [ex, ey, ez] = this.pos3(r);
       const effectType = r.u8();
       if (!this.seekMode) {
-        g.effects.push({ x: ex, y: ey, z: ez, effectId: effectType, startTick: performance.now(), duration: 600 });
+        g.effects.push({ x: ex, y: ey, z: ez, effectId: effectType + 1, startTick: performance.now(), duration: 600 });
       }
     }
-    else if (t === 0x84) { r.skip(5); r.u8(); r.skip16(); }
+    else if (t === 0x84) {
+      // Animated text (damage numbers, healing, XP)
+      const [ax, ay, az] = this.pos3(r);
+      const colorByte = r.u8();
+      const text = r.str16();
+      if (!this.seekMode) {
+        const color = this.protocolColorToHex(colorByte);
+        g.animatedTexts.push({ x: ax, y: ay, z: az, color, text, startTick: performance.now(), duration: 1000 });
+      }
+    }
     else if (t === 0x85) {
       const [fx2, fy2, fz2] = this.pos3(r);
       const [tx2, ty2, tz2] = this.pos3(r);
@@ -239,7 +248,7 @@ export class PacketParser {
       if (!this.seekMode) {
         const dist = Math.max(Math.abs(tx2 - fx2), Math.abs(ty2 - fy2));
         const dur = Math.max(150, dist * 150);
-        g.projectiles.push({ fromX: fx2, fromY: fy2, fromZ: fz2, toX: tx2, toY: ty2, toZ: tz2, missileId: missileType, startTick: performance.now(), duration: dur });
+        g.projectiles.push({ fromX: fx2, fromY: fy2, fromZ: fz2, toX: tx2, toY: ty2, toZ: tz2, missileId: missileType + 1, startTick: performance.now(), duration: dur });
       }
     }
     // Creature updates
@@ -448,10 +457,16 @@ export class PacketParser {
       const ft = this.gs.getTile(fx, fy, fz);
       // 1. Try exact stackpos
       if (sp >= 0 && sp < ft.length && ft[sp][0] === 'cr') {
-        cid = ft[sp][1];
-        ft.splice(sp, 1);
-        this.gs.setTile(fx, fy, fz, ft);
-      } else {
+        const candidateCr = this.gs.creatures.get(ft[sp][1]);
+        // Verify creature's stored position matches source tile
+        if (candidateCr && candidateCr.x === fx && candidateCr.y === fy && candidateCr.z === fz) {
+          cid = ft[sp][1];
+          ft.splice(sp, 1);
+          this.gs.setTile(fx, fy, fz, ft);
+        } else {
+          // Stale stackpos — fall through to position-based search
+          cid = null;
+        }
         // 2. Search by creature whose stored position matches source
         for (let i = 0; i < ft.length; i++) {
           if (ft[i][0] === 'cr') {
@@ -497,8 +512,8 @@ export class PacketParser {
 
         c.x = tx; c.y = ty; c.z = tz;
 
-        // Smooth walking (only in real-time playback, not during seek)
-        if (!this.seekMode) {
+        // Smooth walking (only in real-time playback, not during seek, and only if actually moving)
+        if (!this.seekMode && (dx !== 0 || dy !== 0)) {
           c.walking = true;
           const groundSpeed = 150;
           const walkDuration = c.speed > 0 ? Math.max(100, Math.floor(groundSpeed * 1000 / Math.max(1, c.speed))) : 300;
@@ -810,5 +825,38 @@ export class PacketParser {
       const offset = camZ - nz;
       skip = this.readFloorArea(r, ox, oy, nz, W, H, offset, skip);
     }
+  }
+
+  /**
+   * Convert Tibia protocol color byte to hex string.
+   * Uses the same 216-color cube (6x6x6) as the client.
+   */
+  private protocolColorToHex(c: number): string {
+    // Tibia animated text colors: mapped from protocol color index
+    // Common values: 180=red, 30=white, 210=orange, 120=green, 35=yellow, 215=blue
+    const colorMap: Record<number, string> = {
+      0: '#000000',
+      30: '#ffffff',
+      35: '#ffff00',
+      66: '#00ff00',
+      95: '#00ffff',
+      108: '#ff8800',
+      120: '#00ff00',
+      129: '#ffff00',
+      144: '#ff0000',
+      150: '#ff6600',
+      154: '#ff4444',
+      180: '#cc0000',
+      194: '#ff00ff',
+      210: '#ff8800',
+      215: '#5555ff',
+    };
+    if (colorMap[c]) return colorMap[c];
+    // Fallback: 6x6x6 RGB cube
+    const r = Math.floor(c / 36) % 6;
+    const g = Math.floor(c / 6) % 6;
+    const b = c % 6;
+    const toHex = (v: number) => Math.round(v * 51).toString(16).padStart(2, '0');
+    return `#${toHex(r)}${toHex(g)}${toHex(b)}`;
   }
 }

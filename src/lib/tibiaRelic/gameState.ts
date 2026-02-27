@@ -66,6 +66,16 @@ export interface ActiveProjectile {
   duration: number;
 }
 
+export interface AnimatedText {
+  x: number;
+  y: number;
+  z: number;
+  color: string;
+  text: string;
+  startTick: number;
+  duration: number;
+}
+
 export class GameState {
   tiles: Map<string, TileItem[]> = new Map();
   creatures: Map<number, Creature> = new Map();
@@ -77,6 +87,7 @@ export class GameState {
   messages: ChatMessage[] = [];
   effects: ActiveEffect[] = [];
   projectiles: ActiveProjectile[] = [];
+  animatedTexts: AnimatedText[] = [];
 
   tileKey(x: number, y: number, z: number): string {
     return `${x},${y},${z}`;
@@ -102,6 +113,9 @@ export class GameState {
     }
     if (this.projectiles.length > 0) {
       this.projectiles = this.projectiles.filter(p => now - p.startTick < p.duration);
+    }
+    if (this.animatedTexts.length > 0) {
+      this.animatedTexts = this.animatedTexts.filter(a => now - a.startTick < a.duration);
     }
   }
 
@@ -146,6 +160,7 @@ export class GameState {
     this.messages = [];
     this.effects = [];
     this.projectiles = [];
+    this.animatedTexts = [];
   }
 
   reset() {
@@ -159,6 +174,7 @@ export class GameState {
     this.messages = [];
     this.effects = [];
     this.projectiles = [];
+    this.animatedTexts = [];
   }
 }
 
