@@ -1,76 +1,64 @@
 
 
-## Tornar o Player Fluido como Video (Smooth Walking + 60fps)
+## Corrigir Transicao de Tela Travada e Player Sumindo
 
-### Diagnostico
+### Diagnostico Principal
 
-Analisando o codigo atual e comparando com o tibiarc C++ (`web_player.cpp`), identifiquei 3 problemas que fazem o player parecer "frame a frame":
+Comparando com o tibiarc C++ (`web_player.cpp`) e o comportamento do OTClient, identifiquei **3 bugs criticos** que causam os problemas reportados:
 
-1. **FPS travado em 20**: O animation loop em `TibiarcPlayer.tsx` tem `const FPS = 20` com throttling manual. O tibiarc C++ usa `emscripten_set_main_loop(MainLoop, 0, 0)` - ou seja, **sem cap de FPS**, roda na taxa nativa do monitor (60fps+).
+### Bug 1: Camera Nao Acompanha o Walk do Player (Tela "Trava")
 
-2. **Sem interpolacao de movimento (walk offset)**: Quando uma criatura se move, o `moveCr` no parser seta `c.x = tx; c.y = ty` **instantaneamente**. O renderer desenha na posicao do tile sem nenhuma transicao. No tibiarc/OTClient, criaturas possuem um **walk offset em pixels** que vai de -32px ate 0px ao longo da duracao do passo, criando o efeito de deslizamento suave entre tiles.
+**Causa raiz**: Quando o jogador anda, dois pacotes chegam quase simultaneamente:
+- `scroll(dx, dy)` -> atualiza `camX/camY` **instantaneamente**
+- `moveCr()` -> seta walk offset no player (anima de -32px a 0px)
 
-3. **Animacao baseada em tick, nao em tempo real**: O `this.tick++` incrementa 1 por frame renderizado. Se o FPS cai, a animacao desacelera junto. No tibiarc, `g_currentTick` e baseado em `emscripten_get_now()` (tempo real), garantindo velocidade constante independente do FPS.
+O resultado: todos os tiles do mapa "pulam" para a nova posicao de uma vez, mas o sprite do player desliza suavemente. Isso cria o efeito de "tela travando" a cada passo.
 
-### Plano de Implementacao
+**Correcao (como OTClient faz)**: No renderer, ao desenhar, aplicar o **walk offset do player** como deslocamento de toda a viewport. Assim, quando o player anda:
+1. `scroll()` carrega os tiles novos (correto)
+2. `moveCr()` seta o walk offset no player
+3. O renderer desloca **todos os tiles** pelo walk offset do player, fazendo a tela inteira deslizar suavemente junto com o personagem
 
-#### 1. Adicionar walk offset ao Creature (`gameState.ts`)
+### Bug 2: Player Sumindo da Tela
 
-Novos campos na interface `Creature`:
-- `walkOffsetX: number` - offset em pixels (-32 a 0 ou 0 a 32)
-- `walkOffsetY: number` - offset em pixels
-- `walkStartTick: number` - quando o passo comecou
-- `walkDuration: number` - duracao total do passo em ms
+**Causa raiz**: O HUD (nome/barra de vida) filtra criaturas com `c.z !== z`, mas durante mudancas de andar (`floorUp/floorDown`), o `camZ` muda antes do creature update. Alem disso, a area visivel para renderizacao de criaturas e `VP_W + 1` / `VP_H + 1`, o que pode cortar criaturas que estao exatamente na borda durante o walk offset.
 
-#### 2. Setar walk offset no moveCr (`packetParser.ts`)
+**Correcao**: Expandir a margem de visibilidade do HUD de +1 para +3 tiles e garantir que a area de renderizacao do viewport cubra tiles extras para criaturas com walk offset ativo.
 
-Quando uma criatura se move de (fx,fy) para (tx,ty):
-- Calcular direcao: dx = tx - fx, dy = ty - fy
-- Setar `walkOffsetX = -dx * 32`, `walkOffsetY = -dy * 32` (comeca deslocado para tras)
-- Setar `walkStartTick = performance.now()` e `walkDuration` baseado na speed
-- O offset vai interpolar de (-32,0) ate (0,0) ao longo da duracao
+### Bug 3: Walk Duration Incorreta
 
-#### 3. Interpolar posicao no renderer (`renderer.ts`)
+**Causa raiz**: A formula atual `Math.max(100, Math.floor(1000 / (c.speed / 220)))` nao corresponde ao calculo do cliente real. No OTClient, a duracao do passo depende do `groundSpeed` do tile (atributo `speed` no DAT) e da velocidade da criatura:
+- `stepDuration = groundSpeed * 1000 / creatureSpeed` (simplificado)
+- O ground speed padrao e ~150 para grama normal
 
-No `drawCreatureNative`, antes de desenhar:
-- Calcular `progress = (now - walkStartTick) / walkDuration` (0 a 1)
-- Se progress < 1: `pixelOffsetX = walkOffsetX * (1 - progress)`, idem Y
-- Se progress >= 1: offset = 0, walking = false
-- Aplicar offset ao `bx` e `by` do desenho
+Com a formula atual, criaturas rapidas ficam com animacao muito lenta, e criaturas lentas ficam muito rapidas.
 
-O mesmo offset deve ser aplicado ao HUD (nome/barra de vida) para que acompanhem a criatura.
+**Correcao**: Usar uma formula mais proxima do cliente real, considerando um ground speed fixo de 150 (sem acesso ao tile de origem, usamos valor padrao).
 
-#### 4. Remover cap de FPS (`TibiarcPlayer.tsx`)
+### Plano de Mudancas
 
-- Remover o throttle de 20 FPS (`const FPS = 20` e `if (time - lastTime < interval) return`)
-- Deixar `requestAnimationFrame` rodar na taxa nativa (~60fps)
-- Manter o calculo de tempo real para progressao da cam (ja esta correto)
+#### `src/lib/tibiaRelic/renderer.ts`
 
-#### 5. Usar tempo real para animacao de sprites (`renderer.ts`)
+1. **Smooth camera follow**: No metodo `draw()`, antes de renderizar os tiles, buscar o creature do player (`gs.playerId`) e calcular seu walk offset atual. Aplicar esse offset como deslocamento pixel a pixel de toda a viewport (subtrair do calculo de `bx/by` de cada tile).
 
-- Trocar `this.tick++` (incremento por frame) por um timestamp real
-- Calcular phase de animacao como `Math.floor(performance.now() / 150) % frames` (150ms por frame, similar ao tibiarc)
-- Isso garante que animacoes rodem na mesma velocidade independente do FPS
+2. **Expandir margem do HUD**: Mudar a verificacao de visibilidade do HUD de `tx2 <= VP_W + 1 && ty2 <= VP_H + 1` para `+3`, evitando criaturas cortadas na borda durante movimentacao.
 
-### Mudancas por Arquivo
+3. **Aplicar camera offset ao HUD**: O mesmo offset de camera smooth deve ser aplicado ao posicionamento do HUD para que nomes/barras acompanhem o deslizamento.
 
-**`src/lib/tibiaRelic/gameState.ts`**
-- Adicionar campos `walkOffsetX`, `walkOffsetY`, `walkStartTick`, `walkDuration` na interface e factory
+#### `src/lib/tibiaRelic/packetParser.ts`
 
-**`src/lib/tibiaRelic/packetParser.ts`**
-- No `moveCr`: calcular e setar walk offset baseado na direcao e speed da criatura
+4. **Corrigir formula de walk duration**: Trocar `Math.max(100, Math.floor(1000 / (c.speed / 220)))` por formula baseada em ground speed: `Math.max(100, Math.floor(150 * 1000 / Math.max(1, c.speed)))` onde 150 e o ground speed padrao. Para diagonal, multiplicar por 3 (custo extra de diagonal no Tibia).
 
-**`src/lib/tibiaRelic/renderer.ts`**
-- No `drawCreatureNative`: interpolar pixel offset baseado em `performance.now()`
-- Aplicar offset ao HUD tambem
-- Trocar `this.tick` por `performance.now()` para animacoes
+5. **Proteger walk durante scroll**: Quando `scroll()` e chamado (camera se move), nao resetar walks em andamento de criaturas que ja estao animando.
 
-**`src/components/TibiarcPlayer.tsx`**
-- Remover throttle de 20 FPS no animation loop
+#### `src/lib/tibiaRelic/gameState.ts`
+
+6. Nenhuma mudanca necessaria na interface - os campos de walk ja existem.
 
 ### Resultado Esperado
 
-- Criaturas deslizam suavemente entre tiles em vez de "teleportar"
-- Animacoes rodam a ~60fps, visual fluido como video
-- Velocidade de animacao constante independente do FPS do dispositivo
+- A tela desliza suavemente quando o player anda, sem "pulos"
+- O player nunca desaparece durante transicoes de tela
+- A velocidade de caminhada das criaturas corresponde ao visual do jogo original
+- Criaturas na borda da tela continuam visiveis durante o movimento
 
