@@ -1,57 +1,42 @@
 
 
-## Fix Seek Bugs + Add Magic Effects/Projectile Rendering
+## Fix Dead Monster HUD + Stale Creatures + Floor Bugs
 
-### Issue 1: Seek Causes Visual Bugs
+### Root Cause Analysis
 
-**Root Cause**: `handleSeek` in TibiarcPlayer.tsx calls `engine.renderer.clearCache()` which destroys ALL cached sprite canvases and tint canvases. After seek, every visible sprite must be recreated from scratch (hundreds of `document.createElement('canvas')` calls in the first few frames), causing massive stuttering and visual "bugs" as the renderer struggles to rebuild.
+All three issues share a single root cause: **creatures are never removed from `gs.creatures` map**.
 
-The sprite cache and tint cache are keyed by sprite ID and outfit colors -- they do NOT depend on game state or position, so clearing them during seek is unnecessary and harmful.
+When a creature dies or leaves the screen:
+1. `delThing` (opcode 0x6c) removes it from the tile array
+2. But the creature object stays in `gs.creatures` forever
+3. The HUD loop iterates ALL creatures in the map, drawing name/HP for dead or off-screen creatures
+4. After seeking, hundreds of stale creatures accumulate at old positions and floors
 
-**Fix** (`src/components/TibiarcPlayer.tsx`):
-- In `handleSeek`: Remove the `engine.renderer.clearCache()` call. Only clear cache when loading a NEW .cam file (which is already done in `handleFileSelect`).
-- In `resetPlayback`: Same -- remove `clearCache()` since we're replaying the same recording with the same sprites.
+### Changes
 
-### Issue 2: Magic Effects and Projectiles Not Rendered
+#### 1. `src/lib/tibiaRelic/packetParser.ts` - Clean up creatures on removal
 
-Currently, opcodes 0x83 (magic effect) and 0x85 (distance shot/projectile) are parsed but immediately discarded. The DatLoader also reads effect and missile definitions from Tibia.dat but throws them away.
+**In `delThing`**: When a creature reference (`['cr', id]`) is removed from a tile, also delete it from `gs.creatures` (unless it's the player). This ensures dead monsters and creatures that leave the viewport are properly cleaned up.
 
-**Changes needed across 4 files:**
+**In `moveCr`**: No change needed -- creatures that move are correctly tracked.
 
-#### A. `src/lib/tibiaRelic/datLoader.ts` -- Store effects and missiles
-- Add `effects: Map<number, ItemType>` and `missiles: Map<number, ItemType>` to DatLoader
-- In the `load()` method, store effect entries (IDs 1..effectMaxId) and missile entries (IDs 1..missileMaxId) instead of discarding them
-- Note: effects and missiles do NOT have patZ (pass `false` for hasPatZ)
+#### 2. `src/lib/tibiaRelic/renderer.ts` - Only draw HUD for creatures on tiles
 
-#### B. `src/lib/tibiaRelic/gameState.ts` -- Add effect/projectile state
-- Add `ActiveEffect` interface: `{ x, y, z, effectId, startTick, duration }`
-- Add `ActiveProjectile` interface: `{ fromX, fromY, fromZ, toX, toY, toZ, missileId, startTick, duration }`
-- Add `effects: ActiveEffect[]` and `projectiles: ActiveProjectile[]` arrays to GameState
-- Add `pruneEffects(now)` method that removes expired effects/projectiles
-- Clear these arrays in `reset()`
+**In the HUD loop** (line 377): Before drawing a creature's HUD, verify the creature actually exists on its tile. Check that the tile at `(c.x, c.y, c.z)` contains a `['cr', c.id]` entry. Skip HUD rendering if the creature isn't found on any tile (stale entry).
 
-#### C. `src/lib/tibiaRelic/packetParser.ts` -- Parse and store effects
-- **Opcode 0x83** (magic effect): Parse position (u16 x, u16 y, u8 z) + u8 effectType. Create an `ActiveEffect` with ~600ms duration, push to `gs.effects`
-- **Opcode 0x85** (projectile): Parse fromPos(5 bytes) + toPos(5 bytes) + u8 missileType. Create an `ActiveProjectile` with duration based on distance (~150ms per tile), push to `gs.projectiles`
-- Opcode 0x84 (animated text) can remain skipped for now
+Additionally, skip HUD for creatures with `health <= 0` as an extra safety measure.
 
-#### D. `src/lib/tibiaRelic/renderer.ts` -- Render effects and projectiles
-- Add a new render pass (Pass 3.5, after creatures but before top items) that draws active effects:
-  - For each `ActiveEffect`: look up sprite from `dat.effects`, compute animation frame from elapsed time, draw at world position using `drawItemNative` logic
-  - For each `ActiveProjectile`: look up sprite from `dat.missiles`, interpolate position from source to destination based on elapsed time, draw at interpolated position
-- Call `gs.pruneEffects(now)` at the start of `draw()` to remove expired ones
-- The effect sprites use the same `getNativeSprite()` cache as items, so no new caching needed
+#### 3. `src/components/TibiarcPlayer.tsx` - Prune stale creatures after seek
+
+**In `applyTo`** (after seek completes): After clearing walk animations, scan all creatures and remove any that are NOT present on their claimed tile. This handles edge cases where frames were skipped during seek replay.
 
 ### Files to Edit
-1. **`src/components/TibiarcPlayer.tsx`** -- Remove unnecessary cache clears on seek/reset
-2. **`src/lib/tibiaRelic/datLoader.ts`** -- Store effect and missile definitions
-3. **`src/lib/tibiaRelic/gameState.ts`** -- Add effect/projectile arrays and pruning
-4. **`src/lib/tibiaRelic/packetParser.ts`** -- Parse opcodes 0x83 and 0x85 into game state
-5. **`src/lib/tibiaRelic/renderer.ts`** -- Render active effects and projectiles
+1. **`src/lib/tibiaRelic/packetParser.ts`** -- Delete creature from `gs.creatures` when removed from tile via `delThing`
+2. **`src/lib/tibiaRelic/renderer.ts`** -- Validate creature is on-tile before drawing HUD; skip health<=0
+3. **`src/components/TibiarcPlayer.tsx`** -- Prune orphaned creatures from `gs.creatures` after seek
 
 ### Expected Results
-- Seeking via slider no longer causes stuttering or visual corruption
-- Magic effects (explosion, fire, healing, etc.) appear at the correct position and animate
-- Projectiles (arrows, bolts, spells) fly from source to destination
-- Effects automatically expire after their animation completes
+- Dead monsters no longer show name/HP bars
+- Seeking no longer leaves stale creatures on screen or on wrong floors
+- Camera and tiles load correctly after seeking to any position
 
