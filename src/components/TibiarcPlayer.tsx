@@ -206,6 +206,15 @@ const TibiarcPlayer = ({ className }: TibiarcPlayerProps) => {
         c.walkOffsetX = 0;
         c.walkOffsetY = 0;
       }
+      // Prune orphaned creatures: remove any not present on their claimed tile
+      for (const [cid, c] of engine.gs.creatures.entries()) {
+        if (cid === engine.gs.playerId) continue;
+        const tile = engine.gs.getTile(c.x, c.y, c.z);
+        const onTile = tile.some(i => i[0] === 'cr' && i[1] === cid);
+        if (!onTile) {
+          engine.gs.creatures.delete(cid);
+        }
+      }
     }
   };
 
