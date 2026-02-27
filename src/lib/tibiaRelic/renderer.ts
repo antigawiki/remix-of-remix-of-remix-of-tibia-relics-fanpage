@@ -143,13 +143,16 @@ export class Renderer {
     const ph = Math.floor(now / 200) % 4; // time-based animation: 200ms per frame
     this.hudEntries = [];
 
-    // Smooth camera follow: apply player's walk offset to entire viewport
+    // Smooth camera follow: NEGATE player's walk offset to shift viewport
+    // When player moves east (walkOffsetX=-32), camera must shift tiles RIGHT (+32)
+    // so the instant camX jump is smoothly compensated. The player's own walk offset
+    // in drawCreatureNative then cancels this out, keeping the player centered.
     let camOffX = 0, camOffY = 0;
     const player = g.playerId ? g.creatures.get(g.playerId) : undefined;
     if (player && player.walking && now < player.walkEndTick) {
       const progress = Math.min(1, (now - player.walkStartTick) / player.walkDuration);
-      camOffX = Math.round(player.walkOffsetX * (1 - progress));
-      camOffY = Math.round(player.walkOffsetY * (1 - progress));
+      camOffX = -Math.round(player.walkOffsetX * (1 - progress));
+      camOffY = -Math.round(player.walkOffsetY * (1 - progress));
     }
 
     // Determine visible floors
@@ -222,13 +225,7 @@ export class Renderer {
     const scaleY = canvasHeight / NATIVE_H;
 
     // Draw creature HUDs AFTER upscale on the display canvas (high-res text)
-    // Recompute camera offset for HUD positioning
-    let hudCamOffX = 0, hudCamOffY = 0;
-    if (player && player.walking && now < player.walkEndTick) {
-      const progress = Math.min(1, (now - player.walkStartTick) / player.walkDuration);
-      hudCamOffX = player.walkOffsetX * (1 - progress);
-      hudCamOffY = player.walkOffsetY * (1 - progress);
-    }
+    // Use same negated camera offset for HUD positioning
     for (const c of g.creatures.values()) {
       if (c.z !== z) continue;
       const tx2 = c.x - (g.camX - 8);
@@ -242,12 +239,12 @@ export class Renderer {
             if (it && it.elevation > 0) elev += it.elevation;
           }
         }
-        // Interpolate walk offset for HUD positioning
-        let hudOx = hudCamOffX, hudOy = hudCamOffY;
+        // HUD offset = camera offset + creature's own walk offset
+        let hudOx = camOffX, hudOy = camOffY;
         if (c.walking && now < c.walkEndTick) {
           const progress = Math.min(1, (now - c.walkStartTick) / c.walkDuration);
-          hudOx += c.walkOffsetX * (1 - progress);
-          hudOy += c.walkOffsetY * (1 - progress);
+          hudOx += Math.round(c.walkOffsetX * (1 - progress));
+          hudOy += Math.round(c.walkOffsetY * (1 - progress));
         }
         const sx = (tx2 * TILE_PX + hudOx) * scaleX;
         const sy = (ty2 * TILE_PX - elev + hudOy) * scaleY;

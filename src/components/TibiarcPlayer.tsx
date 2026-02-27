@@ -44,6 +44,7 @@ const TibiarcPlayer = ({ className }: TibiarcPlayerProps) => {
     speed: number;
     playing: boolean;
     rafId: number | null;
+    _lastProgressUpdate: number;
   } | null>(null);
 
   const [state, setState] = useState<PlayerState>('idle');
@@ -117,7 +118,7 @@ const TibiarcPlayer = ({ className }: TibiarcPlayerProps) => {
           spr, dat, gs, parser, renderer,
           cam: null, curFrame: 0, curMs: 0,
           wallT0: 0, camT0Ms: 0, speed: 1,
-          playing: false, rafId: null,
+          playing: false, rafId: null, _lastProgressUpdate: 0,
         };
 
         setDataLoaded(true);
@@ -148,17 +149,23 @@ const TibiarcPlayer = ({ className }: TibiarcPlayerProps) => {
       if (!canvas) return;
 
       if (engine.playing && engine.cam) {
-        const elapsed = (performance.now() - engine.wallT0) / 1000;
+        const now = performance.now();
+        const elapsed = (now - engine.wallT0) / 1000;
         const target = Math.floor(engine.camT0Ms + elapsed * 1000 * engine.speed);
 
         if (target >= engine.cam.totalMs) {
           applyTo(engine, engine.cam.totalMs);
           engine.playing = false;
           setState('paused');
+          setProgress(engine.curMs);
         } else {
           applyTo(engine, target);
+          // Throttle React state updates to ~10Hz to avoid jank
+          if (!engine._lastProgressUpdate || now - engine._lastProgressUpdate > 100) {
+            engine._lastProgressUpdate = now;
+            setProgress(engine.curMs);
+          }
         }
-        setProgress(engine.curMs);
       }
 
       // Update floor override from ref to stay in sync
