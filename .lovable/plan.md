@@ -1,54 +1,75 @@
 
 
-## Diagnostico e Correcao: Floor Mismatch e Criaturas Invisíveis
+## Correcao: Viewport Off-Center + Floor Camera Desync
 
-### Causa Raiz Identificada
+### Diagnostico Detalhado
 
-Apos analise detalhada comparando com OTClient e tibiarc, identifiquei **dois bugs concretos**:
+Apos analise aprofundada comparando com OTClient, identifiquei **duas causas raiz concretas**:
 
-### BUG 1 - CRITICO: `floorChanged` nunca dispara (cleanup de criaturas nao executa)
+### BUG 1: Viewport deslocado 1 tile (player nao esta no centro)
 
-Em `syncPlayerToCamera()`, a deteccao de mudanca de floor e:
+No OTClient, a area de leitura do mapa e 18x14 tiles, mas a viewport visivel e 15x11. O OTClient aplica um offset de `(18-15-1)/2 = 1` tile horizontalmente e `(14-11-1)/2 = 1` tile verticalmente para centralizar o player. Nosso renderer usa `cx0 = renderCamX - 8`, colocando o player no tile 8 da tela (pixel 256 de 480). O correto e tile 7 (pixel 224, centro exato).
+
+**Correcao**: Mudar `cx0 = renderCamX - 7 + offset` e `cy0 = renderCamY - 5 + offset`. Atualizar tambem o calculo de posicao do HUD.
+
+### BUG 2: Camera floor usa `player.z` que pode estar desatualizado
+
+O renderer usa `renderCamZ = player.z` como floor da camera. Porem, durante transicoes de floor, se o parsing parcialmente falha (erro no TCP demux, BufOverflow no meio da leitura de tiles), `player.z` pode ficar preso no floor anterior enquanto `g.camZ` ja foi atualizado. Resultado: camera mostra floor errado.
+
+**Correcao**: Usar `g.camZ` como fonte autoritativa do floor da camera, nao `player.z`. O `g.camZ` e SEMPRE atualizado antes da leitura de tiles nos handlers floorUp/floorDown/mapDesc. Mesmo que a leitura de tiles falhe, o revert no catch ja cuida de restaurar `g.camZ`.
+
+### Implementacao
+
+#### Arquivo: `src/lib/tibiaRelic/renderer.ts`
+
+**1. Corrigir fonte da camera (usar g.camX/Y/Z em vez de player.x/y/z):**
+
 ```text
-const floorChanged = player.z !== g.camZ;
+// ANTES:
+const renderCamX = player ? player.x : g.camX;
+const renderCamY = player ? player.y : g.camY;
+const renderCamZ = player ? player.z : g.camZ;
+
+// DEPOIS:
+const renderCamX = g.camX;
+const renderCamY = g.camY;
+const renderCamZ = g.camZ;
 ```
 
-Porem, durante `floorUp`/`floorDown`, o `readTileItems` ja atualiza `player.z` para o novo floor ANTES de `syncPlayerToCamera` rodar. Resultado: `player.z === g.camZ` e `floorChanged = false`. O codigo de limpeza de criaturas distantes **nunca executa**, deixando criaturas "fantasma" de floors anteriores no estado.
+O `g.camX/Y/Z` e a fonte autoritativa do protocolo. A posicao do player e usada apenas para walk offset (smooth scrolling), nao para a posicao base da camera.
 
-**Correcao**: Passar o `oldZ` explicitamente para `syncPlayerToCamera` a partir dos handlers `floorUp`/`floorDown`, em vez de tentar detectar automaticamente.
+**2. Corrigir offset do viewport (centralizar player):**
 
-### BUG 2 - ALTO: HUD renderiza nomes em area maior que Pass 3 renderiza sprites
+```text
+// ANTES:
+const cx0 = renderCamX - 8 + offset;
+const cy0 = renderCamY - 6 + offset;
 
-O HUD usa viewport `tx >= -2 && tx <= VP_W + 3` (20 colunas), mas Pass 3 (sprites) itera `tx = -1 a VP_W + 2` (18 colunas). Criaturas nas bordas tem nome sem sprite.
+// DEPOIS (OTClient-aligned):
+const cx0 = renderCamX - 7 + offset;
+const cy0 = renderCamY - 5 + offset;
+```
 
-**Correcao**: Alinhar os bounds do HUD com os bounds do Pass 3.
+**3. Atualizar calculo HUD para mesma origem:**
 
-### Plano de Implementacao
+```text
+// ANTES:
+const tx2 = c.x - (renderCamX - 8);
+const ty2 = c.y - (renderCamY - 6);
 
-**Arquivo: `src/lib/tibiaRelic/packetParser.ts`**
+// DEPOIS:
+const tx2 = c.x - (renderCamX - 7);
+const ty2 = c.y - (renderCamY - 5);
+```
 
-1. Modificar `syncPlayerToCamera` para aceitar um parametro opcional `oldZ`:
-   - `syncPlayerToCamera(oldZ?: number)`
-   - Usar `oldZ !== undefined ? oldZ !== g.camZ : player.z !== g.camZ` para `floorChanged`
+**4. Atualizar calcFirstVisibleFloor para usar mesmas coordenadas:**
 
-2. Nos handlers `floorUp` e `floorDown`, passar `oldZ` para `syncPlayerToCamera`:
-   - `floorUp`: `this.syncPlayerToCamera(oldZ)` onde `oldZ` e o camZ antes do decremento
-   - `floorDown`: `this.syncPlayerToCamera(oldZ)` onde `oldZ` e o camZ antes do incremento
-
-3. Tambem passar `oldZ` nos handlers `mapDesc` (0x64) e player position (0x9a) que chamam `syncPlayerToCamera`, passando o camZ anterior ao update.
-
-**Arquivo: `src/lib/tibiaRelic/renderer.ts`**
-
-4. Alinhar o viewport do HUD com o Pass 3:
-   - Mudar `tx2 >= -2 && tx2 <= VP_W + 3 && ty2 >= -2 && ty2 <= VP_H + 3`
-   - Para `tx2 >= -1 && tx2 <= VP_W + 2 && ty2 >= -1 && ty2 <= VP_H + 2`
-
-5. Adicionar log temporario nos floor changes para diagnostico futuro:
-   - Console.log em `floorUp`/`floorDown` com oldZ, newZ, e contagem de criaturas limpas
+Verificar que o metodo recebe `renderCamX/Y` corretos (agora `g.camX/Y`).
 
 ### Resultado Esperado
 
-- Criaturas de floors distantes sao corretamente removidas durante transicoes
-- Nomes e sprites sempre aparecem juntos (mesma area de viewport)
-- Logs de diagnostico permitem identificar problemas residuais rapidamente
+- Player exatamente no centro da viewport (tile 7 de 15 horizontal, tile 5 de 11 vertical)
+- Floor da camera sempre sincronizado com o protocolo (g.camZ)
+- Sem mais "nomes fantasma" em floors errados apos transicoes
+- Walk offset continua funcionando para smooth scrolling
 
