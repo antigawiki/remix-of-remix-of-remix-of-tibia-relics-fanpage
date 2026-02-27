@@ -141,6 +141,8 @@ export class PacketParser {
     else if (t === 0x6b) this.chgThing(r);
     else if (t === 0x6c) this.delThing(r);
     else if (t === 0x6d) this.moveCr(r);
+    // Creature turn (opcode 0x63 at top level, not inside tile read)
+    else if (t === 0x63) { const cid = r.u32(); const dir = r.u8(); const c = g.creatures.get(cid); if (c) c.direction = dir; }
     // Login
     else if (t === 0x0a) this.login(r);
     else if (t === 0x0b) { /* GM actions */ }
@@ -319,12 +321,34 @@ export class PacketParser {
     const sp = r.u8();
     const [tx, ty, tz] = this.pos3(r);
 
-    const ft = [...this.gs.getTile(fx, fy, fz)];
     let cid: number | null = null;
-    if (sp >= 0 && sp < ft.length && ft[sp][0] === 'cr') {
-      cid = ft[sp][1];
-      ft.splice(sp, 1);
-      this.gs.setTile(fx, fy, fz, ft);
+
+    // Support 0xFFFF format (creature referenced by ID, not position)
+    if (fx === 0xFFFF) {
+      // fx=0xFFFF means fy=creatureId (packed in fy/fz/sp)
+      // Actually in 7.x protocol, 0xFFFF position means lookup by creature id
+      // The "sp" already read is part of the creature reference
+      // Find creature by scanning all creatures at that position
+      for (const c of this.gs.creatures.values()) {
+        if (c.x === tx && c.y === ty) { cid = c.id; break; }
+      }
+    } else {
+      const ft = [...this.gs.getTile(fx, fy, fz)];
+      if (sp >= 0 && sp < ft.length && ft[sp][0] === 'cr') {
+        cid = ft[sp][1];
+        ft.splice(sp, 1);
+        this.gs.setTile(fx, fy, fz, ft);
+      } else {
+        // Fallback: stackpos mismatch — search tile for any creature
+        for (let i = 0; i < ft.length; i++) {
+          if (ft[i][0] === 'cr') {
+            cid = ft[i][1];
+            ft.splice(i, 1);
+            this.gs.setTile(fx, fy, fz, ft);
+            break;
+          }
+        }
+      }
     }
     if (cid !== null) {
       const c = this.gs.creatures.get(cid);
@@ -337,10 +361,9 @@ export class PacketParser {
         c.x = tx; c.y = ty; c.z = tz;
         // Smooth walking: set pixel offset from previous tile
         c.walking = true;
-        const isDiagonal = dx !== 0 && dy !== 0;
-        const groundSpeed = 150; // default ground speed
-        const baseDuration = c.speed > 0 ? Math.floor(groundSpeed * 1000 / Math.max(1, c.speed)) : 300;
-        const walkDuration = Math.max(100, isDiagonal ? Math.floor(baseDuration * 3) : baseDuration);
+        // Visual step duration: no diagonal penalty for interpolation (matches OTClient getStepDuration(true))
+        const groundSpeed = 150;
+        const walkDuration = c.speed > 0 ? Math.max(100, Math.floor(groundSpeed * 1000 / Math.max(1, c.speed))) : 300;
         c.walkDuration = walkDuration;
         c.walkStartTick = performance.now();
         c.walkEndTick = c.walkStartTick + walkDuration;
