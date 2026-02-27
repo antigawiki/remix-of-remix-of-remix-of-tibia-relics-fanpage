@@ -224,9 +224,24 @@ export class PacketParser {
     // World light
     else if (t === 0x82) { r.u8(); r.u8(); }
     // Effects
-    else if (t === 0x83) { r.skip(5); r.u8(); }
+    else if (t === 0x83) {
+      const [ex, ey, ez] = this.pos3(r);
+      const effectType = r.u8();
+      if (!this.seekMode) {
+        g.effects.push({ x: ex, y: ey, z: ez, effectId: effectType + 1, startTick: performance.now(), duration: 600 });
+      }
+    }
     else if (t === 0x84) { r.skip(5); r.u8(); r.skip16(); }
-    else if (t === 0x85) { r.skip(5); r.skip(5); r.u8(); }
+    else if (t === 0x85) {
+      const [fx2, fy2, fz2] = this.pos3(r);
+      const [tx2, ty2, tz2] = this.pos3(r);
+      const missileType = r.u8();
+      if (!this.seekMode) {
+        const dist = Math.max(Math.abs(tx2 - fx2), Math.abs(ty2 - fy2));
+        const dur = Math.max(150, dist * 150);
+        g.projectiles.push({ fromX: fx2, fromY: fy2, fromZ: fz2, toX: tx2, toY: ty2, toZ: tz2, missileId: missileType + 1, startTick: performance.now(), duration: dur });
+      }
+    }
     // Creature updates
     else if (t === 0x86) { r.u32(); r.u8(); }
     else if (t === 0x87) { const nt = r.u8(); for (let i = 0; i < nt; i++) r.u32(); }

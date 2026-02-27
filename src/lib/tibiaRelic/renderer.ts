@@ -6,7 +6,7 @@
  */
 import { SprLoader } from './sprLoader';
 import { DatLoader, type ItemType } from './datLoader';
-import { GameState, type TileItem, type Creature } from './gameState';
+import { GameState, type TileItem, type Creature, type ActiveEffect, type ActiveProjectile } from './gameState';
 
 const VP_W = 15, VP_H = 11;
 const TILE_PX = 32;
@@ -145,6 +145,8 @@ export class Renderer {
 
   draw(canvasWidth: number, canvasHeight: number) {
     const g = this.gs;
+    const now = this.lastDrawTime || performance.now();
+    g.pruneEffects(now);
     const displayCtx = this.ctx;
     const oc = this.offCtx;
 
@@ -163,7 +165,6 @@ export class Renderer {
 
     let camOffX = 0, camOffY = 0;
     const player = g.playerId ? g.creatures.get(g.playerId) : undefined;
-    const now = this.lastDrawTime || performance.now();
     const ph = Math.floor(now / 200) % 4; // time-based animation: 200ms per frame
     this.hudEntries = [];
 
@@ -271,6 +272,70 @@ export class Renderer {
               this.drawCreatureNative(c, bx, by - elevationOffset);
             }
           }
+        }
+      }
+
+      // Pass 3.5: Magic effects
+      for (const eff of g.effects) {
+        if (eff.z !== fz) continue;
+        const etx = eff.x - cx0;
+        const ety = eff.y - cy0;
+        if (etx < -2 || etx > VP_W + 3 || ety < -2 || ety > VP_H + 3) continue;
+        const effDef = this.dat.effects.get(eff.effectId);
+        if (!effDef || effDef.spriteIds.length === 0) continue;
+        const elapsed = now - eff.startTick;
+        const effAnim = Math.max(1, effDef.anim);
+        const frameTime = eff.duration / effAnim;
+        const frame = Math.min(effAnim - 1, Math.floor(elapsed / frameTime));
+        const ebx = etx * TILE_PX + camOffX;
+        const eby = ety * TILE_PX + camOffY;
+        for (let th = 0; th < effDef.height; th++) {
+          for (let tw = 0; tw < effDef.width; tw++) {
+            const W = effDef.width, H = effDef.height;
+            const idx = frame * H * W + th * W + tw;
+            const sid = idx < effDef.spriteIds.length ? effDef.spriteIds[idx] : 0;
+            const sprCanvas = this.getNativeSprite(sid);
+            if (sprCanvas) {
+              oc.drawImage(sprCanvas, ebx - tw * TILE_PX, eby - th * TILE_PX);
+            }
+          }
+        }
+      }
+
+      // Pass 3.6: Projectiles
+      for (const proj of g.projectiles) {
+        if (proj.fromZ !== fz && proj.toZ !== fz) continue;
+        const elapsed = now - proj.startTick;
+        const t = Math.min(1, elapsed / proj.duration);
+        const px = proj.fromX + (proj.toX - proj.fromX) * t;
+        const py = proj.fromY + (proj.toY - proj.fromY) * t;
+        const ptx = px - cx0;
+        const pty = py - cy0;
+        if (ptx < -2 || ptx > VP_W + 3 || pty < -2 || pty > VP_H + 3) continue;
+        const missDef = this.dat.missiles.get(proj.missileId);
+        if (!missDef || missDef.spriteIds.length === 0) continue;
+        // Missile direction pattern: patX encodes direction (0-7 for 8 directions)
+        const dx = proj.toX - proj.fromX;
+        const dy = proj.toY - proj.fromY;
+        let dirIdx = 0;
+        if (dx === 0 && dy < 0) dirIdx = 0;       // N
+        else if (dx > 0 && dy < 0) dirIdx = 1;    // NE
+        else if (dx > 0 && dy === 0) dirIdx = 2;   // E
+        else if (dx > 0 && dy > 0) dirIdx = 3;    // SE
+        else if (dx === 0 && dy > 0) dirIdx = 4;   // S
+        else if (dx < 0 && dy > 0) dirIdx = 5;    // SW
+        else if (dx < 0 && dy === 0) dirIdx = 6;   // W
+        else if (dx < 0 && dy < 0) dirIdx = 7;    // NW
+        const PX = Math.max(1, missDef.patX);
+        const patX = dirIdx % PX;
+        const W = missDef.width, H = missDef.height;
+        const idx = patX * H * W;
+        const sid = idx < missDef.spriteIds.length ? missDef.spriteIds[idx] : 0;
+        const sprCanvas = this.getNativeSprite(sid);
+        if (sprCanvas) {
+          const mbx = Math.round(ptx * TILE_PX + camOffX);
+          const mby = Math.round(pty * TILE_PX + camOffY);
+          oc.drawImage(sprCanvas, mbx, mby);
         }
       }
 
