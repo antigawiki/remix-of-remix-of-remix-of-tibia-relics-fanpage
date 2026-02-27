@@ -1,60 +1,66 @@
 
 
-## Fix Effects + Add Damage Numbers + Creature Walk Fixes
+## Fix Magic Effects + Improve Damage/XP Text
 
-### 1. Restore Effect/Missile ID +1 Offset
+### Root Cause Analysis
 
-The effects were working correctly with `+1` before our changes. The TibiaRelic server appears to use 0-based effect IDs (non-standard), so the `+1` mapping is needed to align with the DatLoader which stores effects starting at ID 1.
+#### Bug 1: Magic Effects Show Wrong Sprites (or "don't appear")
 
-**File**: `src/lib/tibiaRelic/packetParser.ts`
-- Opcode 0x83: Change `effectId: effectType` back to `effectId: effectType + 1`
-- Opcode 0x85: Change `missileId: missileType` back to `missileId: missileType + 1`
+The screenshot clearly shows visual effects rendering (orange bursts, black holes, sparkles), but they are the WRONG effects for the context. This is caused by the `+1` offset on effect IDs.
 
-### 2. Implement Animated Text (Damage Numbers) - Opcode 0x84
+**How it works:**
+- `DatLoader` stores effects starting at ID 1 (`it.id = 1 + i`)
+- Standard Tibia 7.72 protocol sends 1-based effect IDs (e.g., DRAWBLOOD = 1, LOSEENERGY = 2)
+- With `effectType + 1`: protocol blood (1) maps to dat ID 2 (energy) -- every effect is shifted by one position
+- Without `+1`: protocol blood (1) maps to dat ID 1 (blood) -- correct
 
-Currently opcode 0x84 is just skipped. This is the "animated text" packet that shows damage numbers, healing numbers, and XP gains floating above creatures.
+The previous attempt to remove `+1` failed because other bugs (invisible creatures, broken rendering) were active simultaneously, making it impossible to evaluate. Those bugs are now fixed.
 
-**File**: `src/lib/tibiaRelic/gameState.ts`
-- Add `AnimatedText` interface: `{ x, y, z, color, text, startTick, duration }`
-- Add `animatedTexts: AnimatedText[]` array to GameState
-- Add pruning in `pruneEffects()`
-- Include in `snapshot()`/`restore()`/`reset()`
+**Fix** (`src/lib/tibiaRelic/packetParser.ts`):
+- Opcode 0x83: Change `effectId: effectType + 1` to `effectId: effectType`
+- Opcode 0x85: Change `missileId: missileType + 1` to `missileId: missileType`
+- Add temporary `console.log` for the first 20 effects to verify IDs in browser console
 
-**File**: `src/lib/tibiaRelic/packetParser.ts`
-- Parse 0x84 properly: `pos3` + `u8 color` + `str16 text`
-- Convert the protocol color byte to an RGB hex string (Tibia uses an 8-bit color index)
-- Push to `gs.animatedTexts` array (skip in seekMode)
+#### Bug 2: Animated Text Colors Are Wrong
 
-**File**: `src/lib/tibiaRelic/renderer.ts`
-- Add Pass 3.7 (after projectiles, before top items): render animated texts
-- Text floats upward over ~1 second (linear Y interpolation from tile position to -20px above)
-- Draw at native resolution on offscreen canvas with small font (~8px)
-- Use the parsed color for the text, with black outline for readability
+The `protocolColorToHex` method has a hardcoded color map that overrides correct values with wrong ones. Tibia uses a 6x6x6 RGB cube (216 colors) where:
+- Color 215 = white (XP gain text) -- but hardcoded map says `'#5555ff'` (blue!)
+- Color 180 = red (physical damage) -- hardcoded says `'#cc0000'` (close but not exact)
+- Color 30 = green (not white as hardcoded)
 
-### 3. Fix Creature Walk Animation Occasionally Missing
+The 6x6x6 cube formula already produces correct colors. The hardcoded map is actively breaking them.
 
-The walk animation disappears when `moveCr` Format B (0xFFFF) resolves a creature whose stored position already matches the destination (dx=0, dy=0). This happens when the creature's position was updated by a previous packet but the tile reference wasn't cleaned up. The walk offset becomes (0,0), so no visual movement occurs.
+**Fix** (`src/lib/tibiaRelic/packetParser.ts`):
+- Remove the entire hardcoded `colorMap` object
+- Use only the 6x6x6 RGB cube calculation (already implemented as fallback)
 
-**File**: `src/lib/tibiaRelic/packetParser.ts`
-- In `moveCr` Format B: After resolving `fromX/Y/Z` from the creature's stored position, verify `dx` or `dy` is non-zero before setting walk animation. If both are 0, skip the walk offset setup but still update the tile placement.
-- Also ensure that when a creature starts a new walk while still walking, the previous walk is properly finalized (snap position) before starting the new one -- this part already exists but double-check the edge case where `fromX` equals the creature's already-snapped position.
+#### Improvement: Animated Text Too Small and Hard to Read
 
-### 4. Fix Creature Overlap (Player on Top of Another)
+Currently 8px monospace with a simple 1px shadow is too small at native 480x352 resolution.
 
-When `moveCr` removes a creature from a tile by stackpos, it might grab the wrong creature if the stackpos is stale (items were added/removed between the move packets). This causes the wrong creature to be moved, leaving the intended creature orphaned on the tile.
+**Fix** (`src/lib/tibiaRelic/renderer.ts`):
+- Increase font to `bold 11px monospace`
+- Use `strokeText` with 2px black stroke for proper outline (like original Tibia client)
+- Float upward 24px instead of 20px for better visibility
+- Keep the fade-out alpha animation
 
-**File**: `src/lib/tibiaRelic/packetParser.ts`
-- In `moveCr` Format A: After finding a creature by stackpos, verify its stored position matches `(fx, fy, fz)`. If it doesn't match, fall through to the position-based search instead of using the stale stackpos entry.
+---
 
 ### Files to Edit
 
-1. **`src/lib/tibiaRelic/gameState.ts`** -- Add AnimatedText type and array
-2. **`src/lib/tibiaRelic/packetParser.ts`** -- Restore +1 for effects, parse 0x84, fix moveCr edge cases
-3. **`src/lib/tibiaRelic/renderer.ts`** -- Render animated text (damage numbers)
+#### 1. `src/lib/tibiaRelic/packetParser.ts`
+
+- **Line 231**: Change `effectId: effectType + 1` to `effectId: effectType`
+- **Line 251**: Change `missileId: missileType + 1` to `missileId: missileType`
+- **Lines 834-861**: Replace `protocolColorToHex` -- remove hardcoded colorMap, keep only 6x6x6 cube math
+
+#### 2. `src/lib/tibiaRelic/renderer.ts`
+
+- **Lines 342-363**: Improve animated text rendering -- larger font (11px), strokeText outline, 24px float distance
 
 ### Expected Results
-- Attack effects and projectiles show correct sprites (restored +1 mapping)
-- Damage numbers float upward when monsters are hit
-- Walk animations play consistently even for Format B creature moves
-- Creatures don't overlap incorrectly due to stale stackpos references
-
+- Blood effects appear when monsters take physical damage
+- Energy/fire/ice effects match the actual spell being cast
+- XP gain text appears in white
+- Physical damage text appears in red
+- Text is larger and readable with proper black outline like original Tibia
