@@ -640,7 +640,10 @@ export class PacketParser {
     if (!c) { c = createCreature(); c.id = cid; }
     c.name = name;
     this.gs.creatures.set(cid, c);
-    if (rem && rem !== cid) this.gs.creatures.delete(rem);
+    if (rem && rem !== cid) {
+      if (rem === this.gs.playerId) this.gs.playerId = cid;
+      this.gs.creatures.delete(rem);
+    }
     this.updateCreatureCommon(r, c);
     return c;
   }
