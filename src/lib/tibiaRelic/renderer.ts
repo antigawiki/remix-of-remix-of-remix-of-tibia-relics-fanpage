@@ -15,44 +15,85 @@ const NATIVE_H = VP_H * TILE_PX; // 352
 const DIR_MAP: Record<number, number> = { 0: 0, 1: 1, 2: 2, 3: 3 };
 
 /**
- * OTClient/tibiarc HSI-to-RGB outfit color algorithm.
- * 133 colors: 19 hue steps × 7 saturation/intensity levels.
- * Indices that are multiples of 19 are grayscale.
+ * OTClient outfit color algorithm (from outfit.cpp).
+ * 133 colors total: 7 groups × 19 hue steps.
+ * Uses a 6-sector linear HSV-like interpolation — NO cosine functions.
+ * Group index 0 = grayscale row; hue index 0 within each group = also grayscale.
  */
-const HSI_H_STEPS = 19;
-const HSI_SI_VALUES = 7;
-const HSI_SI_PAIRS: [number, number][] = [
-  [0.25, 1.00],  // group 0: light, low saturation
-  [0.25, 0.75],  // group 1
-  [0.50, 0.75],  // group 2
-  [0.667, 0.75], // group 3
-  [1.00, 1.00],  // group 4: vivid
-  [1.00, 0.75],  // group 5
-  [1.00, 0.50],  // group 6: dark
-];
+function getOutfitColor(color: number): [number, number, number] {
+  if (color < 0 || color > 132) return [255, 255, 255];
+  if (color === 0) return [255, 255, 255]; // color 0 = white (no tint)
 
-function hsiToRgb(h: number, s: number, i: number): [number, number, number] {
-  // h in [0,1), s in [0,1], i in [0,1]
-  const hDeg = h * 360;
-  let r: number, g: number, b: number;
+  // OTClient: loc1 = hue, loc2 = saturation, loc3 = value
+  const hueIndex = color % 19;
+  const satGroup = Math.floor(color / 19);
 
-  if (hDeg < 120) {
-    const hRad = (hDeg * Math.PI) / 180;
-    b = i * (1 - s);
-    r = i * (1 + (s * Math.cos(hRad)) / Math.cos(Math.PI / 3 - hRad));
-    g = 3 * i - (r + b);
-  } else if (hDeg < 240) {
-    const hShift = hDeg - 120;
-    const hRad = (hShift * Math.PI) / 180;
-    r = i * (1 - s);
-    g = i * (1 + (s * Math.cos(hRad)) / Math.cos(Math.PI / 3 - hRad));
-    b = 3 * i - (r + g);
+  let loc1: number; // hue [0..1)
+  let loc2: number; // saturation
+  let loc3: number; // value
+
+  if (hueIndex === 0) {
+    // Grayscale: saturation = 0, value decreases with group
+    loc1 = 0;
+    loc2 = 0;
+    loc3 = 1 - satGroup / 7;
   } else {
-    const hShift = hDeg - 240;
-    const hRad = (hShift * Math.PI) / 180;
-    g = i * (1 - s);
-    b = i * (1 + (s * Math.cos(hRad)) / Math.cos(Math.PI / 3 - hRad));
-    r = 3 * i - (g + b);
+    // Chromatic color
+    loc1 = hueIndex / 18.0; // OTClient: hueIndex ranges 1..18, /18.0 gives (0..1]
+
+    // OTClient saturation/value per group (from outfit.cpp)
+    switch (satGroup) {
+      case 0: loc2 = 0.25; loc3 = 1.00; break;
+      case 1: loc2 = 0.25; loc3 = 0.75; break;
+      case 2: loc2 = 0.50; loc3 = 0.75; break;
+      case 3: loc2 = 0.667; loc3 = 0.75; break;
+      case 4: loc2 = 1.00; loc3 = 1.00; break;
+      case 5: loc2 = 1.00; loc3 = 0.75; break;
+      case 6: loc2 = 1.00; loc3 = 0.50; break;
+      default: loc2 = 1.00; loc3 = 1.00; break;
+    }
+  }
+
+  // Early out: black
+  if (loc3 === 0) return [0, 0, 0];
+
+  // Early out: grayscale (saturation == 0)
+  if (loc2 === 0) {
+    const v = Math.round(loc3 * 255);
+    return [v, v, v];
+  }
+
+  // 6-sector linear HSV interpolation (OTClient outfit.cpp)
+  let r: number, g: number, b: number;
+  const V = loc3;
+  const S = loc2;
+  const hue = loc1;
+  const minC = V * (1 - S); // V*(1-S)
+
+  if (hue < 1 / 6) {
+    r = V;
+    b = minC;
+    g = b + (V - b) * 6 * hue;
+  } else if (hue < 2 / 6) {
+    g = V;
+    b = minC;
+    r = g - (V - b) * (6 * hue - 1);
+  } else if (hue < 3 / 6) {
+    g = V;
+    r = minC;
+    b = r + (V - r) * (6 * hue - 2);
+  } else if (hue < 4 / 6) {
+    b = V;
+    r = minC;
+    g = b - (V - r) * (6 * hue - 3);
+  } else if (hue < 5 / 6) {
+    b = V;
+    g = minC;
+    r = g + (V - g) * (6 * hue - 4);
+  } else {
+    r = V;
+    g = minC;
+    b = r - (V - g) * (6 * hue - 5);
   }
 
   return [
@@ -62,24 +103,8 @@ function hsiToRgb(h: number, s: number, i: number): [number, number, number] {
   ];
 }
 
-function getOutfitColor(color: number): [number, number, number] {
-  if (color < 0 || color >= HSI_H_STEPS * HSI_SI_VALUES) return [255, 255, 255];
-
-  if (color % HSI_H_STEPS === 0) {
-    // Grayscale
-    const groupIndex = color / HSI_H_STEPS;
-    const intensity = 1.0 - groupIndex / HSI_SI_VALUES;
-    const v = Math.max(0, Math.min(255, Math.round(intensity * 255)));
-    return [v, v, v];
-  }
-
-  const group = Math.floor(color / HSI_H_STEPS);
-  const hueIndex = color % HSI_H_STEPS;
-  const hue = (hueIndex - 1) / (HSI_H_STEPS - 1);
-  const [sat, int] = HSI_SI_PAIRS[group];
-
-  return hsiToRgb(hue, sat, int);
-}
+const MAX_SPRITE_CACHE = 4000;
+const MAX_TINT_CACHE = 2000;
 
 /** Logged outfit IDs that were not found in DAT (log once per ID) */
 const _missingOutfitWarned = new Set<number>();
@@ -605,6 +630,17 @@ export class Renderer {
       }
 
       tmpCtx.putImageData(maskData, 0, 0);
+
+      // Evict oldest tint cache entries if too large
+      if (this.tintCache.size > MAX_TINT_CACHE) {
+        const it = this.tintCache.keys();
+        for (let i = 0; i < 300; i++) {
+          const k = it.next();
+          if (k.done) break;
+          this.tintCache.delete(k.value);
+        }
+      }
+
       this.tintCache.set(cacheKey, tmpCanvas);
       cached = tmpCanvas;
     }
@@ -644,6 +680,16 @@ export class Renderer {
     canvas.width = TILE_PX;
     canvas.height = TILE_PX;
     canvas.getContext('2d')!.putImageData(imgData, 0, 0);
+
+    // Evict oldest entries if cache too large
+    if (this.spriteCanvasCache.size > MAX_SPRITE_CACHE) {
+      const it = this.spriteCanvasCache.keys();
+      for (let i = 0; i < 500; i++) {
+        const k = it.next();
+        if (k.done) break;
+        this.spriteCanvasCache.delete(k.value);
+      }
+    }
 
     this.spriteCanvasCache.set(key, canvas);
     return canvas;
