@@ -147,19 +147,14 @@ export class Renderer {
     let camOffX = 0, camOffY = 0;
     const player = g.playerId ? g.creatures.get(g.playerId) : undefined;
 
-    // Safety net: if player exists but is NOT on their tile, force re-add
+    // Safety net: if player exists but is NOT on their tile, re-insert at player's stored position
     if (player) {
       const playerTile = g.getTile(player.x, player.y, player.z);
       const isOnTile = playerTile.some(i => i[0] === 'cr' && i[1] === player.id);
       if (!isOnTile) {
-        // Force reposition player to camera position
-        player.x = g.camX; player.y = g.camY; player.z = g.camZ;
-        player.walking = false;
-        player.walkOffsetX = 0;
-        player.walkOffsetY = 0;
-        const tile = g.getTile(g.camX, g.camY, g.camZ);
+        const tile = g.getTile(player.x, player.y, player.z);
         tile.push(['cr', player.id]);
-        g.setTile(g.camX, g.camY, g.camZ, tile);
+        g.setTile(player.x, player.y, player.z, tile);
       }
     }
 
