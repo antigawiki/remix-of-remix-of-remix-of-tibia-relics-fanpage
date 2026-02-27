@@ -1,83 +1,94 @@
 
 
-## Correcao de Criaturas Fora de Posicao e Invisiveis Apos Seek
+## Correcao Definitiva: Demuxer TCP + moveCr
 
-### Problemas Identificados
+### Descoberta Principal: Falta de Demuxer TCP
 
-#### Bug 1: `moveCr` Format A remove duas criaturas do tile (BUG CRITICO)
+Analisei o codigo fonte do tibiarc (github.com/tibiacast/tibiarc) e descobri a causa raiz de TODOS os problemas de posicionamento:
 
-No codigo atual (linhas 462-497), quando o stackpos e valido e encontra uma criatura:
-1. A criatura e encontrada no stackpos (linha 463-469) e `cid` e definido
-2. O codigo **cai direto** no loop de busca por posicao (linha 474-485) **SEM verificar se `cid` ja foi encontrado**
-3. Isso remove uma SEGUNDA criatura do mesmo tile
-4. Resultado: criaturas desaparecem (ficam no `gs.creatures` mas sem referencia no tile)
+**Cada frame do arquivo .cam contem MULTIPLOS pacotes TCP concatenados, cada um com seu proprio prefixo de tamanho (u16).** O tibiarc usa uma classe `Demuxer` para reassemblar esses sub-pacotes antes de processa-los. Nosso codigo trata cada frame como um unico blob de opcodes, o que causa:
 
-Isso explica exatamente o que voce ve: o player "Ondeth Waters" existe no GameState (ataques aparecem nele), mas ele nao aparece visualmente porque foi removido do tile por um `moveCr` de outra criatura.
+1. Prefixos TCP de sub-pacotes sao lidos como opcodes (ex: `0x07` = low byte de um tamanho)
+2. Frames inteiros sao abandonados quando um prefixo nao-opcode e encontrado
+3. Pacotes de movimento, adicao e remocao de criaturas sao PERDIDOS silenciosamente
+4. Estado do jogo (tiles, posicoes) fica desincronizado progressivamente
 
-#### Bug 2: Seek nao recria criaturas que saem da viewport
+Evidencia nos logs: `Unknown opcode 0x07 at pos 13` -- o byte `0x07` e parte de um prefixo de tamanho TCP, nao um opcode real.
 
-Quando fazemos seek (adiantar o video), a limpeza pos-seek (linhas 220-230) remove criaturas "orfas" (que nao estao em nenhum tile). Porem, o problema e que durante o seek com `seekMode=true`, os movimentos de criaturas continuam acontecendo normalmente, e o Bug 1 acima causa perdas que se acumulam ao longo de milhares de frames processados rapidamente.
+### Bug Secundario: moveCr Format A -- busca por posicao presa dentro do if
 
-#### Bug 3: Criaturas com posicao (0,0,0) nunca sao limpas do tile antigo
+No `moveCr` Format A, a busca por posicao (step 2) esta DENTRO do bloco `if (stackpos aponta pra criatura)`. Se o stackpos aponta para um item ou esta fora do range, o codigo pula direto pro fallback "qualquer criatura no tile", movendo a criatura ERRADA.
 
-Na funcao `placeCreatureOnTile` (linha 543-553), criaturas com posicao `(0,0,0)` nao tem sua posicao antiga limpa (`if (c.x !== 0 || c.y !== 0 || c.z !== 0)`). Uma criatura recem-criada com posicao padrao (0,0,0) pode ficar duplicada se colocada no tile (0,0,0) e depois movida.
+### Bug Terciario: moveCr Format B (0xFFFF) invalido para 7.72
+
+O tibiarc so usa 0xFFFF em `moveCr` quando `ModernStacking` esta ativo (versoes > 8.x). Para 7.72, x=0xFFFF nunca deveria acontecer -- indica erro de parsing anterior. Nosso codigo tenta interpretar `fy` como creature ID, potencialmente movendo criaturas para posicoes erradas.
+
+---
 
 ### Plano de Implementacao
 
-#### 1. Corrigir `moveCr` Format A -- guarda `if (cid === null)` (`src/lib/tibiaRelic/packetParser.ts`)
+#### 1. Implementar Demuxer TCP no `process()` (`src/lib/tibiaRelic/packetParser.ts`)
 
-O loop de busca por posicao (linhas 474-485) e o fallback (linhas 487-496) devem estar dentro de blocos `if (cid === null)`. Sem isso, cada `moveCr` pode remover uma criatura extra do tile.
+Substituir a logica de deteccao de prefixo unico por um loop de sub-pacotes TCP:
 
 ```text
-Antes (simplificado):
-  if (stackpos valido && criatura encontrada) {
-    cid = ...; splice
+process(payload):
+  while (bytes restantes >= 2):
+    packetLen = readU16()  // prefixo TCP
+    if (packetLen <= 0 || packetLen > bytes restantes):
+      // Nao e um prefixo valido -- tenta processar como opcodes raw
+      retrocede 2 bytes
+      processa opcodes ate o fim
+      break
+    endPos = pos + packetLen
+    while (pos < endPos):
+      opcode = readU8()
+      dispatch(opcode)
+    pos = endPos  // garante alinhamento
+```
+
+Isso garante que TODOS os sub-pacotes dentro de cada frame sejam processados, eliminando os erros `Unknown opcode 0x07` e recuperando todos os pacotes de movimento/tile que estavam sendo perdidos.
+
+#### 2. Corrigir nesting do moveCr Format A (`src/lib/tibiaRelic/packetParser.ts`)
+
+Mover a busca por posicao (step 2) para FORA do bloco condicional do stackpos:
+
+```text
+Antes:
+  if (stackpos aponta pra criatura) {
+    tenta match...
+    if (falhou) {
+      busca por posicao  // <-- PRESO AQUI DENTRO
+    }
   }
-  // SEMPRE executa -- BUG!
-  for (busca por posicao) { ... }
-  if (cid === null) { fallback }
+  if (cid === null) { any creature fallback }
 
 Depois:
-  if (stackpos valido && criatura encontrada) {
-    cid = ...; splice
+  if (stackpos aponta pra criatura) {
+    tenta match...
   }
-  if (cid === null) {      // <-- GUARDA ADICIONADA
-    for (busca por posicao) { ... }
+  if (cid === null) {
+    busca por posicao    // <-- AGORA INDEPENDENTE
   }
-  if (cid === null) { fallback }
+  if (cid === null) { any creature fallback }
 ```
 
-#### 2. Melhorar limpeza pos-seek (`src/components/TibiarcPlayer.tsx`)
+#### 3. Corrigir moveCr Format B (0xFFFF) (`src/lib/tibiaRelic/packetParser.ts`)
 
-Alem de remover orfaos, fazer o inverso: verificar se criaturas no `gs.creatures` que TEM posicao valida estao realmente presentes no tile correspondente. Se nao, reinseri-las. Isso corrige criaturas que foram removidas indevidamente durante o processamento rapido do seek.
+Para protocolo 7.72, tratar x=0xFFFF como operacao invalida (nao existe ModernStacking). Apenas ler os bytes para manter o parser alinhado, mas NAO mover nenhuma criatura.
 
-```text
-// Apos limpar orfaos, reinserir criaturas validas que faltam no tile
-for (const [cid, c] of gs.creatures.entries()) {
-  const tile = gs.getTile(c.x, c.y, c.z);
-  if (!tile.some(i => i[0] === 'cr' && i[1] === cid)) {
-    tile.push(['cr', cid]);
-    gs.setTile(c.x, c.y, c.z, tile);
-  }
-}
-```
-
-#### 3. Corrigir `placeCreatureOnTile` para sempre limpar posicao antiga (`src/lib/tibiaRelic/packetParser.ts`)
-
-Remover a condicao `(c.x !== 0 || c.y !== 0 || c.z !== 0)` e sempre chamar `removeCreatureFromTile` na posicao anterior. A funcao `removeCreatureFromTile` ja e defensiva e nao faz nada se a criatura nao esta no tile.
+---
 
 ### Arquivos a Editar
 
 1. **`src/lib/tibiaRelic/packetParser.ts`**
-   - Linhas 474-497: Adicionar `if (cid === null)` antes dos loops de busca
-   - Linhas 543-547: Remover condicional em `placeCreatureOnTile`
-
-2. **`src/components/TibiarcPlayer.tsx`**
-   - Linhas 220-231: Adicionar reinsercao de criaturas validas nos tiles apos limpeza de orfaos
+   - Metodo `process()` (~linha 149-184): Implementar loop de sub-pacotes TCP
+   - Metodo `moveCr()` (~linhas 462-498): Corrigir nesting e tratamento de 0xFFFF
 
 ### Resultado Esperado
 
-- Criaturas nao desaparecem mais apos seek/adiantar o video
-- Players como "Ondeth Waters" aparecem corretamente na posicao onde estao sendo atacados
-- Posicoes das criaturas ficam consistentes entre o GameState e os tiles
+- Todos os sub-pacotes TCP dentro de cada frame serao processados (fim dos `Unknown opcode 0x07`)
+- Criaturas aparecerao nas posicoes corretas (movimentos nao serao mais perdidos)
+- Consistencia entre efeitos de combate (sangue, magia) e posicao das criaturas
+- Floor bugs reduzidos drasticamente (dados de mapa nao serao mais descartados)
 
