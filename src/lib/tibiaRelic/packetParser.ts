@@ -148,43 +148,62 @@ export class PacketParser {
 
   process(payload: Uint8Array) {
     const r = new Buf(payload);
-    // Each .cam frame payload contains raw opcodes sequentially — no TCP sub-packet prefixes.
-    this.processOpcodes(r, payload.length);
+    if (payload.length === 0) return;
+
+    // Heuristic: valid Tibia 7.72 opcodes start at 0x0A.
+    // If first byte < 0x0A, it's almost certainly a TCP u16 length prefix.
+    const firstByte = payload[0];
+
+    if (firstByte < 0x0A && payload.length >= 2) {
+      this.processTcpDemux(r, payload.length);
+    } else {
+      this.processOpcodes(r, payload.length);
+    }
   }
 
-  /** Process opcodes from current position up to endPos, with TCP fallback */
+  /** Demux TCP sub-packets: read u16 length prefix, then opcodes within each sub-packet */
+  private processTcpDemux(r: Buf, totalLen: number) {
+    while (r.pos + 2 <= totalLen) {
+      try {
+        const subLen = r.u16();
+        if (subLen === 0) continue; // skip empty TCP packets
+        if (r.pos + subLen > totalLen) {
+          // Invalid length — maybe not TCP after all, try as direct opcodes
+          r.pos -= 2; // rewind the u16
+          this.processDirectOpcodes(r, totalLen);
+          return;
+        }
+        const subEnd = r.pos + subLen;
+        this.processDirectOpcodes(r, subEnd);
+        r.pos = subEnd; // ensure alignment even if opcode parse stopped early
+      } catch (e) {
+        if (this.frameErrorCount < 30) {
+          this.frameErrorCount++;
+          console.warn(`[PacketParser] Error in TCP demux:`, e);
+        }
+        break;
+      }
+    }
+  }
+
+  /** Process opcodes with TCP fallback for unknown opcodes mid-stream */
   private processOpcodes(r: Buf, endPos: number) {
     while (r.pos < endPos) {
       try {
         const t = r.u8();
         if (this.dispatch(t, r)) continue;
 
-        // Unknown opcode — try TCP length prefix fallback
-        r.pos -= 1; // rewind the u8 we just read
-        if (r.left() >= 2) {
-          const possibleLen = r.peek16();
-          if (possibleLen > 0 && possibleLen <= r.left() - 2) {
-            r.u16(); // consume the length prefix
-            const subEnd = Math.min(r.pos + possibleLen, endPos);
-            this.processSubPacket(r, subEnd);
-            r.pos = subEnd; // ensure alignment
-            continue;
-          }
-        }
-
-        // Not a valid TCP prefix either — skip to end
-        if (this.frameErrorCount < 30) {
-          this.frameErrorCount++;
-          console.warn(`[PacketParser] Unknown opcode 0x${t.toString(16)} at pos ${r.pos}, no TCP fallback`);
-        }
-        break;
+        // Unknown opcode — try TCP demux for rest of frame
+        r.pos -= 1;
+        this.processTcpDemux(r, endPos);
+        return;
       } catch (e) {
         if (this.frameErrorCount < 30) {
           this.frameErrorCount++;
           if (e instanceof BufOverflowError) {
-            console.warn(`[PacketParser] Buffer overflow in sub-packet: ${e.message}`);
+            console.warn(`[PacketParser] Buffer overflow: ${e.message}`);
           } else {
-            console.warn(`[PacketParser] Parse error in sub-packet:`, e);
+            console.warn(`[PacketParser] Parse error:`, e);
           }
         }
         break;
@@ -192,8 +211,8 @@ export class PacketParser {
     }
   }
 
-  /** Process opcodes within a TCP sub-packet (no recursive TCP fallback) */
-  private processSubPacket(r: Buf, endPos: number) {
+  /** Process opcodes directly — no TCP fallback (used inside demuxed sub-packets) */
+  private processDirectOpcodes(r: Buf, endPos: number) {
     while (r.pos < endPos) {
       try {
         const t = r.u8();
