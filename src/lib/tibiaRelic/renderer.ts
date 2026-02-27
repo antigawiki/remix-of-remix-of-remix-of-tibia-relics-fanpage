@@ -183,9 +183,11 @@ export class Renderer {
 
     // Derive render camera from player's actual position (OTClient "followed creature" approach)
     // This prevents camera desync during floor transitions, teleports, or missed packets
-    const renderCamX = player ? player.x : g.camX;
-    const renderCamY = player ? player.y : g.camY;
-    const renderCamZ = player ? player.z : g.camZ;
+    // Use g.cam as authoritative camera source (always updated by protocol)
+    // Player position is only used for walk offset (smooth scrolling)
+    const renderCamX = g.camX;
+    const renderCamY = g.camY;
+    const renderCamZ = g.camZ;
     const z = this.floorOverride ?? renderCamZ;
 
     // Only apply walk offset to camera when player is actively walking
@@ -204,8 +206,8 @@ export class Renderer {
 
     for (const fz of floors) {
       const offset = z - fz;
-      const cx0 = renderCamX - 8 + offset;
-      const cy0 = renderCamY - 6 + offset;
+      const cx0 = renderCamX - 7 + offset;
+      const cy0 = renderCamY - 5 + offset;
 
       // Elevation map for this floor (indexed by grid position)
       const elevMap = new Float32Array(GRID_W * GRID_H);
@@ -405,8 +407,8 @@ export class Renderer {
       // Validate creature is actually on its tile (skip stale entries)
       const crTile = g.getTile(c.x, c.y, c.z);
       if (!crTile.some(i => i[0] === 'cr' && i[1] === c.id)) continue;
-      const tx2 = c.x - (renderCamX - 8);
-      const ty2 = c.y - (renderCamY - 6);
+      const tx2 = c.x - (renderCamX - 7);
+      const ty2 = c.y - (renderCamY - 5);
       if (tx2 >= -1 && tx2 <= VP_W + 2 && ty2 >= -1 && ty2 <= VP_H + 2) {
         const tileItems = g.getTile(c.x, c.y, z);
         let elev = 0;
