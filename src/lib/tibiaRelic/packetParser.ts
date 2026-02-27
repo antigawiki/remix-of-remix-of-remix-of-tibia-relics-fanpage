@@ -103,6 +103,9 @@ export class PacketParser {
     if (!g.playerId) return;
     const player = g.creatures.get(g.playerId);
     if (!player) return;
+    
+    const floorChanged = player.z !== g.camZ;
+    
     // Already in sync — skip
     if (player.x === g.camX && player.y === g.camY && player.z === g.camZ) return;
     // Remove from old tile
@@ -116,6 +119,20 @@ export class PacketParser {
     const tile = g.getTile(player.x, player.y, player.z);
     tile.push(['cr', player.id]);
     g.setTile(player.x, player.y, player.z, tile);
+
+    // When floor changes, clean up creatures that are too far away vertically.
+    // This prevents stale creatures from old floors showing names on the new floor.
+    if (floorChanged) {
+      const newZ = g.camZ;
+      for (const [cid, c] of g.creatures) {
+        if (cid === g.playerId) continue;
+        if (Math.abs(c.z - newZ) > 2) {
+          // Remove from tile and delete from creatures map
+          this.removeCreatureFromTile(cid, c.x, c.y, c.z);
+          g.creatures.delete(cid);
+        }
+      }
+    }
   }
 
   /**
