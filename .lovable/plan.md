@@ -1,54 +1,46 @@
 
 
-## Fix Camera Desync + Creature Name Rendering
+## Fix Video Freezing and Camera Following Wrong Creature
 
-### Issue 1: Camera Desyncing from Player
+### Root Cause 1: Player Creature ID Gets Deleted (Main Bug)
 
-**Root Cause**: The renderer uses `g.camX / g.camY` to center the viewport. These values are set by protocol packets (`mapDesc`, `scroll`, `floorUp/Down`). However, in certain situations (floor transitions, teleports, being pushed), the protocol may move the player creature via `moveCr` or `mapDesc` without perfectly synchronizing `camX/camY` with the player creature's actual stored position. The result is the camera pointing at the wrong location while the player sprite stays at its real coordinates.
-
-**OTClient Approach**: OTClient uses a "followed creature" concept. The viewport is ALWAYS centered on the followed creature's actual position, not on a separate camera variable. This is inherently self-correcting.
-
-**Fix**: In the renderer's `draw()` method, derive the render camera from the player creature's actual stored position (if available) instead of `g.camX/g.camY`. This way even if protocol packets desync `camX/camY`, the viewport will always show the player centered.
+In `readCreatureFull` (packetParser.ts, line 635-646), the protocol sends a "remove ID" (`rem`) and a "new ID" (`cid`). When a creature's ID changes (server reassigns IDs to manage its ID pool), the old creature is deleted:
 
 ```text
-// Instead of:
-const z = this.floorOverride ?? g.camZ;
-// And using g.camX, g.camY everywhere
-
-// Use:
-const renderCamX = player ? player.x : g.camX;
-const renderCamY = player ? player.y : g.camY;
-const renderCamZ = player ? player.z : g.camZ;
+if (rem && rem !== cid) this.gs.creatures.delete(rem);
 ```
 
-This only affects rendering -- `g.camX/camY/camZ` remain untouched for protocol parsing purposes.
+**Critical bug**: If `rem === g.playerId`, the player creature is completely removed from the creatures map, but `g.playerId` is never updated to `cid`. After this:
+- `g.creatures.get(g.playerId)` returns `undefined`
+- The renderer falls back to stale `g.camX/g.camY` coordinates
+- The camera appears "stuck" or follows the wrong position
+- The player sprite disappears because it's no longer in the creatures map
 
-### Issue 2: Creature Name Size and Position
+**Fix**: When `rem === g.playerId`, update `g.playerId = cid` before deleting the old entry.
 
-**Current Problem**: Names are drawn at font size `tileW / 4` which scales proportionally with canvas size but doesn't match original Tibia. The health bar width also scales oddly (`min(hudW-2, tileW*2)`). Names are truncated to 16 chars.
+### Root Cause 2: Floor Override Uses Wrong Z Source
 
-**OTClient/Original Tibia Approach**:
-- Health bar is a fixed 27px wide (at native resolution), positioned centered above the creature
-- Name font is a fixed size (~11-12px bitmap font)
-- The name length is NOT truncated (full name shown)
-- Health bar is positioned just above the creature, name above the bar
+In the animation loop (TibiarcPlayer.tsx, line 174), the floor override calculation uses `engine.gs.camZ`:
 
-**Fix**: Use fixed sizes relative to native tile resolution (32px), then scale to display. Specifically:
-- Health bar: fixed 27px (native) width, centered on creature
-- Font: scale based on display DPI but with tighter bounds (~11px at native, roughly `Math.max(10, Math.min(13, tileW / 3))`)
-- Remove the 16-char truncation
-- Better vertical spacing between bar and name
+```text
+const targetZ = Math.max(0, Math.min(15, engine.gs.camZ + floorOffsetVal));
+```
+
+But the renderer now derives camera Z from `player.z`, not `gs.camZ`. During floor transitions these can momentarily differ, causing the override to target the wrong floor.
+
+**Fix**: When the player creature exists, use its Z coordinate for the floor override base.
 
 ### Files to Edit
 
-**`src/lib/tibiaRelic/renderer.ts`**
+**`src/lib/tibiaRelic/packetParser.ts`**
+- In `readCreatureFull` (line 643): Before `this.gs.creatures.delete(rem)`, check if `rem === this.gs.playerId` and if so, update `this.gs.playerId = cid`.
 
-1. In `draw()` method: compute `renderCamX`, `renderCamY`, `renderCamZ` from the player creature's position when available, and use those for all viewport coordinate calculations (floor iteration, tile iteration, HUD positioning). Keep the safety net that re-inserts the player on its tile.
-
-2. In `drawCreatureHudHiRes()`: adjust health bar to fixed native-width (27px scaled), improve font sizing, remove 16-char name truncation, adjust vertical positioning.
+**`src/components/TibiarcPlayer.tsx`**
+- In the animation loop (line 172-178): Use the player creature's Z coordinate (when available) as the base for floor override calculation instead of `gs.camZ`.
 
 ### Expected Result
-- Camera ALWAYS follows the player creature, never desyncing during floor transitions or creature movements
-- Creature names and health bars match original Tibia proportions and positioning
-- No regression in map rendering or walk animations
+- Player creature ID is always tracked correctly even when the server reassigns IDs
+- Camera never loses track of the player during extended playback
+- Floor override stays synchronized with the player's actual floor
+- Video continues playing normally through all sections without freezing
 
