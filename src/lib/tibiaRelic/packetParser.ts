@@ -94,6 +94,31 @@ export class PacketParser {
   }
 
   /**
+   * Sync the player creature's position to gs.camX/Y/Z.
+   * This ensures the renderer (which follows player.x/y) always shows
+   * the correct map area after teleports, floor changes, or scroll packets.
+   */
+  private syncPlayerToCamera() {
+    const g = this.gs;
+    if (!g.playerId) return;
+    const player = g.creatures.get(g.playerId);
+    if (!player) return;
+    // Already in sync — skip
+    if (player.x === g.camX && player.y === g.camY && player.z === g.camZ) return;
+    // Remove from old tile
+    this.removeCreatureFromTile(player.id, player.x, player.y, player.z);
+    // Update position
+    player.x = g.camX;
+    player.y = g.camY;
+    player.z = g.camZ;
+    // Place on new tile
+    this.removeCreatureFromTile(player.id, player.x, player.y, player.z); // dedup
+    const tile = g.getTile(player.x, player.y, player.z);
+    tile.push(['cr', player.id]);
+    g.setTile(player.x, player.y, player.z, tile);
+  }
+
+  /**
    * Remove creature `cid` from the tile at (x,y,z).
    * Defensive: scans all entries and removes all matches.
    */
@@ -219,6 +244,7 @@ export class PacketParser {
       const [x, y, z] = this.pos3(r);
       g.camX = x; g.camY = y; g.camZ = z;
       this.clampCamZ();
+      this.syncPlayerToCamera();
     }
     // Stats/skills/icons
     else if (t === 0xa0) this.readStats(r);
@@ -277,6 +303,7 @@ export class PacketParser {
 
     const { startz, endz, zstep } = this.getFloorRange(z);
     this.readMultiFloorArea(r, x - 8, y - 6, 18, 14, z, startz, endz, zstep);
+    this.syncPlayerToCamera();
 
     if (!this.loggedFirst) {
       this.loggedFirst = true;
@@ -302,6 +329,7 @@ export class PacketParser {
       g.camX = oldX; g.camY = oldY;
       throw e;
     }
+    this.syncPlayerToCamera();
   }
 
   private tileUpd(r: Buf) {
@@ -553,6 +581,7 @@ export class PacketParser {
       g.camZ = oldZ; g.camX = oldX; g.camY = oldY;
       throw e;
     }
+    this.syncPlayerToCamera();
   }
 
   private floorDown(r: Buf) {
@@ -580,6 +609,7 @@ export class PacketParser {
       g.camZ = oldZ; g.camX = oldX; g.camY = oldY;
       throw e;
     }
+    this.syncPlayerToCamera();
   }
 
   private talk(r: Buf) {
