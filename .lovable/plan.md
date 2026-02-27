@@ -1,77 +1,76 @@
 
 
-## Corrigir Outfits Ausentes e Cores Erradas
+## Tornar o Player Fluido como Video (Smooth Walking + 60fps)
 
-### Problema 1: Paleta de Cores Totalmente Errada
+### Diagnostico
 
-A paleta de cores no codigo (`OUTFIT_PALETTE`) foi escrita manualmente com valores incorretos. O Tibia usa um algoritmo HSI-to-RGB com 133 cores (19 matizes x 7 niveis), documentado no codigo fonte do OTClient (`outfit.cpp`).
+Analisando o codigo atual e comparando com o tibiarc C++ (`web_player.cpp`), identifiquei 3 problemas que fazem o player parecer "frame a frame":
 
-**Exemplo da diferenca:**
-- Nosso indice 1: `[255,212,191]` (um tom de pele)
-- OTClient indice 1: HSI com hue=1/18, sat=0.25, int=1.0 -> `[255,239,191]` (tom levemente amarelado)
+1. **FPS travado em 20**: O animation loop em `TibiarcPlayer.tsx` tem `const FPS = 20` com throttling manual. O tibiarc C++ usa `emscripten_set_main_loop(MainLoop, 0, 0)` - ou seja, **sem cap de FPS**, roda na taxa nativa do monitor (60fps+).
 
-A paleta inteira esta desalinhada porque o layout e linear por grupos de 19 (cada coluna de matiz), nao por grupos de 5.
+2. **Sem interpolacao de movimento (walk offset)**: Quando uma criatura se move, o `moveCr` no parser seta `c.x = tx; c.y = ty` **instantaneamente**. O renderer desenha na posicao do tile sem nenhuma transicao. No tibiarc/OTClient, criaturas possuem um **walk offset em pixels** que vai de -32px ate 0px ao longo da duracao do passo, criando o efeito de deslizamento suave entre tiles.
 
-**Correcao:** Substituir a tabela fixa pela funcao `getOutfitColor(index)` que implementa o **mesmo algoritmo HSI** do OTClient:
-- `HSI_H_STEPS = 19` (matizes por grupo)
-- `HSI_SI_VALUES = 7` (niveis de saturacao/intensidade)
-- Indices multiplos de 19: escala de cinza
-- Demais: conversao HSI -> RGB com 6 faixas de matiz
+3. **Animacao baseada em tick, nao em tempo real**: O `this.tick++` incrementa 1 por frame renderizado. Se o FPS cai, a animacao desacelera junto. No tibiarc, `g_currentTick` e baseado em `emscripten_get_now()` (tempo real), garantindo velocidade constante independente do FPS.
 
-### Problema 2: Outfits Nao Aparecem em Algumas Criaturas
+### Plano de Implementacao
 
-Analise das screenshots mostra criaturas com nome/barra de vida mas sem sprite visivel (Vermonth, scarab). O retangulo de fallback (colorido semi-transparente) pode estar se confundindo com o fundo de areia.
+#### 1. Adicionar walk offset ao Creature (`gameState.ts`)
 
-**Causas identificadas:**
-1. O looktype da criatura pode nao existir no DAT (ID fora do range de outfits carregados). `this.dat.outfits.get(c.outfit)` retorna `undefined`, pula renderizacao.
-2. O sprite ID calculado pode ser 0 para certas combinacoes de direcao/frame, fazendo `getNativeSprite(0)` retornar null.
-3. O fallback visual (retangulo rgba 0.6) e quase invisivel contra fundos claros como areia.
+Novos campos na interface `Creature`:
+- `walkOffsetX: number` - offset em pixels (-32 a 0 ou 0 a 32)
+- `walkOffsetY: number` - offset em pixels
+- `walkStartTick: number` - quando o passo comecou
+- `walkDuration: number` - duracao total do passo em ms
 
-**Correcoes:**
-1. **Fallback mais visivel**: Trocar retangulo semi-transparente por um contorno solido + X dentro, visivel contra qualquer fundo.
-2. **Log de diagnostico**: Quando outfit nao e encontrado no DAT, logar uma vez por outfit ID para ajudar a diagnosticar.
-3. **Bounds checking**: Quando sprite index ultrapassa o array, tentar frame 0 como fallback antes de desistir.
+#### 2. Setar walk offset no moveCr (`packetParser.ts`)
 
-### Problema 3: Tint pode falhar silenciosamente
+Quando uma criatura se move de (fx,fy) para (tx,ty):
+- Calcular direcao: dx = tx - fx, dy = ty - fy
+- Setar `walkOffsetX = -dx * 32`, `walkOffsetY = -dy * 32` (comeca deslocado para tras)
+- Setar `walkStartTick = performance.now()` e `walkDuration` baseado na speed
+- O offset vai interpolar de (-32,0) ate (0,0) ao longo da duracao
 
-O algoritmo de tint atual usa heuristica de "canal dominante" (amarelo=head, vermelho=body, verde=legs, azul=feet). Se a mascara tiver pixels com cores mistas ou baixa intensidade, o pixel e descartado (alpha=0). Isso pode "apagar" partes do outfit colorido.
+#### 3. Interpolar posicao no renderer (`renderer.ts`)
 
-**Correcao:** Relaxar os thresholds de deteccao de canal para aceitar mais pixels como parte da mascara, e tratar pixels ambiguos como "body" (canal mais comum) em vez de descarta-los.
+No `drawCreatureNative`, antes de desenhar:
+- Calcular `progress = (now - walkStartTick) / walkDuration` (0 a 1)
+- Se progress < 1: `pixelOffsetX = walkOffsetX * (1 - progress)`, idem Y
+- Se progress >= 1: offset = 0, walking = false
+- Aplicar offset ao `bx` e `by` do desenho
+
+O mesmo offset deve ser aplicado ao HUD (nome/barra de vida) para que acompanhem a criatura.
+
+#### 4. Remover cap de FPS (`TibiarcPlayer.tsx`)
+
+- Remover o throttle de 20 FPS (`const FPS = 20` e `if (time - lastTime < interval) return`)
+- Deixar `requestAnimationFrame` rodar na taxa nativa (~60fps)
+- Manter o calculo de tempo real para progressao da cam (ja esta correto)
+
+#### 5. Usar tempo real para animacao de sprites (`renderer.ts`)
+
+- Trocar `this.tick++` (incremento por frame) por um timestamp real
+- Calcular phase de animacao como `Math.floor(performance.now() / 150) % frames` (150ms por frame, similar ao tibiarc)
+- Isso garante que animacoes rodem na mesma velocidade independente do FPS
 
 ### Mudancas por Arquivo
 
+**`src/lib/tibiaRelic/gameState.ts`**
+- Adicionar campos `walkOffsetX`, `walkOffsetY`, `walkStartTick`, `walkDuration` na interface e factory
+
+**`src/lib/tibiaRelic/packetParser.ts`**
+- No `moveCr`: calcular e setar walk offset baseado na direcao e speed da criatura
+
 **`src/lib/tibiaRelic/renderer.ts`**
-1. Substituir `OUTFIT_PALETTE` + `convert8BitColor()` pela funcao `getOutfitColor(color)` baseada no algoritmo HSI do OTClient
-2. Melhorar fallback visual para criaturas sem sprite
-3. Adicionar fallback de frame (tentar frame 0 se frame atual nao tem sprite)
-4. Relaxar thresholds do tint para melhor cobertura de mascara
-5. Log de warning (limitado) quando outfit ID nao encontrado no DAT
+- No `drawCreatureNative`: interpolar pixel offset baseado em `performance.now()`
+- Aplicar offset ao HUD tambem
+- Trocar `this.tick` por `performance.now()` para animacoes
 
-### Detalhes Tecnicos do Algoritmo HSI
+**`src/components/TibiarcPlayer.tsx`**
+- Remover throttle de 20 FPS no animation loop
 
-```text
-HSI_H_STEPS = 19
-HSI_SI_VALUES = 7
+### Resultado Esperado
 
-getOutfitColor(color):
-  if color >= 133: color = 0
-  
-  if color % 19 == 0:     // Grayscale
-    intensity = 1 - (color/19) / 7
-    return RGB(intensity*255, intensity*255, intensity*255)
-  
-  hue = (color % 19) / 18.0
-  group = floor(color / 19)
-  
-  // Saturacao e intensidade por grupo:
-  // 0: sat=0.25, int=1.00  (mais claro, menos saturado)
-  // 1: sat=0.25, int=0.75
-  // 2: sat=0.50, int=0.75
-  // 3: sat=0.667, int=0.75
-  // 4: sat=1.00, int=1.00  (vivo)
-  // 5: sat=1.00, int=0.75
-  // 6: sat=1.00, int=0.50  (mais escuro)
-  
-  // HSI -> RGB com 6 faixas de matiz (padrao)
-```
+- Criaturas deslizam suavemente entre tiles em vez de "teleportar"
+- Animacoes rodam a ~60fps, visual fluido como video
+- Velocidade de animacao constante independente do FPS do dispositivo
 
