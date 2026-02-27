@@ -109,6 +109,18 @@ export class PacketParser {
     }
   }
 
+  /** Set tile to empty but preserve any creature references already on it */
+  private setTilePreservingCreatures(x: number, y: number, z: number) {
+    const key = this.gs.tileKey(x, y, z);
+    const existing = this.gs.tiles.get(key);
+    if (existing) {
+      const creatures = existing.filter(i => i[0] === 'cr');
+      this.gs.setTile(x, y, z, creatures);
+    } else {
+      this.gs.setTile(x, y, z, []);
+    }
+  }
+
   process(payload: Uint8Array) {
     const r = new Buf(payload);
 
@@ -656,17 +668,29 @@ export class PacketParser {
       r.skip(2);
       if (word === CR_FULL) {
         const c = this.readCreatureFull(r);
+        // Dedup: remove from old tile before placing on new
+        if (c.x !== x || c.y !== y || c.z !== z) {
+          this.removeCreatureFromTile(c.id, c.x, c.y, c.z);
+        }
         c.x = x; c.y = y; c.z = z;
         items.push(['cr', c.id]);
       } else if (word === CR_KNOWN) {
         const c = this.readCreatureKnown(r);
+        if (c.x !== x || c.y !== y || c.z !== z) {
+          this.removeCreatureFromTile(c.id, c.x, c.y, c.z);
+        }
         c.x = x; c.y = y; c.z = z;
         items.push(['cr', c.id]);
       } else if (word === CR_OLD) {
         const cid = r.u32();
         const dir = r.u8();
         const c = this.gs.creatures.get(cid);
-        if (c) { c.direction = dir; c.x = x; c.y = y; c.z = z; }
+        if (c) {
+          if (c.x !== x || c.y !== y || c.z !== z) {
+            this.removeCreatureFromTile(cid, c.x, c.y, c.z);
+          }
+          c.direction = dir; c.x = x; c.y = y; c.z = z;
+        }
         items.push(['cr', cid]);
       } else if (word >= 100 && word <= 9999) {
         const it = this.dat.items.get(word);
@@ -686,7 +710,7 @@ export class PacketParser {
       for (let ty = 0; ty < H; ty++) {
         if (r.left() < 2) return;
         if (skip > 0) {
-          this.gs.setTile(ox + tx, oy + ty, z, []);
+          this.setTilePreservingCreatures(ox + tx, oy + ty, z);
           skip--;
           continue;
         }
@@ -700,7 +724,7 @@ export class PacketParser {
       for (let ty = 0; ty < H; ty++) {
         if (r.left() < 2) return skip;
         if (skip > 0) {
-          this.gs.setTile(ox + tx + offset, oy + ty + offset, z, []);
+          this.setTilePreservingCreatures(ox + tx + offset, oy + ty + offset, z);
           skip--;
           continue;
         }
@@ -716,7 +740,7 @@ export class PacketParser {
       for (let ty = 0; ty < H; ty++) {
         if (r.left() < 2) return;
         if (skip > 0) {
-          this.gs.setTile(ox + tx + offset, oy + ty + offset, z, []);
+          this.setTilePreservingCreatures(ox + tx + offset, oy + ty + offset, z);
           skip--;
           continue;
         }
