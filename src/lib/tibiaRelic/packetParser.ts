@@ -152,19 +152,32 @@ export class PacketParser {
     this.processOpcodes(r, payload.length);
   }
 
-  /** Process opcodes from current position up to endPos */
+  /** Process opcodes from current position up to endPos, with TCP fallback */
   private processOpcodes(r: Buf, endPos: number) {
     while (r.pos < endPos) {
       try {
         const t = r.u8();
-        if (!this.dispatch(t, r)) {
-          // Unknown opcode — skip to end of this sub-packet
-          if (this.frameErrorCount < 30) {
-            this.frameErrorCount++;
-            console.warn(`[PacketParser] Unknown opcode 0x${t.toString(16)} at pos ${r.pos - 1}, skipping to end of sub-packet`);
+        if (this.dispatch(t, r)) continue;
+
+        // Unknown opcode — try TCP length prefix fallback
+        r.pos -= 1; // rewind the u8 we just read
+        if (r.left() >= 2) {
+          const possibleLen = r.peek16();
+          if (possibleLen > 0 && possibleLen <= r.left() - 2) {
+            r.u16(); // consume the length prefix
+            const subEnd = Math.min(r.pos + possibleLen, endPos);
+            this.processSubPacket(r, subEnd);
+            r.pos = subEnd; // ensure alignment
+            continue;
           }
-          break;
         }
+
+        // Not a valid TCP prefix either — skip to end
+        if (this.frameErrorCount < 30) {
+          this.frameErrorCount++;
+          console.warn(`[PacketParser] Unknown opcode 0x${t.toString(16)} at pos ${r.pos}, no TCP fallback`);
+        }
+        break;
       } catch (e) {
         if (this.frameErrorCount < 30) {
           this.frameErrorCount++;
@@ -174,6 +187,21 @@ export class PacketParser {
             console.warn(`[PacketParser] Parse error in sub-packet:`, e);
           }
         }
+        break;
+      }
+    }
+  }
+
+  /** Process opcodes within a TCP sub-packet (no recursive TCP fallback) */
+  private processSubPacket(r: Buf, endPos: number) {
+    while (r.pos < endPos) {
+      try {
+        const t = r.u8();
+        if (!this.dispatch(t, r)) {
+          // Unknown opcode inside sub-packet — skip rest
+          break;
+        }
+      } catch (e) {
         break;
       }
     }
