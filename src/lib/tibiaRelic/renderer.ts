@@ -88,6 +88,7 @@ const _missingOutfitWarned = new Set<number>();
 
 export class Renderer {
   private tick = 0;
+  private lastDrawTime = 0;
   private spriteCanvasCache: Map<string, HTMLCanvasElement | null> = new Map();
   private tintCache: Map<string, HTMLCanvasElement | null> = new Map();
 
@@ -114,7 +115,10 @@ export class Renderer {
     this.offCtx.imageSmoothingEnabled = false;
   }
 
-  incTick() { this.tick++; }
+  incTick() {
+    this.tick++;
+    this.lastDrawTime = performance.now();
+  }
 
   draw(canvasWidth: number, canvasHeight: number) {
     const g = this.gs;
@@ -135,7 +139,8 @@ export class Renderer {
     oc.fillRect(0, 0, NATIVE_W, NATIVE_H);
 
     const z = this.floorOverride ?? g.camZ;
-    const ph = (Math.floor(this.tick / 8)) % 4;
+    const now = this.lastDrawTime || performance.now();
+    const ph = Math.floor(now / 200) % 4; // time-based animation: 200ms per frame
     this.hudEntries = [];
 
     // Determine visible floors
@@ -208,6 +213,7 @@ export class Renderer {
     const scaleY = canvasHeight / NATIVE_H;
 
     // Draw creature HUDs AFTER upscale on the display canvas (high-res text)
+    const now2 = this.lastDrawTime || performance.now();
     for (const c of g.creatures.values()) {
       if (c.z !== z) continue;
       const tx2 = c.x - (g.camX - 8);
@@ -221,8 +227,15 @@ export class Renderer {
             if (it && it.elevation > 0) elev += it.elevation;
           }
         }
-        const sx = tx2 * TILE_PX * scaleX;
-        const sy = (ty2 * TILE_PX - elev) * scaleY;
+        // Interpolate walk offset for HUD positioning
+        let hudOx = 0, hudOy = 0;
+        if (c.walking && now2 < c.walkEndTick) {
+          const progress = Math.min(1, (now2 - c.walkStartTick) / c.walkDuration);
+          hudOx = c.walkOffsetX * (1 - progress);
+          hudOy = c.walkOffsetY * (1 - progress);
+        }
+        const sx = (tx2 * TILE_PX + hudOx) * scaleX;
+        const sy = (ty2 * TILE_PX - elev + hudOy) * scaleY;
         this.drawCreatureHudHiRes(sx, sy, c, TILE_PX * scaleX, TILE_PX * scaleY);
       }
     }
@@ -317,9 +330,23 @@ export class Renderer {
 
   /** Draw creature at native 32px resolution on offscreen canvas */
   private drawCreatureNative(c: Creature, bx: number, by: number) {
-    if (c.walking && performance.now() > c.walkEndTick) {
-      c.walking = false;
+    const now = this.lastDrawTime || performance.now();
+
+    // Interpolate walk offset
+    let ox = 0, oy = 0;
+    if (c.walking) {
+      if (now >= c.walkEndTick) {
+        c.walking = false;
+        c.walkOffsetX = 0;
+        c.walkOffsetY = 0;
+      } else {
+        const progress = Math.min(1, (now - c.walkStartTick) / c.walkDuration);
+        ox = Math.round(c.walkOffsetX * (1 - progress));
+        oy = Math.round(c.walkOffsetY * (1 - progress));
+      }
     }
+    bx += ox;
+    by += oy;
 
     if (c.outfit === 0 && c.outfitItem > 0) {
       const it = this.dat.items.get(c.outfitItem);
@@ -345,12 +372,12 @@ export class Renderer {
 
       let a: number;
       if (ot.animateIdle) {
-        a = Math.floor(this.tick / 8) % A;
+        a = Math.floor(now / 200) % A; // time-based: 200ms per frame
       } else if (c.walking) {
         if (A <= 2) {
-          a = Math.floor(this.tick / 6) % A;
+          a = Math.floor(now / 150) % A;
         } else {
-          a = (Math.floor(this.tick / 6) % (A - 1)) + 1;
+          a = (Math.floor(now / 150) % (A - 1)) + 1;
         }
       } else {
         a = 0;
