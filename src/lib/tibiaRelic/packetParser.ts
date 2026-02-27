@@ -148,26 +148,8 @@ export class PacketParser {
 
   process(payload: Uint8Array) {
     const r = new Buf(payload);
-
-    // TCP Demuxer: each frame contains multiple TCP sub-packets,
-    // each prefixed with a u16 length. We loop through all of them.
-    while (r.left() >= 2) {
-      const packetLen = r.u16();
-
-      // Validate: if packetLen is 0 or exceeds remaining bytes,
-      // this isn't a valid TCP prefix — treat rest as raw opcodes
-      if (packetLen <= 0 || packetLen > r.left()) {
-        // Rewind the 2 bytes we just read (they might be an opcode + data)
-        r.pos -= 2;
-        this.processOpcodes(r, r.pos + r.left());
-        break;
-      }
-
-      const endPos = r.pos + packetLen;
-      this.processOpcodes(r, endPos);
-      // Ensure alignment even if opcodes didn't consume all bytes
-      r.pos = endPos;
-    }
+    // Each .cam frame payload contains raw opcodes sequentially — no TCP sub-packet prefixes.
+    this.processOpcodes(r, payload.length);
   }
 
   /** Process opcodes from current position up to endPos */
