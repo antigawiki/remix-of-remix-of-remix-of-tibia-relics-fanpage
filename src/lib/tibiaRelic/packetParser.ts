@@ -149,33 +149,47 @@ export class PacketParser {
   process(payload: Uint8Array) {
     const r = new Buf(payload);
 
-    // Detect u16 length prefix (TCP framing)
-    if (payload.length >= 4) {
-      const prefixLen = r.peek16();
-      if (prefixLen === payload.length - 2) {
-        r.skip(2);
-      }
-    }
+    // TCP Demuxer: each frame contains multiple TCP sub-packets,
+    // each prefixed with a u16 length. We loop through all of them.
+    while (r.left() >= 2) {
+      const packetLen = r.u16();
 
-    while (!r.eof()) {
+      // Validate: if packetLen is 0 or exceeds remaining bytes,
+      // this isn't a valid TCP prefix — treat rest as raw opcodes
+      if (packetLen <= 0 || packetLen > r.left()) {
+        // Rewind the 2 bytes we just read (they might be an opcode + data)
+        r.pos -= 2;
+        this.processOpcodes(r, r.pos + r.left());
+        break;
+      }
+
+      const endPos = r.pos + packetLen;
+      this.processOpcodes(r, endPos);
+      // Ensure alignment even if opcodes didn't consume all bytes
+      r.pos = endPos;
+    }
+  }
+
+  /** Process opcodes from current position up to endPos */
+  private processOpcodes(r: Buf, endPos: number) {
+    while (r.pos < endPos) {
       try {
         const t = r.u8();
         if (!this.dispatch(t, r)) {
-          // Unknown opcode — abort this frame entirely
+          // Unknown opcode — skip to end of this sub-packet
           if (this.frameErrorCount < 30) {
             this.frameErrorCount++;
-            console.warn(`[PacketParser] Unknown opcode 0x${t.toString(16)} at pos ${r.pos - 1}, abandoning frame (${r.left()} bytes left)`);
+            console.warn(`[PacketParser] Unknown opcode 0x${t.toString(16)} at pos ${r.pos - 1}, skipping to end of sub-packet`);
           }
           break;
         }
       } catch (e) {
-        // Any parse error (including BufOverflow) — abort frame
         if (this.frameErrorCount < 30) {
           this.frameErrorCount++;
           if (e instanceof BufOverflowError) {
-            console.warn(`[PacketParser] Buffer overflow, abandoning frame: ${e.message}`);
+            console.warn(`[PacketParser] Buffer overflow in sub-packet: ${e.message}`);
           } else {
-            console.warn(`[PacketParser] Parse error, abandoning frame:`, e);
+            console.warn(`[PacketParser] Parse error in sub-packet:`, e);
           }
         }
         break;
@@ -437,63 +451,48 @@ export class PacketParser {
     let fromX: number, fromY: number, fromZ: number;
 
     if (fx === 0xFFFF) {
-      // Format B: creature referenced by ID, not by tile position
-      const candidateId = fy;
-      let c = this.gs.creatures.get(candidateId);
-      if (c) {
-        cid = candidateId;
-        fromX = c.x; fromY = c.y; fromZ = c.z;
-      } else {
-        // Scan all creatures for one at destination
-        for (const cr of this.gs.creatures.values()) {
-          if (cr.x === tx && cr.y === ty && cr.z === tz) {
-            cid = cr.id;
-            fromX = cr.x; fromY = cr.y; fromZ = cr.z;
-            break;
-          }
-        }
-        if (cid === null) return;
-      }
-      this.removeCreatureFromTile(cid, fromX!, fromY!, fromZ!);
+      // Format B: 0xFFFF is ModernStacking (versions > 8.x).
+      // For 7.72 protocol this should NOT happen — it indicates a prior parsing error.
+      // Just consume the bytes to stay aligned but do NOT move any creature.
+      return;
     } else {
       // Format A: normal tile-based move
       fromX = fx; fromY = fy; fromZ = fz;
       const ft = this.gs.getTile(fx, fy, fz);
+
       // 1. Try exact stackpos
       if (sp >= 0 && sp < ft.length && ft[sp][0] === 'cr') {
         const candidateCr = this.gs.creatures.get(ft[sp][1]);
-        // Verify creature's stored position matches source tile
         if (candidateCr && candidateCr.x === fx && candidateCr.y === fy && candidateCr.z === fz) {
           cid = ft[sp][1];
           ft.splice(sp, 1);
           this.gs.setTile(fx, fy, fz, ft);
-        } else {
-          // Stale stackpos — fall through to position-based search
-          cid = null;
         }
-        // 2. Search by creature whose stored position matches source (only if stackpos failed)
-        if (cid === null) {
-          for (let i = 0; i < ft.length; i++) {
-            if (ft[i][0] === 'cr') {
-              const cc = this.gs.creatures.get(ft[i][1]);
-              if (cc && cc.x === fx && cc.y === fy && cc.z === fz) {
-                cid = ft[i][1];
-                ft.splice(i, 1);
-                this.gs.setTile(fx, fy, fz, ft);
-                break;
-              }
-            }
-          }
-        }
-        // 3. Last fallback: any creature on tile
-        if (cid === null) {
-          for (let i = 0; i < ft.length; i++) {
-            if (ft[i][0] === 'cr') {
+      }
+
+      // 2. Search by creature whose stored position matches source (only if stackpos failed)
+      if (cid === null) {
+        for (let i = 0; i < ft.length; i++) {
+          if (ft[i][0] === 'cr') {
+            const cc = this.gs.creatures.get(ft[i][1]);
+            if (cc && cc.x === fx && cc.y === fy && cc.z === fz) {
               cid = ft[i][1];
               ft.splice(i, 1);
               this.gs.setTile(fx, fy, fz, ft);
               break;
             }
+          }
+        }
+      }
+
+      // 3. Last fallback: any creature on tile
+      if (cid === null) {
+        for (let i = 0; i < ft.length; i++) {
+          if (ft[i][0] === 'cr') {
+            cid = ft[i][1];
+            ft.splice(i, 1);
+            this.gs.setTile(fx, fy, fz, ft);
+            break;
           }
         }
       }
