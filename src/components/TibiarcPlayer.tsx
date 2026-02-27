@@ -186,8 +186,9 @@ const TibiarcPlayer = ({ className }: TibiarcPlayerProps) => {
     return () => cancelAnimationFrame(rafId);
   }, []);
 
-  const applyTo = (engine: NonNullable<typeof engineRef.current>, targetMs: number) => {
+  const applyTo = (engine: NonNullable<typeof engineRef.current>, targetMs: number, isSeek = false) => {
     if (!engine.cam) return;
+    if (isSeek) engine.parser.seekMode = true;
     while (engine.curFrame < engine.cam.frames.length) {
       const frame = engine.cam.frames[engine.curFrame];
       if (frame.timestamp > targetMs) break;
@@ -195,6 +196,15 @@ const TibiarcPlayer = ({ className }: TibiarcPlayerProps) => {
       engine.curFrame++;
     }
     engine.curMs = targetMs;
+    if (isSeek) {
+      engine.parser.seekMode = false;
+      // Clear all walk animations after seek to prevent ghost offsets
+      for (const c of engine.gs.creatures.values()) {
+        c.walking = false;
+        c.walkOffsetX = 0;
+        c.walkOffsetY = 0;
+      }
+    }
   };
 
   const handleFileSelect = useCallback(async (file: File) => {
@@ -234,7 +244,7 @@ const TibiarcPlayer = ({ className }: TibiarcPlayerProps) => {
       setFloorOffset(0);
 
       // Apply first frames to get initial map
-      applyTo(engine, 0);
+      applyTo(engine, 0, true);
 
       setDuration(cam.totalMs);
       setProgress(0);
@@ -282,7 +292,7 @@ const TibiarcPlayer = ({ className }: TibiarcPlayerProps) => {
     engine.renderer.clearCache();
     engine.curFrame = 0;
     engine.curMs = 0;
-    applyTo(engine, 0);
+    applyTo(engine, 0, true);
 
     setProgress(0);
     setFloorOffset(0);
@@ -318,7 +328,7 @@ const TibiarcPlayer = ({ className }: TibiarcPlayerProps) => {
     engine.renderer.clearCache();
     engine.curFrame = 0;
     engine.curMs = 0;
-    applyTo(engine, ms);
+    applyTo(engine, ms, true);
 
     setProgress(ms);
 

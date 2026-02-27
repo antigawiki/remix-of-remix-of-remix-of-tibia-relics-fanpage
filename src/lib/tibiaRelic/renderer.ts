@@ -144,11 +144,26 @@ export class Renderer {
     this.hudEntries = [];
 
     // Smooth camera follow: NEGATE player's walk offset to shift viewport
-    // When player moves east (walkOffsetX=-32), camera must shift tiles RIGHT (+32)
-    // so the instant camX jump is smoothly compensated. The player's own walk offset
-    // in drawCreatureNative then cancels this out, keeping the player centered.
     let camOffX = 0, camOffY = 0;
     const player = g.playerId ? g.creatures.get(g.playerId) : undefined;
+
+    // Safety net: if player exists but is NOT on their tile, force re-add
+    if (player) {
+      const playerTile = g.getTile(player.x, player.y, player.z);
+      const isOnTile = playerTile.some(i => i[0] === 'cr' && i[1] === player.id);
+      if (!isOnTile) {
+        // Force reposition player to camera position
+        player.x = g.camX; player.y = g.camY; player.z = g.camZ;
+        player.walking = false;
+        player.walkOffsetX = 0;
+        player.walkOffsetY = 0;
+        const tile = g.getTile(g.camX, g.camY, g.camZ);
+        tile.push(['cr', player.id]);
+        g.setTile(g.camX, g.camY, g.camZ, tile);
+      }
+    }
+
+    // Only apply walk offset to camera when player is actively walking
     if (player && player.walking && now < player.walkEndTick) {
       const progress = Math.min(1, (now - player.walkStartTick) / player.walkDuration);
       camOffX = -Math.round(player.walkOffsetX * (1 - progress));

@@ -19,6 +19,8 @@ export interface PacketParserOptions {
 export class PacketParser {
   private looktypeU16: boolean;
   private outfitWindowRangeU16: boolean;
+  /** When true, walk animations are suppressed (used during seek/fast-replay) */
+  public seekMode = false;
 
   constructor(public gs: GameState, public dat: DatLoader, opts: PacketParserOptions = {}) {
     this.looktypeU16 = !!opts.looktypeU16;
@@ -362,22 +364,13 @@ export class PacketParser {
 
     if (fx === 0xFFFF) {
       // Format B: creature referenced by ID, not by tile position
-      // In the 7.x wire format, when x=0xFFFF the "y" field was actually
-      // used to encode the creature ID (or part of it). We combine fy as
-      // the creature ID (it's a u16 from pos3, but creature IDs fit).
-      // However, the real OTClient approach: when x==0xFFFF, it uses
-      // y | (z << 16) or just y as creature-id lookup. For 7.x with 32-bit
-      // creature IDs, the server typically sends the full pos3 + stack even
-      // for "known" moves. The 0xFFFF case is rare but we handle it:
-      // Try fy as creature ID first, then scan.
       const candidateId = fy;
       let c = this.gs.creatures.get(candidateId);
       if (c) {
         cid = candidateId;
         fromX = c.x; fromY = c.y; fromZ = c.z;
       } else {
-        // Fallback: find any creature that is at the destination
-        // (server may have already moved it logically)
+        // Scan all creatures for one at destination
         for (const cr of this.gs.creatures.values()) {
           if (cr.x === tx && cr.y === ty && cr.z === tz) {
             cid = cr.id;
@@ -385,30 +378,40 @@ export class PacketParser {
             break;
           }
         }
-        if (cid === null) {
-          // Last resort: ignore this move
-          return;
-        }
+        if (cid === null) return;
       }
-      // Remove from old tile
       this.removeCreatureFromTile(cid, fromX!, fromY!, fromZ!);
     } else {
       // Format A: normal tile-based move
       fromX = fx; fromY = fy; fromZ = fz;
       const ft = this.gs.getTile(fx, fy, fz);
-      // Try exact stackpos first
+      // 1. Try exact stackpos
       if (sp >= 0 && sp < ft.length && ft[sp][0] === 'cr') {
         cid = ft[sp][1];
         ft.splice(sp, 1);
         this.gs.setTile(fx, fy, fz, ft);
       } else {
-        // Fallback: search tile for any creature
+        // 2. Search by creature whose stored position matches source
         for (let i = 0; i < ft.length; i++) {
           if (ft[i][0] === 'cr') {
-            cid = ft[i][1];
-            ft.splice(i, 1);
-            this.gs.setTile(fx, fy, fz, ft);
-            break;
+            const cc = this.gs.creatures.get(ft[i][1]);
+            if (cc && cc.x === fx && cc.y === fy && cc.z === fz) {
+              cid = ft[i][1];
+              ft.splice(i, 1);
+              this.gs.setTile(fx, fy, fz, ft);
+              break;
+            }
+          }
+        }
+        // 3. Last fallback: any creature on tile
+        if (cid === null) {
+          for (let i = 0; i < ft.length; i++) {
+            if (ft[i][0] === 'cr') {
+              cid = ft[i][1];
+              ft.splice(i, 1);
+              this.gs.setTile(fx, fy, fz, ft);
+              break;
+            }
           }
         }
       }
@@ -424,17 +427,26 @@ export class PacketParser {
         else if (dx === 0 && dy > 0) c.direction = DIR_S;
         else if (dx < 0) c.direction = DIR_W;
 
+        // Snap any previous walk before starting new one
+        if (c.walking) {
+          c.walking = false;
+          c.walkOffsetX = 0;
+          c.walkOffsetY = 0;
+        }
+
         c.x = tx; c.y = ty; c.z = tz;
 
-        // Smooth walking
-        c.walking = true;
-        const groundSpeed = 150;
-        const walkDuration = c.speed > 0 ? Math.max(100, Math.floor(groundSpeed * 1000 / Math.max(1, c.speed))) : 300;
-        c.walkDuration = walkDuration;
-        c.walkStartTick = performance.now();
-        c.walkEndTick = c.walkStartTick + walkDuration;
-        c.walkOffsetX = -dx * 32;
-        c.walkOffsetY = -dy * 32;
+        // Smooth walking (only in real-time playback, not during seek)
+        if (!this.seekMode) {
+          c.walking = true;
+          const groundSpeed = 150;
+          const walkDuration = c.speed > 0 ? Math.max(100, Math.floor(groundSpeed * 1000 / Math.max(1, c.speed))) : 300;
+          c.walkDuration = walkDuration;
+          c.walkStartTick = performance.now();
+          c.walkEndTick = c.walkStartTick + walkDuration;
+          c.walkOffsetX = -dx * 32;
+          c.walkOffsetY = -dy * 32;
+        }
 
         // Place on destination tile (defensive: remove duplicates first)
         this.removeCreatureFromTile(cid, tx, ty, tz);
