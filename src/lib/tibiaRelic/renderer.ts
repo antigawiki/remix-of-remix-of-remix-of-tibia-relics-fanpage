@@ -347,16 +347,17 @@ export class Renderer {
         if (atx < -2 || atx > VP_W + 3 || aty < -2 || aty > VP_H + 3) continue;
         const elapsed = now - at.startTick;
         const progress = Math.min(1, elapsed / at.duration);
-        const floatY = progress * 20; // float upward 20px
+        const floatY = progress * 24; // float upward 24px
         const alpha = 1 - progress; // fade out
         const px = atx * TILE_PX + camOffX + TILE_PX / 2;
         const py = aty * TILE_PX + camOffY + TILE_PX / 2 - floatY;
         oc.save();
         oc.globalAlpha = alpha;
-        oc.font = 'bold 8px monospace';
+        oc.font = 'bold 11px monospace';
         oc.textAlign = 'center';
-        oc.fillStyle = '#000000';
-        oc.fillText(at.text, px + 1, py + 1);
+        oc.lineWidth = 2;
+        oc.strokeStyle = '#000000';
+        oc.strokeText(at.text, px, py);
         oc.fillStyle = at.color;
         oc.fillText(at.text, px, py);
         oc.restore();
