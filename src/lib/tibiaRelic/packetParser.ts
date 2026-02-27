@@ -98,16 +98,22 @@ export class PacketParser {
    * This ensures the renderer (which follows player.x/y) always shows
    * the correct map area after teleports, floor changes, or scroll packets.
    */
-  private syncPlayerToCamera() {
+  private syncPlayerToCamera(oldCamZ?: number) {
     const g = this.gs;
     if (!g.playerId) return;
     const player = g.creatures.get(g.playerId);
     if (!player) return;
     
-    const floorChanged = player.z !== g.camZ;
+    // Detect floor change: if oldCamZ was passed (from floorUp/floorDown/mapDesc),
+    // compare it against current camZ. This is reliable because readTileItems may
+    // have already updated player.z via placeCreatureOnTile before we get here.
+    const floorChanged = oldCamZ !== undefined ? oldCamZ !== g.camZ : false;
     
-    // Already in sync — skip
-    if (player.x === g.camX && player.y === g.camY && player.z === g.camZ) return;
+    // Already in sync — skip (but still do cleanup if floor changed)
+    if (player.x === g.camX && player.y === g.camY && player.z === g.camZ) {
+      if (floorChanged) this.cleanupDistantCreatures(g.camZ);
+      return;
+    }
     // Remove from old tile
     this.removeCreatureFromTile(player.id, player.x, player.y, player.z);
     // Update position
@@ -120,19 +126,22 @@ export class PacketParser {
     tile.push(['cr', player.id]);
     g.setTile(player.x, player.y, player.z, tile);
 
-    // When floor changes, clean up creatures that are too far away vertically.
-    // This prevents stale creatures from old floors showing names on the new floor.
-    if (floorChanged) {
-      const newZ = g.camZ;
-      for (const [cid, c] of g.creatures) {
-        if (cid === g.playerId) continue;
-        if (Math.abs(c.z - newZ) > 2) {
-          // Remove from tile and delete from creatures map
-          this.removeCreatureFromTile(cid, c.x, c.y, c.z);
-          g.creatures.delete(cid);
-        }
+    if (floorChanged) this.cleanupDistantCreatures(g.camZ);
+  }
+
+  /** Remove creatures more than 2 floors from current Z */
+  private cleanupDistantCreatures(currentZ: number) {
+    const g = this.gs;
+    let cleaned = 0;
+    for (const [cid, c] of g.creatures) {
+      if (cid === g.playerId) continue;
+      if (Math.abs(c.z - currentZ) > 2) {
+        this.removeCreatureFromTile(cid, c.x, c.y, c.z);
+        g.creatures.delete(cid);
+        cleaned++;
       }
     }
+    console.log(`[FloorChange] oldZ=${arguments[0]} -> newZ=${currentZ}, cleaned ${cleaned} distant creatures, remaining: ${g.creatures.size}`);
   }
 
   /**
@@ -327,9 +336,10 @@ export class PacketParser {
     // Player pos
     else if (t === 0x9a) {
       const [x, y, z] = this.pos3(r);
+      const prevZ = g.camZ;
       g.camX = x; g.camY = y; g.camZ = z;
       this.clampCamZ();
-      this.syncPlayerToCamera();
+      this.syncPlayerToCamera(prevZ);
     }
     // Stats/skills/icons
     else if (t === 0xa0) this.readStats(r);
@@ -389,13 +399,14 @@ export class PacketParser {
 
   private mapDesc(r: Buf) {
     const [x, y, z] = this.pos3(r);
+    const prevZ = this.gs.camZ;
     this.gs.camX = x; this.gs.camY = y; this.gs.camZ = z;
     this.clampCamZ();
     this.gs.mapLoaded = true;
 
     const { startz, endz, zstep } = this.getFloorRange(z);
     this.readMultiFloorArea(r, x - 8, y - 6, 18, 14, z, startz, endz, zstep);
-    this.syncPlayerToCamera();
+    this.syncPlayerToCamera(prevZ);
 
     if (!this.loggedFirst) {
       this.loggedFirst = true;
@@ -665,7 +676,7 @@ export class PacketParser {
       g.camZ = oldZ; g.camX = oldX; g.camY = oldY;
       throw e;
     }
-    this.syncPlayerToCamera();
+    this.syncPlayerToCamera(oldZ);
   }
 
   private floorDown(r: Buf) {
@@ -693,7 +704,7 @@ export class PacketParser {
       g.camZ = oldZ; g.camX = oldX; g.camY = oldY;
       throw e;
     }
-    this.syncPlayerToCamera();
+    this.syncPlayerToCamera(oldZ);
   }
 
   private talk(r: Buf) {
