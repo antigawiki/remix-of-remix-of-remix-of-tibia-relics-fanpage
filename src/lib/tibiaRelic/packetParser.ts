@@ -224,7 +224,7 @@ export class PacketParser {
     else if (t === 0x63) { const cid = r.u32(); const dir = r.u8(); const c = g.creatures.get(cid); if (c) c.direction = dir; }
     // Login
     else if (t === 0x0a) this.login(r);
-    else if (t === 0x0b) { /* GM actions */ }
+    else if (t === 0x0b) { r.skip(32); /* GM actions: 32 violation reason bytes */ }
     else if (t === 0x0f) { /* FYI token */ }
     else if (t === 0x1d) { /* pingback (7.72) */ }
     else if (t === 0x1e) { /* ping */ }
@@ -284,6 +284,7 @@ export class PacketParser {
     else if (t === 0x8f) { r.u32(); r.u16(); }
     else if (t === 0x90) { r.u32(); r.u8(); }
     else if (t === 0x91) { r.u32(); r.u8(); }
+    else if (t === 0x92) { r.u32(); r.u8(); /* creatureUnpass */ }
     // Text windows
     else if (t === 0x96) { r.u32(); r.u16(); r.u16(); r.skip16(); }
     else if (t === 0x97) { r.u8(); r.u32(); r.skip16(); }
@@ -299,8 +300,9 @@ export class PacketParser {
     else if (t === 0xa1) r.skip(14);
     else if (t === 0xa2) r.u8();
     else if (t === 0xa3) { /* cancelTarget */ }
-    else if (t === 0xa4) { r.skip(2); /* spellCooldown: u16 spellId */ }
+    else if (t === 0xa4) { r.skip(5); /* spellCooldown: u8 spellId + u32 delay */ }
     else if (t === 0xa5) { r.skip(5); /* spellGroupCooldown: u8 groupId + u32 delay */ }
+    else if (t === 0xa6) { r.u32(); /* multiUseDelay */ }
     else if (t === 0xa7) { r.skip(3); /* setPlayerModes: u8 fight + u8 chase + u8 safe */ }
     else if (t === 0xa8) { r.skip(5); /* creatureSquare: u32 creatureId + u8 color */ }
     // Chat
@@ -308,16 +310,16 @@ export class PacketParser {
     else if (t === 0xab) { const nc = r.u8(); for (let i = 0; i < nc; i++) { r.u16(); r.str16(); } }
     else if (t === 0xac) { r.u16(); r.str16(); }
     else if (t === 0xad) r.str16();
-    else if (t === 0xae) { /* close channel */ }
-    else if (t === 0xaf) { /* close channel */ }
-    else if (t === 0xb0) r.skip(2);
+    else if (t === 0xae) { r.u16(); /* ruleViolation channel */ }
+    else if (t === 0xaf) { r.skip16(); /* ruleViolation remove */ }
+    else if (t === 0xb0) { r.skip16(); /* ruleViolation cancel */ }
     else if (t === 0xb1) { /* lockViolation */ }
     else if (t === 0xb2) { r.u16(); r.skip16(); }
     else if (t === 0xb3) r.u16();
     else if (t === 0xb4) this.textMsg(r);
     else if (t === 0xb5) r.u8();
     // Walk cancel / move delay (7.72 tibiarc parity)
-    else if (t === 0xb6) { /* walk cancel — no payload beyond opcode */ }
+    else if (t === 0xb6) { r.u16(); /* walk cancel: u16 wait ms */ }
     else if (t === 0xb7) { /* unused / reserved */ }
     else if (t === 0xb8) { /* unused / reserved */ }
     // Floor change
@@ -335,6 +337,8 @@ export class PacketParser {
     // Quest dialog
     else if (t === 0xf0) this.skipQuestLog(r);
     else if (t === 0xf1) this.skipQuestLine(r);
+    // Death
+    else if (t === 0x28) { /* death — no payload for 7.72 */ }
     // Error/MOTD
     else if (t === 0x14) { r.u16(); r.skip16(); }
     else return false;
@@ -663,7 +667,7 @@ export class PacketParser {
 
   private talk(r: Buf) {
     try {
-      r.u32();
+      // No r.u32() — GameMessageStatements is NOT part of 7.72 vanilla
       const name = r.str16();
       const tp = r.u8();
       const POS_TYPES = new Set([0x01, 0x02, 0x03, 0x0E, 0x10]);
@@ -683,7 +687,7 @@ export class PacketParser {
   }
 
   private readStats(r: Buf) {
-    r.skip(20);
+    r.skip(22); // 20 base + u16 stamina
   }
 
   private textMsg(r: Buf) {
