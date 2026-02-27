@@ -1,5 +1,5 @@
 import { useRef, useState, useCallback, useEffect } from 'react';
-import { Upload, Play, Pause, FastForward, RotateCcw, Loader2, ChevronUp, ChevronDown, Layers, Sparkles, Monitor } from 'lucide-react';
+import { Upload, Play, Pause, FastForward, RotateCcw, Loader2, ChevronUp, ChevronDown, Layers, Sparkles, Monitor, SkipBack, SkipForward } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Slider } from '@/components/ui/slider';
 import { useTranslation } from '@/i18n';
@@ -462,6 +462,26 @@ const TibiarcPlayer = ({ className }: TibiarcPlayerProps) => {
               className="border-border/50"
             >
               <RotateCcw className="w-4 h-4" />
+            </Button>
+            <Button
+              variant="outline"
+              size="icon"
+              onClick={() => handleSeek([Math.max(0, progress - 10000)])}
+              disabled={!hasRecording}
+              className="border-border/50"
+              title="-10s"
+            >
+              <SkipBack className="w-4 h-4" />
+            </Button>
+            <Button
+              variant="outline"
+              size="icon"
+              onClick={() => handleSeek([Math.min(duration, progress + 10000)])}
+              disabled={!hasRecording}
+              className="border-border/50"
+              title="+10s"
+            >
+              <SkipForward className="w-4 h-4" />
             </Button>
             <Button
               variant="outline"
