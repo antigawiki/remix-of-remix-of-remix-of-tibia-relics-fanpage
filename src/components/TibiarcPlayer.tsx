@@ -171,7 +171,9 @@ const TibiarcPlayer = ({ className }: TibiarcPlayerProps) => {
       // Update floor override from ref to stay in sync
       const floorOffsetVal = floorOffsetRef.current;
       if (floorOffsetVal !== 0) {
-        const targetZ = Math.max(0, Math.min(15, engine.gs.camZ + floorOffsetVal));
+        const player = engine.gs.creatures.get(engine.gs.playerId);
+        const baseZ = player ? player.z : engine.gs.camZ;
+        const targetZ = Math.max(0, Math.min(15, baseZ + floorOffsetVal));
         engine.renderer.floorOverride = targetZ;
       } else {
         engine.renderer.floorOverride = null;
