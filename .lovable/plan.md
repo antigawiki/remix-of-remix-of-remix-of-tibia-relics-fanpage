@@ -1,64 +1,66 @@
 
+Resumo do diagnóstico (comparado com OTClient/tibiarc e com os logs atuais):
 
-## Corrigir Transicao de Tela Travada e Player Sumindo
+1) Regressão principal de fluidez: o offset de câmera foi aplicado com sinal incorreto no renderer, e o player recebe deslocamento duas vezes (câmera + walk próprio).  
+- No OTClient: cálculo equivalente é “posição da criatura - drawOffset da câmera + drawOffset da criatura”, o que cancela o offset do player seguido (ele fica estável) e move o mapa suavemente.
+- No estado atual: offsets somam no mesmo sentido, causando “pulos”, sensação de travamento e sumiço intermitente.
 
-### Diagnostico Principal
+2) Duração de walk diagonal foi aplicada de forma incompatível com a referência para animação visual.  
+- No OTClient, a atualização visual usa `getStepDuration(true)` (ignora multiplicador diagonal na interpolação visual).  
+- Hoje está multiplicando por 3 no parser para diagonal, o que deixa passos inconsistentes e “arrastados”.
 
-Comparando com o tibiarc C++ (`web_player.cpp`) e o comportamento do OTClient, identifiquei **3 bugs criticos** que causam os problemas reportados:
+3) Move de criatura ainda está frágil versus formato real de protocolo.  
+- Referência usa `getMappedThing`: pode vir por `pos+stack` ou por `0xFFFF + creatureId`.  
+- Parser atual assume apenas `pos+stack`, o que pode falhar em certos frames e contribuir para criaturas/player “sumirem”.
 
-### Bug 1: Camera Nao Acompanha o Walk do Player (Tela "Trava")
+4) Gargalo de UI após liberar 60fps: `setProgress` em toda frame força re-render React contínuo.  
+- Isso piora jank perceptível mesmo com renderer canvas funcionando.
 
-**Causa raiz**: Quando o jogador anda, dois pacotes chegam quase simultaneamente:
-- `scroll(dx, dy)` -> atualiza `camX/camY` **instantaneamente**
-- `moveCr()` -> seta walk offset no player (anima de -32px a 0px)
+5) Log recorrente `[PacketParser] Unknown opcode 0x63 ...` mostra perda de sincronização em alguns frames (especialmente seek), gerando abort de frame e estado visual quebrado.
 
-O resultado: todos os tiles do mapa "pulam" para a nova posicao de uma vez, mas o sprite do player desliza suavemente. Isso cria o efeito de "tela travando" a cada passo.
+Plano de correção (ordem de execução):
 
-**Correcao (como OTClient faz)**: No renderer, ao desenhar, aplicar o **walk offset do player** como deslocamento de toda a viewport. Assim, quando o player anda:
-1. `scroll()` carrega os tiles novos (correto)
-2. `moveCr()` seta o walk offset no player
-3. O renderer desloca **todos os tiles** pelo walk offset do player, fazendo a tela inteira deslizar suavemente junto com o personagem
+Fase 1 — corrigir regressões críticas de movimento/câmera  
+- `src/lib/tibiaRelic/renderer.ts`
+  - inverter a aplicação do offset global da câmera (usar equivalente ao “-drawOffset” da referência);
+  - manter offset próprio da criatura separado;
+  - ajustar HUD para usar a mesma lógica (evitar duplo offset no player).
+- `src/lib/tibiaRelic/packetParser.ts`
+  - remover multiplicador diagonal da duração visual do walk (alinhado a `getStepDuration(true)` do OTClient para interpolação).
 
-### Bug 2: Player Sumindo da Tela
+Fase 2 — robustez de protocolo (sumiço de criatura/player e drift)  
+- `src/lib/tibiaRelic/packetParser.ts`
+  - suportar `moveCr` no formato alternativo `0xFFFF + creatureId` além de `fromPos+stack`;
+  - adicionar fallback seguro quando `stackpos` não bate (sem quebrar frame inteiro);
+  - tratar opcodes ausentes relevantes (ex.: walk-wait) para reduzir “unknown opcode”.
+- manter abort de frame em erro grave, mas com estratégia de recuperação menos destrutiva para eventos não críticos.
 
-**Causa raiz**: O HUD (nome/barra de vida) filtra criaturas com `c.z !== z`, mas durante mudancas de andar (`floorUp/floorDown`), o `camZ` muda antes do creature update. Alem disso, a area visivel para renderizacao de criaturas e `VP_W + 1` / `VP_H + 1`, o que pode cortar criaturas que estao exatamente na borda durante o walk offset.
+Fase 3 — fluidez real no frontend  
+- `src/components/TibiarcPlayer.tsx`
+  - desacoplar atualização visual do canvas da atualização de estado React;
+  - “throttle” de `setProgress` (ex.: 8–12Hz) para evitar re-render 60fps;
+  - preservar seek/play responsivos sem sacrificar fps.
 
-**Correcao**: Expandir a margem de visibilidade do HUD de +1 para +3 tiles e garantir que a area de renderizacao do viewport cubra tiles extras para criaturas com walk offset ativo.
+Fase 4 — validação técnica completa  
+- Teste A/B com .cam problemática e uma .cam estável:
+  - caminhada reta e diagonal;
+  - transição de tela durante walk do player;
+  - floor up/down;
+  - seek repetido em região com erro anterior (49:xx);
+  - confirmar ausência de sumiço de player/creaturas.
+- Confirmar nos logs:
+  - queda drástica de `Unknown opcode 0x63`;
+  - ausência de “camera jump” perceptível;
+  - frame pacing mais estável.
 
-### Bug 3: Walk Duration Incorreta
+Detalhes técnicos (referência open source usada):
+- MapView do OTClient aplica offset de câmera do jogador seguido no “source rect” (equivalente a subtrair no espaço de render).
+- Draw de criatura aplica `getDrawOffset()` (walk próprio) separadamente.
+- Fórmula visual de walk usa step duration sem penalidade diagonal na interpolação frame-a-frame.
+- Parse de movimento usa `getMappedThing` (suporta posicional e por id), evitando perda de entidade em casos de stack mismatch.
 
-**Causa raiz**: A formula atual `Math.max(100, Math.floor(1000 / (c.speed / 220)))` nao corresponde ao calculo do cliente real. No OTClient, a duracao do passo depende do `groundSpeed` do tile (atributo `speed` no DAT) e da velocidade da criatura:
-- `stepDuration = groundSpeed * 1000 / creatureSpeed` (simplificado)
-- O ground speed padrao e ~150 para grama normal
-
-Com a formula atual, criaturas rapidas ficam com animacao muito lenta, e criaturas lentas ficam muito rapidas.
-
-**Correcao**: Usar uma formula mais proxima do cliente real, considerando um ground speed fixo de 150 (sem acesso ao tile de origem, usamos valor padrao).
-
-### Plano de Mudancas
-
-#### `src/lib/tibiaRelic/renderer.ts`
-
-1. **Smooth camera follow**: No metodo `draw()`, antes de renderizar os tiles, buscar o creature do player (`gs.playerId`) e calcular seu walk offset atual. Aplicar esse offset como deslocamento pixel a pixel de toda a viewport (subtrair do calculo de `bx/by` de cada tile).
-
-2. **Expandir margem do HUD**: Mudar a verificacao de visibilidade do HUD de `tx2 <= VP_W + 1 && ty2 <= VP_H + 1` para `+3`, evitando criaturas cortadas na borda durante movimentacao.
-
-3. **Aplicar camera offset ao HUD**: O mesmo offset de camera smooth deve ser aplicado ao posicionamento do HUD para que nomes/barras acompanhem o deslizamento.
-
-#### `src/lib/tibiaRelic/packetParser.ts`
-
-4. **Corrigir formula de walk duration**: Trocar `Math.max(100, Math.floor(1000 / (c.speed / 220)))` por formula baseada em ground speed: `Math.max(100, Math.floor(150 * 1000 / Math.max(1, c.speed)))` onde 150 e o ground speed padrao. Para diagonal, multiplicar por 3 (custo extra de diagonal no Tibia).
-
-5. **Proteger walk durante scroll**: Quando `scroll()` e chamado (camera se move), nao resetar walks em andamento de criaturas que ja estao animando.
-
-#### `src/lib/tibiaRelic/gameState.ts`
-
-6. Nenhuma mudanca necessaria na interface - os campos de walk ja existem.
-
-### Resultado Esperado
-
-- A tela desliza suavemente quando o player anda, sem "pulos"
-- O player nunca desaparece durante transicoes de tela
-- A velocidade de caminhada das criaturas corresponde ao visual do jogo original
-- Criaturas na borda da tela continuam visiveis durante o movimento
-
+Resultado esperado após implementação:
+- transição de cena suave junto com o walk, sem “travar a tela”;
+- player e criaturas não desaparecendo durante deslocamento;
+- redução forte de stutter percebido;
+- seek menos propenso a quebrar estado por frame abortado.
