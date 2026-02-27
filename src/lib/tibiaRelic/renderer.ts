@@ -181,12 +181,11 @@ export class Renderer {
       }
     }
 
-    // Derive render camera from player's actual position (OTClient "followed creature" approach)
-    // This prevents camera desync during floor transitions, teleports, or missed packets
-    // Use g.cam as authoritative camera source (always updated by protocol)
-    // Player position is only used for walk offset (smooth scrolling)
-    const renderCamX = g.camX;
-    const renderCamY = g.camY;
+    // Use player position for centering (player is always at screen center)
+    // Use g.camZ for floor (authoritative from protocol, avoids floor desync)
+    // g.camX/Y can drift from player.x/y due to perspective shifts in floor transitions
+    const renderCamX = player ? player.x : g.camX;
+    const renderCamY = player ? player.y : g.camY;
     const renderCamZ = g.camZ;
     const z = this.floorOverride ?? renderCamZ;
 
@@ -398,33 +397,6 @@ export class Renderer {
     // Compute scale factor for HUD positioning on display canvas
     const scaleX = canvasWidth / NATIVE_W;
     const scaleY = canvasHeight / NATIVE_H;
-
-    // DEBUG: Draw player center marker and info
-    if (player) {
-      // Player tile position relative to viewport origin
-      const ptx = player.x - (renderCamX - 7);
-      const pty = player.y - (renderCamY - 5);
-      // Red outline on player tile
-      const px = ptx * TILE_PX * scaleX + camOffX * scaleX;
-      const py = pty * TILE_PX * scaleY + camOffY * scaleY;
-      displayCtx.strokeStyle = '#ff0000';
-      displayCtx.lineWidth = 2;
-      displayCtx.strokeRect(px, py, TILE_PX * scaleX, TILE_PX * scaleY);
-      // Green crosshair at exact canvas center
-      const cx = canvasWidth / 2, cy = canvasHeight / 2;
-      displayCtx.strokeStyle = '#00ff00';
-      displayCtx.lineWidth = 1;
-      displayCtx.beginPath();
-      displayCtx.moveTo(cx - 10, cy); displayCtx.lineTo(cx + 10, cy);
-      displayCtx.moveTo(cx, cy - 10); displayCtx.lineTo(cx, cy + 10);
-      displayCtx.stroke();
-      // Debug text
-      displayCtx.fillStyle = '#ffff00';
-      displayCtx.font = '12px monospace';
-      displayCtx.textAlign = 'left';
-      displayCtx.fillText(`cam=(${renderCamX},${renderCamY},${renderCamZ}) player=(${player.x},${player.y},${player.z}) ptx=${ptx} pty=${pty}`, 4, 14);
-      displayCtx.fillText(`camOff=(${camOffX},${camOffY}) creatures=${g.creatures.size} floorOverride=${this.floorOverride}`, 4, 28);
-    }
 
     // Draw creature HUDs AFTER upscale on the display canvas (high-res text)
     // Use same negated camera offset for HUD positioning
