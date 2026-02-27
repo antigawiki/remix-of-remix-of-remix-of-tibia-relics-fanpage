@@ -471,15 +471,17 @@ export class PacketParser {
           // Stale stackpos — fall through to position-based search
           cid = null;
         }
-        // 2. Search by creature whose stored position matches source
-        for (let i = 0; i < ft.length; i++) {
-          if (ft[i][0] === 'cr') {
-            const cc = this.gs.creatures.get(ft[i][1]);
-            if (cc && cc.x === fx && cc.y === fy && cc.z === fz) {
-              cid = ft[i][1];
-              ft.splice(i, 1);
-              this.gs.setTile(fx, fy, fz, ft);
-              break;
+        // 2. Search by creature whose stored position matches source (only if stackpos failed)
+        if (cid === null) {
+          for (let i = 0; i < ft.length; i++) {
+            if (ft[i][0] === 'cr') {
+              const cc = this.gs.creatures.get(ft[i][1]);
+              if (cc && cc.x === fx && cc.y === fy && cc.z === fz) {
+                cid = ft[i][1];
+                ft.splice(i, 1);
+                this.gs.setTile(fx, fy, fz, ft);
+                break;
+              }
             }
           }
         }
@@ -541,10 +543,8 @@ export class PacketParser {
    * Place creature on tile, removing it from any previous tile first.
    */
   private placeCreatureOnTile(c: Creature, x: number, y: number, z: number) {
-    // Remove from old position if different
-    if (c.x !== 0 || c.y !== 0 || c.z !== 0) {
-      this.removeCreatureFromTile(c.id, c.x, c.y, c.z);
-    }
+    // Always remove from old position (removeCreatureFromTile is defensive/no-op if not present)
+    this.removeCreatureFromTile(c.id, c.x, c.y, c.z);
     // Remove any duplicate at destination
     this.removeCreatureFromTile(c.id, x, y, z);
     c.x = x; c.y = y; c.z = z;
