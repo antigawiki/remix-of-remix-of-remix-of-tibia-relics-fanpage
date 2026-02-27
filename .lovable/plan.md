@@ -1,51 +1,53 @@
 
+Objetivo: eliminar o sumiço intermitente do player com correção de protocolo + consistência de estado, alinhado ao comportamento de clientes open source (OTClient/tibiarc).
 
-## Corrigir Tiles Desenhados Por Cima do Player
+Diagnóstico aprofundado (comparação com open source):
+1) `moveCr` no formato `0xFFFF + creatureId` está incorreto no parser atual.
+- Referência (OTClient `getMappedThing` e tibiarc `ParseTileMoveCreature`): quando `x == 0xFFFF`, lê `u32 creatureId` e move por ID.
+- Atual: lê como `pos3 + stack`, tenta achar criatura por destino e calcula `dx = tx - 65535`, gerando offsets absurdos e perda visual (player “some”).
 
-### Problema
+2) Divergência de opcodes 7.72 relevantes:
+- tibiarc trata `0x1D` (pingback), `0xB6` (move delay), `0xB7`, `0xB8`, `0xDD`.
+- Parser atual ignora alguns deles, causando `Unknown opcode` e aborto de frame (perda de updates).
 
-Quando o player anda, o sprite do tile vizinho aparece **por cima** do sprite do player (como mostra a imagem). Isso acontece porque o renderer atual desenha **tile por tile** -- ou seja, para cada tile (tx,ty), desenha chao, itens, criaturas e topo antes de passar pro proximo tile. Quando o player esta entre dois tiles (walk offset ativo), o tile seguinte ainda nao foi processado, e quando e processado, seu chao e itens sao desenhados por cima da criatura ja renderizada no tile anterior.
+3) Mutação de câmera antes de validar payload em opcodes de mapa:
+- `scroll/floorUp/floorDown` já alteram `camX/camY/camZ` antes da leitura de tiles.
+- Em pacote inválido/parcial isso deixa estado “quebrado” (player fora da viewport).
 
-### Como o OTClient/Tibiarc Resolve
+Plano de implementação:
 
-No cliente original e no OTClient, a renderizacao e feita em **passes globais**:
-1. Primeiro, desenha o chao de **todos** os tiles
-2. Depois, desenha itens de **todos** os tiles
-3. Depois, desenha **todas** as criaturas
-4. Por ultimo, desenha itens de topo de **todos** os tiles
+Arquivos:
+- `src/lib/tibiaRelic/packetParser.ts`
+- (validação apenas) `src/lib/tibiaRelic/renderer.ts`
 
-Isso garante que criaturas sempre fiquem acima de qualquer chao/item regular, independente da posicao de walk.
+Fase 1 — Correção crítica de movimento por ID:
+- Reescrever `moveCr` para suportar dois formatos exatamente:
+  - A) `fromPos + stack + toPos`
+  - B) `0xFFFF + creatureId + toPos`
+- No formato B: obter `from` pelo estado atual da criatura (`c.x/c.y/c.z`) e remover corretamente do tile antigo.
+- Atualizar direção e walk offset usando `from real -> to`, nunca com `fx=65535`.
 
-### Correcao
+Fase 2 — Sincronização robusta tile<->creature:
+- Adicionar helper interno para remover `cid` de qualquer tile anterior conhecido antes de inserir no destino (deduplicação defensiva).
+- Garantir invariantes: criatura em no máximo 1 tile visível por vez; sem “fantasmas” de stack antigo.
 
-**Arquivo: `src/lib/tibiaRelic/renderer.ts`**
+Fase 3 — Paridade de opcodes 7.72 (tibiarc):
+- Implementar/ignorar corretamente: `0x1D`, `0xB6`, `0xB7`, `0xB8`, `0xDD` (skip seguro conforme tamanho esperado).
+- Reduzir abortos de frame por opcodes válidos ainda não tratados.
 
-Reestruturar o loop de renderizacao no metodo `draw()` de per-tile para passes globais:
+Fase 4 — Segurança transacional para câmera:
+- Em `scroll/floorUp/floorDown`, aplicar atualização de câmera somente após leitura mínima válida de mapa.
+- Em falha/parcial, não “commitar” deslocamento de câmera.
 
-**Antes (per-tile):**
-```
-for each tile:
-  draw ground
-  draw items  
-  draw creatures  // <-- pode ficar atras do chao do tile vizinho
-  draw top
-```
+Fase 5 — Validação detalhada:
+- Reproduzir com .cam problemática em playback normal e seek.
+- Verificar:
+  - player não some em transições prolongadas;
+  - queda clara de `Unknown opcode`;
+  - ausência de drift de câmera após erro de parse;
+  - sem regressão no fix de z-order (tiles x player).
 
-**Depois (passes globais):**
-```
-Pass 1: for each tile -> draw ground + clip + bottom (stackPrio 0,1,2)
-Pass 2: for each tile -> draw regular items (stackPrio 4,5)
-Pass 3: for each tile -> draw creatures (com walk offset)
-Pass 4: for each tile -> draw top items (stackPrio 3)
-```
-
-Na implementacao, para cada floor visivel, coleto a informacao de elevacao e posicao dos tiles, e depois itero 4 vezes separadamente. Criaturas que estao andando entre tiles serao desenhadas no Pass 3, que ocorre **depois** de todos os chao e itens regulares ja estarem na tela.
-
-Tambem preciso armazenar o `elevationOffset` calculado no Pass 1 para reutilizar nos passes seguintes (em um array temporario indexado por tx,ty).
-
-### Detalhes Tecnicos
-
-- Criar um array 2D temporario `elevMap[ty][tx]` para guardar elevacao calculada no Pass 1
-- Separar os 4 `for` loops internos em 4 loops externos independentes sobre todos os tiles
-- Manter a mesma logica de `camOffX/camOffY` e bounds checking
-- Nenhuma mudanca em outros arquivos
+Resultado esperado:
+- desaparecimento do player eliminado nos momentos intermitentes;
+- estado de mapa/criaturas estável mesmo com frames problemáticos;
+- comportamento alinhado ao fluxo usado em OTClient/tibiarc para `move creature` por ID.
