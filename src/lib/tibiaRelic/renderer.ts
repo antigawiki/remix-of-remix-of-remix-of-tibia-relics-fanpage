@@ -38,22 +38,20 @@ function hsiToRgb(h: number, s: number, i: number): [number, number, number] {
 
   if (hDeg < 120) {
     const hRad = (hDeg * Math.PI) / 180;
-    const cos60 = Math.cos(((60 - hDeg) * Math.PI) / 180);
-    const cosH = Math.cos(hRad);
     b = i * (1 - s);
-    r = i * (1 + (s * cos60) / Math.cos(((60 * Math.PI) / 180) - hRad));
+    r = i * (1 + (s * Math.cos(hRad)) / Math.cos(Math.PI / 3 - hRad));
     g = 3 * i - (r + b);
   } else if (hDeg < 240) {
     const hShift = hDeg - 120;
     const hRad = (hShift * Math.PI) / 180;
     r = i * (1 - s);
-    g = i * (1 + (s * Math.cos(((60 - hShift) * Math.PI) / 180)) / Math.cos(((60 * Math.PI) / 180) - hRad));
+    g = i * (1 + (s * Math.cos(hRad)) / Math.cos(Math.PI / 3 - hRad));
     b = 3 * i - (r + g);
   } else {
     const hShift = hDeg - 240;
     const hRad = (hShift * Math.PI) / 180;
     g = i * (1 - s);
-    b = i * (1 + (s * Math.cos(((60 - hShift) * Math.PI) / 180)) / Math.cos(((60 * Math.PI) / 180) - hRad));
+    b = i * (1 + (s * Math.cos(hRad)) / Math.cos(Math.PI / 3 - hRad));
     r = 3 * i - (g + b);
   }
 
@@ -392,8 +390,8 @@ export class Renderer {
         const sid = this.getSpriteIndex(it, ph, wx, wy, tw, th);
         const sprCanvas = this.getNativeSprite(sid);
         if (sprCanvas) {
-          const dx = bx - tw * TILE_PX + it.dispX;
-          const dy = by - th * TILE_PX + it.dispY - elevationOffset;
+          const dx = bx - tw * TILE_PX - it.dispX;
+          const dy = by - th * TILE_PX - it.dispY - elevationOffset;
           if (dx > -TILE_PX * 2 && dx < NATIVE_W + TILE_PX && dy > -TILE_PX * 2 && dy < NATIVE_H + TILE_PX) {
             oc.drawImage(sprCanvas, dx, dy);
           }
@@ -674,21 +672,26 @@ export class Renderer {
     const fw = Math.max(1, Math.floor(bw * c.health / 100));
     const hc = c.health > 50 ? '#00c800' : (c.health > 25 ? '#c8c800' : '#c80000');
     const barX = hudX + (hudW - bw) / 2;
-    const barH = Math.max(2, Math.round(4 * scale)); // ~4px native
+    const barH = Math.max(1, Math.round(3 * scale)); // ~3px native (thinner)
+    const barY = hudY - barH - Math.round(1 * scale);
 
+    // 1px dark border around health bar (matching original Tibia)
+    const borderW = Math.max(1, Math.round(1 * scale));
+    ctx.fillStyle = '#000000';
+    ctx.fillRect(barX - borderW, barY - borderW, bw + borderW * 2, barH + borderW * 2);
     ctx.fillStyle = '#500000';
-    ctx.fillRect(barX, hudY - barH - Math.round(2 * scale), bw, barH);
+    ctx.fillRect(barX, barY, bw, barH);
     ctx.fillStyle = hc;
-    ctx.fillRect(barX, hudY - barH - Math.round(2 * scale), fw, barH);
+    ctx.fillRect(barX, barY, fw, barH);
 
-    // Font: ~11px at native resolution, scaled to display
-    const fs = Math.max(10, Math.min(13, Math.round(11 * scale)));
+    // Font: ~8px at native resolution, scaled to display (smaller, tighter like original)
+    const fs = Math.max(8, Math.min(11, Math.round(8 * scale)));
     const nameColor = isPlayer ? '#00FF00' : '#64c8ff';
     ctx.font = `bold ${fs}px Arial`;
     ctx.textAlign = 'center';
     ctx.strokeStyle = '#000000';
-    ctx.lineWidth = 2;
-    const nameY = hudY - barH - Math.round(4 * scale);
+    ctx.lineWidth = Math.max(1, Math.round(1.5 * scale));
+    const nameY = barY - Math.round(1 * scale);
     ctx.strokeText(c.name, hudX + hudW / 2, nameY);
     ctx.fillStyle = nameColor;
     ctx.fillText(c.name, hudX + hudW / 2, nameY);
