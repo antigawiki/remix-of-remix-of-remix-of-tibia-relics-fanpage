@@ -1,74 +1,83 @@
 
 
-## Correcao dos Efeitos Magicos + Bugs de Floor
+## Correcao de Criaturas Fora de Posicao e Invisiveis Apos Seek
 
-### Causa Raiz Principal: DatLoader le efeitos/misseis com formato errado
+### Problemas Identificados
 
-Investiguei o codigo fonte do OTClient (thingtype.cpp, linha 546-549) e descobri a causa raiz definitiva:
+#### Bug 1: `moveCr` Format A remove duas criaturas do tile (BUG CRITICO)
 
-```text
-// OTClient - thingtype.cpp
-if (g_game.getClientVersion() >= 755)
-    m_numPatternZ = fin->getU8();   // le patZ para TODOS os tipos
-else
-    m_numPatternZ = 1;
-```
+No codigo atual (linhas 462-497), quando o stackpos e valido e encontra uma criatura:
+1. A criatura e encontrada no stackpos (linha 463-469) e `cid` e definido
+2. O codigo **cai direto** no loop de busca por posicao (linha 474-485) **SEM verificar se `cid` ja foi encontrado**
+3. Isso remove uma SEGUNDA criatura do mesmo tile
+4. Resultado: criaturas desaparecem (ficam no `gs.creatures` mas sem referencia no tile)
 
-Para versao >= 7.55 (inclui 7.72), o campo `patZ` e lido para **TODOS** os tipos: items, outfits, efeitos E misseis. Essa funcao e universal - nao distingue categoria.
+Isso explica exatamente o que voce ve: o player "Ondeth Waters" existe no GameState (ataques aparecem nele), mas ele nao aparece visualmente porque foi removido do tile por um `moveCr` de outra criatura.
 
-Nosso `DatLoader` usa `hasPatZ = true` para items e outfits (correto), mas `hasPatZ = false` para efeitos e misseis (ERRADO). Isso causa:
+#### Bug 2: Seek nao recria criaturas que saem da viewport
 
-1. **Offset de 1 byte por entrada**: Ao pular o byte de patZ, o valor de patZ e lido como `anim`, e o verdadeiro `anim` vira parte dos sprite IDs
-2. **Erro em cascata**: Cada efeito le um numero errado de sprites, deslocando o ponteiro `p` incorretamente
-3. **Todos os efeitos E misseis ficam com sprites errados**: A corrupcao se propaga por TODAS as entradas subsequentes
+Quando fazemos seek (adiantar o video), a limpeza pos-seek (linhas 220-230) remove criaturas "orfas" (que nao estao em nenhum tile). Porem, o problema e que durante o seek com `seekMode=true`, os movimentos de criaturas continuam acontecendo normalmente, e o Bug 1 acima causa perdas que se acumulam ao longo de milhares de frames processados rapidamente.
 
-Isso explica perfeitamente por que os efeitos aparecem (estao sendo renderizados) mas com sprites completamente errados -- nao sao efeitos de magia, sao sprites aleatorios de outras posicoes no arquivo.
+#### Bug 3: Criaturas com posicao (0,0,0) nunca sao limpas do tile antigo
 
-### Problema Secundario: Opcode 0xa8 nao tratado
-
-Os logs mostram `Unknown opcode 0xa8` sendo disparado frequentemente, causando abandono de frames inteiros. Cada frame abandonado perde potencialmente dados importantes (movimentos de criaturas, atualizacoes de tile, efeitos). No protocolo 7.72, 0xa8 provavelmente e "creatureSquare" (marcacao de criatura) com payload de 5 bytes (u32 creatureId + u8 color). Opcodes 0xa4-0xa7 tambem podem aparecer e devem ser tratados.
+Na funcao `placeCreatureOnTile` (linha 543-553), criaturas com posicao `(0,0,0)` nao tem sua posicao antiga limpa (`if (c.x !== 0 || c.y !== 0 || c.z !== 0)`). Uma criatura recem-criada com posicao padrao (0,0,0) pode ficar duplicada se colocada no tile (0,0,0) e depois movida.
 
 ### Plano de Implementacao
 
-#### 1. Corrigir DatLoader - efeitos e misseis com patZ (`src/lib/tibiaRelic/datLoader.ts`)
+#### 1. Corrigir `moveCr` Format A -- guarda `if (cid === null)` (`src/lib/tibiaRelic/packetParser.ts`)
 
-Mudar `hasPatZ` de `false` para `true` nas linhas 80-89:
+O loop de busca por posicao (linhas 474-485) e o fallback (linhas 487-496) devem estar dentro de blocos `if (cid === null)`. Sem isso, cada `moveCr` pode remover uma criatura extra do tile.
 
 ```text
-Antes:
-  effects:  this.readEntry(bytes, view, p, false)   // ERRADO
-  missiles: this.readEntry(bytes, view, p, false)   // ERRADO
+Antes (simplificado):
+  if (stackpos valido && criatura encontrada) {
+    cid = ...; splice
+  }
+  // SEMPRE executa -- BUG!
+  for (busca por posicao) { ... }
+  if (cid === null) { fallback }
 
 Depois:
-  effects:  this.readEntry(bytes, view, p, true)    // CORRETO
-  missiles: this.readEntry(bytes, view, p, true)    // CORRETO
+  if (stackpos valido && criatura encontrada) {
+    cid = ...; splice
+  }
+  if (cid === null) {      // <-- GUARDA ADICIONADA
+    for (busca por posicao) { ... }
+  }
+  if (cid === null) { fallback }
 ```
 
-Tambem atualizar o comentario do metodo `readEntry` que diz "true for items" para refletir que e para todos os tipos em versao >= 7.55.
+#### 2. Melhorar limpeza pos-seek (`src/components/TibiarcPlayer.tsx`)
 
-#### 2. Adicionar handlers para opcodes faltantes (`src/lib/tibiaRelic/packetParser.ts`)
+Alem de remover orfaos, fazer o inverso: verificar se criaturas no `gs.creatures` que TEM posicao valida estao realmente presentes no tile correspondente. Se nao, reinseri-las. Isso corrige criaturas que foram removidas indevidamente durante o processamento rapido do seek.
 
-Adicionar tratamento para opcodes que estao causando abandono de frames:
-- **0xa4**: spellCooldown -- skip 2 bytes (u16 spellId)
-- **0xa5**: spellGroupCooldown -- skip 5 bytes (u8 groupId + u32 delay)
-- **0xa7**: setPlayerModes -- skip 3 bytes (u8 fight + u8 chase + u8 safe)
-- **0xa8**: creatureSquare -- skip 5 bytes (u32 creatureId + u8 color)
+```text
+// Apos limpar orfaos, reinserir criaturas validas que faltam no tile
+for (const [cid, c] of gs.creatures.entries()) {
+  const tile = gs.getTile(c.x, c.y, c.z);
+  if (!tile.some(i => i[0] === 'cr' && i[1] === cid)) {
+    tile.push(['cr', cid]);
+    gs.setTile(c.x, c.y, c.z, tile);
+  }
+}
+```
 
-Isso evita que frames inteiros sejam descartados por causa de opcodes desconhecidos.
+#### 3. Corrigir `placeCreatureOnTile` para sempre limpar posicao antiga (`src/lib/tibiaRelic/packetParser.ts`)
 
-#### 3. Manter mapeamento de IDs sem offset
-
-Manter `effectId: effectType` e `missileId: missileType` (sem +1). O protocolo padrao envia IDs 1-based, e o DatLoader armazena a partir de ID 1. Com o patZ corrigido, os sprite IDs serao os corretos.
+Remover a condicao `(c.x !== 0 || c.y !== 0 || c.z !== 0)` e sempre chamar `removeCreatureFromTile` na posicao anterior. A funcao `removeCreatureFromTile` ja e defensiva e nao faz nada se a criatura nao esta no tile.
 
 ### Arquivos a Editar
 
-1. **`src/lib/tibiaRelic/datLoader.ts`** -- Mudar `hasPatZ` para `true` em efeitos e misseis (linhas 80-89)
-2. **`src/lib/tibiaRelic/packetParser.ts`** -- Adicionar handlers para opcodes 0xa4, 0xa5, 0xa7, 0xa8
+1. **`src/lib/tibiaRelic/packetParser.ts`**
+   - Linhas 474-497: Adicionar `if (cid === null)` antes dos loops de busca
+   - Linhas 543-547: Remover condicional em `placeCreatureOnTile`
+
+2. **`src/components/TibiarcPlayer.tsx`**
+   - Linhas 220-231: Adicionar reinsercao de criaturas validas nos tiles apos limpeza de orfaos
 
 ### Resultado Esperado
 
-- Efeitos de sangue, fogo, energia aparecerao corretamente durante combate
-- Projéteis (flechas, magias) mostrarao os sprites corretos
-- Menos frames abandonados = menos bugs de floor e criaturas invisíveis
-- Textos de dano e XP continuarao funcionando com as cores corretas
+- Criaturas nao desaparecem mais apos seek/adiantar o video
+- Players como "Ondeth Waters" aparecem corretamente na posicao onde estao sendo atacados
+- Posicoes das criaturas ficam consistentes entre o GameState e os tiles
 
