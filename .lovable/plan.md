@@ -1,94 +1,47 @@
 
 
-## Correcao Definitiva: Demuxer TCP + moveCr
+## Reverter o Demuxer TCP (causa da regressao)
 
-### Descoberta Principal: Falta de Demuxer TCP
+### Diagnostico
 
-Analisei o codigo fonte do tibiarc (github.com/tibiacast/tibiarc) e descobri a causa raiz de TODOS os problemas de posicionamento:
+O demuxer TCP adicionado no `process()` esta ERRADO para o formato `.cam` do TibiaRelic. Cada frame do `.cam` ja contem opcodes puros (sem prefixos TCP de tamanho). O que acontece:
 
-**Cada frame do arquivo .cam contem MULTIPLOS pacotes TCP concatenados, cada um com seu proprio prefixo de tamanho (u16).** O tibiarc usa uma classe `Demuxer` para reassemblar esses sub-pacotes antes de processa-los. Nosso codigo trata cada frame como um unico blob de opcodes, o que causa:
+1. O demuxer le os primeiros 2 bytes como "tamanho do sub-pacote" -- mas esses bytes sao na verdade o primeiro opcode + dados
+2. Isso desalinha todo o parsing desde o primeiro byte de cada frame
+3. Resultado: tela de carregamento, criaturas sumindo, tudo bugado
 
-1. Prefixos TCP de sub-pacotes sao lidos como opcodes (ex: `0x07` = low byte de um tamanho)
-2. Frames inteiros sao abandonados quando um prefixo nao-opcode e encontrado
-3. Pacotes de movimento, adicao e remocao de criaturas sao PERDIDOS silenciosamente
-4. Estado do jogo (tiles, posicoes) fica desincronizado progressivamente
+**Evidencia**: antes do demuxer, tudo funcionava (criaturas apareciam, efeitos mostravam, so tinha problemas de posicionamento). Depois do demuxer, nada funciona.
 
-Evidencia nos logs: `Unknown opcode 0x07 at pos 13` -- o byte `0x07` e parte de um prefixo de tamanho TCP, nao um opcode real.
+O formato `.cam` do TibiaRelic grava frames assim:
+```text
+[timestamp u64] [payload_size u16] [opcodes puros...]
+```
+O `camParser.ts` ja extrai o payload corretamente. Cada payload e um bloco de opcodes sequenciais, sem sub-pacotes TCP.
 
-### Bug Secundario: moveCr Format A -- busca por posicao presa dentro do if
+### Plano
 
-No `moveCr` Format A, a busca por posicao (step 2) esta DENTRO do bloco `if (stackpos aponta pra criatura)`. Se o stackpos aponta para um item ou esta fora do range, o codigo pula direto pro fallback "qualquer criatura no tile", movendo a criatura ERRADA.
+#### 1. Reverter `process()` para processar opcodes diretamente (`src/lib/tibiaRelic/packetParser.ts`)
 
-### Bug Terciario: moveCr Format B (0xFFFF) invalido para 7.72
-
-O tibiarc so usa 0xFFFF em `moveCr` quando `ModernStacking` esta ativo (versoes > 8.x). Para 7.72, x=0xFFFF nunca deveria acontecer -- indica erro de parsing anterior. Nosso codigo tenta interpretar `fy` como creature ID, potencialmente movendo criaturas para posicoes erradas.
-
----
-
-### Plano de Implementacao
-
-#### 1. Implementar Demuxer TCP no `process()` (`src/lib/tibiaRelic/packetParser.ts`)
-
-Substituir a logica de deteccao de prefixo unico por um loop de sub-pacotes TCP:
+Remover o loop de sub-pacotes TCP e voltar a processar o payload inteiro como opcodes sequenciais:
 
 ```text
 process(payload):
-  while (bytes restantes >= 2):
-    packetLen = readU16()  // prefixo TCP
-    if (packetLen <= 0 || packetLen > bytes restantes):
-      // Nao e um prefixo valido -- tenta processar como opcodes raw
-      retrocede 2 bytes
-      processa opcodes ate o fim
-      break
-    endPos = pos + packetLen
-    while (pos < endPos):
-      opcode = readU8()
-      dispatch(opcode)
-    pos = endPos  // garante alinhamento
+  processOpcodes(r, payload.length)   // direto, sem demuxer
 ```
 
-Isso garante que TODOS os sub-pacotes dentro de cada frame sejam processados, eliminando os erros `Unknown opcode 0x07` e recuperando todos os pacotes de movimento/tile que estavam sendo perdidos.
+O metodo `processOpcodes` ja existe e funciona corretamente -- so precisa ser chamado diretamente.
 
-#### 2. Corrigir nesting do moveCr Format A (`src/lib/tibiaRelic/packetParser.ts`)
+#### 2. Manter as outras correcoes
 
-Mover a busca por posicao (step 2) para FORA do bloco condicional do stackpos:
+As correcoes do `moveCr` (guarda `if (cid === null)`) e do `placeCreatureOnTile` ja estao corretas e devem ser mantidas. O problema era SOMENTE o demuxer TCP.
 
-```text
-Antes:
-  if (stackpos aponta pra criatura) {
-    tenta match...
-    if (falhou) {
-      busca por posicao  // <-- PRESO AQUI DENTRO
-    }
-  }
-  if (cid === null) { any creature fallback }
+### Arquivo a Editar
 
-Depois:
-  if (stackpos aponta pra criatura) {
-    tenta match...
-  }
-  if (cid === null) {
-    busca por posicao    // <-- AGORA INDEPENDENTE
-  }
-  if (cid === null) { any creature fallback }
-```
-
-#### 3. Corrigir moveCr Format B (0xFFFF) (`src/lib/tibiaRelic/packetParser.ts`)
-
-Para protocolo 7.72, tratar x=0xFFFF como operacao invalida (nao existe ModernStacking). Apenas ler os bytes para manter o parser alinhado, mas NAO mover nenhuma criatura.
-
----
-
-### Arquivos a Editar
-
-1. **`src/lib/tibiaRelic/packetParser.ts`**
-   - Metodo `process()` (~linha 149-184): Implementar loop de sub-pacotes TCP
-   - Metodo `moveCr()` (~linhas 462-498): Corrigir nesting e tratamento de 0xFFFF
+1. **`src/lib/tibiaRelic/packetParser.ts`** -- Simplificar `process()` para chamar `processOpcodes` diretamente sem o loop de demuxer TCP
 
 ### Resultado Esperado
 
-- Todos os sub-pacotes TCP dentro de cada frame serao processados (fim dos `Unknown opcode 0x07`)
-- Criaturas aparecerao nas posicoes corretas (movimentos nao serao mais perdidos)
-- Consistencia entre efeitos de combate (sangue, magia) e posicao das criaturas
-- Floor bugs reduzidos drasticamente (dados de mapa nao serao mais descartados)
+- Volta a funcionar como antes (criaturas visiveis, efeitos corretos)
+- Mantem as correcoes de `moveCr` e `placeCreatureOnTile` que foram feitas anteriormente
+- Mantem os handlers de opcodes 0xa4/0xa5/0xa7/0xa8
 
