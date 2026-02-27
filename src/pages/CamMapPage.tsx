@@ -1,0 +1,325 @@
+import { useState, useEffect, useRef, useCallback } from 'react';
+import { Link } from 'react-router-dom';
+import { ArrowLeft, Map as MapIcon, ChevronUp, ChevronDown, Loader2, Info } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
+import { useTranslation } from '@/i18n';
+import { ThemeToggle } from '@/components/ThemeToggle';
+import { LanguageSelector } from '@/components/LanguageSelector';
+import { SprLoader } from '@/lib/tibiaRelic/sprLoader';
+import { DatLoader } from '@/lib/tibiaRelic/datLoader';
+import { MapTileRenderer, type TileData } from '@/lib/tibiaRelic/mapTileRenderer';
+import { supabase } from '@/integrations/supabase/client';
+import L from 'leaflet';
+import 'leaflet/dist/leaflet.css';
+
+// Tibia map center (roughly Thais area)
+const DEFAULT_CENTER_X = 32369;
+const DEFAULT_CENTER_Y = 32241;
+const DEFAULT_Z = 7;
+const CHUNK_TILES = 8;
+
+const CamMapPage = () => {
+  const { t } = useTranslation();
+  const mapContainerRef = useRef<HTMLDivElement>(null);
+  const mapRef = useRef<L.Map | null>(null);
+  const tileLayerRef = useRef<L.GridLayer | null>(null);
+  const rendererRef = useRef<MapTileRenderer | null>(null);
+  const tileDataCacheRef = useRef<Map<string, TileData[]>>(new Map());
+
+  const [currentFloor, setCurrentFloor] = useState(DEFAULT_Z);
+  const [loading, setLoading] = useState(true);
+  const [mouseCoords, setMouseCoords] = useState<{ x: number; y: number } | null>(null);
+  const [tileCount, setTileCount] = useState(0);
+
+  // Load sprite/dat data
+  useEffect(() => {
+    let cancelled = false;
+    const loadData = async () => {
+      try {
+        const [sprRes, datRes] = await Promise.all([
+          fetch('/tibiarc/data/Tibia.spr'),
+          fetch('/tibiarc/data/Tibia.dat'),
+        ]);
+        if (!sprRes.ok || !datRes.ok) throw new Error('Data files not found');
+        const [sprBuf, datBuf] = await Promise.all([sprRes.arrayBuffer(), datRes.arrayBuffer()]);
+        if (cancelled) return;
+
+        const spr = new SprLoader();
+        spr.load(sprBuf);
+        const dat = new DatLoader();
+        dat.load(datBuf);
+
+        rendererRef.current = new MapTileRenderer(spr, dat);
+        setLoading(false);
+      } catch (err) {
+        console.error('[CamMap] Failed to load data:', err);
+      }
+    };
+    loadData();
+    return () => { cancelled = true; };
+  }, []);
+
+  // Fetch tile count
+  useEffect(() => {
+    const fetchCount = async () => {
+      const { count } = await supabase
+        .from('cam_map_tiles')
+        .select('*', { count: 'exact', head: true })
+        .eq('z', currentFloor);
+      if (count !== null) setTileCount(count);
+    };
+    fetchCount();
+  }, [currentFloor]);
+
+  // Fetch tiles for a chunk area from database
+  const fetchChunkTiles = useCallback(async (
+    chunkX: number, chunkY: number, z: number
+  ): Promise<TileData[]> => {
+    const cacheKey = `${chunkX},${chunkY},${z}`;
+    const cached = tileDataCacheRef.current.get(cacheKey);
+    if (cached) return cached;
+
+    const baseX = chunkX * CHUNK_TILES;
+    const baseY = chunkY * CHUNK_TILES;
+
+    const { data, error } = await supabase
+      .from('cam_map_tiles')
+      .select('x, y, z, items')
+      .eq('z', z)
+      .gte('x', baseX)
+      .lt('x', baseX + CHUNK_TILES)
+      .gte('y', baseY)
+      .lt('y', baseY + CHUNK_TILES);
+
+    if (error || !data) return [];
+
+    const tiles: TileData[] = data.map((row: any) => ({
+      x: row.x,
+      y: row.y,
+      z: row.z,
+      items: row.items as number[],
+    }));
+
+    tileDataCacheRef.current.set(cacheKey, tiles);
+    return tiles;
+  }, []);
+
+  // Initialize Leaflet map
+  useEffect(() => {
+    if (loading || !mapContainerRef.current || mapRef.current) return;
+
+    // Custom CRS: 1 unit = 1 tile (32px at max zoom)
+    // Leaflet zoom 0 = 1px per tile, zoom 5 = 32px per tile
+    const maxZoom = 5;
+    const tileSize = 256;
+
+    const map = L.map(mapContainerRef.current, {
+      crs: L.CRS.Simple,
+      minZoom: 0,
+      maxZoom,
+      zoomControl: true,
+      attributionControl: false,
+    });
+
+    // Convert Tibia coords to Leaflet LatLng
+    // At zoom 5 (native), 1 pixel = 1 game pixel, 32px = 1 tile
+    // Leaflet simple CRS: lat = -y, lng = x (inverted Y)
+    const scale = CHUNK_TILES; // tiles per chunk
+    const centerLat = -DEFAULT_CENTER_Y / scale;
+    const centerLng = DEFAULT_CENTER_X / scale;
+    map.setView([centerLat, centerLng], 3);
+
+    mapRef.current = map;
+
+    // Track mouse position
+    map.on('mousemove', (e: L.LeafletMouseEvent) => {
+      const tileX = Math.floor(e.latlng.lng * scale);
+      const tileY = Math.floor(-e.latlng.lat * scale);
+      setMouseCoords({ x: tileX, y: tileY });
+    });
+
+    return () => {
+      map.remove();
+      mapRef.current = null;
+      tileLayerRef.current = null;
+    };
+  }, [loading]);
+
+  // Create/update tile layer when floor changes
+  useEffect(() => {
+    const map = mapRef.current;
+    const renderer = rendererRef.current;
+    if (!map || !renderer) return;
+
+    // Remove previous layer
+    if (tileLayerRef.current) {
+      map.removeLayer(tileLayerRef.current);
+      tileLayerRef.current = null;
+    }
+
+    // Clear data cache for new floor
+    tileDataCacheRef.current.clear();
+
+    const scale = CHUNK_TILES;
+
+    const CustomTileLayer = L.GridLayer.extend({
+      createTile(coords: L.Coords, done: L.DoneCallback) {
+        const tile = document.createElement('canvas');
+        tile.width = 256;
+        tile.height = 256;
+
+        // Convert Leaflet tile coords to Tibia chunk coords
+        // At zoom level z, each tile covers 2^(maxZoom-z) chunks
+        const factor = Math.pow(2, 5 - coords.z);
+        const chunkX = Math.floor(coords.x * factor);
+        const chunkY = Math.floor(-coords.y * factor - 1) * -1 - 1;
+
+        // For higher zoom levels, we render a single chunk
+        // For lower zoom levels, we'd need to render multiple chunks scaled down
+        if (coords.z >= 3) {
+        // At zoom 3+, render individual chunks
+          const tibiaChunkX = Math.floor(coords.x * factor);
+          const tibiaChunkY = Math.floor((-coords.y - 1) * factor);
+
+          fetchChunkTiles(tibiaChunkX, tibiaChunkY, currentFloor).then((tiles: TileData[]) => {
+            if (tiles.length > 0) {
+              const rendered = renderer.renderChunk(tibiaChunkX, tibiaChunkY, currentFloor, tiles);
+              if (rendered) {
+                const ctx = tile.getContext('2d')!;
+                ctx.imageSmoothingEnabled = false;
+                ctx.drawImage(rendered, 0, 0, 256, 256);
+              }
+            }
+            (done as any)(null, tile);
+          }).catch(() => (done as any)(null, tile));
+        } else {
+          // Low zoom: render multiple chunks into one tile
+          const chunksPerTile = Math.pow(2, 3 - coords.z);
+          const baseChunkX = coords.x * chunksPerTile;
+          const baseChunkY = (-coords.y - 1) * chunksPerTile;
+          const chunkPx = 256 / chunksPerTile;
+
+          const promises: Promise<void>[] = [];
+          const ctx = tile.getContext('2d')!;
+          ctx.imageSmoothingEnabled = false;
+
+          for (let cy = 0; cy < chunksPerTile; cy++) {
+            for (let cx = 0; cx < chunksPerTile; cx++) {
+              const tcx = baseChunkX + cx;
+              const tcy = baseChunkY + cy;
+              promises.push(
+                fetchChunkTiles(tcx, tcy, currentFloor).then(tiles => {
+                  if (tiles.length > 0) {
+                    const rendered = renderer.renderChunk(tcx, tcy, currentFloor, tiles);
+                    if (rendered) {
+                      ctx.drawImage(rendered, cx * chunkPx, cy * chunkPx, chunkPx, chunkPx);
+                    }
+                  }
+                })
+              );
+            }
+          }
+
+          Promise.all(promises).then(() => (done as any)(null, tile)).catch(() => (done as any)(null, tile));
+        }
+
+        return tile;
+      },
+    });
+
+    const layer = new (CustomTileLayer as any)({
+      tileSize: 256,
+      minZoom: 0,
+      maxZoom: 5,
+      noWrap: true,
+    }) as L.GridLayer;
+
+    layer.addTo(map);
+    tileLayerRef.current = layer;
+  }, [currentFloor, loading, fetchChunkTiles]);
+
+  const floorDisplay = 7 - currentFloor;
+
+  return (
+    <div className="min-h-screen bg-background flex flex-col">
+      {/* Top bar */}
+      <div className="bg-card border-b border-border/50 px-4 py-3 flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <Link to="/" className="text-gold hover:text-gold/80 transition-colors">
+            <ArrowLeft className="w-5 h-5" />
+          </Link>
+          <div className="flex items-center gap-2">
+            <MapIcon className="w-5 h-5 text-gold" />
+            <h1 className="font-heading text-lg text-gold">Cam Map</h1>
+          </div>
+        </div>
+        <div className="flex items-center gap-2">
+          <LanguageSelector />
+          <ThemeToggle />
+        </div>
+      </div>
+
+      {/* Map container */}
+      <div className="flex-1 relative">
+        {loading ? (
+          <div className="absolute inset-0 flex items-center justify-center bg-background">
+            <div className="flex flex-col items-center gap-3">
+              <Loader2 className="w-8 h-8 text-gold animate-spin" />
+              <p className="text-sm text-muted-foreground">Carregando sprites...</p>
+            </div>
+          </div>
+        ) : (
+          <div ref={mapContainerRef} className="absolute inset-0" style={{ background: '#1a2420' }} />
+        )}
+
+        {/* Floor controls overlay */}
+        {!loading && (
+          <div className="absolute top-4 right-4 z-[1000] flex flex-col items-center gap-1 bg-card/90 border border-border/50 rounded-sm p-2">
+            <Button
+              variant="outline"
+              size="icon"
+              className="border-border/50 h-8 w-8"
+              onClick={() => setCurrentFloor(prev => Math.max(0, prev - 1))}
+              disabled={currentFloor <= 0}
+            >
+              <ChevronUp className="w-4 h-4" />
+            </Button>
+            <Badge variant="outline" className="min-w-[60px] justify-center text-xs font-mono">
+              {floorDisplay > 0 ? `+${floorDisplay}` : floorDisplay}
+            </Badge>
+            <Button
+              variant="outline"
+              size="icon"
+              className="border-border/50 h-8 w-8"
+              onClick={() => setCurrentFloor(prev => Math.min(15, prev + 1))}
+              disabled={currentFloor >= 15}
+            >
+              <ChevronDown className="w-4 h-4" />
+            </Button>
+          </div>
+        )}
+
+        {/* Coordinates overlay */}
+        {!loading && mouseCoords && (
+          <div className="absolute bottom-4 left-4 z-[1000] bg-card/90 border border-border/50 rounded-sm px-3 py-1.5">
+            <span className="text-xs font-mono text-muted-foreground">
+              X: {mouseCoords.x} | Y: {mouseCoords.y} | Z: {currentFloor}
+            </span>
+          </div>
+        )}
+
+        {/* Tile count overlay */}
+        {!loading && (
+          <div className="absolute bottom-4 right-4 z-[1000] bg-card/90 border border-border/50 rounded-sm px-3 py-1.5">
+            <span className="text-xs text-muted-foreground">
+              {tileCount.toLocaleString()} tiles mapeados neste andar
+            </span>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
+
+export default CamMapPage;
