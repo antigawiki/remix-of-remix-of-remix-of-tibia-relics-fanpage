@@ -1,98 +1,54 @@
 
 
-## Solucao Definitiva: TCP Demuxer Robusto com Deteccao Automatica
+## Diagnostico e Correcao: Floor Mismatch e Criaturas Invisíveis
 
-### Diagnostico
+### Causa Raiz Identificada
 
-Os erros "Unknown opcode 0x0, 0x1, 0x2, 0x8" sao **prefixos TCP u16** (length headers de sub-pacotes) que nao estao sendo processados corretamente. O fallback TCP atual falha porque:
+Apos analise detalhada comparando com OTClient e tibiarc, identifiquei **dois bugs concretos**:
 
-1. Para opcode 0x0: a checagem `possibleLen > 0` rejeita pacotes de tamanho 0
-2. Para opcodes 0x1/0x2/0x8: o byte ja foi consumido como u8, entao o `peek16()` le bytes desalinhados
-3. O fallback so tenta TCP APOS falhar no dispatch, perdendo contexto
+### BUG 1 - CRITICO: `floorChanged` nunca dispara (cleanup de criaturas nao executa)
 
-### Causa Raiz
-
-O formato `.cam` do tibiarc usa um TCP demuxer (confirmado pelo `web_player.cpp` que usa `Recordings::Read` com demuxer interno). Cada frame payload contem **sub-pacotes TCP** com prefixo u16 de tamanho. Porem, nem todos os frames usam esse formato -- alguns comecam direto com opcodes validos.
-
-### Solucao: Deteccao Automatica por Frame
-
-Modificar `process()` para detectar automaticamente se o frame usa TCP sub-packets ou opcodes diretos:
-
-1. Peek nos primeiros 2 bytes do frame como u16 (possivel TCP length)
-2. Se o valor faz sentido como tamanho TCP (> 0, < tamanho total do frame, e o primeiro byte APOS o sub-pacote tambem e um u16 valido OU o sub-pacote consome o frame inteiro), usar modo TCP
-3. Se o primeiro byte e um opcode valido (0x0A-0xF1), usar modo direto
-4. Heuristica: se o primeiro byte < 0x0A (nao e um opcode valido), e quase certamente um TCP length prefix
-
-### Implementacao
-
-#### Arquivo: `src/lib/tibiaRelic/packetParser.ts`
-
-**1. Substituir `process()` com deteccao automatica:**
-
+Em `syncPlayerToCamera()`, a deteccao de mudanca de floor e:
 ```text
-process(payload):
-  r = new Buf(payload)
-  
-  // Heuristica: primeiro byte < 0x0A nao e opcode valido no protocolo 7.72
-  // Opcodes validos comecam em 0x0A (login). Bytes < 0x0A indicam TCP prefix.
-  firstByte = payload[0]
-  
-  if (firstByte < 0x0A AND payload.length >= 2):
-    // TCP demuxer mode
-    processTcpDemux(r, payload.length)
-  else:
-    // Direct opcodes mode (com TCP fallback para sub-packets intermediarios)
-    processOpcodes(r, payload.length)
+const floorChanged = player.z !== g.camZ;
 ```
 
-**2. Novo metodo `processTcpDemux()`:**
+Porem, durante `floorUp`/`floorDown`, o `readTileItems` ja atualiza `player.z` para o novo floor ANTES de `syncPlayerToCamera` rodar. Resultado: `player.z === g.camZ` e `floorChanged = false`. O codigo de limpeza de criaturas distantes **nunca executa**, deixando criaturas "fantasma" de floors anteriores no estado.
 
-```text
-processTcpDemux(r, totalLen):
-  while r.pos + 2 <= totalLen:
-    subLen = r.u16()
-    if subLen == 0:
-      continue  // skip empty TCP packets
-    if r.pos + subLen > totalLen:
-      // Invalid length - maybe not TCP after all, try as opcodes
-      r.pos -= 2  // rewind the u16
-      processDirectOpcodes(r, totalLen)  // no TCP fallback to avoid recursion
-      return
-    subEnd = r.pos + subLen
-    processDirectOpcodes(r, subEnd)
-    r.pos = subEnd  // ensure alignment even if opcode parse stopped early
-```
+**Correcao**: Passar o `oldZ` explicitamente para `syncPlayerToCamera` a partir dos handlers `floorUp`/`floorDown`, em vez de tentar detectar automaticamente.
 
-**3. Simplificar `processOpcodes()` para incluir TCP fallback inline:**
+### BUG 2 - ALTO: HUD renderiza nomes em area maior que Pass 3 renderiza sprites
 
-```text
-processOpcodes(r, endPos):
-  while r.pos < endPos:
-    t = r.u8()
-    if dispatch(t, r): continue
-    
-    // Unknown opcode - try TCP demux for rest of frame
-    r.pos -= 1
-    processTcpDemux(r, endPos)
-    return
-```
+O HUD usa viewport `tx >= -2 && tx <= VP_W + 3` (20 colunas), mas Pass 3 (sprites) itera `tx = -1 a VP_W + 2` (18 colunas). Criaturas nas bordas tem nome sem sprite.
 
-**4. `processDirectOpcodes()` - sem fallback (para uso dentro de sub-packets TCP):**
+**Correcao**: Alinhar os bounds do HUD com os bounds do Pass 3.
 
-Renomear o atual `processSubPacket` para `processDirectOpcodes` -- processa opcodes ate endPos sem tentar TCP fallback. Usado DENTRO de sub-pacotes TCP ja demuxados.
+### Plano de Implementacao
 
-### Porque Esta Solucao e Definitiva
+**Arquivo: `src/lib/tibiaRelic/packetParser.ts`**
 
-- Frames que comecam com TCP (byte < 0x0A) sao demuxados corretamente desde o inicio
-- Frames que comecam com opcodes diretos (byte >= 0x0A) funcionam normalmente
-- Se um opcode desconhecido aparece no meio de opcodes diretos, tenta TCP demux pro resto
-- Pacotes TCP de tamanho 0 sao ignorados (resolve o erro 0x00)
-- Pacotes TCP de tamanho 1-8 sao processados corretamente (resolve 0x01, 0x02, 0x08)
-- Nenhuma recursao infinita (processDirectOpcodes nunca tenta TCP)
-- Tolerante a falhas: se TCP demux falha, para graciosamente
+1. Modificar `syncPlayerToCamera` para aceitar um parametro opcional `oldZ`:
+   - `syncPlayerToCamera(oldZ?: number)`
+   - Usar `oldZ !== undefined ? oldZ !== g.camZ : player.z !== g.camZ` para `floorChanged`
+
+2. Nos handlers `floorUp` e `floorDown`, passar `oldZ` para `syncPlayerToCamera`:
+   - `floorUp`: `this.syncPlayerToCamera(oldZ)` onde `oldZ` e o camZ antes do decremento
+   - `floorDown`: `this.syncPlayerToCamera(oldZ)` onde `oldZ` e o camZ antes do incremento
+
+3. Tambem passar `oldZ` nos handlers `mapDesc` (0x64) e player position (0x9a) que chamam `syncPlayerToCamera`, passando o camZ anterior ao update.
+
+**Arquivo: `src/lib/tibiaRelic/renderer.ts`**
+
+4. Alinhar o viewport do HUD com o Pass 3:
+   - Mudar `tx2 >= -2 && tx2 <= VP_W + 3 && ty2 >= -2 && ty2 <= VP_H + 3`
+   - Para `tx2 >= -1 && tx2 <= VP_W + 2 && ty2 >= -1 && ty2 <= VP_H + 2`
+
+5. Adicionar log temporario nos floor changes para diagnostico futuro:
+   - Console.log em `floorUp`/`floorDown` com oldZ, newZ, e contagem de criaturas limpas
 
 ### Resultado Esperado
 
-- Zero erros "Unknown opcode" no console
-- Tiles renderizados nas posicoes corretas
-- Estabilidade durante seek e playback longo
+- Criaturas de floors distantes sao corretamente removidas durante transicoes
+- Nomes e sprites sempre aparecem juntos (mesma area de viewport)
+- Logs de diagnostico permitem identificar problemas residuais rapidamente
+
