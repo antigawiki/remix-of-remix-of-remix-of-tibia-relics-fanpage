@@ -221,12 +221,8 @@ const TibiarcPlayer = ({ className }: TibiarcPlayerProps) => {
         c.walking = false;
         c.walkOffsetX = 0;
         c.walkOffsetY = 0;
-        // Remove dead or orphaned creatures (except player)
+        // Remove orphaned creatures not on any tile (except player)
         if (cid === engine.gs.playerId) continue;
-        if (c.health <= 0) {
-          engine.gs.creatures.delete(cid);
-          continue;
-        }
         const tile = engine.gs.getTile(c.x, c.y, c.z);
         if (!tile.some(i => i[0] === 'cr' && i[1] === cid)) {
           engine.gs.creatures.delete(cid);
