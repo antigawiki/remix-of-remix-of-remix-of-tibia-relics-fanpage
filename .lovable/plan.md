@@ -1,64 +1,61 @@
 
-## Fix Outfit Colors + Rendering Issues
 
-### Bug 1: Color Algorithm is COMPLETELY Wrong (Critical)
+## Fix Camera Freezing: Player Position Desync
 
-The current code uses an HSI-to-RGB formula with cosine functions in 3 sectors. The **actual OTClient source code** (outfit.cpp) uses a completely different algorithm: a 6-sector linear HSV-like interpolation with NO cosine functions at all.
+### Root Cause (Critical)
 
-**OTClient's actual algorithm** (from outfit.cpp):
+The renderer derives the camera position from `player.x / player.y` (the player creature's stored coordinates), NOT from `gs.camX / gs.camY`:
+
 ```text
-loc1 = hue [0..1)
-loc2 = saturation
-loc3 = value
-
-6 sectors based on hue:
-  hue < 1/6: red=V, blue=V*(1-S), green=blue+(V-blue)*6*hue
-  hue < 2/6: green=V, blue=V*(1-S), red=green-(V-blue)*(6*hue-1)
-  hue < 3/6: green=V, red=V*(1-S), blue=red+(V-red)*(6*hue-2)
-  hue < 4/6: blue=V, red=V*(1-S), green=blue-(V-red)*(6*hue-3)
-  hue < 5/6: blue=V, green=V*(1-S), red=green+(V-green)*(6*hue-4)
-  else:      red=V, green=V*(1-S), blue=red-(V-green)*(6*hue-5)
+const renderCamX = player ? player.x : g.camX;   // line 183
+const renderCamY = player ? player.y : g.camY;   // line 184
 ```
 
-Our code uses `cos()` based HSI formula in 3 sectors -- this produces fundamentally different color values. That's why red appears as pink/magenta.
+However, **multiple opcodes update `gs.camX/Y/Z` without updating the player creature's position**:
 
-**Second bug in hue**: We compute hue as `(hueIndex - 1) / 18` but OTClient uses `hueIndex / 18.0` (where hueIndex = `color % 19`). This shifts every color by one step.
+1. **Opcode 0x9a (Player Position / Cancel Walk)** -- Updates `gs.camX/Y/Z` only. This fires during teleports, cancel-walk corrections, and repositions.
+2. **Opcodes 0x65-0x68 (Map Scroll)** -- Increment `gs.camX/Y` but never touch `player.x/y`. In the Tibia protocol, scroll packets fire when the player walks, alongside a `moveCr` packet that updates the creature. But if the `moveCr` parse fails (or is in a different frame), the camera stays stuck.
+3. **Opcodes 0xbe/0xbf (Floor Up/Down)** -- Update `gs.camX/Y/Z` (including the diagonal offset `camX++/camY++`) but never update the player creature's floor or position.
+4. **Opcode 0x64 (Full Map Description)** -- Updates `gs.camX/Y/Z`. The player creature IS in the tile data and gets repositioned via `readTileItems`, BUT if the tile read encounters a parse error and aborts, the player creature retains its old position while `gs.camX/Y/Z` has already jumped.
 
-**Fix**: Replace `hsiToRgb` and `getOutfitColor` entirely with OTClient's exact algorithm from outfit.cpp.
+This means any time the camera position diverges from the player creature's stored position (which happens frequently during teleports, floor changes, or parse errors), the renderer shows a stale view -- the "frozen camera" the user sees.
 
-### Bug 2: Grayscale Colors Wrong
+### Solution: Sync Player Position After Camera Updates
 
-OTClient's grayscale case:
-- `loc2 = 0`, `loc3 = 1 - color / 19 / 7`
-- Then goes through the if(loc2==0) path returning `(loc3*255, loc3*255, loc3*255)`
+Add a `syncPlayerToCamera()` helper method that updates the player creature's x/y/z to match `gs.camX/Y/Z`. Call it after every opcode that modifies camera coordinates.
 
-Our code computes intensity differently: `1.0 - groupIndex / 7` which is equivalent. But the early-return at loc3==0 and loc2==0 is missing, which could cause edge cases.
-
-**Fix**: Match OTClient's exact flow including early returns for black and grayscale.
-
-### Bug 3: Stuttering in Cities
-
-Dense city tiles have many unique sprites. Each `getNativeSprite()` call that misses cache creates a new canvas element synchronously, causing frame drops. Additionally, the tint cache grows unbounded.
-
-**Fix**: 
-- Add periodic cache size limits (evict oldest entries when cache exceeds threshold)
-- This won't fully eliminate stutter but will prevent memory growth
-
-### Bug 4: Screen Appears "Frozen" During Combat
-
-This is largely expected -- when creatures fight in place, without spell effects or damage numbers rendered, nothing visually changes except HP bars. The protocol sends effect opcodes (0x83, 0x84, 0x85) but we skip them.
-
-No code change for this in this iteration -- effect rendering would be a separate feature.
+This matches OTClient behavior where the "followed creature" position and camera position are always kept in sync by the protocol handler.
 
 ### Files to Edit
 
-**`src/lib/tibiaRelic/renderer.ts`**:
-1. Replace `hsiToRgb` function with OTClient's exact 6-sector algorithm (no cosines)
-2. Replace `getOutfitColor` to use `hueIndex / 18.0` instead of `(hueIndex-1) / 18`
-3. Match OTClient's exact grayscale and early-return logic
-4. Add cache size limiting to prevent unbounded memory growth
+**`src/lib/tibiaRelic/packetParser.ts`**:
+
+1. Add `syncPlayerToCamera()` method:
+   - Gets the player creature from `gs.creatures.get(gs.playerId)`
+   - Removes it from its old tile
+   - Updates `player.x/y/z` to `gs.camX/Y/Z`
+   - Places it on the new tile
+
+2. Call `syncPlayerToCamera()` at the end of:
+   - `mapDesc` (0x64) -- after reading all tile data
+   - `scroll` (0x65-0x68) -- after successful map edge read
+   - `floorUp` (0xbe) -- after camera position adjustment
+   - `floorDown` (0xbf) -- after camera position adjustment
+   - Opcode 0x9a handler -- after setting camX/Y/Z
+
+### Why This Fixes the Freezing
+
+The user's screenshots show: at timestamp ~58:00, the player's HP changes (combat is happening) but the view is stuck on an empty jungle. Meanwhile the real game (attachment 4) shows the player in a town with other players. This means:
+- The server sent a teleport (mapDesc 0x64 or position update 0x9a) moving the player to the town
+- `gs.camX/Y` was updated to the town coordinates
+- But `player.x/y` stayed at the old jungle coordinates
+- The renderer kept showing the jungle because it follows `player.x/y`
+- HP updates (0x8c) still work because they reference creature ID, not position
+
+After this fix, any camera update immediately repositions the player creature, so the renderer always shows the correct location.
 
 ### Expected Results
-- All outfit colors match the original Tibia client exactly (red is red, not pink)
-- Reduced memory usage from cache management
-- No regression in rendering or animation
+- Camera immediately follows teleports, floor changes, and walk corrections
+- No more "frozen" view while HP bars change
+- Smooth transitions between different map areas
+
