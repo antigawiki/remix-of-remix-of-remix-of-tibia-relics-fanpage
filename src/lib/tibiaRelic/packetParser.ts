@@ -337,7 +337,10 @@ export class PacketParser {
         c.x = tx; c.y = ty; c.z = tz;
         // Smooth walking: set pixel offset from previous tile
         c.walking = true;
-        const walkDuration = c.speed > 0 ? Math.max(100, Math.floor(1000 / (c.speed / 220))) : 300;
+        const isDiagonal = dx !== 0 && dy !== 0;
+        const groundSpeed = 150; // default ground speed
+        const baseDuration = c.speed > 0 ? Math.floor(groundSpeed * 1000 / Math.max(1, c.speed)) : 300;
+        const walkDuration = Math.max(100, isDiagonal ? Math.floor(baseDuration * 3) : baseDuration);
         c.walkDuration = walkDuration;
         c.walkStartTick = performance.now();
         c.walkEndTick = c.walkStartTick + walkDuration;

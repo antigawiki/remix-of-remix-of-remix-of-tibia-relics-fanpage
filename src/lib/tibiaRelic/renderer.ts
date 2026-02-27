@@ -143,6 +143,15 @@ export class Renderer {
     const ph = Math.floor(now / 200) % 4; // time-based animation: 200ms per frame
     this.hudEntries = [];
 
+    // Smooth camera follow: apply player's walk offset to entire viewport
+    let camOffX = 0, camOffY = 0;
+    const player = g.playerId ? g.creatures.get(g.playerId) : undefined;
+    if (player && player.walking && now < player.walkEndTick) {
+      const progress = Math.min(1, (now - player.walkStartTick) / player.walkDuration);
+      camOffX = Math.round(player.walkOffsetX * (1 - progress));
+      camOffY = Math.round(player.walkOffsetY * (1 - progress));
+    }
+
     // Determine visible floors
     const floors = this.getVisibleFloors(z);
 
@@ -152,15 +161,15 @@ export class Renderer {
       const cx0 = g.camX - 8 + offset;
       const cy0 = g.camY - 6 + offset;
 
-      for (let ty = 0; ty < VP_H + 3; ty++) {
-        for (let tx = 0; tx < VP_W + 3; tx++) {
+      for (let ty = -1; ty < VP_H + 3; ty++) {
+        for (let tx = -1; tx < VP_W + 3; tx++) {
           const wx = cx0 + tx;
           const wy = cy0 + ty;
           const items = g.getTile(wx, wy, fz);
           if (items.length === 0) continue;
 
-          const bx = tx * TILE_PX;
-          const by = ty * TILE_PX;
+          const bx = tx * TILE_PX + camOffX;
+          const by = ty * TILE_PX + camOffY;
 
           // Pass 1: Ground + clip + bottom (stackPrio 0, 1, 2)
           let elevationOffset = 0;
@@ -213,12 +222,18 @@ export class Renderer {
     const scaleY = canvasHeight / NATIVE_H;
 
     // Draw creature HUDs AFTER upscale on the display canvas (high-res text)
-    const now2 = this.lastDrawTime || performance.now();
+    // Recompute camera offset for HUD positioning
+    let hudCamOffX = 0, hudCamOffY = 0;
+    if (player && player.walking && now < player.walkEndTick) {
+      const progress = Math.min(1, (now - player.walkStartTick) / player.walkDuration);
+      hudCamOffX = player.walkOffsetX * (1 - progress);
+      hudCamOffY = player.walkOffsetY * (1 - progress);
+    }
     for (const c of g.creatures.values()) {
       if (c.z !== z) continue;
       const tx2 = c.x - (g.camX - 8);
       const ty2 = c.y - (g.camY - 6);
-      if (tx2 >= 0 && tx2 <= VP_W + 1 && ty2 >= 0 && ty2 <= VP_H + 1) {
+      if (tx2 >= -2 && tx2 <= VP_W + 3 && ty2 >= -2 && ty2 <= VP_H + 3) {
         const tileItems = g.getTile(c.x, c.y, z);
         let elev = 0;
         for (const ti of tileItems) {
@@ -228,11 +243,11 @@ export class Renderer {
           }
         }
         // Interpolate walk offset for HUD positioning
-        let hudOx = 0, hudOy = 0;
-        if (c.walking && now2 < c.walkEndTick) {
-          const progress = Math.min(1, (now2 - c.walkStartTick) / c.walkDuration);
-          hudOx = c.walkOffsetX * (1 - progress);
-          hudOy = c.walkOffsetY * (1 - progress);
+        let hudOx = hudCamOffX, hudOy = hudCamOffY;
+        if (c.walking && now < c.walkEndTick) {
+          const progress = Math.min(1, (now - c.walkStartTick) / c.walkDuration);
+          hudOx += c.walkOffsetX * (1 - progress);
+          hudOy += c.walkOffsetY * (1 - progress);
         }
         const sx = (tx2 * TILE_PX + hudOx) * scaleX;
         const sy = (ty2 * TILE_PX - elev + hudOy) * scaleY;
