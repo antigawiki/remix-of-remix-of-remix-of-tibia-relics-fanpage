@@ -1,78 +1,35 @@
 
-## Comprehensive Bug Fix: Revert Broken Changes + Keep Good Ones
 
-### Root Cause Analysis
+## Fix Dead Creature Ghost + Effect Sprite Offset
 
-The previous round of changes introduced **3 critical regressions** while fixing dead monster cleanup. Here's exactly what went wrong:
+### Bug 1: Dead creature alive body visible for ~1 second alongside corpse
 
-### Bug 1: Creatures in Wrong Positions (Tsunade far from Resenha)
+**What's happening**: The death sequence in Tibia protocol is:
+1. Server sends health=0 (opcode 0x8c)
+2. Server adds corpse item to tile (addThing)
+3. Server removes creature from tile (delThing)
 
-**Cause**: `delThing` (opcode 0x6c) now deletes creatures from `gs.creatures`. This is WRONG.
+Between steps 1-3, the creature with health=0 is STILL drawn with its alive outfit because we removed the `health > 0` check from Pass 3. This means both the corpse AND the alive-looking creature render simultaneously for up to 1 second.
 
-In OTClient's `parseTileRemoveThing`, removing a thing from a tile does NOT destroy the creature object. The creature data (name, outfit, position) is preserved. In Tibia protocol, creatures can be moved via `delThing` + `addThing` sequences (not just `moveCr`). Deleting from `gs.creatures` in `delThing` destroys the creature's data, so when it's re-added, it gets a fresh object with no name, wrong outfit, or wrong position.
+**Fix** (`src/lib/tibiaRelic/renderer.ts`):
+- Re-add `c.health > 0` check in Pass 3 (creature body drawing, line 271). Creatures at 0 HP become invisible immediately, and the corpse item (already added to the tile) shows in its place. The gap between health=0 and corpse appearing is typically 1-2 frames (imperceptible), much better than showing both simultaneously for a full second.
 
-**Fix**: Remove the creature deletion from `delThing`. Only delete from the tile array.
+### Bug 2: Effect/projectile sprites showing wrong visuals
 
-### Bug 2: Attack Effects Completely Disappeared
+**What's happening**: The DatLoader stores effects starting at ID 1 (`it.id = 1 + i`). Standard Tibia 7.72 protocol sends 1-based effect IDs (e.g., CONST_ME_DRAWBLOOD = 1). The code currently does `effectType + 1`, which maps server ID 1 to dat ID 2 -- shifting every effect and projectile by one position, showing the WRONG sprite.
 
-**Cause**: Effect and missile IDs were changed from `effectType + 1` to `effectType`.
+When we previously tried removing `+1`, effects seemed to "disappear," but that was likely due to other visual bugs happening simultaneously (invisible creatures, etc.) making it hard to evaluate.
 
-After checking OTClient source code, the protocol sends 1-based effect IDs and the dat stores effects starting at ID 1. Direct mapping SHOULD work. However, this specific TibiaRelic server appears to use 0-based IDs (the original `+1` code was working -- effects showed correct visuals). Since `effectType + 1` was producing visible effects before, we must restore it.
-
-**Fix**: Restore `effectType + 1` and `missileType + 1` for the ID mapping.
-
-### Bug 3: Dead Monster Invisible Gap (alive sprite vanishes, delay, then corpse)
-
-**Cause**: Renderer Pass 3 now skips drawing creatures with `health <= 0`. The death sequence is:
-1. Server sends health update (0x8c): health = 0
-2. (Some frames pass)
-3. Server sends chgThing (0x6b): replaces creature with corpse item
-
-Between steps 1 and 2, the creature is invisible because the renderer refuses to draw it. This creates the visible "gap."
-
-In OTClient, dead creatures are still drawn with their alive outfit until the server replaces them with a corpse. Only the HUD (name/health bar) should be hidden for dead creatures.
-
-**Fix**: Remove the `health > 0` check from Pass 3 (creature body drawing). Keep the `health <= 0` skip only in the HUD loop (already there).
-
-### Bug 4: No Walk Animation
-
-**Cause**: Side effect of `delThing` deleting creatures from `gs.creatures`. When a creature's data is destroyed and recreated, the walk animation state (walkStartTick, walkEndTick, walkOffset) is lost. The creature appears to teleport instead of walking smoothly.
-
-**Fix**: Resolved by fixing Bug 1 (reverting `delThing` deletion).
-
----
-
-### What to KEEP from previous changes
-
-- `chgThing` creature deletion -- When a creature's tile slot is replaced by an item (corpse), deleting from `gs.creatures` IS correct. This is the proper death cleanup.
-- Keyframe/snapshot system -- The `GameState.snapshot()` / `restore()` system and keyframe-based seeking are solid improvements.
-- HUD validation -- The HUD loop already validates creature is on-tile and has health > 0. This stays.
-- Post-seek pruning of orphaned creatures -- Good, but remove the `health <= 0` deletion (a creature can be at 0 HP briefly during death sequence and still be valid).
-
----
+**Fix** (`src/lib/tibiaRelic/packetParser.ts`):
+- Opcode 0x83 (Magic Effect): Change `effectType + 1` back to `effectType` (direct 1-based mapping)
+- Opcode 0x85 (Projectile): Change `missileType + 1` back to `missileType` (direct 1-based mapping)
 
 ### Files to Edit
 
-#### 1. `src/lib/tibiaRelic/packetParser.ts`
-
-**`delThing` method (lines 399-412)**: Remove the creature deletion from `gs.creatures`. Only splice from tile array.
-
-**Effect opcode 0x83 (line 231)**: Restore `effectType + 1` for the effectId.
-
-**Missile opcode 0x85 (line 242)**: Restore `missileType + 1` for the missileId.
-
-#### 2. `src/lib/tibiaRelic/renderer.ts`
-
-**Pass 3 creature drawing (line 271)**: Remove the `c.health > 0` check. Draw all creatures found on tiles regardless of health. The death cleanup via `chgThing` handles removing dead creatures properly.
-
-#### 3. `src/components/TibiarcPlayer.tsx`
-
-**Post-seek pruning (lines 220-234)**: Remove the `health <= 0` deletion. Only prune truly orphaned creatures (those not found on any tile).
+1. **`src/lib/tibiaRelic/renderer.ts`** (line 271) -- Add `c.health > 0` condition to creature drawing in Pass 3
+2. **`src/lib/tibiaRelic/packetParser.ts`** (lines 231, 242) -- Remove `+ 1` from effectId and missileId
 
 ### Expected Results
-- Creatures appear at correct positions (Tsunade next to Resenha)
-- Attack effects and projectiles render with correct sprites
-- Death sequence is seamless: alive sprite shown until corpse replaces it
-- Walk animations work properly
-- Seek still works fast via keyframe system
-- Dead creature HUD (name/health bar) still hidden correctly
+- Dead monsters disappear immediately when health reaches 0, corpse replaces them seamlessly
+- Magic effects and projectile sprites show the correct visual for each attack type
+
