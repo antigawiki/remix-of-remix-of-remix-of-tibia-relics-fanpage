@@ -1,53 +1,83 @@
 
-Objetivo: eliminar o sumiço intermitente do player com correção de protocolo + consistência de estado, alinhado ao comportamento de clientes open source (OTClient/tibiarc).
 
-Diagnóstico aprofundado (comparação com open source):
-1) `moveCr` no formato `0xFFFF + creatureId` está incorreto no parser atual.
-- Referência (OTClient `getMappedThing` e tibiarc `ParseTileMoveCreature`): quando `x == 0xFFFF`, lê `u32 creatureId` e move por ID.
-- Atual: lê como `pos3 + stack`, tenta achar criatura por destino e calcula `dx = tx - 65535`, gerando offsets absurdos e perda visual (player “some”).
+## Corrigir Player Sumindo e Descentralizado
 
-2) Divergência de opcodes 7.72 relevantes:
-- tibiarc trata `0x1D` (pingback), `0xB6` (move delay), `0xB7`, `0xB8`, `0xDD`.
-- Parser atual ignora alguns deles, causando `Unknown opcode` e aborto de frame (perda de updates).
+### Problemas Identificados
 
-3) Mutação de câmera antes de validar payload em opcodes de mapa:
-- `scroll/floorUp/floorDown` já alteram `camX/camY/camZ` antes da leitura de tiles.
-- Em pacote inválido/parcial isso deixa estado “quebrado” (player fora da viewport).
+**1. Player some durante playback acelerado ou seek**
+Quando multiplos pacotes de movimento sao processados em um unico frame de render (especialmente em 2x-8x ou apos seek), o `moveCr` pode falhar em encontrar a criatura correta no tile fonte. O fallback pega a PRIMEIRA criatura do tile (que pode nao ser o player), deixando o player "orfao" no tile antigo enquanto a camera (camX/camY) avanca via opcode `scroll`. Resultado: player fora do viewport = invisivel.
 
-Plano de implementação:
+**2. Player descentralizado (viewport parece maior do que mostra)**
+Durante playback acelerado, multiplos `moveCr` para o player acontecem entre dois renders. Cada um sobrescreve o `walkOffset` do anterior. A camera (camX/camY) pula N tiles, mas o walk offset so compensa 1 tile. Resultado: player aparece N-1 tiles deslocado do centro.
 
-Arquivos:
-- `src/lib/tibiaRelic/packetParser.ts`
-- (validação apenas) `src/lib/tibiaRelic/renderer.ts`
+**3. Walk offsets residuais apos seek**
+Apos seek, os pacotes sao reaplicados rapidamente. Walks ficam com `walkStartTick = performance.now()` do momento do seek, criando animacoes fantasma que deslocam a camera.
 
-Fase 1 — Correção crítica de movimento por ID:
-- Reescrever `moveCr` para suportar dois formatos exatamente:
-  - A) `fromPos + stack + toPos`
-  - B) `0xFFFF + creatureId + toPos`
-- No formato B: obter `from` pelo estado atual da criatura (`c.x/c.y/c.z`) e remover corretamente do tile antigo.
-- Atualizar direção e walk offset usando `from real -> to`, nunca com `fx=65535`.
+### Correcoes Planejadas
 
-Fase 2 — Sincronização robusta tile<->creature:
-- Adicionar helper interno para remover `cid` de qualquer tile anterior conhecido antes de inserir no destino (deduplicação defensiva).
-- Garantir invariantes: criatura em no máximo 1 tile visível por vez; sem “fantasmas” de stack antigo.
+**Arquivo: `src/lib/tibiaRelic/packetParser.ts`**
 
-Fase 3 — Paridade de opcodes 7.72 (tibiarc):
-- Implementar/ignorar corretamente: `0x1D`, `0xB6`, `0xB7`, `0xB8`, `0xDD` (skip seguro conforme tamanho esperado).
-- Reduzir abortos de frame por opcodes válidos ainda não tratados.
+1. **Identificacao precisa do player em moveCr**: Quando o stackpos nao bate no tile fonte, antes de pegar "qualquer criatura", verificar especificamente pelo ID armazenado na criatura (comparar `c.x/c.y/c.z` com a posicao fonte). Isso evita mover a criatura errada.
 
-Fase 4 — Segurança transacional para câmera:
-- Em `scroll/floorUp/floorDown`, aplicar atualização de câmera somente após leitura mínima válida de mapa.
-- Em falha/parcial, não “commitar” deslocamento de câmera.
+2. **Snap de walk anterior**: Quando `moveCr` chega para uma criatura que ja esta andando (`c.walking === true`), zerar o walk anterior antes de iniciar o novo. Isso evita acumulo de offsets incorretos.
 
-Fase 5 — Validação detalhada:
-- Reproduzir com .cam problemática em playback normal e seek.
-- Verificar:
-  - player não some em transições prolongadas;
-  - queda clara de `Unknown opcode`;
-  - ausência de drift de câmera após erro de parse;
-  - sem regressão no fix de z-order (tiles x player).
+3. **Modo de seek sem walk animation**: Adicionar flag `seekMode` ao parser. Quando ativo (durante seek/replay rapido), nao setar walk animation nas criaturas. Walks so devem animar durante playback em tempo real.
 
-Resultado esperado:
-- desaparecimento do player eliminado nos momentos intermitentes;
-- estado de mapa/criaturas estável mesmo com frames problemáticos;
-- comportamento alinhado ao fluxo usado em OTClient/tibiarc para `move creature` por ID.
+**Arquivo: `src/lib/tibiaRelic/renderer.ts`**
+
+4. **Safety net do player**: No metodo `draw()`, apos computar o viewport, verificar se o player creature existe mas NAO esta em nenhum tile visivel. Se isso acontecer, forcar o re-posicionamento do player no tile `(camX, camY, camZ)`. Isso e um fallback defensivo para qualquer edge case de protocolo.
+
+5. **Nao aplicar walk offset do player na camera quando walking=false**: Garantir que `camOffX/Y` so e computado quando o player realmente tem walk ativo, evitando offset residual.
+
+**Arquivo: `src/components/TibiarcPlayer.tsx`**
+
+6. **Limpar walks apos seek**: Apos `applyTo()` durante seek, iterar sobre todas as criaturas e setar `walking = false`, `walkOffsetX/Y = 0`. Isso elimina animacoes fantasma pos-seek.
+
+7. **Passar flag de seek para o parser**: Setar `parser.seekMode = true` antes do replay rapido e `false` depois.
+
+### Detalhes Tecnicos
+
+**moveCr melhorado (pseudo-codigo):**
+```
+// Format A: tile-based
+ft = getTile(fx, fy, fz)
+// 1. Try exact stackpos
+if ft[sp] is creature -> use it
+// 2. Search by creature position match (NEW)
+else -> for each creature in ft:
+  c = creatures.get(cid)
+  if c.x == fx && c.y == fy && c.z == fz -> use it
+// 3. Last fallback: any creature on tile
+else -> pick first creature
+```
+
+**Snap de walk anterior:**
+```
+if (c.walking) {
+  c.walking = false;
+  c.walkOffsetX = 0;
+  c.walkOffsetY = 0;
+}
+// Then start new walk...
+```
+
+**Safety net no renderer:**
+```
+// After computing viewport, before drawing HUDs
+if (playerId && player exists) {
+  const playerTile = getTile(player.x, player.y, player.z);
+  const isOnTile = playerTile.some(i => i[0]==='cr' && i[1]===playerId);
+  if (!isOnTile) {
+    // Force re-add player to camera position
+    player.x = camX; player.y = camY; player.z = camZ;
+    placeOnTile(player);
+  }
+}
+```
+
+### Resultado Esperado
+- Player nunca desaparece (safety net + identificacao precisa)
+- Player fica centralizado mesmo em 4x/8x (sem acumulo de walk offsets)
+- Seek limpo sem animacoes residuais
+- Sem regressao no z-order fix anterior
+
