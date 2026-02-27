@@ -1,35 +1,60 @@
 
 
-## Fix Dead Creature Ghost + Effect Sprite Offset
+## Fix Effects + Add Damage Numbers + Creature Walk Fixes
 
-### Bug 1: Dead creature alive body visible for ~1 second alongside corpse
+### 1. Restore Effect/Missile ID +1 Offset
 
-**What's happening**: The death sequence in Tibia protocol is:
-1. Server sends health=0 (opcode 0x8c)
-2. Server adds corpse item to tile (addThing)
-3. Server removes creature from tile (delThing)
+The effects were working correctly with `+1` before our changes. The TibiaRelic server appears to use 0-based effect IDs (non-standard), so the `+1` mapping is needed to align with the DatLoader which stores effects starting at ID 1.
 
-Between steps 1-3, the creature with health=0 is STILL drawn with its alive outfit because we removed the `health > 0` check from Pass 3. This means both the corpse AND the alive-looking creature render simultaneously for up to 1 second.
+**File**: `src/lib/tibiaRelic/packetParser.ts`
+- Opcode 0x83: Change `effectId: effectType` back to `effectId: effectType + 1`
+- Opcode 0x85: Change `missileId: missileType` back to `missileId: missileType + 1`
 
-**Fix** (`src/lib/tibiaRelic/renderer.ts`):
-- Re-add `c.health > 0` check in Pass 3 (creature body drawing, line 271). Creatures at 0 HP become invisible immediately, and the corpse item (already added to the tile) shows in its place. The gap between health=0 and corpse appearing is typically 1-2 frames (imperceptible), much better than showing both simultaneously for a full second.
+### 2. Implement Animated Text (Damage Numbers) - Opcode 0x84
 
-### Bug 2: Effect/projectile sprites showing wrong visuals
+Currently opcode 0x84 is just skipped. This is the "animated text" packet that shows damage numbers, healing numbers, and XP gains floating above creatures.
 
-**What's happening**: The DatLoader stores effects starting at ID 1 (`it.id = 1 + i`). Standard Tibia 7.72 protocol sends 1-based effect IDs (e.g., CONST_ME_DRAWBLOOD = 1). The code currently does `effectType + 1`, which maps server ID 1 to dat ID 2 -- shifting every effect and projectile by one position, showing the WRONG sprite.
+**File**: `src/lib/tibiaRelic/gameState.ts`
+- Add `AnimatedText` interface: `{ x, y, z, color, text, startTick, duration }`
+- Add `animatedTexts: AnimatedText[]` array to GameState
+- Add pruning in `pruneEffects()`
+- Include in `snapshot()`/`restore()`/`reset()`
 
-When we previously tried removing `+1`, effects seemed to "disappear," but that was likely due to other visual bugs happening simultaneously (invisible creatures, etc.) making it hard to evaluate.
+**File**: `src/lib/tibiaRelic/packetParser.ts`
+- Parse 0x84 properly: `pos3` + `u8 color` + `str16 text`
+- Convert the protocol color byte to an RGB hex string (Tibia uses an 8-bit color index)
+- Push to `gs.animatedTexts` array (skip in seekMode)
 
-**Fix** (`src/lib/tibiaRelic/packetParser.ts`):
-- Opcode 0x83 (Magic Effect): Change `effectType + 1` back to `effectType` (direct 1-based mapping)
-- Opcode 0x85 (Projectile): Change `missileType + 1` back to `missileType` (direct 1-based mapping)
+**File**: `src/lib/tibiaRelic/renderer.ts`
+- Add Pass 3.7 (after projectiles, before top items): render animated texts
+- Text floats upward over ~1 second (linear Y interpolation from tile position to -20px above)
+- Draw at native resolution on offscreen canvas with small font (~8px)
+- Use the parsed color for the text, with black outline for readability
+
+### 3. Fix Creature Walk Animation Occasionally Missing
+
+The walk animation disappears when `moveCr` Format B (0xFFFF) resolves a creature whose stored position already matches the destination (dx=0, dy=0). This happens when the creature's position was updated by a previous packet but the tile reference wasn't cleaned up. The walk offset becomes (0,0), so no visual movement occurs.
+
+**File**: `src/lib/tibiaRelic/packetParser.ts`
+- In `moveCr` Format B: After resolving `fromX/Y/Z` from the creature's stored position, verify `dx` or `dy` is non-zero before setting walk animation. If both are 0, skip the walk offset setup but still update the tile placement.
+- Also ensure that when a creature starts a new walk while still walking, the previous walk is properly finalized (snap position) before starting the new one -- this part already exists but double-check the edge case where `fromX` equals the creature's already-snapped position.
+
+### 4. Fix Creature Overlap (Player on Top of Another)
+
+When `moveCr` removes a creature from a tile by stackpos, it might grab the wrong creature if the stackpos is stale (items were added/removed between the move packets). This causes the wrong creature to be moved, leaving the intended creature orphaned on the tile.
+
+**File**: `src/lib/tibiaRelic/packetParser.ts`
+- In `moveCr` Format A: After finding a creature by stackpos, verify its stored position matches `(fx, fy, fz)`. If it doesn't match, fall through to the position-based search instead of using the stale stackpos entry.
 
 ### Files to Edit
 
-1. **`src/lib/tibiaRelic/renderer.ts`** (line 271) -- Add `c.health > 0` condition to creature drawing in Pass 3
-2. **`src/lib/tibiaRelic/packetParser.ts`** (lines 231, 242) -- Remove `+ 1` from effectId and missileId
+1. **`src/lib/tibiaRelic/gameState.ts`** -- Add AnimatedText type and array
+2. **`src/lib/tibiaRelic/packetParser.ts`** -- Restore +1 for effects, parse 0x84, fix moveCr edge cases
+3. **`src/lib/tibiaRelic/renderer.ts`** -- Render animated text (damage numbers)
 
 ### Expected Results
-- Dead monsters disappear immediately when health reaches 0, corpse replaces them seamlessly
-- Magic effects and projectile sprites show the correct visual for each attack type
+- Attack effects and projectiles show correct sprites (restored +1 mapping)
+- Damage numbers float upward when monsters are hit
+- Walk animations play consistently even for Format B creature moves
+- Creatures don't overlap incorrectly due to stale stackpos references
 
