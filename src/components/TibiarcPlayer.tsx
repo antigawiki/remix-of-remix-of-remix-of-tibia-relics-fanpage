@@ -216,7 +216,7 @@ const TibiarcPlayer = ({ className }: TibiarcPlayerProps) => {
     engine.curMs = targetMs;
     if (isSeek) {
       engine.parser.seekMode = false;
-      // Clear walk animations and prune stale creatures
+      // Clear walk animations, prune stale creatures, and re-insert missing ones
       for (const [cid, c] of engine.gs.creatures.entries()) {
         c.walking = false;
         c.walkOffsetX = 0;
@@ -224,8 +224,15 @@ const TibiarcPlayer = ({ className }: TibiarcPlayerProps) => {
         // Remove orphaned creatures not on any tile (except player)
         if (cid === engine.gs.playerId) continue;
         const tile = engine.gs.getTile(c.x, c.y, c.z);
-        if (!tile.some(i => i[0] === 'cr' && i[1] === cid)) {
-          engine.gs.creatures.delete(cid);
+        const onTile = tile.some(i => i[0] === 'cr' && i[1] === cid);
+        if (!onTile) {
+          // If creature has a valid position, re-insert it on its tile
+          if (c.x !== 0 || c.y !== 0 || c.z !== 0) {
+            tile.push(['cr', cid]);
+            engine.gs.setTile(c.x, c.y, c.z, tile);
+          } else {
+            engine.gs.creatures.delete(cid);
+          }
         }
       }
     }
