@@ -376,6 +376,10 @@ export class Renderer {
     // Use same negated camera offset for HUD positioning
     for (const c of g.creatures.values()) {
       if (c.z !== z) continue;
+      if (c.health <= 0) continue;
+      // Validate creature is actually on its tile (skip stale entries)
+      const crTile = g.getTile(c.x, c.y, c.z);
+      if (!crTile.some(i => i[0] === 'cr' && i[1] === c.id)) continue;
       const tx2 = c.x - (renderCamX - 8);
       const ty2 = c.y - (renderCamY - 6);
       if (tx2 >= -2 && tx2 <= VP_W + 3 && ty2 >= -2 && ty2 <= VP_H + 3) {

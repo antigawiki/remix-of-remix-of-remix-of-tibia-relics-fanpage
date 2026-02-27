@@ -396,8 +396,13 @@ export class PacketParser {
     const sp = r.u8();
     const tile = [...this.gs.getTile(x, y, z)];
     if (sp >= 0 && sp < tile.length) {
+      const removed = tile[sp];
       tile.splice(sp, 1);
       this.gs.setTile(x, y, z, tile);
+      // Remove creature from gs.creatures if it was deleted from the tile (unless it's the player)
+      if (removed[0] === 'cr' && removed[1] !== this.gs.playerId) {
+        this.gs.creatures.delete(removed[1]);
+      }
     }
   }
 
