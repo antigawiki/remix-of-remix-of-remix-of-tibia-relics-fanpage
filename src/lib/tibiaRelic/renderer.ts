@@ -168,14 +168,16 @@ export class Renderer {
     const ph = Math.floor(now / 200) % 4; // time-based animation: 200ms per frame
     this.hudEntries = [];
 
-    // Safety net: if player exists but is NOT on their tile, re-insert at player's stored position
-    if (player) {
-      const playerTile = g.getTile(player.x, player.y, player.z);
-      const isOnTile = playerTile.some(i => i[0] === 'cr' && i[1] === player.id);
+    // Safety net: re-insert creatures that are in gs.creatures but missing from their tile
+    // This prevents "invisible" creatures caused by parsing drift or accidental tile removal
+    for (const c of g.creatures.values()) {
+      if (c.health <= 0) continue;
+      const crTile = g.getTile(c.x, c.y, c.z);
+      const isOnTile = crTile.some(i => i[0] === 'cr' && i[1] === c.id);
       if (!isOnTile) {
-        const tile = g.getTile(player.x, player.y, player.z);
-        tile.push(['cr', player.id]);
-        g.setTile(player.x, player.y, player.z, tile);
+        const tile = g.getTile(c.x, c.y, c.z);
+        tile.push(['cr', c.id]);
+        g.setTile(c.x, c.y, c.z, tile);
       }
     }
 

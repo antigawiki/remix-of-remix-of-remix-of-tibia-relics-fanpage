@@ -445,11 +445,6 @@ export class PacketParser {
       const iid = this.skipItem(r);
       const tile = [...this.gs.getTile(x, y, z)];
       if (sp >= 0 && sp < tile.length) {
-        // If replacing a creature (e.g. with corpse), remove from gs.creatures
-        const old = tile[sp];
-        if (old[0] === 'cr' && old[1] !== this.gs.playerId) {
-          this.gs.creatures.delete(old[1]);
-        }
         tile[sp] = ['it', iid];
         this.gs.setTile(x, y, z, tile);
       }
