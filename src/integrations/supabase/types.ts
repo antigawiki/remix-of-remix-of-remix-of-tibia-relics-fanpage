@@ -50,6 +50,30 @@ export type Database = {
         }
         Relationships: []
       }
+      cam_map_tiles: {
+        Row: {
+          items: Json
+          updated_at: string
+          x: number
+          y: number
+          z: number
+        }
+        Insert: {
+          items?: Json
+          updated_at?: string
+          x: number
+          y: number
+          z: number
+        }
+        Update: {
+          items?: Json
+          updated_at?: string
+          x?: number
+          y?: number
+          z?: number
+        }
+        Relationships: []
+      }
       cam_uploads: {
         Row: {
           file_name: string

@@ -4,12 +4,15 @@ import { Button } from '@/components/ui/button';
 import { Slider } from '@/components/ui/slider';
 import { useTranslation } from '@/i18n';
 import { Badge } from '@/components/ui/badge';
+import { Progress } from '@/components/ui/progress';
 import { parseCamFile, type CamFile } from '@/lib/tibiaRelic/camParser';
 import { SprLoader } from '@/lib/tibiaRelic/sprLoader';
 import { DatLoader } from '@/lib/tibiaRelic/datLoader';
 import { PacketParser } from '@/lib/tibiaRelic/packetParser';
 import { GameState, type GameStateSnapshot } from '@/lib/tibiaRelic/gameState';
 import { Renderer } from '@/lib/tibiaRelic/renderer';
+import { extractMapTiles, type MapExtractionProgress } from '@/lib/tibiaRelic/mapExtractor';
+import { supabase } from '@/integrations/supabase/client';
 
 
 type PlayerState = 'idle' | 'loading-data' | 'ready' | 'loading-cam' | 'playing' | 'paused' | 'error';
@@ -58,6 +61,8 @@ const TibiarcPlayer = ({ className }: TibiarcPlayerProps) => {
   const [dataLoaded, setDataLoaded] = useState(false);
   const [floorOffset, setFloorOffset] = useState(0);
   const [qualityMode, setQualityMode] = useState<'classic' | 'enhanced'>('enhanced');
+  const [extracting, setExtracting] = useState(false);
+  const [extractProgress, setExtractProgress] = useState<MapExtractionProgress | null>(null);
   const floorOffsetRef = useRef(0);
   const containerRef = useRef<HTMLDivElement>(null);
 
@@ -400,6 +405,49 @@ const TibiarcPlayer = ({ className }: TibiarcPlayerProps) => {
   const isLoading = state === 'loading-data' || state === 'loading-cam';
   const hasRecording = state === 'playing' || state === 'paused';
 
+  const handleExtractMap = useCallback(async () => {
+    const engine = engineRef.current;
+    if (!engine || !engine.cam) return;
+    setExtracting(true);
+    setExtractProgress(null);
+
+    try {
+      const tiles = await extractMapTiles(engine.cam, engine.dat, (p) => {
+        setExtractProgress(p);
+      });
+
+      // Upload to database in batches
+      const entries = Array.from(tiles.entries());
+      const BATCH = 500;
+      for (let i = 0; i < entries.length; i += BATCH) {
+        const batch = entries.slice(i, i + BATCH).map(([key, items]) => {
+          const [x, y, z] = key.split(',').map(Number);
+          return { x, y, z, items, updated_at: new Date().toISOString() };
+        });
+
+        const { error } = await supabase
+          .from('cam_map_tiles' as any)
+          .upsert(batch as any, { onConflict: 'x,y,z' });
+
+        if (error) {
+          console.error('[MapExtract] Upsert error:', error);
+        }
+
+        setExtractProgress(prev => prev ? {
+          ...prev,
+          percent: Math.round(100 * Math.min(i + BATCH, entries.length) / entries.length),
+        } : null);
+      }
+
+      console.log(`[MapExtract] Done: ${tiles.size} tiles uploaded`);
+    } catch (err) {
+      console.error('[MapExtract] Failed:', err);
+    } finally {
+      setExtracting(false);
+      setExtractProgress(null);
+    }
+  }, []);
+
   return (
     <div className={`flex flex-col gap-4 ${className}`}>
       {/* Canvas / Upload Area */}
@@ -613,15 +661,33 @@ const TibiarcPlayer = ({ className }: TibiarcPlayerProps) => {
               )}
             </Button>
             {hasRecording && (
-              <Button
-                variant="outline"
-                size="sm"
-                className="border-border/50"
-                onClick={() => fileInputRef.current?.click()}
-              >
-                <Upload className="w-3 h-3 mr-1" />
-                Outra .cam
-              </Button>
+              <>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="border-border/50"
+                  onClick={() => fileInputRef.current?.click()}
+                >
+                  <Upload className="w-3 h-3 mr-1" />
+                  Outra .cam
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="border-gold/50 text-gold hover:bg-gold/10"
+                  onClick={handleExtractMap}
+                  disabled={extracting}
+                >
+                  {extracting ? (
+                    <><Loader2 className="w-3 h-3 mr-1 animate-spin" />{extractProgress ? `${extractProgress.percent}%` : 'Extraindo...'}</>
+                  ) : (
+                    <>🗺️ Extrair Mapa</>
+                  )}
+                </Button>
+              </>
+            )}
+            {extracting && extractProgress && (
+              <Progress value={extractProgress.percent} className="w-24 h-2" />
             )}
             <span className="text-sm text-muted-foreground">
               {state === 'idle' && !dataLoaded && 'Inicializando...'}
