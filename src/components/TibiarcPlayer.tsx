@@ -137,14 +137,9 @@ const TibiarcPlayer = ({ className }: TibiarcPlayerProps) => {
   // Animation loop
   useEffect(() => {
     let rafId: number;
-    const FPS = 20;
-    const interval = 1000 / FPS;
-    let lastTime = 0;
 
-    const loop = (time: number) => {
+    const loop = (_time: number) => {
       rafId = requestAnimationFrame(loop);
-      if (time - lastTime < interval) return;
-      lastTime = time;
 
       const engine = engineRef.current;
       if (!engine) return;
