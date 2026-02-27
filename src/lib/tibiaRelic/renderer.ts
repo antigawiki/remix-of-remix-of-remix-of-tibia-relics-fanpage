@@ -158,12 +158,19 @@ export class Renderer {
     // Determine visible floors
     const floors = this.getVisibleFloors(z);
 
-    // Draw each floor with stack-priority passes
+    // Global rendering passes (OTClient-style) to prevent tiles drawing over creatures
+    const GRID_W = VP_W + 4; // -1 to VP_W+2
+    const GRID_H = VP_H + 4; // -1 to VP_H+2
+
     for (const fz of floors) {
       const offset = z - fz;
       const cx0 = g.camX - 8 + offset;
       const cy0 = g.camY - 6 + offset;
 
+      // Elevation map for this floor (indexed by grid position)
+      const elevMap = new Float32Array(GRID_W * GRID_H);
+
+      // Pass 1: Ground + clip + bottom (stackPrio 0, 1, 2) — compute elevation
       for (let ty = -1; ty < VP_H + 3; ty++) {
         for (let tx = -1; tx < VP_W + 3; tx++) {
           const wx = cx0 + tx;
@@ -173,9 +180,8 @@ export class Renderer {
 
           const bx = tx * TILE_PX + camOffX;
           const by = ty * TILE_PX + camOffY;
-
-          // Pass 1: Ground + clip + bottom (stackPrio 0, 1, 2)
           let elevationOffset = 0;
+
           for (const item of items) {
             if (item[0] === 'cr') continue;
             const it = this.dat.items.get(item[1]);
@@ -184,16 +190,43 @@ export class Renderer {
             if (it.elevation > 0) elevationOffset += it.elevation;
           }
 
-          // Pass 2: Regular items (stackPrio 5, default)
+          elevMap[(ty + 1) * GRID_W + (tx + 1)] = elevationOffset;
+        }
+      }
+
+      // Pass 2: Regular items (stackPrio 4, 5, default)
+      for (let ty = -1; ty < VP_H + 3; ty++) {
+        for (let tx = -1; tx < VP_W + 3; tx++) {
+          const wx = cx0 + tx;
+          const wy = cy0 + ty;
+          const items = g.getTile(wx, wy, fz);
+          if (items.length === 0) continue;
+
+          const bx = tx * TILE_PX + camOffX;
+          const by = ty * TILE_PX + camOffY;
+          const elevationOffset = elevMap[(ty + 1) * GRID_W + (tx + 1)];
+
           for (const item of items) {
             if (item[0] === 'cr') continue;
             const it = this.dat.items.get(item[1]);
             if (!it || it.stackPrio <= 2 || it.stackPrio === 3) continue;
             this.drawItemNative(it, bx, by, elevationOffset, ph, wx, wy);
-            if (it.elevation > 0) elevationOffset += it.elevation;
           }
+        }
+      }
 
-          // Pass 3: Creatures
+      // Pass 3: Creatures (drawn AFTER all ground/items — never behind tiles)
+      for (let ty = -1; ty < VP_H + 3; ty++) {
+        for (let tx = -1; tx < VP_W + 3; tx++) {
+          const wx = cx0 + tx;
+          const wy = cy0 + ty;
+          const items = g.getTile(wx, wy, fz);
+          if (items.length === 0) continue;
+
+          const bx = tx * TILE_PX + camOffX;
+          const by = ty * TILE_PX + camOffY;
+          const elevationOffset = elevMap[(ty + 1) * GRID_W + (tx + 1)];
+
           for (const item of items) {
             if (item[0] !== 'cr') continue;
             const c = g.creatures.get(item[1]);
@@ -201,8 +234,21 @@ export class Renderer {
               this.drawCreatureNative(c, bx, by - elevationOffset);
             }
           }
+        }
+      }
 
-          // Pass 4: Top items (stackPrio 3)
+      // Pass 4: Top items (stackPrio 3 — drawn over creatures)
+      for (let ty = -1; ty < VP_H + 3; ty++) {
+        for (let tx = -1; tx < VP_W + 3; tx++) {
+          const wx = cx0 + tx;
+          const wy = cy0 + ty;
+          const items = g.getTile(wx, wy, fz);
+          if (items.length === 0) continue;
+
+          const bx = tx * TILE_PX + camOffX;
+          const by = ty * TILE_PX + camOffY;
+          const elevationOffset = elevMap[(ty + 1) * GRID_W + (tx + 1)];
+
           for (const item of items) {
             if (item[0] === 'cr') continue;
             const it = this.dat.items.get(item[1]);
