@@ -107,7 +107,7 @@ export class MapTileRenderer {
 
           const def = this.dat.items.get(itemId);
           if (!def) continue;
-          if (def.stackPrio > 3) continue;
+          if (def.stackPrio > 5) continue;
           this.drawItem(ctx, def, px, py, wx, wy);
         }
 

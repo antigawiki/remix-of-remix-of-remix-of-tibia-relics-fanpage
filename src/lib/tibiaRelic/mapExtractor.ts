@@ -307,7 +307,7 @@ function buildFilteredTiles(
     const itemIds: number[] = [];
     for (const [id, count] of counts.entries()) {
       const def = dat.items.get(id);
-      if (def && (def.stackPrio === 0 || count >= 2)) {
+      if (def) {
         itemIds.push(id);
       }
     }

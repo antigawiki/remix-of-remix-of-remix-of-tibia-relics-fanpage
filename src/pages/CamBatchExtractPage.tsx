@@ -21,7 +21,7 @@ interface FileEntry {
   error?: string;
 }
 
-const UPLOAD_BATCH = 50;
+const UPLOAD_BATCH = 200;
 
 const CamBatchExtractPage = () => {
   const [datLoader, setDatLoader] = useState<DatLoader | null>(null);
