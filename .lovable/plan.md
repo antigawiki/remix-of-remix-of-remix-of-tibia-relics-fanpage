@@ -1,67 +1,81 @@
 
 
-## Plano: Capturar Tiles Multi-Floor e Destacar Buracos Especiais
+## Plano: Corrigir Tiles Duplicados/Fora de Posicao e Criaturas Mortas
 
-### Problemas Identificados
+### Diagnostico
 
-1. **Filtro de viewport muito restritivo**: O filtro `tz !== camZ` descarta todos os tiles de andares diferentes. Porem o servidor Tibia envia dados de multiplos andares simultaneamente (floors z-2 a z+2 no subsolo, ou 7 a 0 na superficie). Esses tiles sao dados reais e valiosos -- incluindo locais que o jogador nunca visitou fisicamente.
+Analisando as imagens e o codigo, identifiquei dois problemas raiz:
 
-2. **Filtro de distancia remove tiles distantes**: O check `Math.abs(tx - camX) > 20` impede a captura de tiles que o servidor envia alem da viewport. Em servidores customizados como TibiaRelic, e possivel que o servidor envie informacao extra.
+**1. Tiles fora de posicao (stale data do GameState)**
 
-3. **Tiles especiais nao sao destacados**: Rope holes (tiles com circulo marrom onde se usa corda) e shovel spots (chao do deserto que esconde buracos) tem IDs de item especificos no Tibia.dat que podem ser identificados e destacados visualmente.
+O `GameState.tiles` acumula TODOS os tiles ja vistos durante a reproducao da .cam. Quando o jogador se move, os tiles antigos de posicoes anteriores nunca sao removidos do estado. Ao removermos o filtro de viewport na funcao `snapshotTilesWithCounts`, tiles de 500+ posicoes de distancia (de onde o jogador esteve minutos atras) sao re-contados em CADA snapshot, atingindo o threshold de persistencia (2 snapshots) e sendo extraidos como se fossem tiles validos. Isso gera a duplicacao e os itens "fantasma" fora de posicao.
 
-### Sobre os IDs Especiais (Rope Holes e Shovel Spots)
+**2. Criaturas mortas que nao sao purgadas**
 
-No Tibia 7.x, esses tiles tem item IDs especificos:
-- **Rope hole**: Tipicamente item 384 (ground tile com circulo marrom). E um item de chao (stackPrio 0) com sprite distinto.
-- **Shovel spot**: Tipicamente item 606 (loose stone pile no deserto). Sim, tem ID diferente do chao comum -- e um item separado empilhado sobre o ground tile do deserto. Quando o jogador usa shovel nele, o servidor troca por um tile de buraco.
-
-Como os IDs podem variar no TibiaRelic, a abordagem ideal e: identificar esses IDs empiricamente verificando os sprites no DatLoader, e adicionar uma lista configuravel no renderer.
-
----
+O sistema de dedup usa um grid 5x5 para agrupar criaturas. Uma criatura viva em (102,103) gera a chave "100,105,7,Rat", mas quando morre em (99,99) gera "100,100,7,Rat" -- chaves diferentes. Assim, o registro de morte nao consegue purgar o registro de vida anterior.
 
 ### Solucao
 
-#### 1. Relaxar filtro de andar no MapExtractor (`mapExtractor.ts`)
+#### 1. Re-adicionar filtro de viewport para tiles (apenas distancia, sem filtro de andar)
 
-Remover a restricao `tz !== camZ` para capturar tiles de todos os andares que o servidor envia. Manter apenas:
-- Validacao de coordenadas do mundo (30000-35000)
-- Filtro de coordenadas zero
-- Filtro de item ID valido
+O servidor Tibia envia tiles dentro de uma viewport de aproximadamente 18x14 tiles ao redor do jogador. Tiles fora dessa faixa no `gs.tiles` sao dados obsoletos de posicoes anteriores. Re-adicionar o filtro de distancia resolve a duplicacao sem perder dados de outros andares.
 
-Tambem remover o filtro de distancia da camera (`Math.abs > 20`), ja que os dados sao enviados pelo servidor e sao confiaveis.
+**Arquivo: `src/lib/tibiaRelic/mapExtractor.ts`** - funcao `snapshotTilesWithCounts`
 
-Para criaturas, manter o filtro de distancia (criaturas distantes podem ser stale data no GameState).
+Adicionar apos a validacao de coordenadas do mundo:
+```text
+// Filtro de viewport: o servidor envia tiles dentro de ~18x14 do jogador.
+// Tiles fora disso sao dados obsoletos de posicoes anteriores no GameState.
+const camX = gs.camX;
+const camY = gs.camY;
+if (camX > 0 && camY > 0) {
+  if (Math.abs(tx - camX) > 18 || Math.abs(ty - camY) > 14) continue;
+}
+```
 
-#### 2. Destacar tiles especiais no MapTileRenderer (`mapTileRenderer.ts`)
+Isso mantém a captura multi-floor (sem filtro de Z) mas impede que tiles de posicoes anteriores do jogador sejam contados repetidamente.
 
-Adicionar deteccao de item IDs especiais durante o rendering:
-- **Rope holes**: Desenhar um overlay colorido (borda verde ou icone) sobre tiles que contem o item de rope hole
-- **Shovel spots**: Desenhar um overlay diferente (borda amarela ou icone de pa) sobre tiles que contem o item de shovel spot
+#### 2. Corrigir rastreamento de criaturas mortas usando ID em vez de grid
 
-Criar uma lista de IDs especiais configuravel. Para descobrir os IDs corretos no TibiaRelic, adicionar um log temporario que imprime os sprite IDs dos items de chao encontrados, permitindo identificar visualmente os tiles especiais.
+Em vez de rastrear morte por chave de grid (que falha quando a criatura se move), rastrear por ID da criatura. Assim, se a criatura ID 12345 (um "Rat") foi vista viva e depois morta, a versao morta sempre cancela a viva independente da posicao.
 
-#### 3. Ferramenta de investigacao de IDs (bonus)
+**Arquivo: `src/lib/tibiaRelic/mapExtractor.ts`** - funcao `snapshotCreatures`
 
-Adicionar um tooltip no CamMapPage que, ao passar o mouse sobre um tile, mostra os item IDs presentes naquela posicao. Isso facilita a identificacao de IDs de tiles especiais como rope holes e shovel spots.
+Mudancas:
+- Usar `Map<number, string>` para mapear creature ID -> grid key da ultima posicao viva
+- Usar `Set<number>` para IDs de criaturas vistas mortas
+- No final, para cada ID morto, remover a entry correspondente do creatureMap
 
----
+```text
+// Novo: mapear creature ID -> grid key para rastrear posicao
+const creatureIdToKey = new Map<number, string>(); // passado como parametro
+const deadCreatureIds = new Set<number>();          // substitui deadCreatures
+
+// Quando criatura esta viva:
+creatureIdToKey.set(c.id, key);
+deadCreatureIds.delete(c.id);
+
+// Quando criatura esta morta:
+deadCreatureIds.add(c.id);
+
+// No final (em extractMapTiles):
+for (const deadId of deadCreatureIds) {
+  const key = creatureIdToKey.get(deadId);
+  if (key) creatureMap.delete(key);
+}
+```
 
 ### Arquivos Modificados
 
 1. **`src/lib/tibiaRelic/mapExtractor.ts`**
-   - `snapshotTilesWithCounts`: Remover `tz !== camZ` e o filtro de distancia da camera
-   - Manter filtro de coordenadas validas (30000-35000) e zeros
+   - `snapshotTilesWithCounts`: Adicionar filtro de distancia da camera (18x14) sem filtro de andar. Precisa receber `gs` para acessar camX/camY.
+   - `snapshotCreatures`: Trocar rastreamento de morte de grid key para creature ID
+   - `extractMapTiles`: Adicionar `creatureIdToKey` map, ajustar logica de purge final
 
-2. **`src/lib/tibiaRelic/mapTileRenderer.ts`**
-   - Adicionar constante `SPECIAL_TILES` com IDs de rope holes e shovel spots (inicialmente com IDs comuns do Tibia 7.x: 384, 469, 470, 482, 484 para rope; 606, 593 para shovel)
-   - No `renderChunk`, apos desenhar os items do tile, verificar se algum ID e especial e desenhar overlay colorido
+### Resultado Esperado
 
-3. **`src/pages/CamMapPage.tsx`**
-   - Adicionar tooltip com item IDs ao passar mouse sobre tiles (usando dados em memoria do floorDataRef)
-   - Exibir legenda dos highlights especiais
-
-### Observacao
-
-Sera necessario re-extrair as .cam apos essa mudanca para capturar os tiles de outros andares que antes eram descartados. Os IDs especiais podem precisar de ajuste apos investigacao visual.
+- Tiles serao capturados apenas dentro da viewport real do servidor (~18x14), eliminando tiles "fantasma" de posicoes anteriores
+- Todos os andares (z) continuam sendo capturados normalmente
+- Criaturas mortas serao corretamente purgadas independente de onde morreram
+- Sera necessario limpar o banco e re-extrair as .cam
 
