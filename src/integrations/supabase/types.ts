@@ -745,6 +745,7 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      clear_cam_map_data: { Args: never; Returns: undefined }
       has_role: {
         Args: {
           _role: Database["public"]["Enums"]["app_role"]
