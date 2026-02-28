@@ -746,6 +746,7 @@ export type Database = {
     }
     Functions: {
       clear_cam_map_data: { Args: never; Returns: undefined }
+      compact_tiles_to_chunks: { Args: { p_floor: number }; Returns: number }
       has_role: {
         Args: {
           _role: Database["public"]["Enums"]["app_role"]
