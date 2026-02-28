@@ -135,19 +135,23 @@ function snapshotCreatures(
     if (c.health <= 0) continue;
     if (c.x === 0 && c.y === 0 && c.z === 0) continue;
     if (!c.name || c.name === '') continue;
-    // Skip players (they have unique names but aren't spawns)
-    // Heuristic: creatures with outfit but no outfitItem are regular creatures
     if (c.outfit === 0 && c.outfitItem === 0) continue;
 
-    const key = `${c.x},${c.y},${c.z},${c.name}`;
-    creatureMap.set(key, {
-      x: c.x,
-      y: c.y,
-      z: c.z,
-      name: c.name,
-      outfitId: c.outfit,
-      direction: c.direction,
-    });
+    // Round to 5x5 grid to deduplicate moving creatures
+    const gridX = Math.round(c.x / 5) * 5;
+    const gridY = Math.round(c.y / 5) * 5;
+    const key = `${gridX},${gridY},${c.z},${c.name}`;
+    // Only store first sighting per grid cell (don't accumulate)
+    if (!creatureMap.has(key)) {
+      creatureMap.set(key, {
+        x: gridX,
+        y: gridY,
+        z: c.z,
+        name: c.name,
+        outfitId: c.outfit,
+        direction: c.direction,
+      });
+    }
   }
 }
 

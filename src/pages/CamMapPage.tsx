@@ -17,10 +17,11 @@ import 'leaflet/dist/leaflet.css';
 const DEFAULT_CENTER_X = 32369;
 const DEFAULT_CENTER_Y = 32241;
 const DEFAULT_Z = 7;
-const CHUNK_TILES = 8;
+const CHUNK_TILES = 8; // renderer chunk size (8x8 tiles = 256px)
+const DB_CHUNK = 32;  // database chunk size (32x32 tiles)
 const PAGE_SIZE = 1000;
 
-/** Preload all tiles for a floor using paginated queries, returning a Map indexed by chunk key. */
+/** Preload all tiles for a floor from cam_map_chunks, distributing into renderer-sized chunks. */
 async function preloadFloor(
   z: number,
   onProgress: (loaded: number) => void,
@@ -28,29 +29,39 @@ async function preloadFloor(
   const chunkMap = new Map<string, TileData[]>();
   const creatureMap = new Map<string, CreatureData[]>();
 
-  // Load tiles
+  // Load chunks (each row = 32x32 tiles)
   let offset = 0;
-  let total = 0;
+  let totalTiles = 0;
   while (true) {
     const { data, error } = await supabase
-      .from('cam_map_tiles')
-      .select('x, y, z, items')
+      .from('cam_map_chunks' as any)
+      .select('chunk_x, chunk_y, z, tiles_data')
       .eq('z', z)
       .range(offset, offset + PAGE_SIZE - 1);
 
     if (error || !data || data.length === 0) break;
 
     for (const row of data as any[]) {
-      const cx = Math.floor(row.x / CHUNK_TILES);
-      const cy = Math.floor(row.y / CHUNK_TILES);
-      const key = `${cx},${cy}`;
-      let arr = chunkMap.get(key);
-      if (!arr) { arr = []; chunkMap.set(key, arr); }
-      arr.push({ x: row.x, y: row.y, z: row.z, items: row.items as number[] });
+      const tilesData = row.tiles_data as Record<string, number[]>;
+      const baseX = row.chunk_x * DB_CHUNK;
+      const baseY = row.chunk_y * DB_CHUNK;
+
+      for (const [relKey, items] of Object.entries(tilesData)) {
+        const [rx, ry] = relKey.split(',').map(Number);
+        const absX = baseX + rx;
+        const absY = baseY + ry;
+        // Map to renderer chunk (8x8)
+        const rcx = Math.floor(absX / CHUNK_TILES);
+        const rcy = Math.floor(absY / CHUNK_TILES);
+        const key = `${rcx},${rcy}`;
+        let arr = chunkMap.get(key);
+        if (!arr) { arr = []; chunkMap.set(key, arr); }
+        arr.push({ x: absX, y: absY, z: row.z, items: items as number[] });
+        totalTiles++;
+      }
     }
 
-    total += data.length;
-    onProgress(total);
+    onProgress(totalTiles);
     offset += PAGE_SIZE;
     if (data.length < PAGE_SIZE) break;
   }

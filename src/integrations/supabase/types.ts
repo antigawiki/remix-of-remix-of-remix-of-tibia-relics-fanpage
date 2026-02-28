@@ -50,6 +50,30 @@ export type Database = {
         }
         Relationships: []
       }
+      cam_map_chunks: {
+        Row: {
+          chunk_x: number
+          chunk_y: number
+          tiles_data: Json
+          updated_at: string
+          z: number
+        }
+        Insert: {
+          chunk_x: number
+          chunk_y: number
+          tiles_data?: Json
+          updated_at?: string
+          z: number
+        }
+        Update: {
+          chunk_x?: number
+          chunk_y?: number
+          tiles_data?: Json
+          updated_at?: string
+          z?: number
+        }
+        Relationships: []
+      }
       cam_map_creatures: {
         Row: {
           direction: number
@@ -691,6 +715,10 @@ export type Database = {
           _user_id: string
         }
         Returns: boolean
+      }
+      merge_cam_chunk: {
+        Args: { new_data: Json; px: number; py: number; pz: number }
+        Returns: undefined
       }
       merge_cam_tile: {
         Args: { new_items: Json; px: number; py: number; pz: number }
