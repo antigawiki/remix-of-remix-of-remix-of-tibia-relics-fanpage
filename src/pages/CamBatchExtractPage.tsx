@@ -194,6 +194,8 @@ const CamBatchExtractPage = () => {
     }
   };
 
+  const SLICE_SIZE = 20;
+
   const generateMap = async () => {
     setGenerating(true);
     const failedFloors: number[] = [];
@@ -201,32 +203,62 @@ const CamBatchExtractPage = () => {
 
     try {
       for (let z = 0; z <= 15; z++) {
-        setCompactStatus(`Gerando mapa... andar ${z + 1}/16`);
-        const { data, error } = await supabase.rpc('compact_tiles_to_chunks' as any, { p_floor: z });
-        if (error) {
-          console.error(`[Compact] Floor ${z} error:`, error);
-          failedFloors.push(z);
-        } else if (data && data > 0) {
-          totalChunks += data;
-          console.log(`[Compact] Floor ${z}: ${data} chunks`);
-        }
-      }
+        setCompactStatus(`Andar ${z} — consultando range...`);
 
-      // Retry failed floors once
-      if (failedFloors.length > 0) {
-        const retryFloors = [...failedFloors];
-        failedFloors.length = 0;
-        for (const z of retryFloors) {
-          setCompactStatus(`Retentando andar ${z}...`);
-          const { data, error } = await supabase.rpc('compact_tiles_to_chunks' as any, { p_floor: z });
+        // Get the chunk_x range for this floor
+        const { data: rangeData, error: rangeError } = await supabase
+          .from('cam_map_tiles')
+          .select('x')
+          .eq('z', z)
+          .order('x', { ascending: true })
+          .limit(1)
+          .single();
+
+        if (rangeError || !rangeData) {
+          console.log(`[Compact] Floor ${z}: no tiles, skipping`);
+          continue;
+        }
+
+        const { data: rangeMax } = await supabase
+          .from('cam_map_tiles')
+          .select('x')
+          .eq('z', z)
+          .order('x', { ascending: false })
+          .limit(1)
+          .single();
+
+        if (!rangeMax) continue;
+
+        const minCx = Math.floor(rangeData.x / 8);
+        const maxCx = Math.floor(rangeMax.x / 8);
+        const slices: [number, number][] = [];
+
+        for (let start = minCx; start <= maxCx; start += SLICE_SIZE) {
+          slices.push([start, Math.min(start + SLICE_SIZE - 1, maxCx)]);
+        }
+
+        let floorOk = true;
+        for (let s = 0; s < slices.length; s++) {
+          if (abortRef.current) break;
+          const [sMin, sMax] = slices[s];
+          setCompactStatus(`Andar ${z} — fatia ${s + 1}/${slices.length}`);
+
+          const { data, error } = await supabase.rpc('compact_tiles_range' as any, {
+            p_floor: z,
+            p_min_cx: sMin,
+            p_max_cx: sMax,
+          });
+
           if (error) {
-            console.error(`[Compact] Retry floor ${z} error:`, error);
-            failedFloors.push(z);
+            console.error(`[Compact] Floor ${z} slice ${sMin}-${sMax} error:`, error);
+            floorOk = false;
           } else if (data && data > 0) {
             totalChunks += data;
-            console.log(`[Compact] Retry floor ${z}: ${data} chunks`);
           }
         }
+
+        if (!floorOk) failedFloors.push(z);
+        else console.log(`[Compact] Floor ${z}: done`);
       }
 
       if (failedFloors.length > 0) {

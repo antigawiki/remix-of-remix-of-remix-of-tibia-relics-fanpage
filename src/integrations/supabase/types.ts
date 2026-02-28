@@ -746,6 +746,10 @@ export type Database = {
     }
     Functions: {
       clear_cam_map_data: { Args: never; Returns: undefined }
+      compact_tiles_range: {
+        Args: { p_floor: number; p_max_cx: number; p_min_cx: number }
+        Returns: number
+      }
       compact_tiles_to_chunks: { Args: { p_floor: number }; Returns: number }
       has_role: {
         Args: {
