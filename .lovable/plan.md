@@ -1,40 +1,57 @@
 
 
-## Plano: Filtrar Players das Criaturas no Cam Map
+## Plano: Reativar Terreno Extraido das .cam + Criaturas (sem Players)
 
-### Situacao Atual
-O mapa base externo (opentibia) ja fornece o terreno e esta funcionando corretamente. O problema e que as criaturas extraidas incluem **players** (jogadores) alem dos monstros, o que polui o mapa com entidades que nao sao relevantes para identificar spawns de hunts.
+### Problema
+O mapa externo nao cobre todas as areas. Ao desativar os tiles extraidos das .cam, perdeu-se o terreno em areas que o mapa externo nao possui. O objetivo e mostrar **terreno extraido + criaturas** como camada sobre o mapa externo (que serve de fallback onde existir).
 
 ### Solucao
 
-Filtrar players durante a extracao no `mapExtractor.ts`, usando duas regras:
+**Arquivo: `src/pages/CamMapPage.tsx`**
 
-1. **Excluir o jogador da gravacao**: Pular criaturas cujo `id === gs.playerId`
-2. **Excluir outros jogadores**: Players no Tibia 7.x possuem cores de outfit customizaveis (head, body, legs, feet com valores > 0). Monstros e NPCs tipicamente tem esses valores zerados. Usar isso como heuristica para filtrar players.
+Reativar o carregamento de `cam_map_chunks` no `preloadFloor`, distribuindo os tiles para o grid de 8x8 do renderer:
+
+1. Voltar a carregar `cam_map_chunks` paginado por floor (z), em paralelo com `cam_map_creatures`
+2. Para cada chunk (32x32), extrair as posicoes relativas do JSONB `tiles_data` e converter para coordenadas absolutas, agrupando por sub-chunks de 8x8 (chave do renderer)
+3. Popular o `floorDataRef` com os `TileData[]` para cada sub-chunk
+4. Restaurar `getChunkTiles` para buscar dados do `floorDataRef` em vez de retornar array vazio
+5. Atualizar contadores na UI para mostrar tiles + criaturas
+
+**Fluxo de rendering (camadas):**
+```text
+1. Mapa base externo (fallback onde existir)
+2. Tiles extraidos das .cam (terreno completo)
+3. Criaturas vivas (sem players, ja filtradas na extracao)
+```
 
 ### Detalhes Tecnicos
 
-**Arquivo: `src/lib/tibiaRelic/mapExtractor.ts`**
-
-Na funcao `snapshotCreatures`, adicionar filtros:
+Na funcao `preloadFloor`, adicionar logica paralela:
 
 ```text
-// Pular o player que gravou a cam
-if (c.id === gs.playerId) continue;
-
-// Pular outros players (possuem cores de outfit customizadas)
-if (c.head !== 0 || c.body !== 0 || c.legs !== 0 || c.feet !== 0) continue;
+// Carregar chunks e criaturas em paralelo
+const [chunkResult, creatureResult] = await Promise.all([
+  loadChunks(z, onProgress),
+  loadCreatures(z, onProgress),
+]);
 ```
 
-A funcao precisa receber o `GameState` completo (ja recebe) para acessar `gs.playerId` e as propriedades `head/body/legs/feet` de cada criatura.
+Para converter chunks 32x32 em sub-chunks 8x8:
+```text
+Para cada chunk (cx, cy, z) com tiles_data:
+  Para cada tile "relX,relY" -> [itemIds]:
+    absX = cx * 32 + relX
+    absY = cy * 32 + relY
+    subChunkX = floor(absX / 8)
+    subChunkY = floor(absY / 8)
+    Adicionar TileData { x: absX, y: absY, z, items: itemIds } ao sub-chunk
+```
+
+### Arquivos Modificados
+- `src/pages/CamMapPage.tsx` - reativar preload de chunks + distribuir para renderer
 
 ### O que NAO muda
-- O mapa base externo (terreno) continua carregando normalmente
-- Os tiles extraidos das .cam continuam sem ser renderizados (terreno vem do mapa externo)
-- A logica de deduplicacao por grid 5x5 permanece
-
-### Resultado
-O mapa mostrara apenas o terreno do opentibia + sprites de monstros vivos nos locais corretos, sem players.
-
-**Obs**: Sera necessario re-extrair os arquivos .cam no Batch Extract para que os dados no banco sejam atualizados sem players.
+- `mapExtractor.ts` - ja filtra players e criaturas mortas corretamente
+- `mapTileRenderer.ts` - ja renderiza tiles + criaturas corretamente
+- `CamBatchExtractPage.tsx` - ja salva chunks e criaturas no banco
 
