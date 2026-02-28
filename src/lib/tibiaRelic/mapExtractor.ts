@@ -137,6 +137,12 @@ function snapshotCreatures(
     if (!c.name || c.name === '') continue;
     if (c.outfit === 0 && c.outfitItem === 0) continue;
 
+    // Skip the recording player
+    if (c.id === gs.playerId) continue;
+
+    // Skip other players (they have customized outfit colors; monsters/NPCs have all zeros)
+    if (c.head !== 0 || c.body !== 0 || c.legs !== 0 || c.feet !== 0) continue;
+
     // Round to 5x5 grid to deduplicate moving creatures
     const gridX = Math.round(c.x / 5) * 5;
     const gridY = Math.round(c.y / 5) * 5;
