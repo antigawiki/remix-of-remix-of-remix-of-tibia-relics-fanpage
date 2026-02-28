@@ -55,8 +55,10 @@ export async function extractMapTiles(
 
   // Persistence counters: key "x,y,z" -> Map<itemId, snapshotCount>
   const itemCounts = new Map<string, Map<number, number>>();
-  // Creature spawns: key "x,y,z,name" -> CreatureSpawn (last seen wins)
+  // Creature spawns: key "gridX,gridY,z,name" -> CreatureSpawn (last sighting wins)
   const creatureMap = new Map<string, CreatureSpawn>();
+  // Track creatures seen dead — will be purged at end
+  const deadCreatures = new Set<string>();
 
   let frameIdx = 0;
   let snapshotNum = 0;
@@ -76,7 +78,7 @@ export async function extractMapTiles(
       // After each chunk, snapshot current tiles and creatures
       snapshotNum++;
       snapshotTilesWithCounts(gs, dat, itemCounts, snapshotNum);
-      snapshotCreatures(gs, creatureMap);
+      snapshotCreatures(gs, creatureMap, deadCreatures);
 
       if (onProgress) {
         onProgress({
@@ -92,6 +94,10 @@ export async function extractMapTiles(
       } else {
         // Build final tiles using persistence filter (items seen in >= 2 snapshots)
         const tiles = buildFilteredTiles(itemCounts, dat);
+        // Purge creatures that were last seen dead
+        for (const deadKey of deadCreatures) {
+          creatureMap.delete(deadKey);
+        }
         resolve({ tiles, creatures: creatureMap });
       }
     }
@@ -126,13 +132,15 @@ function snapshotTilesWithCounts(
 
 /**
  * Snapshot living creatures from the GameState.
+ * Uses "last sighting wins" — always overwrites previous entry.
+ * Tracks dead creatures to purge them at the end.
  */
 function snapshotCreatures(
   gs: GameState,
   creatureMap: Map<string, CreatureSpawn>,
+  deadCreatures: Set<string>,
 ) {
   for (const c of gs.creatures.values()) {
-    if (c.health <= 0) continue;
     if (c.x === 0 && c.y === 0 && c.z === 0) continue;
     if (!c.name || c.name === '') continue;
     if (c.outfit === 0 && c.outfitItem === 0) continue;
@@ -140,24 +148,35 @@ function snapshotCreatures(
     // Skip the recording player
     if (c.id === gs.playerId) continue;
 
-    // Skip other players (they have customized outfit colors; monsters/NPCs have all zeros)
+    // Skip other players: those with customized outfit colors
     if (c.head !== 0 || c.body !== 0 || c.legs !== 0 || c.feet !== 0) continue;
+
+    // Skip players with default white outfit (outfit 128-143 with all colors zero)
+    if (c.outfit >= 128 && c.outfit <= 143) continue;
 
     // Round to 5x5 grid to deduplicate moving creatures
     const gridX = Math.round(c.x / 5) * 5;
     const gridY = Math.round(c.y / 5) * 5;
     const key = `${gridX},${gridY},${c.z},${c.name}`;
-    // Only store first sighting per grid cell (don't accumulate)
-    if (!creatureMap.has(key)) {
-      creatureMap.set(key, {
-        x: gridX,
-        y: gridY,
-        z: c.z,
-        name: c.name,
-        outfitId: c.outfit,
-        direction: c.direction,
-      });
+
+    if (c.health <= 0) {
+      // Mark as dead — will be purged at end
+      deadCreatures.add(key);
+      creatureMap.delete(key);
+      continue;
     }
+
+    // Always overwrite with latest sighting (removes "first only" limitation)
+    // Also remove from dead set if it respawned
+    deadCreatures.delete(key);
+    creatureMap.set(key, {
+      x: gridX,
+      y: gridY,
+      z: c.z,
+      name: c.name,
+      outfitId: c.outfit,
+      direction: c.direction,
+    });
   }
 }
 
