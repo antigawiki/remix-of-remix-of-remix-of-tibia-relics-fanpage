@@ -119,6 +119,7 @@ const CamMapPage = () => {
   const [floorLoading, setFloorLoading] = useState(true);
   const [loadingStatus, setLoadingStatus] = useState('');
   const [mouseCoords, setMouseCoords] = useState<{ x: number; y: number } | null>(null);
+  const [tileItemIds, setTileItemIds] = useState<number[]>([]);
   const [creatureCount, setCreatureCount] = useState(0);
   const [tileCount, setTileCount] = useState(0);
 
@@ -200,6 +201,17 @@ const CamMapPage = () => {
       const tileX = Math.floor(e.latlng.lng);
       const tileY = Math.floor(-e.latlng.lat);
       setMouseCoords({ x: tileX, y: tileY });
+
+      // Look up item IDs for this tile from memory
+      const subCX = Math.floor(tileX / CHUNK_TILES);
+      const subCY = Math.floor(tileY / CHUNK_TILES);
+      const chunkTiles = floorDataRef.current.get(`${subCX},${subCY}`);
+      if (chunkTiles) {
+        const tile = chunkTiles.find(t => t.x === tileX && t.y === tileY);
+        setTileItemIds(tile ? tile.items : []);
+      } else {
+        setTileItemIds([]);
+      }
     });
 
     return () => {
@@ -374,16 +386,35 @@ const CamMapPage = () => {
           </div>
         )}
 
-        {/* Coordinates overlay */}
+        {/* Coordinates + Item IDs overlay */}
         {!isLoading && mouseCoords && (
-          <div className="absolute bottom-4 left-4 z-[1000] bg-card/90 border border-border/50 rounded-sm px-3 py-1.5">
+          <div className="absolute bottom-4 left-4 z-[1000] bg-card/90 border border-border/50 rounded-sm px-3 py-1.5 max-w-sm">
             <span className="text-xs font-mono text-muted-foreground">
               X: {mouseCoords.x} | Y: {mouseCoords.y} | Z: {currentFloor}
             </span>
+            {tileItemIds.length > 0 && (
+              <div className="text-xs font-mono text-muted-foreground mt-0.5">
+                IDs: {tileItemIds.join(', ')}
+              </div>
+            )}
           </div>
         )}
 
-        {/* Creature count overlay */}
+        {/* Legend overlay */}
+        {!isLoading && (
+          <div className="absolute top-4 left-4 z-[1000] bg-card/90 border border-border/50 rounded-sm px-3 py-2 flex flex-col gap-1">
+            <div className="flex items-center gap-2">
+              <span className="inline-block w-3 h-3 border-2 rounded-sm" style={{ borderColor: '#00ff88', background: 'rgba(0,255,136,0.15)' }} />
+              <span className="text-xs text-muted-foreground">Rope Hole</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="inline-block w-3 h-3 border-2 rounded-sm" style={{ borderColor: '#ffcc00', background: 'rgba(255,204,0,0.15)' }} />
+              <span className="text-xs text-muted-foreground">Shovel Spot</span>
+            </div>
+          </div>
+        )}
+
+        {/* Tile/creature count overlay */}
         {!isLoading && (
           <div className="absolute bottom-4 right-4 z-[1000] bg-card/90 border border-border/50 rounded-sm px-3 py-1.5">
             <span className="text-xs text-muted-foreground">
