@@ -1,1 +1,4 @@
 project_id = "rmofmkjmzwkxjzfirbpt"
+
+[functions.map-tile-proxy]
+verify_jwt = false
