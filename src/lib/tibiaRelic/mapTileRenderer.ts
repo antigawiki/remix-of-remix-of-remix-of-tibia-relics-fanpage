@@ -14,6 +14,12 @@ const CHUNK_PX = CHUNK_TILES * TILE_PX; // 256
 
 const MAX_CACHE = 300;
 
+// Special tile IDs for visual highlights (Tibia 7.x common IDs)
+// Rope holes: ground tiles with brown circle indicating rope spot
+const ROPE_HOLE_IDS = new Set([384, 469, 470, 482, 484]);
+// Shovel spots: loose stone piles that hide holes underneath
+const SHOVEL_SPOT_IDS = new Set([606, 593, 867, 868]);
+
 export interface TileData {
   x: number;
   y: number;
@@ -84,12 +90,44 @@ export class MapTileRenderer {
         const px = tx * TILE_PX;
         const py = ty * TILE_PX;
 
+        let hasRopeHole = false;
+        let hasShovelSpot = false;
+
         for (const itemId of items) {
+          if (ROPE_HOLE_IDS.has(itemId)) hasRopeHole = true;
+          if (SHOVEL_SPOT_IDS.has(itemId)) hasShovelSpot = true;
+
           const def = this.dat.items.get(itemId);
           if (!def) continue;
-          // Only render ground (0) and borders (1) to avoid accumulated clutter
           if (def.stackPrio > 3) continue;
           this.drawItem(ctx, def, px, py);
+        }
+
+        // Draw special tile overlays
+        if (hasRopeHole) {
+          ctx.save();
+          ctx.strokeStyle = '#00ff88';
+          ctx.lineWidth = 2;
+          ctx.strokeRect(px + 1, py + 1, TILE_PX - 2, TILE_PX - 2);
+          ctx.fillStyle = 'rgba(0, 255, 136, 0.15)';
+          ctx.fillRect(px + 1, py + 1, TILE_PX - 2, TILE_PX - 2);
+          // Small rope icon indicator
+          ctx.fillStyle = '#00ff88';
+          ctx.font = '10px monospace';
+          ctx.fillText('R', px + 2, py + 10);
+          ctx.restore();
+        }
+        if (hasShovelSpot) {
+          ctx.save();
+          ctx.strokeStyle = '#ffcc00';
+          ctx.lineWidth = 2;
+          ctx.strokeRect(px + 1, py + 1, TILE_PX - 2, TILE_PX - 2);
+          ctx.fillStyle = 'rgba(255, 204, 0, 0.15)';
+          ctx.fillRect(px + 1, py + 1, TILE_PX - 2, TILE_PX - 2);
+          ctx.fillStyle = '#ffcc00';
+          ctx.font = '10px monospace';
+          ctx.fillText('S', px + 2, py + 10);
+          ctx.restore();
         }
       }
     }

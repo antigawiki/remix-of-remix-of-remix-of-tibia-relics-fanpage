@@ -115,14 +115,6 @@ function snapshotTilesWithCounts(
   itemCounts: Map<string, Map<number, number>>,
   _snapshotNum: number,
 ) {
-  // Only accept tiles within the camera viewport (~18x14 around camera center)
-  // This prevents broken frames from placing tiles at completely wrong coordinates
-  const camX = gs.camX;
-  const camY = gs.camY;
-  const camZ = gs.camZ;
-  const VIEW_RANGE_X = 20; // generous margin beyond 18x14 viewport
-  const VIEW_RANGE_Y = 16;
-
   for (const [key, tileItems] of gs.tiles.entries()) {
     // Parse exact coordinates from tile key
     const parts = key.split(',');
@@ -133,10 +125,6 @@ function snapshotTilesWithCounts(
 
     // Skip tiles with invalid/zero coordinates
     if (tx === 0 || ty === 0) continue;
-    // Skip tiles on different floor than camera (only accept same floor)
-    if (tz !== camZ) continue;
-    // Skip tiles outside reasonable viewport range of camera
-    if (Math.abs(tx - camX) > VIEW_RANGE_X || Math.abs(ty - camY) > VIEW_RANGE_Y) continue;
     // Skip tiles with obviously invalid world coordinates (Tibia map range)
     if (tx < 30000 || tx > 35000 || ty < 30000 || ty > 35000 || tz < 0 || tz > 15) continue;
 
