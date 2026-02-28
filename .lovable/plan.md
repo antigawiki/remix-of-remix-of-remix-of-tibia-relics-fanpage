@@ -1,29 +1,59 @@
 
 
-## Adicionar botao "Gerar Mapa" na pagina de extracao
+## Corrigir timeout na geracao dos andares 7 e 8
 
-### Problema
-Os tiles estao sendo salvos no banco (`cam_map_tiles`) mas a compactacao em chunks 8x8 (`cam_map_chunks`) nao esta acontecendo de forma confiavel apos o upload. O viewer do mapa depende dos chunks para renderizar, entao sem eles o mapa fica vazio.
+### O que esta acontecendo
+Os andares 7 e 8 sao os mais densos (nivel do chao, cidades, etc). A funcao SQL `compact_tiles_to_chunks` processa lotes de 50 valores de `chunk_x` por vez, mas mesmo assim o volume total de dados nesses andares causa timeout no banco. O retry tambem falha pelo mesmo motivo.
 
 ### Solucao
-Adicionar um botao "Gerar Mapa" na barra superior, ao lado do botao "Limpar DB", que executa `compact_tiles_to_chunks` para todos os 16 andares (0-15) sob demanda. Isso permite ao usuario gerar/regenerar o mapa a qualquer momento, independente do fluxo de extracao.
+Dividir a compactacao em faixas menores chamadas diretamente do frontend, em vez de depender de uma unica chamada SQL que processa o andar inteiro.
 
 ### Mudancas
 
-**Arquivo: `src/pages/CamBatchExtractPage.tsx`**
+**1. Nova funcao SQL: `compact_tiles_range`**
+- Recebe `p_floor`, `p_min_cx`, `p_max_cx` (faixa de chunk_x a processar)
+- Processa apenas os chunks dentro dessa faixa, sem loop interno
+- Deleta apenas os chunks existentes nessa faixa antes de inserir
+- Retorna o numero de chunks criados
 
-1. Adicionar icone `Map` do lucide-react nos imports
-2. Criar estado `generating` (boolean) para controlar o loading do botao
-3. Criar funcao `generateMap` que:
-   - Itera de z=0 ate z=15 chamando `compact_tiles_to_chunks(p_floor: z)`
-   - Atualiza `compactStatus` com o progresso ("Gerando mapa... andar X/16")
-   - Exibe toast de sucesso/erro ao final
-4. Adicionar o botao na barra superior com confirmacao (AlertDialog), estilizado em gold, mostrando spinner durante a geracao
-5. Remover a compactacao automatica do final do `processAll` (linhas 166-181) para separar as responsabilidades -- o usuario decide quando gerar o mapa
+**2. Atualizar `generateMap` no frontend (`CamBatchExtractPage.tsx`)**
+- Para cada andar, primeiro consulta o range de `chunk_x` existente no `cam_map_tiles`
+- Divide esse range em fatias de 20 unidades de `chunk_x`
+- Chama `compact_tiles_range(floor, min_cx, max_cx)` para cada fatia
+- Atualiza o progresso mostrando "Andar X - fatia Y/Z"
+- Remove a logica de retry (nao sera mais necessaria com fatias pequenas)
 
-### Layout do botao
-O botao ficara na barra superior entre o titulo e os botoes existentes:
+### Detalhes tecnicos
+
+```sql
+-- compact_tiles_range: processa uma faixa especifica de chunk_x
+CREATE FUNCTION compact_tiles_range(p_floor int, p_min_cx int, p_max_cx int)
+RETURNS integer AS $$
+BEGIN
+  DELETE FROM cam_map_chunks
+  WHERE z = p_floor AND chunk_x >= p_min_cx AND chunk_x <= p_max_cx;
+
+  INSERT INTO cam_map_chunks (chunk_x, chunk_y, z, tiles_data, updated_at)
+  SELECT floor(x/8)::int, floor(y/8)::int, p_floor,
+    jsonb_object_agg(...), now()
+  FROM cam_map_tiles
+  WHERE z = p_floor
+    AND floor(x/8)::int >= p_min_cx AND floor(x/8)::int <= p_max_cx
+  GROUP BY floor(x/8)::int, floor(y/8)::int;
+
+  RETURN found_count;
+END;
+$$
 ```
-[<- ] [Upload icon] Batch Extract .cam    [Gerar Mapa] [Limpar DB] [Lang] [Theme]
+
+No frontend, o fluxo passa a ser:
 ```
+Para cada andar (0-15):
+  1. SELECT min(floor(x/8)), max(floor(x/8)) FROM cam_map_tiles WHERE z = andar
+  2. Dividir [min, max] em fatias de 20
+  3. Para cada fatia: chamar compact_tiles_range(andar, fatia_min, fatia_max)
+  4. Atualizar progresso
+```
+
+Isso garante que nenhuma chamada individual processe mais que ~20*8 = 160 colunas de tiles, eliminando o timeout mesmo nos andares mais densos.
 
