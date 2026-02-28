@@ -416,22 +416,17 @@ const TibiarcPlayer = ({ className }: TibiarcPlayerProps) => {
         setExtractProgress(p);
       });
 
-      // Upload tiles to database in batches
+      // Upload tiles to database using merge function (accumulates items)
       const tileEntries = Array.from(result.tiles.entries());
-      const BATCH = 500;
+      const BATCH = 50;
       for (let i = 0; i < tileEntries.length; i += BATCH) {
-        const batch = tileEntries.slice(i, i + BATCH).map(([key, items]) => {
+        const batch = tileEntries.slice(i, i + BATCH);
+        await Promise.all(batch.map(([key, items]) => {
           const [x, y, z] = key.split(',').map(Number);
-          return { x, y, z, items, updated_at: new Date().toISOString() };
-        });
-
-        const { error } = await supabase
-          .from('cam_map_tiles' as any)
-          .upsert(batch as any, { onConflict: 'x,y,z' });
-
-        if (error) {
-          console.error('[MapExtract] Tiles upsert error:', error);
-        }
+          return supabase.rpc('merge_cam_tile' as any, {
+            px: x, py: y, pz: z, new_items: items,
+          });
+        }));
       }
 
       // Upload creatures to database in batches

@@ -1,9 +1,11 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { Link } from 'react-router-dom';
-import { ArrowLeft, Map as MapIcon, ChevronUp, ChevronDown, Loader2 } from 'lucide-react';
+import { ArrowLeft, Map as MapIcon, ChevronUp, ChevronDown, Loader2, Layers } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
+import { Switch } from '@/components/ui/switch';
+import { Label } from '@/components/ui/label';
 import { useTranslation } from '@/i18n';
 import { ThemeToggle } from '@/components/ThemeToggle';
 import { LanguageSelector } from '@/components/LanguageSelector';
@@ -87,9 +89,11 @@ const CamMapPage = () => {
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<L.Map | null>(null);
   const tileLayerRef = useRef<L.GridLayer | null>(null);
+  const baseLayerRef = useRef<L.TileLayer | null>(null);
   const rendererRef = useRef<MapTileRenderer | null>(null);
   const floorDataRef = useRef<Map<string, TileData[]>>(new Map());
   const creatureDataRef = useRef<Map<string, CreatureData[]>>(new Map());
+  const [showBaseMap, setShowBaseMap] = useState(true);
 
   const [currentFloor, setCurrentFloor] = useState(DEFAULT_Z);
   const [assetsLoading, setAssetsLoading] = useState(true);
@@ -171,6 +175,32 @@ const CamMapPage = () => {
     map.setView([-DEFAULT_CENTER_Y, DEFAULT_CENTER_X], 3);
     mapRef.current = map;
 
+    // External base map layer
+    const ExternalTileLayer = L.TileLayer.extend({
+      getTileUrl(coords: L.Coords) {
+        // The external server uses: {zoom}/{z}/{x}_{y}.png
+        // In L.CRS.Simple at zoom=5, 1 tile = 8x8 game tiles (same as our chunks)
+        // At lower zooms, tiles cover more area
+        const z = (this as any)._clampZoom ?? coords.z;
+        const floor = (this as any).options.floor ?? 7;
+        // Map leaflet coords to external tile coords
+        // External uses 256px tiles at zoom 0-5 with same coordinate system
+        return `https://st54085.ispot.cc/mapper/tibiarelic/${z}/${floor}/${coords.x}_${coords.y}.png`;
+      },
+    });
+
+    const baseLayer = new (ExternalTileLayer as any)({
+      tileSize: 256,
+      minZoom: 0,
+      maxZoom: 5,
+      noWrap: true,
+      floor: DEFAULT_Z,
+      errorTileUrl: '',
+    }) as L.TileLayer;
+
+    baseLayer.addTo(map);
+    baseLayerRef.current = baseLayer;
+
     map.on('mousemove', (e: L.LeafletMouseEvent) => {
       const tileX = Math.floor(e.latlng.lng);
       const tileY = Math.floor(-e.latlng.lat);
@@ -181,8 +211,29 @@ const CamMapPage = () => {
       map.remove();
       mapRef.current = null;
       tileLayerRef.current = null;
+      baseLayerRef.current = null;
     };
   }, [assetsLoading]);
+
+  // Update base layer floor when floor changes
+  useEffect(() => {
+    const baseLayer = baseLayerRef.current;
+    if (!baseLayer) return;
+    (baseLayer as any).options.floor = currentFloor;
+    baseLayer.redraw();
+  }, [currentFloor]);
+
+  // Toggle base map visibility
+  useEffect(() => {
+    const baseLayer = baseLayerRef.current;
+    const map = mapRef.current;
+    if (!baseLayer || !map) return;
+    if (showBaseMap) {
+      if (!map.hasLayer(baseLayer)) baseLayer.addTo(map);
+    } else {
+      if (map.hasLayer(baseLayer)) map.removeLayer(baseLayer);
+    }
+  }, [showBaseMap]);
 
   // Create/update tile layer when floor data is ready
   useEffect(() => {
@@ -299,7 +350,7 @@ const CamMapPage = () => {
 
         {/* Floor controls overlay */}
         {!isLoading && (
-          <div className="absolute top-4 right-4 z-[1000] flex flex-col items-center gap-1 bg-card/90 border border-border/50 rounded-sm p-2">
+          <div className="absolute top-4 right-4 z-[1000] flex flex-col items-center gap-2 bg-card/90 border border-border/50 rounded-sm p-2">
             <Button
               variant="outline"
               size="icon"
@@ -321,6 +372,20 @@ const CamMapPage = () => {
             >
               <ChevronDown className="w-4 h-4" />
             </Button>
+
+            {/* Base map toggle */}
+            <div className="flex items-center gap-1.5 mt-1 pt-1 border-t border-border/50">
+              <Switch
+                id="base-map"
+                checked={showBaseMap}
+                onCheckedChange={setShowBaseMap}
+                className="scale-75"
+              />
+              <Label htmlFor="base-map" className="text-[10px] text-muted-foreground cursor-pointer">
+                <Layers className="w-3 h-3 inline mr-0.5" />
+                Base
+              </Label>
+            </div>
           </div>
         )}
 

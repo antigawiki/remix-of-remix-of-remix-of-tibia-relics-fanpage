@@ -692,6 +692,10 @@ export type Database = {
         }
         Returns: boolean
       }
+      merge_cam_tile: {
+        Args: { new_items: Json; px: number; py: number; pz: number }
+        Returns: undefined
+      }
     }
     Enums: {
       app_role: "admin" | "moderator" | "user"
