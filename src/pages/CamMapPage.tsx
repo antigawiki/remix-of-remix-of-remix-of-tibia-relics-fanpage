@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { Link } from 'react-router-dom';
-import { ArrowLeft, Map as MapIcon, ChevronUp, ChevronDown, Loader2 } from 'lucide-react';
+import { ArrowLeft, Map as MapIcon, ChevronUp, ChevronDown, Loader2, Bug, Layers } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
@@ -160,6 +160,8 @@ const CamMapPage = () => {
   const [tileItemIds, setTileItemIds] = useState<number[]>([]);
   const [spawnCount, setSpawnCount] = useState(0);
   const [tileCount, setTileCount] = useState(0);
+  const [showSpawns, setShowSpawns] = useState(true);
+  const [showTiles, setShowTiles] = useState(true);
 
   // Load sprite/dat data
   useEffect(() => {
@@ -308,8 +310,8 @@ const CamMapPage = () => {
           const baseChunkY = co.y * chunksPerTile;
 
           if (chunksPerTile === 1) {
-            const tiles = getChunkTiles(baseChunkX, baseChunkY);
-            const spawns = getChunkSpawns(baseChunkX, baseChunkY);
+            const tiles = showTiles ? getChunkTiles(baseChunkX, baseChunkY) : [];
+            const spawns = showSpawns ? getChunkSpawns(baseChunkX, baseChunkY) : [];
             if (tiles.length > 0 || spawns.length > 0) {
               const rendered = renderer.renderChunk(baseChunkX, baseChunkY, floor, tiles, undefined, spawns);
               if (rendered) c.drawImage(rendered, 0, 0, 256, 256);
@@ -320,8 +322,8 @@ const CamMapPage = () => {
               for (let cx = 0; cx < chunksPerTile; cx++) {
                 const tcx = baseChunkX + cx;
                 const tcy = baseChunkY + cy;
-                const tiles = getChunkTiles(tcx, tcy);
-                const spawns = getChunkSpawns(tcx, tcy);
+                const tiles = showTiles ? getChunkTiles(tcx, tcy) : [];
+                const spawns = showSpawns ? getChunkSpawns(tcx, tcy) : [];
                 if (tiles.length > 0 || spawns.length > 0) {
                   const rendered = renderer.renderChunk(tcx, tcy, floor, tiles, undefined, spawns);
                   if (rendered) c.drawImage(rendered, cx * chunkPx, cy * chunkPx, chunkPx, chunkPx);
@@ -343,7 +345,7 @@ const CamMapPage = () => {
 
     layer.addTo(map);
     tileLayerRef.current = layer;
-  }, [currentFloor, floorLoading, getChunkTiles, getChunkSpawns, getExternalTileUrl]);
+  }, [currentFloor, floorLoading, getChunkTiles, getChunkSpawns, getExternalTileUrl, showSpawns, showTiles]);
 
   const floorDisplay = 7 - currentFloor;
   const isLoading = assetsLoading || floorLoading;
@@ -421,6 +423,24 @@ const CamMapPage = () => {
               <ChevronDown className="w-4 h-4" />
             </Button>
 
+            <div className="border-t border-border/50 mt-1 pt-1 flex flex-col gap-1">
+              <button
+                onClick={() => setShowTiles(v => !v)}
+                className={`flex items-center gap-1.5 text-xs px-1 py-0.5 rounded transition-colors ${showTiles ? 'text-gold' : 'text-muted-foreground'}`}
+                title="Mostrar/ocultar itens do mapa"
+              >
+                <Layers className="w-3.5 h-3.5" />
+                Items
+              </button>
+              <button
+                onClick={() => setShowSpawns(v => !v)}
+                className={`flex items-center gap-1.5 text-xs px-1 py-0.5 rounded transition-colors ${showSpawns ? 'text-gold' : 'text-muted-foreground'}`}
+                title="Mostrar/ocultar spawns de criaturas"
+              >
+                <Bug className="w-3.5 h-3.5" />
+                Spawns
+              </button>
+            </div>
           </div>
         )}
 
