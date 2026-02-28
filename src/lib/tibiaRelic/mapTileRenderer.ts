@@ -88,7 +88,7 @@ export class MapTileRenderer {
           const def = this.dat.items.get(itemId);
           if (!def) continue;
           // Only render ground (0) and borders (1) to avoid accumulated clutter
-          if (def.stackPrio > 1) continue;
+          if (def.stackPrio > 3) continue;
           this.drawItem(ctx, def, px, py);
         }
       }
