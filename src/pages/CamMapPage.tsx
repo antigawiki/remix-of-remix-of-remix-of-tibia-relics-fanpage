@@ -215,7 +215,6 @@ const CamMapPage = () => {
 
         // Load external base tile first, then overlay cam data
         const img = new Image();
-        img.crossOrigin = 'anonymous';
         img.onload = () => {
           ctx.drawImage(img, 0, 0, 256, 256);
           drawCamData(ctx, coords);
