@@ -1,81 +1,71 @@
 
 
-## Plano: Corrigir Tiles Duplicados/Fora de Posicao e Criaturas Mortas
+## Plano: Sistema de Mapeamento de Spawns por Area
 
-### Diagnostico
+### Conceito
 
-Analisando as imagens e o codigo, identifiquei dois problemas raiz:
+Em vez de registrar cada criatura individual (que gera problemas com mortes, duplicatas e poluicao visual), o sistema vai agregar dados de spawn por regiao. Quando o jogador passa por uma area, o extrator conta quantas criaturas de cada tipo aparecem ali. Apos multiplas passagens pela mesma area, os dados se consolidam mostrando o spawn real: "nesta regiao nascem 2 Ghouls e 1 Skeleton".
 
-**1. Tiles fora de posicao (stale data do GameState)**
+### Design
 
-O `GameState.tiles` acumula TODOS os tiles ja vistos durante a reproducao da .cam. Quando o jogador se move, os tiles antigos de posicoes anteriores nunca sao removidos do estado. Ao removermos o filtro de viewport na funcao `snapshotTilesWithCounts`, tiles de 500+ posicoes de distancia (de onde o jogador esteve minutos atras) sao re-contados em CADA snapshot, atingindo o threshold de persistencia (2 snapshots) e sendo extraidos como se fossem tiles validos. Isso gera a duplicacao e os itens "fantasma" fora de posicao.
+#### Nova tabela: `cam_map_spawns`
 
-**2. Criaturas mortas que nao sao purgadas**
+Armazena dados agregados de spawn por chunk (32x32 tiles, mesmo grid dos tiles):
 
-O sistema de dedup usa um grid 5x5 para agrupar criaturas. Uma criatura viva em (102,103) gera a chave "100,105,7,Rat", mas quando morre em (99,99) gera "100,100,7,Rat" -- chaves diferentes. Assim, o registro de morte nao consegue purgar o registro de vida anterior.
+| Coluna | Tipo | Descricao |
+|--------|------|-----------|
+| chunk_x | integer | Coordenada X do chunk (tile_x / 32) |
+| chunk_y | integer | Coordenada Y do chunk (tile_y / 32) |
+| z | integer | Andar |
+| creature_name | text | Nome da criatura |
+| outfit_id | integer | ID do outfit para renderizar sprite |
+| avg_count | real | Quantidade media vista por passagem |
+| positions | jsonb | Array de posicoes relativas dentro do chunk `[{x,y}]` |
+| visit_count | integer | Quantas vezes o jogador passou por este chunk |
+| updated_at | timestamptz | Ultima atualizacao |
 
-### Solucao
+Chave primaria composta: `(chunk_x, chunk_y, z, creature_name)`
 
-#### 1. Re-adicionar filtro de viewport para tiles (apenas distancia, sem filtro de andar)
+#### Logica de Extracao (mapExtractor.ts)
 
-O servidor Tibia envia tiles dentro de uma viewport de aproximadamente 18x14 tiles ao redor do jogador. Tiles fora dessa faixa no `gs.tiles` sao dados obsoletos de posicoes anteriores. Re-adicionar o filtro de distancia resolve a duplicacao sem perder dados de outros andares.
+1. **Detectar "visitas" a chunks**: Cada vez que `camX/camY` entra em um novo chunk de 32x32, marca como uma visita a esse chunk
+2. **Contar criaturas por visita**: Para cada visita, registra quantas criaturas vivas de cada tipo estao na viewport, agrupadas por chunk
+3. **Agregar**: No final da extracao, calcula a media de criaturas por tipo por visita para cada chunk
+4. **Posicoes**: Armazena as posicoes relativas (dentro do chunk 0-31) onde cada tipo de criatura foi mais frequentemente vista
 
-**Arquivo: `src/lib/tibiaRelic/mapExtractor.ts`** - funcao `snapshotTilesWithCounts`
+O filtro de criaturas continua o mesmo: ignora players (outfit colors customizadas, outfits 128-143), ignora o jogador gravando, ignora criaturas mortas (health <= 0).
 
-Adicionar apos a validacao de coordenadas do mundo:
-```text
-// Filtro de viewport: o servidor envia tiles dentro de ~18x14 do jogador.
-// Tiles fora disso sao dados obsoletos de posicoes anteriores no GameState.
-const camX = gs.camX;
-const camY = gs.camY;
-if (camX > 0 && camY > 0) {
-  if (Math.abs(tx - camX) > 18 || Math.abs(ty - camY) > 14) continue;
-}
-```
+#### Funcao SQL de Merge
 
-Isso mantém a captura multi-floor (sem filtro de Z) mas impede que tiles de posicoes anteriores do jogador sejam contados repetidamente.
+Como multiplas .cam podem cobrir a mesma area, uma funcao `merge_cam_spawn` faz media ponderada:
+- Se ja existe registro para aquele chunk+criatura, recalcula a media considerando o visit_count anterior
+- Novas posicoes sao adicionadas ao array (com dedup)
 
-#### 2. Corrigir rastreamento de criaturas mortas usando ID em vez de grid
+#### Renderizacao (mapTileRenderer.ts)
 
-Em vez de rastrear morte por chave de grid (que falha quando a criatura se move), rastrear por ID da criatura. Assim, se a criatura ID 12345 (um "Rat") foi vista viva e depois morta, a versao morta sempre cancela a viva independente da posicao.
+- Para cada chunk visivel, consulta os spawns daquele chunk
+- Renderiza os sprites das criaturas nas posicoes armazenadas
+- Se avg_count > 1, posiciona multiplos sprites lado a lado com espacamento de ~3-4 tiles
+- Se nao ha posicoes suficientes para a quantidade, distribui em grid dentro do chunk
 
-**Arquivo: `src/lib/tibiaRelic/mapExtractor.ts`** - funcao `snapshotCreatures`
+#### Substituicao da tabela antiga
 
-Mudancas:
-- Usar `Map<number, string>` para mapear creature ID -> grid key da ultima posicao viva
-- Usar `Set<number>` para IDs de criaturas vistas mortas
-- No final, para cada ID morto, remover a entry correspondente do creatureMap
+A tabela `cam_map_creatures` atual sera substituida por `cam_map_spawns`. O codigo de upload e visualizacao sera atualizado para usar a nova tabela.
 
-```text
-// Novo: mapear creature ID -> grid key para rastrear posicao
-const creatureIdToKey = new Map<number, string>(); // passado como parametro
-const deadCreatureIds = new Set<number>();          // substitui deadCreatures
-
-// Quando criatura esta viva:
-creatureIdToKey.set(c.id, key);
-deadCreatureIds.delete(c.id);
-
-// Quando criatura esta morta:
-deadCreatureIds.add(c.id);
-
-// No final (em extractMapTiles):
-for (const deadId of deadCreatureIds) {
-  const key = creatureIdToKey.get(deadId);
-  if (key) creatureMap.delete(key);
-}
-```
+---
 
 ### Arquivos Modificados
 
-1. **`src/lib/tibiaRelic/mapExtractor.ts`**
-   - `snapshotTilesWithCounts`: Adicionar filtro de distancia da camera (18x14) sem filtro de andar. Precisa receber `gs` para acessar camX/camY.
-   - `snapshotCreatures`: Trocar rastreamento de morte de grid key para creature ID
-   - `extractMapTiles`: Adicionar `creatureIdToKey` map, ajustar logica de purge final
+1. **Migracao SQL**: Criar tabela `cam_map_spawns` + funcao `merge_cam_spawn` + RLS policies
+2. **`src/lib/tibiaRelic/mapExtractor.ts`**: Refatorar extracao de criaturas para agregar por chunk com contagem por visita. Nova interface `SpawnData` e nova logica de snapshot baseada em visitas
+3. **`src/pages/CamMapPage.tsx`**: Atualizar upload para salvar na nova tabela e atualizar carregamento para ler de `cam_map_spawns`
+4. **`src/lib/tibiaRelic/mapTileRenderer.ts`**: Atualizar `renderChunk` para receber spawns agregados e posicionar multiplos sprites com espacamento
 
 ### Resultado Esperado
 
-- Tiles serao capturados apenas dentro da viewport real do servidor (~18x14), eliminando tiles "fantasma" de posicoes anteriores
-- Todos os andares (z) continuam sendo capturados normalmente
-- Criaturas mortas serao corretamente purgadas independente de onde morreram
-- Sera necessario limpar o banco e re-extrair as .cam
+- Mapa limpo mostrando apenas spawns confirmados (vistos em multiplas passagens)
+- Quantidade correta de cada tipo de criatura por area
+- Sprites posicionados de forma organizada sem sobreposicao
+- Criaturas mortas nunca aparecem (so conta health > 0)
+- Dados se acumulam de multiplas .cam files sem duplicar
 
