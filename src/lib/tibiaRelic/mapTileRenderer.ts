@@ -36,6 +36,13 @@ export interface CreatureData {
   direction: number;
 }
 
+export interface SpawnRenderData {
+  creatureName: string;
+  outfitId: number;
+  avgCount: number;
+  positions: Array<{ x: number; y: number }>; // relative to chunk (0-31)
+}
+
 export class MapTileRenderer {
   private cache = new Map<string, HTMLCanvasElement | null>();
   private cacheOrder: string[] = [];
@@ -56,6 +63,7 @@ export class MapTileRenderer {
     z: number,
     tiles: TileData[],
     creatures?: CreatureData[],
+    spawns?: SpawnRenderData[],
   ): HTMLCanvasElement | null {
     const key = `${chunkX},${chunkY},${z}`;
     if (this.cache.has(key)) return this.cache.get(key)!;
@@ -132,7 +140,7 @@ export class MapTileRenderer {
       }
     }
 
-    // Draw creatures on top of tiles
+    // Draw creatures on top of tiles (legacy)
     if (creatures && creatures.length > 0) {
       for (const c of creatures) {
         const tx = c.x - baseX;
@@ -141,6 +149,23 @@ export class MapTileRenderer {
         const px = tx * TILE_PX;
         const py = ty * TILE_PX;
         this.drawCreature(ctx, c.outfit_id, c.direction, px, py);
+      }
+    }
+
+    // Draw spawns (new aggregated system)
+    // The chunk here is 8x8 tiles but spawn positions are relative to 32x32 DB chunks.
+    // We need to map DB chunk positions to our 8x8 render chunk.
+    if (spawns && spawns.length > 0) {
+      for (const spawn of spawns) {
+        const count = Math.round(spawn.avgCount);
+        // Use stored positions, distribute if not enough
+        const positionsToRender = this.getSpawnPositions(spawn, count, baseX, baseY, CHUNK_TILES);
+        for (const pos of positionsToRender) {
+          if (pos.tx < 0 || pos.tx >= CHUNK_TILES || pos.ty < 0 || pos.ty >= CHUNK_TILES) continue;
+          const px = pos.tx * TILE_PX;
+          const py = pos.ty * TILE_PX;
+          this.drawCreature(ctx, spawn.outfitId, 2, px, py);
+        }
       }
     }
 
@@ -209,6 +234,47 @@ export class MapTileRenderer {
         }
       }
     }
+  }
+
+  /**
+   * Get render positions for spawn data within an 8x8 render chunk.
+   */
+  private getSpawnPositions(
+    spawn: SpawnRenderData,
+    count: number,
+    baseX: number,
+    baseY: number,
+    chunkTiles: number,
+  ): Array<{ tx: number; ty: number }> {
+    const result: Array<{ tx: number; ty: number }> = [];
+    const used = new Set<string>();
+    const dbChunkBaseX = Math.floor(baseX / 32) * 32;
+    const dbChunkBaseY = Math.floor(baseY / 32) * 32;
+
+    for (const pos of spawn.positions) {
+      if (result.length >= count) break;
+      const tx = dbChunkBaseX + pos.x - baseX;
+      const ty = dbChunkBaseY + pos.y - baseY;
+      const key = `${tx},${ty}`;
+      if (tx >= 0 && tx < chunkTiles && ty >= 0 && ty < chunkTiles && !used.has(key)) {
+        result.push({ tx, ty });
+        used.add(key);
+      }
+    }
+
+    // Fill remaining with grid
+    if (result.length < count) {
+      for (let gy = 1; gy < chunkTiles && result.length < count; gy += 3) {
+        for (let gx = 1; gx < chunkTiles && result.length < count; gx += 3) {
+          const key = `${gx},${gy}`;
+          if (!used.has(key)) {
+            result.push({ tx: gx, ty: gy });
+            used.add(key);
+          }
+        }
+      }
+    }
+    return result;
   }
 
   private getSpriteCanvas(sid: number): HTMLCanvasElement | null {

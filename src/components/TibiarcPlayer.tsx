@@ -429,27 +429,22 @@ const TibiarcPlayer = ({ className }: TibiarcPlayerProps) => {
         }));
       }
 
-      // Upload creatures to database in batches
-      const creatureEntries = Array.from(result.creatures.values());
-      for (let i = 0; i < creatureEntries.length; i += BATCH) {
-        const batch = creatureEntries.slice(i, i + BATCH).map(c => ({
-          x: c.x, y: c.y, z: c.z,
-          name: c.name,
-          outfit_id: c.outfitId,
-          direction: c.direction,
-          updated_at: new Date().toISOString(),
-        }));
-
-        const { error } = await supabase
-          .from('cam_map_creatures' as any)
-          .upsert(batch as any, { onConflict: 'x,y,z,name' });
-
-        if (error) {
-          console.error('[MapExtract] Creatures upsert error:', error);
-        }
+      // Upload spawns to database in batches
+      for (let i = 0; i < result.spawns.length; i += BATCH) {
+        const batch = result.spawns.slice(i, i + BATCH);
+        await Promise.all(batch.map(s =>
+          supabase.rpc('merge_cam_spawn' as any, {
+            px: s.chunkX, py: s.chunkY, pz: s.z,
+            p_creature_name: s.creatureName,
+            p_outfit_id: s.outfitId,
+            p_avg_count: s.avgCount,
+            p_positions: s.positions,
+            p_visit_count: s.visitCount,
+          })
+        ));
       }
 
-      console.log(`[MapExtract] Done: ${result.tiles.size} tiles, ${result.creatures.size} creatures uploaded`);
+      console.log(`[MapExtract] Done: ${result.tiles.size} tiles, ${result.spawns.length} spawns uploaded`);
     } catch (err) {
       console.error('[MapExtract] Failed:', err);
     } finally {

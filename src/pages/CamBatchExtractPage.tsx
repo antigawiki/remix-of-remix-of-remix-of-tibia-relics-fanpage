@@ -104,7 +104,7 @@ const CamBatchExtractPage = () => {
 
         // Upload phase
         setFiles(prev => prev.map((f, idx) =>
-          idx === i ? { ...f, status: 'uploading', progress: 0, tiles: result.tiles.size, creatures: result.creatures.size } : f
+          idx === i ? { ...f, status: 'uploading', progress: 0, tiles: result.tiles.size, creatures: result.spawns.length } : f
         ));
 
         // Group tiles into 32x32 chunks
@@ -136,27 +136,27 @@ const CamBatchExtractPage = () => {
           ));
         }
 
-        // Upload creatures
-        const creatureEntries = Array.from(result.creatures.values());
-        for (let j = 0; j < creatureEntries.length; j += UPLOAD_BATCH) {
+        // Upload spawns
+        for (let j = 0; j < result.spawns.length; j += UPLOAD_BATCH) {
           if (abortRef.current) break;
-          const batch = creatureEntries.slice(j, j + UPLOAD_BATCH).map(c => ({
-            x: c.x, y: c.y, z: c.z,
-            name: c.name,
-            outfit_id: c.outfitId,
-            direction: c.direction,
-            updated_at: new Date().toISOString(),
-          }));
-          await supabase
-            .from('cam_map_creatures' as any)
-            .upsert(batch as any, { onConflict: 'x,y,z,name' });
+          const batch = result.spawns.slice(j, j + UPLOAD_BATCH);
+          await Promise.all(batch.map(s =>
+            supabase.rpc('merge_cam_spawn' as any, {
+              px: s.chunkX, py: s.chunkY, pz: s.z,
+              p_creature_name: s.creatureName,
+              p_outfit_id: s.outfitId,
+              p_avg_count: s.avgCount,
+              p_positions: s.positions,
+              p_visit_count: s.visitCount,
+            })
+          ));
         }
 
         setFiles(prev => prev.map((f, idx) =>
           idx === i ? { ...f, status: 'done', progress: 100 } : f
         ));
 
-        console.log(`[BatchExtract] ${files[i].file.name}: ${result.tiles.size} tiles, ${result.creatures.size} creatures`);
+        console.log(`[BatchExtract] ${files[i].file.name}: ${result.tiles.size} tiles, ${result.spawns.length} spawns`);
 
         // Small delay between files to let GC run
         await new Promise(r => setTimeout(r, 100));
