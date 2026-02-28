@@ -1,71 +1,46 @@
 
 
-## Mostrar criaturas vivas no Cam Map (e remover cadaveres)
+## Melhorias no Cam Map: Merge de tiles + Mapa externo como base
 
-### O que muda
+### 1. Merge em vez de substituir na extracao
 
-Atualmente o extrator salva apenas **itens** de cada tile, o que inclui cadaveres (corpos de criaturas mortas que viram itens no chao). As criaturas vivas sao ignoradas. O objetivo e inverter isso: capturar as criaturas vivas e suas posicoes, e filtrar cadaveres dos itens.
+**Problema atual**: O upsert com `onConflict: 'x,y,z'` sobrescreve os items do tile existente. Se duas cams cobrem a mesma area, a segunda apaga os dados da primeira.
 
-### Fluxo
+**Solucao**: Usar uma funcao SQL no banco que faz merge dos arrays de items. Ao inserir um tile que ja existe, os item IDs novos sao adicionados ao array existente (uniao sem duplicatas), preservando tudo que ja foi descoberto.
 
-```text
-Extracao (.cam)
-     |
-     v
-[Items do tile] -- filtra cadaveres (items que so aparecem em alguns frames)
-[Criaturas]     -- coleta nome + outfit + posicao de cada criatura viva
-     |
-     v
-[Banco de dados]
-  cam_map_tiles   -- items sem cadaveres
-  cam_map_creatures (NOVA) -- spawns de criaturas
-     |
-     v
-[Renderer] -- desenha items + sprites de criaturas por cima
-```
+- Criar uma funcao SQL `merge_cam_tile(px, py, pz, new_items)` que faz:
+  - Se o tile nao existe: INSERT normal
+  - Se ja existe: UPDATE combinando os items existentes com os novos (uniao sem duplicatas via `array_agg(DISTINCT ...)`)
+- Alterar o `TibiarcPlayer.tsx` para chamar essa funcao via `supabase.rpc()` em vez de upsert direto
+- As criaturas continuam com upsert normal (faz sentido sobrescrever pois a ultima observacao e a mais recente)
+
+### 2. Mapa externo como camada base (fallback)
+
+**Descoberta**: O mapa do opentibia.info usa tiles PNG pre-renderizados hospedados em `https://st54085.ispot.cc/mapper/tibiarelic/{zoom}/{z}/{x}_{y}.png`. Sao imagens prontas que podemos usar como camada de fundo.
+
+**Solucao**: Adicionar uma camada `L.TileLayer` do Leaflet que carrega diretamente essas imagens como base. O Cam Map renderizado localmente (com sprites) sera desenhado por cima como overlay. Onde nao houver dados de cam, o usuario vera o mapa externo.
+
+- Adicionar uma `L.TileLayer` apontando para o tile server externo como camada base
+- Manter o `L.GridLayer` customizado como overlay (cam data por cima)
+- Mapear corretamente as coordenadas do Leaflet para o padrao `{zoom}/{z}/{x}_{y}.png` do servidor externo
+- Adicionar toggle na UI para mostrar/esconder a camada base
 
 ### Mudancas tecnicas
 
-#### 1. Nova tabela `cam_map_creatures`
+#### Banco de dados
+- Nova funcao SQL `merge_cam_tile` que recebe `(x, y, z, items jsonb)` e faz merge inteligente dos arrays
 
-Armazena criaturas encontradas durante a extracao. Usa UPSERT por coordenada + nome para evitar duplicatas.
+#### `src/components/TibiarcPlayer.tsx`
+- Substituir `supabase.from('cam_map_tiles').upsert(...)` por chamadas em batch a `supabase.rpc('merge_cam_tile', ...)`
 
-| Coluna | Tipo | Descricao |
-|--------|------|-----------|
-| x | integer | Coordenada X (PK composta) |
-| y | integer | Coordenada Y (PK composta) |
-| z | integer | Andar (PK composta) |
-| name | text | Nome da criatura (PK composta) |
-| outfit_id | integer | ID do outfit no DAT |
-| direction | integer | Direcao (0-3) |
-| updated_at | timestamptz | Ultima atualizacao |
-
-RLS: SELECT publico, INSERT/UPDATE publico (mesmo padrao de cam_map_tiles).
-
-#### 2. Extrator (`mapExtractor.ts`)
-
-- **Coletar criaturas**: alem de items, extrair de `gs.creatures` todas as criaturas com `health > 0` (vivas), salvando nome, outfit, posicao e direcao.
-- **Filtrar cadaveres**: usar heuristica de persistencia -- items que aparecem consistentemente em multiplos snapshots sao mantidos; items que aparecem esporadicamente (cadaveres que decaem) sao descartados. Na pratica, manter um contador por tile+itemId e so incluir no resultado final items vistos em pelo menos 2 snapshots diferentes.
-- Retornar dois Maps: um de tiles (items) e outro de criaturas.
-
-#### 3. Upload no Player (`TibiarcPlayer.tsx`)
-
-- Apos a extracao, fazer upsert dos tiles (como ja faz) E upsert das criaturas na nova tabela `cam_map_creatures`.
-
-#### 4. Cam Map Page (`CamMapPage.tsx`)
-
-- No `preloadFloor`, tambem buscar criaturas do andar atual da tabela `cam_map_creatures`.
-- Passar dados de criaturas para o renderer.
-
-#### 5. Renderer (`mapTileRenderer.ts`)
-
-- Adicionar metodo `drawCreature` que renderiza o outfit da criatura usando sprites do DatLoader (frame 0, sem animacao).
-- Apos desenhar os items de um tile, desenhar as criaturas naquela posicao por cima.
-- Usar a mesma logica de sprite indexing do Renderer principal (direction mapping, layers, patX/patY), porem simplificada (sem animacao, sem tinting de cores).
+#### `src/pages/CamMapPage.tsx`
+- Adicionar `L.TileLayer` base com URL do mapa externo
+- Mapear coordenadas Leaflet para o formato do tile server (zoom/z/x_y.png)
+- Adicionar botao toggle para camada base
+- Manter GridLayer customizado como overlay
 
 ### Resultado esperado
-
-- O mapa mostra o terreno limpo (sem corpos no chao)
-- Criaturas vivas aparecem nos locais onde foram vistas, como "spawns" estaticos
-- Multiplas cams do mesmo local acumulam criaturas diferentes encontradas
+- Multiplas cams do mesmo local acumulam descobertas em vez de sobrescrever
+- O mapa mostra o mundo completo (via imagens externas) com detalhes das cams sobrepostos
+- Usuario ve um mapa rico desde o inicio, mesmo sem ter extraido muitas cams
 
