@@ -106,36 +106,30 @@ const CamMapPage = () => {
   }, []);
 
   // Initialize Leaflet map
+  // Coordinate system: use raw Tibia coords as CRS units.
+  // At zoom 5 (max), 1 CRS unit = 32 pixels, so 1 tile = 32px (native).
+  // A 256px leaflet tile = 8 tibia tiles = 1 chunk.
+  // tileCoord.x = floor(lng * 2^zoom / 256)
+  // At zoom 5: tileCoord = floor(tibiaX * 32 / 256) = floor(tibiaX / 8) = chunkX ✓
   useEffect(() => {
     if (loading || !mapContainerRef.current || mapRef.current) return;
-
-    // Custom CRS: 1 unit = 1 tile (32px at max zoom)
-    // Leaflet zoom 0 = 1px per tile, zoom 5 = 32px per tile
-    const maxZoom = 5;
-    const tileSize = 256;
 
     const map = L.map(mapContainerRef.current, {
       crs: L.CRS.Simple,
       minZoom: 0,
-      maxZoom,
+      maxZoom: 5,
       zoomControl: true,
       attributionControl: false,
     });
 
-    // Convert Tibia coords to Leaflet LatLng
-    // At zoom 5 (native), 1 pixel = 1 game pixel, 32px = 1 tile
-    // Leaflet simple CRS: lat = -y, lng = x (inverted Y)
-    const scale = CHUNK_TILES; // tiles per chunk
-    const centerLat = -DEFAULT_CENTER_Y / scale;
-    const centerLng = DEFAULT_CENTER_X / scale;
-    map.setView([centerLat, centerLng], 3);
-
+    // Use raw Tibia coordinates: lng = x, lat = -y
+    map.setView([-DEFAULT_CENTER_Y, DEFAULT_CENTER_X], 3);
     mapRef.current = map;
 
-    // Track mouse position
+    // Track mouse position in Tibia coords
     map.on('mousemove', (e: L.LeafletMouseEvent) => {
-      const tileX = Math.floor(e.latlng.lng * scale);
-      const tileY = Math.floor(-e.latlng.lat * scale);
+      const tileX = Math.floor(e.latlng.lng);
+      const tileY = Math.floor(-e.latlng.lat);
       setMouseCoords({ x: tileX, y: tileY });
     });
 
@@ -152,39 +146,31 @@ const CamMapPage = () => {
     const renderer = rendererRef.current;
     if (!map || !renderer) return;
 
-    // Remove previous layer
     if (tileLayerRef.current) {
       map.removeLayer(tileLayerRef.current);
       tileLayerRef.current = null;
     }
 
-    // Clear data cache for new floor
     tileDataCacheRef.current.clear();
 
-    const scale = CHUNK_TILES;
-
+    // At zoom z, each leaflet tile covers 2^(5-z) chunks.
+    // chunkX = tileCoord.x * 2^(5-z)  (at zoom 5, chunkX = tileCoord.x)
+    // chunkY = tileCoord.y * 2^(5-z)  (tileCoord.y maps to -lat, i.e. positive tibia Y)
     const CustomTileLayer = L.GridLayer.extend({
       createTile(coords: L.Coords, done: L.DoneCallback) {
         const tile = document.createElement('canvas');
         tile.width = 256;
         tile.height = 256;
 
-        // Convert Leaflet tile coords to Tibia chunk coords
-        // At zoom level z, each tile covers 2^(maxZoom-z) chunks
-        const factor = Math.pow(2, 5 - coords.z);
-        const chunkX = Math.floor(coords.x * factor);
-        const chunkY = Math.floor(-coords.y * factor - 1) * -1 - 1;
+        const chunksPerTile = Math.pow(2, 5 - coords.z);
+        const baseChunkX = coords.x * chunksPerTile;
+        const baseChunkY = coords.y * chunksPerTile;
 
-        // For higher zoom levels, we render a single chunk
-        // For lower zoom levels, we'd need to render multiple chunks scaled down
-        if (coords.z >= 3) {
-        // At zoom 3+, render individual chunks
-          const tibiaChunkX = Math.floor(coords.x * factor);
-          const tibiaChunkY = Math.floor((-coords.y - 1) * factor);
-
-          fetchChunkTiles(tibiaChunkX, tibiaChunkY, currentFloor).then((tiles: TileData[]) => {
+        if (chunksPerTile === 1) {
+          // At zoom 5: 1 leaflet tile = 1 chunk
+          fetchChunkTiles(baseChunkX, baseChunkY, currentFloor).then((tiles: TileData[]) => {
             if (tiles.length > 0) {
-              const rendered = renderer.renderChunk(tibiaChunkX, tibiaChunkY, currentFloor, tiles);
+              const rendered = renderer.renderChunk(baseChunkX, baseChunkY, currentFloor, tiles);
               if (rendered) {
                 const ctx = tile.getContext('2d')!;
                 ctx.imageSmoothingEnabled = false;
@@ -194,16 +180,12 @@ const CamMapPage = () => {
             (done as any)(null, tile);
           }).catch(() => (done as any)(null, tile));
         } else {
-          // Low zoom: render multiple chunks into one tile
-          const chunksPerTile = Math.pow(2, 3 - coords.z);
-          const baseChunkX = coords.x * chunksPerTile;
-          const baseChunkY = (-coords.y - 1) * chunksPerTile;
+          // Lower zoom: render multiple chunks scaled down into one tile
           const chunkPx = 256 / chunksPerTile;
-
-          const promises: Promise<void>[] = [];
           const ctx = tile.getContext('2d')!;
           ctx.imageSmoothingEnabled = false;
 
+          const promises: Promise<void>[] = [];
           for (let cy = 0; cy < chunksPerTile; cy++) {
             for (let cx = 0; cx < chunksPerTile; cx++) {
               const tcx = baseChunkX + cx;
