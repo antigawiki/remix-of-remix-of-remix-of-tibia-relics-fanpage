@@ -176,25 +176,16 @@ const CamMapPage = () => {
     mapRef.current = map;
 
     // External base map layer (direct access — img tags bypass CORS)
-    // Zoom mapping: external_zoom = leaflet_zoom + 3
-    // At leaflet zoom 4 → external zoom 7 (max native), leaflet zoom 5 is upscaled
-    const ExternalTileLayer = L.TileLayer.extend({
-      getTileUrl(coords: L.Coords) {
-        const externalZoom = coords.z + 3;
-        const floor = (this as any).options.floor ?? 7;
-        return `https://st54085.ispot.cc/mapper/tibiarelic/${externalZoom}/${floor}/${coords.x}_${coords.y}.png`;
-      },
-    });
-
-    const baseLayer = new (ExternalTileLayer as any)({
+    // zoomOffset +3: leaflet zoom 0 → external zoom 3, leaflet zoom 4 → external zoom 7
+    const baseLayer = L.tileLayer('https://st54085.ispot.cc/mapper/tibiarelic/{z}/' + DEFAULT_Z + '/{x}_{y}.png', {
       tileSize: 256,
       minZoom: 0,
       maxZoom: 5,
-      maxNativeZoom: 4, // external zoom 7 is the max available
+      maxNativeZoom: 4,
+      zoomOffset: 3,
       noWrap: true,
-      floor: DEFAULT_Z,
       errorTileUrl: '',
-    }) as L.TileLayer;
+    });
 
     baseLayer.addTo(map);
     baseLayerRef.current = baseLayer;
@@ -216,10 +207,23 @@ const CamMapPage = () => {
   // Update base layer floor when floor changes
   useEffect(() => {
     const baseLayer = baseLayerRef.current;
-    if (!baseLayer) return;
-    (baseLayer as any).options.floor = currentFloor;
-    baseLayer.redraw();
-  }, [currentFloor]);
+    const map = mapRef.current;
+    if (!baseLayer || !map) return;
+    // Replace layer with new URL for the new floor
+    const wasVisible = map.hasLayer(baseLayer);
+    if (wasVisible) map.removeLayer(baseLayer);
+    const newBaseLayer = L.tileLayer('https://st54085.ispot.cc/mapper/tibiarelic/{z}/' + currentFloor + '/{x}_{y}.png', {
+      tileSize: 256,
+      minZoom: 0,
+      maxZoom: 5,
+      maxNativeZoom: 4,
+      zoomOffset: 3,
+      noWrap: true,
+      errorTileUrl: '',
+    });
+    if (wasVisible || showBaseMap) newBaseLayer.addTo(map);
+    baseLayerRef.current = newBaseLayer;
+  }, [currentFloor, showBaseMap]);
 
   // Toggle base map visibility
   useEffect(() => {
