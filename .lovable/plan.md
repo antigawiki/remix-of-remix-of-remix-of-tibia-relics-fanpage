@@ -1,55 +1,29 @@
 
 
-## Diagnostico: Acumulacao de itens fantasma entre snapshots
+## Adicionar botao "Gerar Mapa" na pagina de extracao
 
-### Causa raiz
+### Problema
+Os tiles estao sendo salvos no banco (`cam_map_tiles`) mas a compactacao em chunks 8x8 (`cam_map_chunks`) nao esta acontecendo de forma confiavel apos o upload. O viewer do mapa depende dos chunks para renderizar, entao sem eles o mapa fica vazio.
 
-O `snapshotTilesWithCounts` funciona como um **acumulador permanente**: ele coleta IDs de itens de TODOS os snapshots em um `Map<string, Map<number, number>>` que nunca remove entradas. Isso causa dois problemas graves:
+### Solucao
+Adicionar um botao "Gerar Mapa" na barra superior, ao lado do botao "Limpar DB", que executa `compact_tiles_to_chunks` para todos os 16 andares (0-15) sob demanda. Isso permite ao usuario gerar/regenerar o mapa a qualquer momento, independente do fluxo de extracao.
 
-1. **Itens fantasma**: Se um tile teve o item 300 no snapshot 1, mas o item foi removido no snapshot 5 (porta abriu, item foi pego, etc.), o item 300 permanece na saida final. Resultado: tiles com itens que nao existem mais, causando o visual "atropelado".
+### Mudancas
 
-2. **Perda de duplicatas legitimas**: O `Map<number, number>` (id -> count) colapsa duplicatas. Se um tile tem legitimamente DOIS itens com o mesmo ID (ex: duas paredes iguais empilhadas), apenas um eh salvo. O CamPlayer nao tem esse problema pois renderiza diretamente do GameState que preserva a lista completa.
+**Arquivo: `src/pages/CamBatchExtractPage.tsx`**
 
-3. **Perda de ordem**: O `Map` perde a ordem de empilhamento dos itens. O CamPlayer renderiza na ordem correta do Tibia (chao primeiro, depois paredes, depois topo), mas o extrator devolve em ordem arbitraria.
+1. Adicionar icone `Map` do lucide-react nos imports
+2. Criar estado `generating` (boolean) para controlar o loading do botao
+3. Criar funcao `generateMap` que:
+   - Itera de z=0 ate z=15 chamando `compact_tiles_to_chunks(p_floor: z)`
+   - Atualiza `compactStatus` com o progresso ("Gerando mapa... andar X/16")
+   - Exibe toast de sucesso/erro ao final
+4. Adicionar o botao na barra superior com confirmacao (AlertDialog), estilizado em gold, mostrando spinner durante a geracao
+5. Remover a compactacao automatica do final do `processAll` (linhas 166-181) para separar as responsabilidades -- o usuario decide quando gerar o mapa
 
-### Por que o CamPlayer funciona e o mapa nao
-
-O CamPlayer renderiza direto do `GameState.tiles` -- que sempre tem o estado ATUAL de cada tile com a lista completa de itens na ordem correta. O extrator, por outro lado, acumula dados de todos os snapshots e os colapsa em um set de IDs unicos.
-
-### Correcao
-
-Substituir o sistema de contagem por um sistema de "ultimo snapshot vence" (`last-write-wins`). Em vez de acumular contagens, simplesmente armazenar a lista COMPLETA de itens do tile como vista no ultimo snapshot em que o tile estava dentro da area de proximidade. Isso:
-
-- Preserva a ordem de empilhamento (igual ao CamPlayer)
-- Preserva duplicatas legitimas do mesmo item ID
-- Remove automaticamente itens que nao existem mais no tile
-- Simplifica drasticamente o codigo
-
-### Arquivo a modificar
-
-**`src/lib/tibiaRelic/mapExtractor.ts`**:
-
-- Trocar `itemCounts: Map<string, Map<number, number>>` por `latestTiles: Map<string, number[]>` -- armazena a lista completa de item IDs do ultimo snapshot
-- `snapshotTilesWithCounts` vira `snapshotTiles`: para cada tile dentro da proximidade, extrai a lista de item IDs (com stackPrio <= 5) e SUBSTITUI a entrada anterior (nao acumula)
-- `buildFilteredTiles` se torna desnecessario -- o `latestTiles` ja eh o resultado final
-- Manter toda a logica de spawns inalterada
-
-### Logica simplificada
-
-```text
-snapshotTiles(gs, dat, latestTiles):
-  para cada tile em gs.tiles:
-    filtrar por proximidade (±18x, ±14y)
-    filtrar por coordenadas validas
-    coletar items: para cada item 'it' com stackPrio <= 5, push(id)
-    se items.length > 0:
-      latestTiles.set(key, items)  // SUBSTITUI, nao acumula
-
-extractMapTiles():
-  latestTiles = new Map()
-  ...processar frames...
-  snapshotTiles(gs, dat, latestTiles)  // chamado a cada chunk
-  ...
-  resolve({ tiles: latestTiles, spawns })  // sem buildFilteredTiles
+### Layout do botao
+O botao ficara na barra superior entre o titulo e os botoes existentes:
+```
+[<- ] [Upload icon] Batch Extract .cam    [Gerar Mapa] [Limpar DB] [Lang] [Theme]
 ```
 
