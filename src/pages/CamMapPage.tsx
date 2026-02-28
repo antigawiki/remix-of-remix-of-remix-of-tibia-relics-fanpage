@@ -19,6 +19,7 @@ const DEFAULT_CENTER_Y = 32241;
 const DEFAULT_Z = 7;
 const CHUNK_TILES = 8; // renderer chunk size (8x8 tiles = 256px)
 const DB_CHUNK = 8;   // database chunk size (8x8 tiles, matches renderer)
+const SPAWN_DB_CHUNK = 32; // spawns are stored in 32x32 chunks
 const PAGE_SIZE = 1000;
 
 /** Load spawns for a floor. */
@@ -39,8 +40,8 @@ async function loadSpawns(
     for (const row of data as any[]) {
       // Map DB chunk (32x32) spawns to render chunks (8x8)
       // Each DB chunk contains 4x4 = 16 render chunks
-      const dbBaseX = row.chunk_x * DB_CHUNK;
-      const dbBaseY = row.chunk_y * DB_CHUNK;
+      const dbBaseX = row.chunk_x * SPAWN_DB_CHUNK;
+      const dbBaseY = row.chunk_y * SPAWN_DB_CHUNK;
       const positions = (row.positions || []) as Array<{ x: number; y: number }>;
 
       // Group positions by render chunk
