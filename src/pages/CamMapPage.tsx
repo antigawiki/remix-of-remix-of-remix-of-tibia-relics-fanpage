@@ -93,7 +93,7 @@ const CamMapPage = () => {
   const rendererRef = useRef<MapTileRenderer | null>(null);
   const floorDataRef = useRef<Map<string, TileData[]>>(new Map());
   const creatureDataRef = useRef<Map<string, CreatureData[]>>(new Map());
-  const [showBaseMap, setShowBaseMap] = useState(true);
+  const [showBaseMap, setShowBaseMap] = useState(false);
 
   const [currentFloor, setCurrentFloor] = useState(DEFAULT_Z);
   const [assetsLoading, setAssetsLoading] = useState(true);
