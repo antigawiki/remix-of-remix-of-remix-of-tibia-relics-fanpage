@@ -19,13 +19,95 @@ const DEFAULT_CENTER_Y = 32241;
 const DEFAULT_Z = 7;
 const CHUNK_TILES = 8;
 
+// Batch fetching: accumulate chunk requests and resolve them in one query
+function createBatchFetcher() {
+  const cache = new Map<string, TileData[]>();
+  let pendingChunks: Array<{
+    chunkX: number;
+    chunkY: number;
+    z: number;
+    resolve: (tiles: TileData[]) => void;
+  }> = [];
+  let batchTimer: ReturnType<typeof setTimeout> | null = null;
+
+  async function flushBatch() {
+    batchTimer = null;
+    const batch = pendingChunks;
+    pendingChunks = [];
+    if (batch.length === 0) return;
+
+    const z = batch[0].z;
+
+    // Compute bounding box of all requested chunks
+    let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+    for (const req of batch) {
+      const bx = req.chunkX * CHUNK_TILES;
+      const by = req.chunkY * CHUNK_TILES;
+      if (bx < minX) minX = bx;
+      if (bx + CHUNK_TILES > maxX) maxX = bx + CHUNK_TILES;
+      if (by < minY) minY = by;
+      if (by + CHUNK_TILES > maxY) maxY = by + CHUNK_TILES;
+    }
+
+    // Single query for the entire visible area
+    const { data, error } = await supabase
+      .from('cam_map_tiles')
+      .select('x, y, z, items')
+      .eq('z', z)
+      .gte('x', minX)
+      .lt('x', maxX)
+      .gte('y', minY)
+      .lt('y', maxY);
+
+    // Group results by chunk
+    const chunkMap = new Map<string, TileData[]>();
+    if (data && !error) {
+      for (const row of data as any[]) {
+        const cx = Math.floor(row.x / CHUNK_TILES);
+        const cy = Math.floor(row.y / CHUNK_TILES);
+        const key = `${cx},${cy},${z}`;
+        let arr = chunkMap.get(key);
+        if (!arr) { arr = []; chunkMap.set(key, arr); }
+        arr.push({ x: row.x, y: row.y, z: row.z, items: row.items as number[] });
+      }
+    }
+
+    // Resolve all pending promises & populate cache
+    for (const req of batch) {
+      const key = `${req.chunkX},${req.chunkY},${req.z}`;
+      const tiles = chunkMap.get(key) || [];
+      cache.set(key, tiles);
+      req.resolve(tiles);
+    }
+  }
+
+  function fetchChunk(chunkX: number, chunkY: number, z: number): Promise<TileData[]> {
+    const key = `${chunkX},${chunkY},${z}`;
+    const cached = cache.get(key);
+    if (cached) return Promise.resolve(cached);
+
+    return new Promise((resolve) => {
+      pendingChunks.push({ chunkX, chunkY, z, resolve });
+      if (!batchTimer) {
+        batchTimer = setTimeout(flushBatch, 10);
+      }
+    });
+  }
+
+  function clearCache() {
+    cache.clear();
+  }
+
+  return { fetchChunk, clearCache };
+}
+
 const CamMapPage = () => {
   const { t } = useTranslation();
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<L.Map | null>(null);
   const tileLayerRef = useRef<L.GridLayer | null>(null);
   const rendererRef = useRef<MapTileRenderer | null>(null);
-  const tileDataCacheRef = useRef<Map<string, TileData[]>>(new Map());
+  const batchFetcherRef = useRef(createBatchFetcher());
 
   const [currentFloor, setCurrentFloor] = useState(DEFAULT_Z);
   const [loading, setLoading] = useState(true);
@@ -72,37 +154,8 @@ const CamMapPage = () => {
     fetchCount();
   }, [currentFloor]);
 
-  // Fetch tiles for a chunk area from database
-  const fetchChunkTiles = useCallback(async (
-    chunkX: number, chunkY: number, z: number
-  ): Promise<TileData[]> => {
-    const cacheKey = `${chunkX},${chunkY},${z}`;
-    const cached = tileDataCacheRef.current.get(cacheKey);
-    if (cached) return cached;
-
-    const baseX = chunkX * CHUNK_TILES;
-    const baseY = chunkY * CHUNK_TILES;
-
-    const { data, error } = await supabase
-      .from('cam_map_tiles')
-      .select('x, y, z, items')
-      .eq('z', z)
-      .gte('x', baseX)
-      .lt('x', baseX + CHUNK_TILES)
-      .gte('y', baseY)
-      .lt('y', baseY + CHUNK_TILES);
-
-    if (error || !data) return [];
-
-    const tiles: TileData[] = data.map((row: any) => ({
-      x: row.x,
-      y: row.y,
-      z: row.z,
-      items: row.items as number[],
-    }));
-
-    tileDataCacheRef.current.set(cacheKey, tiles);
-    return tiles;
+  const fetchChunkTiles = useCallback((chunkX: number, chunkY: number, z: number) => {
+    return batchFetcherRef.current.fetchChunk(chunkX, chunkY, z);
   }, []);
 
   // Initialize Leaflet map
@@ -151,7 +204,7 @@ const CamMapPage = () => {
       tileLayerRef.current = null;
     }
 
-    tileDataCacheRef.current.clear();
+    batchFetcherRef.current.clearCache();
 
     // At zoom z, each leaflet tile covers 2^(5-z) chunks.
     // chunkX = tileCoord.x * 2^(5-z)  (at zoom 5, chunkX = tileCoord.x)
