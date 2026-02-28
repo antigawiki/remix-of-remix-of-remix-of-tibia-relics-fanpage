@@ -209,30 +209,13 @@ export class MapTileRenderer {
   }
 
   private drawItem(ctx: CanvasRenderingContext2D, def: ItemType, px: number, py: number) {
-    const W = def.width;
-    const H = def.height;
-
-    // For simple 1x1 items, just draw the first sprite
-    if (W === 1 && H === 1) {
-      const sid = def.spriteIds[0];
-      if (sid) {
-        const sprCanvas = this.getSpriteCanvas(sid);
-        if (sprCanvas) ctx.drawImage(sprCanvas, px, py);
-      }
-      return;
-    }
-
-    // Multi-tile items: draw each sub-sprite
-    for (let th = 0; th < H; th++) {
-      for (let tw = 0; tw < W; tw++) {
-        const idx = th * W + tw;
-        const sid = idx < def.spriteIds.length ? def.spriteIds[idx] : 0;
-        if (!sid) continue;
-        const sprCanvas = this.getSpriteCanvas(sid);
-        if (sprCanvas) {
-          ctx.drawImage(sprCanvas, px - tw * TILE_PX, py - th * TILE_PX);
-        }
-      }
+    // Only draw the primary sprite (index 0) for each item.
+    // Each tile stores its own items, so every ground position is filled.
+    // Drawing multi-tile overflow causes clipping at chunk boundaries.
+    const sid = def.spriteIds[0];
+    if (sid) {
+      const sprCanvas = this.getSpriteCanvas(sid);
+      if (sprCanvas) ctx.drawImage(sprCanvas, px, py);
     }
   }
 
