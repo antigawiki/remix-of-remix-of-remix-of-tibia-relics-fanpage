@@ -104,21 +104,35 @@ const CamBatchExtractPage = () => {
 
         if (abortRef.current) break;
 
-        // Upload phase - individual tiles
+        // Upload phase - group tiles into 8x8 chunks and upload directly
         setFiles(prev => prev.map((f, idx) =>
           idx === i ? { ...f, status: 'uploading', progress: 0, tiles: result.tiles.size, creatures: result.spawns.length } : f
         ));
 
-        // Upload tiles individually via merge_cam_tile
-        const tileEntries = Array.from(result.tiles.entries());
-        for (let j = 0; j < tileEntries.length; j += UPLOAD_BATCH) {
+        // Group tiles into 8x8 chunks
+        const chunkMap = new Map<string, Record<string, number[]>>();
+        for (const [key, items] of result.tiles.entries()) {
+          const [x, y, z] = key.split(',').map(Number);
+          const cx = Math.floor(x / 8);
+          const cy = Math.floor(y / 8);
+          const chunkKey = `${cx},${cy},${z}`;
+          let chunkData = chunkMap.get(chunkKey);
+          if (!chunkData) { chunkData = {}; chunkMap.set(chunkKey, chunkData); }
+          const relX = x - cx * 8;
+          const relY = y - cy * 8;
+          chunkData[`${relX},${relY}`] = items;
+        }
+
+        // Upload chunks via merge_cam_chunk
+        const chunkEntries = Array.from(chunkMap.entries());
+        for (let j = 0; j < chunkEntries.length; j += UPLOAD_BATCH) {
           if (abortRef.current) break;
-          const batch = tileEntries.slice(j, j + UPLOAD_BATCH);
-          await Promise.all(batch.map(([key, items]) => {
-            const [x, y, z] = key.split(',').map(Number);
-            return supabase.rpc('merge_cam_tile' as any, { px: x, py: y, pz: z, new_items: items });
+          const batch = chunkEntries.slice(j, j + UPLOAD_BATCH);
+          await Promise.all(batch.map(([key, data]) => {
+            const [cx, cy, z] = key.split(',').map(Number);
+            return supabase.rpc('merge_cam_chunk' as any, { px: cx, py: cy, pz: z, new_data: data });
           }));
-          const uploadPercent = Math.round(((j + UPLOAD_BATCH) / tileEntries.length) * 100);
+          const uploadPercent = Math.round(((j + UPLOAD_BATCH) / chunkEntries.length) * 100);
           setFiles(prev => prev.map((f, idx) =>
             idx === i ? { ...f, progress: Math.min(uploadPercent, 100) } : f
           ));
@@ -157,22 +171,7 @@ const CamBatchExtractPage = () => {
       }
     }
 
-    // Auto-compact tiles into 8x8 chunks
-    if (!abortRef.current) {
-      setCompactStatus('Compactando tiles em chunks 8x8...');
-      try {
-        for (let z = 0; z <= 15; z++) {
-          const { data, error } = await supabase.rpc('compact_tiles_to_chunks' as any, { p_floor: z });
-          if (error) console.error(`[Compact] Floor ${z} error:`, error);
-          else if (data && data > 0) console.log(`[Compact] Floor ${z}: ${data} chunks`);
-        }
-        toast.success('Tiles compactados em chunks 8x8!');
-      } catch (err) {
-        console.error('[Compact] Error:', err);
-        toast.error('Erro ao compactar tiles');
-      }
-      setCompactStatus('');
-    }
+    // No compaction needed — chunks uploaded directly
 
     setProcessing(false);
     setCurrentIdx(-1);
