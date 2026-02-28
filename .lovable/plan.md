@@ -1,57 +1,71 @@
 
 
-## Otimizacao: Pre-carregar todos os tiles do andar de uma vez
+## Mostrar criaturas vivas no Cam Map (e remover cadaveres)
 
-### Problema
+### O que muda
 
-O sistema atual busca tiles sob demanda em pequenos pedacos (chunks de 8x8) conforme o usuario navega. Mesmo com batch fetching, cada movimentacao no mapa gera novas queries ao banco. Alem disso, o Supabase tem um limite de 1000 linhas por query, o que pode cortar resultados silenciosamente.
-
-### Solucao
-
-Carregar TODOS os tiles do andar atual de uma vez na memoria, com paginacao para ultrapassar o limite de 1000 linhas. O Leaflet entao renderiza instantaneamente a partir da memoria local -- zero queries adicionais ao navegar/zoom.
+Atualmente o extrator salva apenas **itens** de cada tile, o que inclui cadaveres (corpos de criaturas mortas que viram itens no chao). As criaturas vivas sao ignoradas. O objetivo e inverter isso: capturar as criaturas vivas e suas posicoes, e filtrar cadaveres dos itens.
 
 ### Fluxo
 
 ```text
-Usuario troca de andar
-        |
-        v
-[Preload] -- busca TODOS os tiles do andar
-             em batches de 1000 (paginacao)
-             com indicador de progresso
-        |
-        v
-[Memoria] -- Map<"chunkX,chunkY", TileData[]>
-             tudo indexado por chunk
-        |
-        v
-[Leaflet] -- createTile busca do Map local
-             renderizacao instantanea
-             zero network requests
+Extracao (.cam)
+     |
+     v
+[Items do tile] -- filtra cadaveres (items que so aparecem em alguns frames)
+[Criaturas]     -- coleta nome + outfit + posicao de cada criatura viva
+     |
+     v
+[Banco de dados]
+  cam_map_tiles   -- items sem cadaveres
+  cam_map_creatures (NOVA) -- spawns de criaturas
+     |
+     v
+[Renderer] -- desenha items + sprites de criaturas por cima
 ```
 
 ### Mudancas tecnicas
 
-#### 1. Funcao `preloadFloor` com paginacao
+#### 1. Nova tabela `cam_map_creatures`
 
-Nova funcao que busca todos os tiles de um andar usando `.range()` em loops de 1000, ate nao ter mais dados. Agrupa tudo em um Map indexado por chunk key.
+Armazena criaturas encontradas durante a extracao. Usa UPSERT por coordenada + nome para evitar duplicatas.
 
-#### 2. Estado de loading por andar
+| Coluna | Tipo | Descricao |
+|--------|------|-----------|
+| x | integer | Coordenada X (PK composta) |
+| y | integer | Coordenada Y (PK composta) |
+| z | integer | Andar (PK composta) |
+| name | text | Nome da criatura (PK composta) |
+| outfit_id | integer | ID do outfit no DAT |
+| direction | integer | Direcao (0-3) |
+| updated_at | timestamptz | Ultima atualizacao |
 
-Adicionar estado `floorLoading` para mostrar progresso enquanto carrega ("Carregando andar... 3000/87000 tiles"). O mapa so renderiza apos o preload terminar.
+RLS: SELECT publico, INSERT/UPDATE publico (mesmo padrao de cam_map_tiles).
 
-#### 3. Leaflet lê da memoria local
+#### 2. Extrator (`mapExtractor.ts`)
 
-O `createTile` deixa de fazer fetch -- simplesmente consulta o Map local com os tiles pre-carregados. Renderizacao instantanea.
+- **Coletar criaturas**: alem de items, extrair de `gs.creatures` todas as criaturas com `health > 0` (vivas), salvando nome, outfit, posicao e direcao.
+- **Filtrar cadaveres**: usar heuristica de persistencia -- items que aparecem consistentemente em multiplos snapshots sao mantidos; items que aparecem esporadicamente (cadaveres que decaem) sao descartados. Na pratica, manter um contador por tile+itemId e so incluir no resultado final items vistos em pelo menos 2 snapshots diferentes.
+- Retornar dois Maps: um de tiles (items) e outro de criaturas.
 
-#### 4. Remover batch fetcher
+#### 3. Upload no Player (`TibiarcPlayer.tsx`)
 
-O sistema de batch fetching fica desnecessario ja que tudo esta em memoria.
+- Apos a extracao, fazer upsert dos tiles (como ja faz) E upsert das criaturas na nova tabela `cam_map_creatures`.
 
-### Beneficios
+#### 4. Cam Map Page (`CamMapPage.tsx`)
 
-- Navegacao instantanea apos o carregamento inicial
-- Sem limite de 1000 linhas (paginacao resolve)
-- Uma unica fase de loading clara em vez de tiles aparecendo gradualmente
-- Zoom e pan sem nenhuma latencia de rede
+- No `preloadFloor`, tambem buscar criaturas do andar atual da tabela `cam_map_creatures`.
+- Passar dados de criaturas para o renderer.
+
+#### 5. Renderer (`mapTileRenderer.ts`)
+
+- Adicionar metodo `drawCreature` que renderiza o outfit da criatura usando sprites do DatLoader (frame 0, sem animacao).
+- Apos desenhar os items de um tile, desenhar as criaturas naquela posicao por cima.
+- Usar a mesma logica de sprite indexing do Renderer principal (direction mapping, layers, patX/patY), porem simplificada (sem animacao, sem tinting de cores).
+
+### Resultado esperado
+
+- O mapa mostra o terreno limpo (sem corpos no chao)
+- Criaturas vivas aparecem nos locais onde foram vistas, como "spawns" estaticos
+- Multiplas cams do mesmo local acumulam criaturas diferentes encontradas
 
