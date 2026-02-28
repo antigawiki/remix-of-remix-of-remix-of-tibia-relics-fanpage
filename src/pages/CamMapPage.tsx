@@ -9,7 +9,7 @@ import { ThemeToggle } from '@/components/ThemeToggle';
 import { LanguageSelector } from '@/components/LanguageSelector';
 import { SprLoader } from '@/lib/tibiaRelic/sprLoader';
 import { DatLoader } from '@/lib/tibiaRelic/datLoader';
-import { MapTileRenderer, type TileData, type CreatureData } from '@/lib/tibiaRelic/mapTileRenderer';
+import { MapTileRenderer, type TileData, type CreatureData, type SpawnRenderData } from '@/lib/tibiaRelic/mapTileRenderer';
 import { supabase } from '@/integrations/supabase/client';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
@@ -21,35 +21,74 @@ const CHUNK_TILES = 8; // renderer chunk size (8x8 tiles = 256px)
 const DB_CHUNK = 32;  // database chunk size (32x32 tiles)
 const PAGE_SIZE = 1000;
 
-/** Load creatures for a floor. */
-async function loadCreatures(
+/** Load spawns for a floor. */
+async function loadSpawns(
   z: number,
   onProgress: (label: string, count: number) => void,
-): Promise<Map<string, CreatureData[]>> {
-  const creatureMap = new Map<string, CreatureData[]>();
+): Promise<Map<string, SpawnRenderData[]>> {
+  const spawnMap = new Map<string, SpawnRenderData[]>();
   let offset = 0;
   let total = 0;
   while (true) {
     const { data, error } = await supabase
-      .from('cam_map_creatures' as any)
-      .select('x, y, z, name, outfit_id, direction')
+      .from('cam_map_spawns' as any)
+      .select('chunk_x, chunk_y, z, creature_name, outfit_id, avg_count, positions')
       .eq('z', z)
       .range(offset, offset + PAGE_SIZE - 1);
     if (error || !data || data.length === 0) break;
     for (const row of data as any[]) {
-      const cx = Math.floor(row.x / CHUNK_TILES);
-      const cy = Math.floor(row.y / CHUNK_TILES);
-      const key = `${cx},${cy}`;
-      let arr = creatureMap.get(key);
-      if (!arr) { arr = []; creatureMap.set(key, arr); }
-      arr.push({ x: row.x, y: row.y, z: row.z, name: row.name, outfit_id: row.outfit_id, direction: row.direction });
+      // Map DB chunk (32x32) spawns to render chunks (8x8)
+      // Each DB chunk contains 4x4 = 16 render chunks
+      const dbBaseX = row.chunk_x * DB_CHUNK;
+      const dbBaseY = row.chunk_y * DB_CHUNK;
+      const positions = (row.positions || []) as Array<{ x: number; y: number }>;
+
+      // Group positions by render chunk
+      const renderChunkPositions = new Map<string, Array<{ x: number; y: number }>>();
+      for (const pos of positions) {
+        const absX = dbBaseX + pos.x;
+        const absY = dbBaseY + pos.y;
+        const rcx = Math.floor(absX / CHUNK_TILES);
+        const rcy = Math.floor(absY / CHUNK_TILES);
+        const key = `${rcx},${rcy}`;
+        let arr = renderChunkPositions.get(key);
+        if (!arr) { arr = []; renderChunkPositions.set(key, arr); }
+        arr.push(pos);
+      }
+
+      // If no positions, put spawn in center render chunk of DB chunk
+      if (positions.length === 0) {
+        const centerRcx = Math.floor((dbBaseX + 16) / CHUNK_TILES);
+        const centerRcy = Math.floor((dbBaseY + 16) / CHUNK_TILES);
+        const key = `${centerRcx},${centerRcy}`;
+        let arr = spawnMap.get(key);
+        if (!arr) { arr = []; spawnMap.set(key, arr); }
+        arr.push({
+          creatureName: row.creature_name,
+          outfitId: row.outfit_id,
+          avgCount: row.avg_count,
+          positions: [{ x: 16, y: 16 }],
+        });
+      } else {
+        // Distribute to render chunks
+        for (const [key, posArr] of renderChunkPositions) {
+          let arr = spawnMap.get(key);
+          if (!arr) { arr = []; spawnMap.set(key, arr); }
+          arr.push({
+            creatureName: row.creature_name,
+            outfitId: row.outfit_id,
+            avgCount: Math.max(1, Math.round(row.avg_count * posArr.length / positions.length)),
+            positions: posArr,
+          });
+        }
+      }
       total++;
     }
-    onProgress('criaturas', total);
+    onProgress('spawns', total);
     offset += PAGE_SIZE;
     if (data.length < PAGE_SIZE) break;
   }
-  return creatureMap;
+  return spawnMap;
 }
 
 /** Load terrain chunks (32x32) and distribute into 8x8 sub-chunks for the renderer. */
@@ -93,16 +132,16 @@ async function loadChunks(
   return tileMap;
 }
 
-/** Preload floor data (terrain + creatures) in parallel. */
+/** Preload floor data (terrain + spawns) in parallel. */
 async function preloadFloor(
   z: number,
   onProgress: (label: string, count: number) => void,
-): Promise<{ tileMap: Map<string, TileData[]>; creatureMap: Map<string, CreatureData[]> }> {
-  const [tileMap, creatureMap] = await Promise.all([
+): Promise<{ tileMap: Map<string, TileData[]>; spawnMap: Map<string, SpawnRenderData[]> }> {
+  const [tileMap, spawnMap] = await Promise.all([
     loadChunks(z, onProgress),
-    loadCreatures(z, onProgress),
+    loadSpawns(z, onProgress),
   ]);
-  return { tileMap, creatureMap };
+  return { tileMap, spawnMap };
 }
 
 const CamMapPage = () => {
@@ -112,7 +151,7 @@ const CamMapPage = () => {
   const tileLayerRef = useRef<L.GridLayer | null>(null);
   const rendererRef = useRef<MapTileRenderer | null>(null);
   const floorDataRef = useRef<Map<string, TileData[]>>(new Map()); // kept for renderer compat
-  const creatureDataRef = useRef<Map<string, CreatureData[]>>(new Map());
+  const spawnDataRef = useRef<Map<string, SpawnRenderData[]>>(new Map());
 
   const [currentFloor, setCurrentFloor] = useState(DEFAULT_Z);
   const [assetsLoading, setAssetsLoading] = useState(true);
@@ -120,7 +159,7 @@ const CamMapPage = () => {
   const [loadingStatus, setLoadingStatus] = useState('');
   const [mouseCoords, setMouseCoords] = useState<{ x: number; y: number } | null>(null);
   const [tileItemIds, setTileItemIds] = useState<number[]>([]);
-  const [creatureCount, setCreatureCount] = useState(0);
+  const [spawnCount, setSpawnCount] = useState(0);
   const [tileCount, setTileCount] = useState(0);
 
   // Load sprite/dat data
@@ -161,12 +200,12 @@ const CamMapPage = () => {
 
     preloadFloor(currentFloor, (label, count) => {
       if (!cancelled) setLoadingStatus(`${count.toLocaleString()} ${label}`);
-    }).then(({ tileMap, creatureMap }) => {
+    }).then(({ tileMap, spawnMap }) => {
       if (cancelled) return;
       floorDataRef.current = tileMap;
-      creatureDataRef.current = creatureMap;
+      spawnDataRef.current = spawnMap;
       setTileCount(Array.from(tileMap.values()).reduce((s, a) => s + a.length, 0));
-      setCreatureCount(Array.from(creatureMap.values()).reduce((s, a) => s + a.length, 0));
+      setSpawnCount(Array.from(spawnMap.values()).reduce((s, a) => s + a.length, 0));
       setFloorLoading(false);
     });
 
@@ -178,8 +217,8 @@ const CamMapPage = () => {
     return floorDataRef.current.get(`${chunkX},${chunkY}`) || [];
   }, []);
 
-  const getChunkCreatures = useCallback((chunkX: number, chunkY: number): CreatureData[] => {
-    return creatureDataRef.current.get(`${chunkX},${chunkY}`) || [];
+  const getChunkSpawns = useCallback((chunkX: number, chunkY: number): SpawnRenderData[] => {
+    return spawnDataRef.current.get(`${chunkX},${chunkY}`) || [];
   }, []);
 
   // Initialize Leaflet map
@@ -271,9 +310,9 @@ const CamMapPage = () => {
 
           if (chunksPerTile === 1) {
             const tiles = getChunkTiles(baseChunkX, baseChunkY);
-            const creatures = getChunkCreatures(baseChunkX, baseChunkY);
-            if (tiles.length > 0 || creatures.length > 0) {
-              const rendered = renderer.renderChunk(baseChunkX, baseChunkY, floor, tiles, creatures);
+            const spawns = getChunkSpawns(baseChunkX, baseChunkY);
+            if (tiles.length > 0 || spawns.length > 0) {
+              const rendered = renderer.renderChunk(baseChunkX, baseChunkY, floor, tiles, undefined, spawns);
               if (rendered) c.drawImage(rendered, 0, 0, 256, 256);
             }
           } else {
@@ -283,9 +322,9 @@ const CamMapPage = () => {
                 const tcx = baseChunkX + cx;
                 const tcy = baseChunkY + cy;
                 const tiles = getChunkTiles(tcx, tcy);
-                const creatures = getChunkCreatures(tcx, tcy);
-                if (tiles.length > 0 || creatures.length > 0) {
-                  const rendered = renderer.renderChunk(tcx, tcy, floor, tiles, creatures);
+                const spawns = getChunkSpawns(tcx, tcy);
+                if (tiles.length > 0 || spawns.length > 0) {
+                  const rendered = renderer.renderChunk(tcx, tcy, floor, tiles, undefined, spawns);
                   if (rendered) c.drawImage(rendered, cx * chunkPx, cy * chunkPx, chunkPx, chunkPx);
                 }
               }
@@ -305,7 +344,7 @@ const CamMapPage = () => {
 
     layer.addTo(map);
     tileLayerRef.current = layer;
-  }, [currentFloor, floorLoading, getChunkTiles, getChunkCreatures, getExternalTileUrl]);
+  }, [currentFloor, floorLoading, getChunkTiles, getChunkSpawns, getExternalTileUrl]);
 
   const floorDisplay = 7 - currentFloor;
   const isLoading = assetsLoading || floorLoading;
@@ -418,7 +457,7 @@ const CamMapPage = () => {
         {!isLoading && (
           <div className="absolute bottom-4 right-4 z-[1000] bg-card/90 border border-border/50 rounded-sm px-3 py-1.5">
             <span className="text-xs text-muted-foreground">
-              {tileCount.toLocaleString()} tiles | {creatureCount.toLocaleString()} criaturas
+              {tileCount.toLocaleString()} tiles | {spawnCount.toLocaleString()} spawns
             </span>
           </div>
         )}

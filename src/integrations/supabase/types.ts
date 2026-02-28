@@ -104,6 +104,42 @@ export type Database = {
         }
         Relationships: []
       }
+      cam_map_spawns: {
+        Row: {
+          avg_count: number
+          chunk_x: number
+          chunk_y: number
+          creature_name: string
+          outfit_id: number
+          positions: Json
+          updated_at: string
+          visit_count: number
+          z: number
+        }
+        Insert: {
+          avg_count?: number
+          chunk_x: number
+          chunk_y: number
+          creature_name: string
+          outfit_id?: number
+          positions?: Json
+          updated_at?: string
+          visit_count?: number
+          z: number
+        }
+        Update: {
+          avg_count?: number
+          chunk_x?: number
+          chunk_y?: number
+          creature_name?: string
+          outfit_id?: number
+          positions?: Json
+          updated_at?: string
+          visit_count?: number
+          z?: number
+        }
+        Relationships: []
+      }
       cam_map_tiles: {
         Row: {
           items: Json
@@ -718,6 +754,19 @@ export type Database = {
       }
       merge_cam_chunk: {
         Args: { new_data: Json; px: number; py: number; pz: number }
+        Returns: undefined
+      }
+      merge_cam_spawn: {
+        Args: {
+          p_avg_count: number
+          p_creature_name: string
+          p_outfit_id: number
+          p_positions: Json
+          p_visit_count: number
+          px: number
+          py: number
+          pz: number
+        }
         Returns: undefined
       }
       merge_cam_tile: {

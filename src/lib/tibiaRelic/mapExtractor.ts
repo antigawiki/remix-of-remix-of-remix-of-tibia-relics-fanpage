@@ -1,12 +1,10 @@
 /**
  * Map Extractor - processes all frames of a .cam file and extracts
- * static tile data (ground items) and creature spawns for building the Cam Map.
+ * static tile data (ground items) and spawn data aggregated by chunk.
  * 
- * Filters out creatures from tiles, keeping only items with stackPrio 0-5.
- * Uses persistence heuristic to filter out corpses (items seen in < 2 snapshots).
- * Also extracts living creatures (health > 0) with outfit/position/direction.
- * 
- * Returns tiles Map<string, number[]> and creatures Map<string, CreatureSpawn>.
+ * Spawn system: tracks "visits" to 32x32 chunks based on player movement.
+ * For each visit, counts living creatures (health > 0) by type per chunk.
+ * Final output: average count per creature type per chunk + positions.
  */
 import { type CamFile } from './camParser';
 import { DatLoader } from './datLoader';
@@ -22,23 +20,39 @@ export interface MapExtractionProgress {
 
 export type ProgressCallback = (progress: MapExtractionProgress) => void;
 
-export interface CreatureSpawn {
-  x: number;
-  y: number;
+export interface SpawnData {
+  chunkX: number;
+  chunkY: number;
   z: number;
-  name: string;
+  creatureName: string;
   outfitId: number;
-  direction: number;
+  avgCount: number;
+  positions: Array<{ x: number; y: number }>;
+  visitCount: number;
 }
 
 export interface MapExtractionResult {
   tiles: Map<string, number[]>;
-  creatures: Map<string, CreatureSpawn>;
+  spawns: SpawnData[];
+}
+
+const DB_CHUNK = 32;
+
+// Per-visit creature count for a chunk
+interface ChunkVisitData {
+  // creature_name -> { count, outfitId, positions: Set<"x,y"> }
+  creatures: Map<string, { count: number; outfitId: number; positions: Set<string> }>;
+}
+
+// Accumulated data across visits
+interface ChunkAccumulator {
+  // creature_name -> { totalCount (sum across visits), outfitId, visitsSeen, positions: Set<"x,y"> }
+  creatures: Map<string, { totalCount: number; outfitId: number; visitsSeen: number; positions: Set<string> }>;
+  totalVisits: number;
 }
 
 /**
- * Extract all static tiles and creature spawns from a .cam file.
- * Uses chunked processing via requestAnimationFrame to avoid blocking the UI.
+ * Extract all static tiles and spawn data from a .cam file.
  */
 export async function extractMapTiles(
   cam: CamFile,
@@ -51,15 +65,16 @@ export async function extractMapTiles(
     looktypeU16: true,
     outfitWindowRangeU16: true,
   });
-  parser.seekMode = true; // No animations needed
+  parser.seekMode = true;
 
-  // Persistence counters: key "x,y,z" -> Map<itemId, snapshotCount>
+  // Tile persistence counters
   const itemCounts = new Map<string, Map<number, number>>();
-  // Creature spawns: key "gridX,gridY,z,name" -> CreatureSpawn (last sighting wins)
-  const creatureMap = new Map<string, CreatureSpawn>();
-  // Track creature ID -> grid key for accurate death purging
-  const creatureIdToKey = new Map<number, string>();
-  const deadCreatureIds = new Set<number>();
+
+  // Spawn tracking
+  const chunkAccumulators = new Map<string, ChunkAccumulator>();
+  let lastPlayerChunkKey = '';
+  // Current visit data for chunks in viewport
+  let currentVisitChunks = new Map<string, ChunkVisitData>();
 
   let frameIdx = 0;
   let snapshotNum = 0;
@@ -76,10 +91,23 @@ export async function extractMapTiles(
         }
       }
 
-      // After each chunk, snapshot current tiles and creatures
       snapshotNum++;
       snapshotTilesWithCounts(gs, dat, itemCounts, snapshotNum);
-      snapshotCreatures(gs, creatureMap, creatureIdToKey, deadCreatureIds);
+
+      // Check if player moved to a new chunk -> flush old visit
+      const playerChunkX = Math.floor(gs.camX / DB_CHUNK);
+      const playerChunkY = Math.floor(gs.camY / DB_CHUNK);
+      const playerChunkKey = `${playerChunkX},${playerChunkY},${gs.camZ}`;
+
+      if (playerChunkKey !== lastPlayerChunkKey && lastPlayerChunkKey !== '') {
+        // Flush current visit data into accumulators
+        flushVisit(currentVisitChunks, chunkAccumulators);
+        currentVisitChunks = new Map();
+      }
+      lastPlayerChunkKey = playerChunkKey;
+
+      // Snapshot creatures into current visit
+      snapshotCreaturesForVisit(gs, currentVisitChunks);
 
       if (onProgress) {
         onProgress({
@@ -93,14 +121,12 @@ export async function extractMapTiles(
       if (frameIdx < cam.frames.length) {
         requestAnimationFrame(processChunk);
       } else {
-        // Build final tiles using persistence filter (items seen in >= 2 snapshots)
+        // Flush last visit
+        flushVisit(currentVisitChunks, chunkAccumulators);
+
         const tiles = buildFilteredTiles(itemCounts, dat);
-        // Purge creatures that were seen dead (by ID -> grid key)
-        for (const deadId of deadCreatureIds) {
-          const key = creatureIdToKey.get(deadId);
-          if (key) creatureMap.delete(key);
-        }
-        resolve({ tiles, creatures: creatureMap });
+        const spawns = buildSpawnData(chunkAccumulators);
+        resolve({ tiles, spawns });
       }
     }
 
@@ -109,7 +135,127 @@ export async function extractMapTiles(
 }
 
 /**
- * Snapshot all tiles, incrementing per-item counters for persistence tracking.
+ * Snapshot living creatures into current visit data, grouped by chunk.
+ * Uses max count per creature type seen during a visit (not sum).
+ */
+function snapshotCreaturesForVisit(
+  gs: GameState,
+  visitChunks: Map<string, ChunkVisitData>,
+) {
+  const camX = gs.camX;
+  const camY = gs.camY;
+  const camZ = gs.camZ;
+
+  // Count creatures per chunk+name in this snapshot
+  const snapshotCounts = new Map<string, Map<string, { count: number; outfitId: number; positions: string[] }>>();
+
+  for (const c of gs.creatures.values()) {
+    if (c.x === 0 && c.y === 0 && c.z === 0) continue;
+    if (!c.name || c.name === '') continue;
+    if (c.outfit === 0 && c.outfitItem === 0) continue;
+    if (c.health <= 0) continue; // Only living creatures
+    if (c.x < 30000 || c.x > 35000 || c.y < 30000 || c.y > 35000 || c.z < 0 || c.z > 15) continue;
+    if (Math.abs(c.x - camX) > 20 || Math.abs(c.y - camY) > 16) continue;
+    if (c.z !== camZ) continue;
+    if (c.id === gs.playerId) continue;
+    if (c.head !== 0 || c.body !== 0 || c.legs !== 0 || c.feet !== 0) continue;
+    if (c.outfit >= 128 && c.outfit <= 143) continue;
+
+    const cx = Math.floor(c.x / DB_CHUNK);
+    const cy = Math.floor(c.y / DB_CHUNK);
+    const chunkKey = `${cx},${cy},${c.z}`;
+    const relX = c.x - cx * DB_CHUNK;
+    const relY = c.y - cy * DB_CHUNK;
+
+    let chunkSnap = snapshotCounts.get(chunkKey);
+    if (!chunkSnap) { chunkSnap = new Map(); snapshotCounts.set(chunkKey, chunkSnap); }
+
+    let entry = chunkSnap.get(c.name);
+    if (!entry) { entry = { count: 0, outfitId: c.outfit, positions: [] }; chunkSnap.set(c.name, entry); }
+    entry.count++;
+    entry.positions.push(`${relX},${relY}`);
+  }
+
+  // Merge snapshot into visit: keep MAX count per creature type
+  for (const [chunkKey, creatures] of snapshotCounts) {
+    let visit = visitChunks.get(chunkKey);
+    if (!visit) { visit = { creatures: new Map() }; visitChunks.set(chunkKey, visit); }
+
+    for (const [name, snap] of creatures) {
+      let existing = visit.creatures.get(name);
+      if (!existing) {
+        existing = { count: 0, outfitId: snap.outfitId, positions: new Set() };
+        visit.creatures.set(name, existing);
+      }
+      // Keep max count seen in any single snapshot during this visit
+      existing.count = Math.max(existing.count, snap.count);
+      existing.outfitId = snap.outfitId;
+      for (const pos of snap.positions) existing.positions.add(pos);
+    }
+  }
+}
+
+/**
+ * Flush a completed visit into the accumulators.
+ */
+function flushVisit(
+  visitChunks: Map<string, ChunkVisitData>,
+  accumulators: Map<string, ChunkAccumulator>,
+) {
+  for (const [chunkKey, visit] of visitChunks) {
+    let acc = accumulators.get(chunkKey);
+    if (!acc) { acc = { creatures: new Map(), totalVisits: 0 }; accumulators.set(chunkKey, acc); }
+    acc.totalVisits++;
+
+    for (const [name, data] of visit.creatures) {
+      let existing = acc.creatures.get(name);
+      if (!existing) {
+        existing = { totalCount: 0, outfitId: data.outfitId, visitsSeen: 0, positions: new Set() };
+        acc.creatures.set(name, existing);
+      }
+      existing.totalCount += data.count;
+      existing.visitsSeen++;
+      existing.outfitId = data.outfitId;
+      for (const pos of data.positions) existing.positions.add(pos);
+    }
+  }
+}
+
+/**
+ * Build final SpawnData array from accumulators.
+ */
+function buildSpawnData(accumulators: Map<string, ChunkAccumulator>): SpawnData[] {
+  const spawns: SpawnData[] = [];
+
+  for (const [chunkKey, acc] of accumulators) {
+    const [cxStr, cyStr, zStr] = chunkKey.split(',');
+    const chunkX = parseInt(cxStr, 10);
+    const chunkY = parseInt(cyStr, 10);
+    const z = parseInt(zStr, 10);
+
+    for (const [name, data] of acc.creatures) {
+      const avgCount = data.totalCount / data.visitsSeen;
+      const positions = Array.from(data.positions).map(p => {
+        const [x, y] = p.split(',').map(Number);
+        return { x, y };
+      });
+
+      spawns.push({
+        chunkX, chunkY, z,
+        creatureName: name,
+        outfitId: data.outfitId,
+        avgCount: Math.round(avgCount * 10) / 10, // 1 decimal
+        positions,
+        visitCount: data.visitsSeen,
+      });
+    }
+  }
+
+  return spawns;
+}
+
+/**
+ * Snapshot tiles with persistence counting (unchanged from before).
  */
 function snapshotTilesWithCounts(
   gs: GameState,
@@ -130,8 +276,6 @@ function snapshotTilesWithCounts(
     if (tx === 0 || ty === 0) continue;
     if (tx < 30000 || tx > 35000 || ty < 30000 || ty > 35000 || tz < 0 || tz > 15) continue;
 
-    // Viewport filter: server sends tiles within ~18x14 of the player.
-    // Tiles beyond that are stale data from previous positions in GameState.
     if (camX > 0 && camY > 0) {
       if (Math.abs(tx - camX) > 18 || Math.abs(ty - camY) > 14) continue;
     }
@@ -151,67 +295,7 @@ function snapshotTilesWithCounts(
 }
 
 /**
- * Snapshot living creatures from the GameState.
- * Uses "last sighting wins" — always overwrites previous entry.
- * Tracks dead creatures to purge them at the end.
- */
-function snapshotCreatures(
-  gs: GameState,
-  creatureMap: Map<string, CreatureSpawn>,
-  creatureIdToKey: Map<number, string>,
-  deadCreatureIds: Set<number>,
-) {
-  const camX = gs.camX;
-  const camY = gs.camY;
-  const camZ = gs.camZ;
-
-  for (const c of gs.creatures.values()) {
-    if (c.x === 0 && c.y === 0 && c.z === 0) continue;
-    if (!c.name || c.name === '') continue;
-    if (c.outfit === 0 && c.outfitItem === 0) continue;
-
-    if (c.x < 30000 || c.x > 35000 || c.y < 30000 || c.y > 35000 || c.z < 0 || c.z > 15) continue;
-    if (Math.abs(c.x - camX) > 20 || Math.abs(c.y - camY) > 16) continue;
-    if (c.z !== camZ) continue;
-
-    if (c.id === gs.playerId) continue;
-    if (c.head !== 0 || c.body !== 0 || c.legs !== 0 || c.feet !== 0) continue;
-    if (c.outfit >= 128 && c.outfit <= 143) continue;
-
-    const gridX = Math.round(c.x / 5) * 5;
-    const gridY = Math.round(c.y / 5) * 5;
-    const key = `${gridX},${gridY},${c.z},${c.name}`;
-
-    if (c.health <= 0) {
-      deadCreatureIds.add(c.id);
-      // Also remove from creatureMap immediately if same key
-      creatureMap.delete(key);
-      continue;
-    }
-
-    // Alive: track ID -> key mapping, remove from dead set if respawned
-    // If this creature had a previous key, remove the old entry
-    const oldKey = creatureIdToKey.get(c.id);
-    if (oldKey && oldKey !== key) {
-      creatureMap.delete(oldKey);
-    }
-    creatureIdToKey.set(c.id, key);
-    deadCreatureIds.delete(c.id);
-
-    creatureMap.set(key, {
-      x: gridX,
-      y: gridY,
-      z: c.z,
-      name: c.name,
-      outfitId: c.outfit,
-      direction: c.direction,
-    });
-  }
-}
-
-/**
- * Build final tile map, keeping only items seen in >= 2 snapshots (filters corpses).
- * Ground tiles (stackPrio 0) are always kept (they don't decay).
+ * Build final tile map with persistence filter.
  */
 function buildFilteredTiles(
   itemCounts: Map<string, Map<number, number>>,
@@ -223,7 +307,6 @@ function buildFilteredTiles(
     const itemIds: number[] = [];
     for (const [id, count] of counts.entries()) {
       const def = dat.items.get(id);
-      // Ground tiles (stackPrio 0) always kept; others need >= 2 sightings
       if (def && (def.stackPrio === 0 || count >= 2)) {
         itemIds.push(id);
       }
