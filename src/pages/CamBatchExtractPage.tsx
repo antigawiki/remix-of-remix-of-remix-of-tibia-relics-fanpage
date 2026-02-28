@@ -196,18 +196,44 @@ const CamBatchExtractPage = () => {
 
   const generateMap = async () => {
     setGenerating(true);
+    const failedFloors: number[] = [];
+    let totalChunks = 0;
+
     try {
-      let totalChunks = 0;
       for (let z = 0; z <= 15; z++) {
         setCompactStatus(`Gerando mapa... andar ${z + 1}/16`);
         const { data, error } = await supabase.rpc('compact_tiles_to_chunks' as any, { p_floor: z });
-        if (error) console.error(`[Compact] Floor ${z} error:`, error);
-        else if (data && data > 0) {
+        if (error) {
+          console.error(`[Compact] Floor ${z} error:`, error);
+          failedFloors.push(z);
+        } else if (data && data > 0) {
           totalChunks += data;
           console.log(`[Compact] Floor ${z}: ${data} chunks`);
         }
       }
-      toast.success(`Mapa gerado! ${totalChunks} chunks criados.`);
+
+      // Retry failed floors once
+      if (failedFloors.length > 0) {
+        const retryFloors = [...failedFloors];
+        failedFloors.length = 0;
+        for (const z of retryFloors) {
+          setCompactStatus(`Retentando andar ${z}...`);
+          const { data, error } = await supabase.rpc('compact_tiles_to_chunks' as any, { p_floor: z });
+          if (error) {
+            console.error(`[Compact] Retry floor ${z} error:`, error);
+            failedFloors.push(z);
+          } else if (data && data > 0) {
+            totalChunks += data;
+            console.log(`[Compact] Retry floor ${z}: ${data} chunks`);
+          }
+        }
+      }
+
+      if (failedFloors.length > 0) {
+        toast.error(`Mapa gerado parcialmente. Andares com erro: ${failedFloors.join(', ')}. Tente novamente.`);
+      } else {
+        toast.success(`Mapa gerado! ${totalChunks} chunks criados.`);
+      }
     } catch (err) {
       console.error('[Compact] Error:', err);
       toast.error('Erro ao gerar mapa');
