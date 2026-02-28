@@ -286,6 +286,9 @@ const CamMapPage = () => {
             <MapIcon className="w-5 h-5 text-gold" />
             <h1 className="font-heading text-lg text-gold">Cam Map</h1>
           </div>
+          <Link to="/b7d3e1a9f5c2/extract" className="text-xs text-muted-foreground hover:text-gold transition-colors ml-4">
+            📦 Batch Extract
+          </Link>
         </div>
         <div className="flex items-center gap-2">
           <LanguageSelector />
