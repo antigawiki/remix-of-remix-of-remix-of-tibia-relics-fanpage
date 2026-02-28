@@ -441,7 +441,7 @@ const CamMapPage = () => {
 
         {/* Legend overlay */}
         {!isLoading && (
-          <div className="absolute top-4 left-4 z-[1000] bg-card/90 border border-border/50 rounded-sm px-3 py-2 flex flex-col gap-1">
+          <div className="absolute bottom-4 left-4 z-[1000] bg-card/90 border border-border/50 rounded-sm px-3 py-2 flex flex-col gap-1">
             <div className="flex items-center gap-2">
               <span className="inline-block w-3 h-3 border-2 rounded-sm" style={{ borderColor: '#00ff88', background: 'rgba(0,255,136,0.15)' }} />
               <span className="text-xs text-muted-foreground">Rope Hole</span>
