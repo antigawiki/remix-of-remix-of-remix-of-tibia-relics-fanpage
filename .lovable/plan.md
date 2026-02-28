@@ -1,40 +1,55 @@
 
 
-## Diagnostico e Correcoes
+## Diagnostico: Acumulacao de itens fantasma entre snapshots
 
-Identifiquei 3 causas raiz para os problemas reportados:
+### Causa raiz
 
-### 1. Itens estruturais filtrados indevidamente (paredes, depots, bancadas)
+O `snapshotTilesWithCounts` funciona como um **acumulador permanente**: ele coleta IDs de itens de TODOS os snapshots em um `Map<string, Map<number, number>>` que nunca remove entradas. Isso causa dois problemas graves:
 
-**Causa**: Dois filtros excessivos estao descartando itens validos:
+1. **Itens fantasma**: Se um tile teve o item 300 no snapshot 1, mas o item foi removido no snapshot 5 (porta abriu, item foi pego, etc.), o item 300 permanece na saida final. Resultado: tiles com itens que nao existem mais, causando o visual "atropelado".
 
-- **`buildFilteredTiles`** (mapExtractor.ts): Exige que itens com `stackPrio > 0` aparecam **2 ou mais vezes** nos snapshots para serem incluidos. Paredes e depots frequentemente aparecem apenas 1 vez por snapshot, sendo descartados.
-- **`mapTileRenderer.ts`**: O renderer filtra itens com `stackPrio > 3`, mas a extracao permite ate `stackPrio 5`. Itens com stackPrio 4-5 sao extraidos mas nunca renderizados.
+2. **Perda de duplicatas legitimas**: O `Map<number, number>` (id -> count) colapsa duplicatas. Se um tile tem legitimamente DOIS itens com o mesmo ID (ex: duas paredes iguais empilhadas), apenas um eh salvo. O CamPlayer nao tem esse problema pois renderiza diretamente do GameState que preserva a lista completa.
 
-**Correcao**:
-- Em `buildFilteredTiles`: Remover o requisito de `count >= 2`. Todos os itens extraidos devem ser incluidos (o filtro de `stackPrio <= 5` na extracao ja e suficiente).
-- Em `mapTileRenderer.ts`: Aumentar o limite de `stackPrio > 3` para `stackPrio > 5`, alinhando com a extracao.
+3. **Perda de ordem**: O `Map` perde a ordem de empilhamento dos itens. O CamPlayer renderiza na ordem correta do Tibia (chao primeiro, depois paredes, depois topo), mas o extrator devolve em ordem arbitraria.
 
-### 2. Spawns desapareceram (coordenadas desalinhadas)
+### Por que o CamPlayer funciona e o mapa nao
 
-**Causa**: O extrator (`mapExtractor.ts`) usa `DB_CHUNK = 32` para agrupar spawns, salvando `chunk_x = floor(x/32)`. Porem, o viewer (`CamMapPage.tsx`) agora usa `DB_CHUNK = 8`, calculando `dbBaseX = chunk_x * 8` ao inves de `chunk_x * 32`. Isso posiciona todas as criaturas nas coordenadas erradas.
+O CamPlayer renderiza direto do `GameState.tiles` -- que sempre tem o estado ATUAL de cada tile com a lista completa de itens na ordem correta. O extrator, por outro lado, acumula dados de todos os snapshots e os colapsa em um set de IDs unicos.
 
-**Correcao**: No `loadSpawns` do CamMapPage, usar o tamanho correto de 32 para calcular a base das posicoes dos spawns (ja que os spawns continuam sendo armazenados em chunks 32x32). Criar constante `SPAWN_DB_CHUNK = 32` separada.
+### Correcao
 
-### 3. Upload lento
+Substituir o sistema de contagem por um sistema de "ultimo snapshot vence" (`last-write-wins`). Em vez de acumular contagens, simplesmente armazenar a lista COMPLETA de itens do tile como vista no ultimo snapshot em que o tile estava dentro da area de proximidade. Isso:
 
-**Causa**: Batch de 50 tiles por vez com `await Promise.all` sequencial.
+- Preserva a ordem de empilhamento (igual ao CamPlayer)
+- Preserva duplicatas legitimas do mesmo item ID
+- Remove automaticamente itens que nao existem mais no tile
+- Simplifica drasticamente o codigo
 
-**Correcao**:
-- Aumentar `UPLOAD_BATCH` de 50 para 200 (mais RPCs em paralelo).
-- Remover o `await` entre o upload de tiles e spawns, executando-os em paralelo quando possivel.
+### Arquivo a modificar
 
----
+**`src/lib/tibiaRelic/mapExtractor.ts`**:
 
-### Arquivos a modificar
+- Trocar `itemCounts: Map<string, Map<number, number>>` por `latestTiles: Map<string, number[]>` -- armazena a lista completa de item IDs do ultimo snapshot
+- `snapshotTilesWithCounts` vira `snapshotTiles`: para cada tile dentro da proximidade, extrai a lista de item IDs (com stackPrio <= 5) e SUBSTITUI a entrada anterior (nao acumula)
+- `buildFilteredTiles` se torna desnecessario -- o `latestTiles` ja eh o resultado final
+- Manter toda a logica de spawns inalterada
 
-1. **`src/lib/tibiaRelic/mapExtractor.ts`**: Remover filtro `count >= 2` em `buildFilteredTiles`
-2. **`src/lib/tibiaRelic/mapTileRenderer.ts`**: Mudar `stackPrio > 3` para `stackPrio > 5`
-3. **`src/pages/CamMapPage.tsx`**: Corrigir `loadSpawns` para usar chunk size 32 nos calculos de posicao
-4. **`src/pages/CamBatchExtractPage.tsx`**: Aumentar `UPLOAD_BATCH` para 200
+### Logica simplificada
+
+```text
+snapshotTiles(gs, dat, latestTiles):
+  para cada tile em gs.tiles:
+    filtrar por proximidade (±18x, ±14y)
+    filtrar por coordenadas validas
+    coletar items: para cada item 'it' com stackPrio <= 5, push(id)
+    se items.length > 0:
+      latestTiles.set(key, items)  // SUBSTITUI, nao acumula
+
+extractMapTiles():
+  latestTiles = new Map()
+  ...processar frames...
+  snapshotTiles(gs, dat, latestTiles)  // chamado a cada chunk
+  ...
+  resolve({ tiles: latestTiles, spawns })  // sem buildFilteredTiles
+```
 
