@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { Link } from 'react-router-dom';
-import { ArrowLeft, Upload, Loader2, CheckCircle2, XCircle, FileIcon, Trash2 } from 'lucide-react';
+import { ArrowLeft, Upload, Loader2, CheckCircle2, XCircle, FileIcon, Trash2, Map } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
 import { ThemeToggle } from '@/components/ThemeToggle';
@@ -163,22 +163,7 @@ const CamBatchExtractPage = () => {
       }
     }
 
-    // Auto-compact tiles into 8x8 chunks
-    if (!abortRef.current) {
-      setCompactStatus('Compactando tiles em chunks 8x8...');
-      try {
-        for (let z = 0; z <= 15; z++) {
-          const { data, error } = await supabase.rpc('compact_tiles_to_chunks' as any, { p_floor: z });
-          if (error) console.error(`[Compact] Floor ${z} error:`, error);
-          else if (data && data > 0) console.log(`[Compact] Floor ${z}: ${data} chunks`);
-        }
-        toast.success('Tiles compactados em chunks 8x8!');
-      } catch (err) {
-        console.error('[Compact] Error:', err);
-        toast.error('Erro ao compactar tiles');
-      }
-      setCompactStatus('');
-    }
+    // Auto-compact removed — user triggers "Gerar Mapa" manually
 
     setProcessing(false);
     setCurrentIdx(-1);
@@ -192,6 +177,7 @@ const CamBatchExtractPage = () => {
     setFiles([]);
   };
 
+  const [generating, setGenerating] = useState(false);
   const [clearing, setClearing] = useState(false);
 
   const clearDatabase = async () => {
@@ -205,6 +191,29 @@ const CamBatchExtractPage = () => {
       console.error(err);
     } finally {
       setClearing(false);
+    }
+  };
+
+  const generateMap = async () => {
+    setGenerating(true);
+    try {
+      let totalChunks = 0;
+      for (let z = 0; z <= 15; z++) {
+        setCompactStatus(`Gerando mapa... andar ${z + 1}/16`);
+        const { data, error } = await supabase.rpc('compact_tiles_to_chunks' as any, { p_floor: z });
+        if (error) console.error(`[Compact] Floor ${z} error:`, error);
+        else if (data && data > 0) {
+          totalChunks += data;
+          console.log(`[Compact] Floor ${z}: ${data} chunks`);
+        }
+      }
+      toast.success(`Mapa gerado! ${totalChunks} chunks criados.`);
+    } catch (err) {
+      console.error('[Compact] Error:', err);
+      toast.error('Erro ao gerar mapa');
+    } finally {
+      setCompactStatus('');
+      setGenerating(false);
     }
   };
 
@@ -227,6 +236,15 @@ const CamBatchExtractPage = () => {
           </div>
         </div>
         <div className="flex items-center gap-2">
+          <Button
+            size="sm"
+            onClick={generateMap}
+            disabled={processing || generating || clearing}
+            className="bg-gold text-gold-foreground hover:bg-gold/90"
+          >
+            {generating ? <Loader2 className="w-3 h-3 mr-1 animate-spin" /> : <Map className="w-3 h-3 mr-1" />}
+            Gerar Mapa
+          </Button>
           <AlertDialog>
             <AlertDialogTrigger asChild>
               <Button variant="destructive" size="sm" disabled={processing || clearing}>
