@@ -64,8 +64,10 @@ export class MapTileRenderer {
     tiles: TileData[],
     creatures?: CreatureData[],
     spawns?: SpawnRenderData[],
+    options?: { hideLooseItems?: boolean },
   ): HTMLCanvasElement | null {
-    const key = `${chunkX},${chunkY},${z}`;
+    const hideLoose = options?.hideLooseItems ?? false;
+    const key = `${chunkX},${chunkY},${z}${hideLoose ? ',noitems' : ''}`;
     if (this.cache.has(key)) return this.cache.get(key)!;
 
     if (tiles.length === 0 && (!creatures || creatures.length === 0)) {
@@ -108,6 +110,8 @@ export class MapTileRenderer {
           const def = this.dat.items.get(itemId);
           if (!def) continue;
           if (def.stackPrio > 5) continue;
+          // Skip loose items (corpses, loot, containers) when hideLooseItems is on
+          if (hideLoose && def.stackPrio >= 4) continue;
           this.drawItem(ctx, def, px, py, wx, wy);
         }
 
