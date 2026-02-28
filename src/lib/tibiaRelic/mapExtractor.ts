@@ -115,7 +115,31 @@ function snapshotTilesWithCounts(
   itemCounts: Map<string, Map<number, number>>,
   _snapshotNum: number,
 ) {
+  // Only accept tiles within the camera viewport (~18x14 around camera center)
+  // This prevents broken frames from placing tiles at completely wrong coordinates
+  const camX = gs.camX;
+  const camY = gs.camY;
+  const camZ = gs.camZ;
+  const VIEW_RANGE_X = 20; // generous margin beyond 18x14 viewport
+  const VIEW_RANGE_Y = 16;
+
   for (const [key, tileItems] of gs.tiles.entries()) {
+    // Parse exact coordinates from tile key
+    const parts = key.split(',');
+    if (parts.length !== 3) continue;
+    const tx = parseInt(parts[0], 10);
+    const ty = parseInt(parts[1], 10);
+    const tz = parseInt(parts[2], 10);
+
+    // Skip tiles with invalid/zero coordinates
+    if (tx === 0 || ty === 0) continue;
+    // Skip tiles on different floor than camera (only accept same floor)
+    if (tz !== camZ) continue;
+    // Skip tiles outside reasonable viewport range of camera
+    if (Math.abs(tx - camX) > VIEW_RANGE_X || Math.abs(ty - camY) > VIEW_RANGE_Y) continue;
+    // Skip tiles with obviously invalid world coordinates (Tibia map range)
+    if (tx < 30000 || tx > 35000 || ty < 30000 || ty > 35000 || tz < 0 || tz > 15) continue;
+
     for (const item of tileItems) {
       if (item[0] !== 'it') continue;
       const id = item[1];
@@ -140,10 +164,21 @@ function snapshotCreatures(
   creatureMap: Map<string, CreatureSpawn>,
   deadCreatures: Set<string>,
 ) {
+  const camX = gs.camX;
+  const camY = gs.camY;
+  const camZ = gs.camZ;
+
   for (const c of gs.creatures.values()) {
     if (c.x === 0 && c.y === 0 && c.z === 0) continue;
     if (!c.name || c.name === '') continue;
     if (c.outfit === 0 && c.outfitItem === 0) continue;
+
+    // Skip creatures with invalid world coordinates
+    if (c.x < 30000 || c.x > 35000 || c.y < 30000 || c.y > 35000 || c.z < 0 || c.z > 15) continue;
+    // Skip creatures too far from camera (likely stale data)
+    if (Math.abs(c.x - camX) > 20 || Math.abs(c.y - camY) > 16) continue;
+    // Skip creatures on different floor
+    if (c.z !== camZ) continue;
 
     // Skip the recording player
     if (c.id === gs.playerId) continue;
