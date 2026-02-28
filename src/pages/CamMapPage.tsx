@@ -21,53 +21,15 @@ const CHUNK_TILES = 8; // renderer chunk size (8x8 tiles = 256px)
 const DB_CHUNK = 32;  // database chunk size (32x32 tiles)
 const PAGE_SIZE = 1000;
 
-/** Preload all tiles for a floor from cam_map_chunks, distributing into renderer-sized chunks. */
+/** Preload creatures for a floor from cam_map_creatures. */
 async function preloadFloor(
   z: number,
   onProgress: (loaded: number) => void,
-): Promise<{ chunkMap: Map<string, TileData[]>; creatureMap: Map<string, CreatureData[]> }> {
-  const chunkMap = new Map<string, TileData[]>();
+): Promise<{ creatureMap: Map<string, CreatureData[]> }> {
   const creatureMap = new Map<string, CreatureData[]>();
 
-  // Load chunks (each row = 32x32 tiles)
   let offset = 0;
-  let totalTiles = 0;
-  while (true) {
-    const { data, error } = await supabase
-      .from('cam_map_chunks' as any)
-      .select('chunk_x, chunk_y, z, tiles_data')
-      .eq('z', z)
-      .range(offset, offset + PAGE_SIZE - 1);
-
-    if (error || !data || data.length === 0) break;
-
-    for (const row of data as any[]) {
-      const tilesData = row.tiles_data as Record<string, number[]>;
-      const baseX = row.chunk_x * DB_CHUNK;
-      const baseY = row.chunk_y * DB_CHUNK;
-
-      for (const [relKey, items] of Object.entries(tilesData)) {
-        const [rx, ry] = relKey.split(',').map(Number);
-        const absX = baseX + rx;
-        const absY = baseY + ry;
-        // Map to renderer chunk (8x8)
-        const rcx = Math.floor(absX / CHUNK_TILES);
-        const rcy = Math.floor(absY / CHUNK_TILES);
-        const key = `${rcx},${rcy}`;
-        let arr = chunkMap.get(key);
-        if (!arr) { arr = []; chunkMap.set(key, arr); }
-        arr.push({ x: absX, y: absY, z: row.z, items: items as number[] });
-        totalTiles++;
-      }
-    }
-
-    onProgress(totalTiles);
-    offset += PAGE_SIZE;
-    if (data.length < PAGE_SIZE) break;
-  }
-
-  // Load creatures
-  offset = 0;
+  let totalCreatures = 0;
   while (true) {
     const { data, error } = await supabase
       .from('cam_map_creatures' as any)
@@ -84,13 +46,15 @@ async function preloadFloor(
       let arr = creatureMap.get(key);
       if (!arr) { arr = []; creatureMap.set(key, arr); }
       arr.push({ x: row.x, y: row.y, z: row.z, name: row.name, outfit_id: row.outfit_id, direction: row.direction });
+      totalCreatures++;
     }
 
+    onProgress(totalCreatures);
     offset += PAGE_SIZE;
     if (data.length < PAGE_SIZE) break;
   }
 
-  return { chunkMap, creatureMap };
+  return { creatureMap };
 }
 
 const CamMapPage = () => {
@@ -99,7 +63,7 @@ const CamMapPage = () => {
   const mapRef = useRef<L.Map | null>(null);
   const tileLayerRef = useRef<L.GridLayer | null>(null);
   const rendererRef = useRef<MapTileRenderer | null>(null);
-  const floorDataRef = useRef<Map<string, TileData[]>>(new Map());
+  const floorDataRef = useRef<Map<string, TileData[]>>(new Map()); // kept for renderer compat
   const creatureDataRef = useRef<Map<string, CreatureData[]>>(new Map());
 
   const [currentFloor, setCurrentFloor] = useState(DEFAULT_Z);
@@ -107,7 +71,7 @@ const CamMapPage = () => {
   const [floorLoading, setFloorLoading] = useState(true);
   const [loadedTiles, setLoadedTiles] = useState(0);
   const [mouseCoords, setMouseCoords] = useState<{ x: number; y: number } | null>(null);
-  const [tileCount, setTileCount] = useState(0);
+  const [creatureCount, setCreatureCount] = useState(0);
 
   // Load sprite/dat data
   useEffect(() => {
@@ -147,11 +111,10 @@ const CamMapPage = () => {
 
     preloadFloor(currentFloor, (count) => {
       if (!cancelled) setLoadedTiles(count);
-    }).then(({ chunkMap, creatureMap }) => {
+    }).then(({ creatureMap }) => {
       if (cancelled) return;
-      floorDataRef.current = chunkMap;
       creatureDataRef.current = creatureMap;
-      setTileCount(Array.from(chunkMap.values()).reduce((s, a) => s + a.length, 0));
+      setCreatureCount(Array.from(creatureMap.values()).reduce((s, a) => s + a.length, 0));
       setFloorLoading(false);
     });
 
@@ -159,8 +122,8 @@ const CamMapPage = () => {
   }, [currentFloor, assetsLoading]);
 
   // Get chunk tiles from memory (instant)
-  const getChunkTiles = useCallback((chunkX: number, chunkY: number): TileData[] => {
-    return floorDataRef.current.get(`${chunkX},${chunkY}`) || [];
+  const getChunkTiles = useCallback((_chunkX: number, _chunkY: number): TileData[] => {
+    return []; // No longer rendering extracted tiles
   }, []);
 
   const getChunkCreatures = useCallback((chunkX: number, chunkY: number): CreatureData[] => {
@@ -369,11 +332,11 @@ const CamMapPage = () => {
           </div>
         )}
 
-        {/* Tile count overlay */}
+        {/* Creature count overlay */}
         {!isLoading && (
           <div className="absolute bottom-4 right-4 z-[1000] bg-card/90 border border-border/50 rounded-sm px-3 py-1.5">
             <span className="text-xs text-muted-foreground">
-              {tileCount.toLocaleString()} tiles mapeados neste andar
+              {creatureCount.toLocaleString()} criaturas neste andar
             </span>
           </div>
         )}
