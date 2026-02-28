@@ -57,8 +57,9 @@ export async function extractMapTiles(
   const itemCounts = new Map<string, Map<number, number>>();
   // Creature spawns: key "gridX,gridY,z,name" -> CreatureSpawn (last sighting wins)
   const creatureMap = new Map<string, CreatureSpawn>();
-  // Track creatures seen dead — will be purged at end
-  const deadCreatures = new Set<string>();
+  // Track creature ID -> grid key for accurate death purging
+  const creatureIdToKey = new Map<number, string>();
+  const deadCreatureIds = new Set<number>();
 
   let frameIdx = 0;
   let snapshotNum = 0;
@@ -78,7 +79,7 @@ export async function extractMapTiles(
       // After each chunk, snapshot current tiles and creatures
       snapshotNum++;
       snapshotTilesWithCounts(gs, dat, itemCounts, snapshotNum);
-      snapshotCreatures(gs, creatureMap, deadCreatures);
+      snapshotCreatures(gs, creatureMap, creatureIdToKey, deadCreatureIds);
 
       if (onProgress) {
         onProgress({
@@ -94,9 +95,10 @@ export async function extractMapTiles(
       } else {
         // Build final tiles using persistence filter (items seen in >= 2 snapshots)
         const tiles = buildFilteredTiles(itemCounts, dat);
-        // Purge creatures that were last seen dead
-        for (const deadKey of deadCreatures) {
-          creatureMap.delete(deadKey);
+        // Purge creatures that were seen dead (by ID -> grid key)
+        for (const deadId of deadCreatureIds) {
+          const key = creatureIdToKey.get(deadId);
+          if (key) creatureMap.delete(key);
         }
         resolve({ tiles, creatures: creatureMap });
       }
@@ -115,18 +117,24 @@ function snapshotTilesWithCounts(
   itemCounts: Map<string, Map<number, number>>,
   _snapshotNum: number,
 ) {
+  const camX = gs.camX;
+  const camY = gs.camY;
+
   for (const [key, tileItems] of gs.tiles.entries()) {
-    // Parse exact coordinates from tile key
     const parts = key.split(',');
     if (parts.length !== 3) continue;
     const tx = parseInt(parts[0], 10);
     const ty = parseInt(parts[1], 10);
     const tz = parseInt(parts[2], 10);
 
-    // Skip tiles with invalid/zero coordinates
     if (tx === 0 || ty === 0) continue;
-    // Skip tiles with obviously invalid world coordinates (Tibia map range)
     if (tx < 30000 || tx > 35000 || ty < 30000 || ty > 35000 || tz < 0 || tz > 15) continue;
+
+    // Viewport filter: server sends tiles within ~18x14 of the player.
+    // Tiles beyond that are stale data from previous positions in GameState.
+    if (camX > 0 && camY > 0) {
+      if (Math.abs(tx - camX) > 18 || Math.abs(ty - camY) > 14) continue;
+    }
 
     for (const item of tileItems) {
       if (item[0] !== 'it') continue;
@@ -150,7 +158,8 @@ function snapshotTilesWithCounts(
 function snapshotCreatures(
   gs: GameState,
   creatureMap: Map<string, CreatureSpawn>,
-  deadCreatures: Set<string>,
+  creatureIdToKey: Map<number, string>,
+  deadCreatureIds: Set<number>,
 ) {
   const camX = gs.camX;
   const camY = gs.camY;
@@ -161,37 +170,34 @@ function snapshotCreatures(
     if (!c.name || c.name === '') continue;
     if (c.outfit === 0 && c.outfitItem === 0) continue;
 
-    // Skip creatures with invalid world coordinates
     if (c.x < 30000 || c.x > 35000 || c.y < 30000 || c.y > 35000 || c.z < 0 || c.z > 15) continue;
-    // Skip creatures too far from camera (likely stale data)
     if (Math.abs(c.x - camX) > 20 || Math.abs(c.y - camY) > 16) continue;
-    // Skip creatures on different floor
     if (c.z !== camZ) continue;
 
-    // Skip the recording player
     if (c.id === gs.playerId) continue;
-
-    // Skip other players: those with customized outfit colors
     if (c.head !== 0 || c.body !== 0 || c.legs !== 0 || c.feet !== 0) continue;
-
-    // Skip players with default white outfit (outfit 128-143 with all colors zero)
     if (c.outfit >= 128 && c.outfit <= 143) continue;
 
-    // Round to 5x5 grid to deduplicate moving creatures
     const gridX = Math.round(c.x / 5) * 5;
     const gridY = Math.round(c.y / 5) * 5;
     const key = `${gridX},${gridY},${c.z},${c.name}`;
 
     if (c.health <= 0) {
-      // Mark as dead — will be purged at end
-      deadCreatures.add(key);
+      deadCreatureIds.add(c.id);
+      // Also remove from creatureMap immediately if same key
       creatureMap.delete(key);
       continue;
     }
 
-    // Always overwrite with latest sighting (removes "first only" limitation)
-    // Also remove from dead set if it respawned
-    deadCreatures.delete(key);
+    // Alive: track ID -> key mapping, remove from dead set if respawned
+    // If this creature had a previous key, remove the old entry
+    const oldKey = creatureIdToKey.get(c.id);
+    if (oldKey && oldKey !== key) {
+      creatureMap.delete(oldKey);
+    }
+    creatureIdToKey.set(c.id, key);
+    deadCreatureIds.delete(c.id);
+
     creatureMap.set(key, {
       x: gridX,
       y: gridY,
