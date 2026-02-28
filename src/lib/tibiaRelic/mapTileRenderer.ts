@@ -108,7 +108,7 @@ export class MapTileRenderer {
           const def = this.dat.items.get(itemId);
           if (!def) continue;
           if (def.stackPrio > 3) continue;
-          this.drawItem(ctx, def, px, py);
+          this.drawItem(ctx, def, px, py, wx, wy);
         }
 
         // Draw special tile overlays
@@ -208,15 +208,25 @@ export class MapTileRenderer {
     }
   }
 
-  private drawItem(ctx: CanvasRenderingContext2D, def: ItemType, px: number, py: number) {
-    // Only draw the primary sprite (index 0) for each item.
-    // Each tile stores its own items, so every ground position is filled.
-    // Drawing multi-tile overflow causes clipping at chunk boundaries.
-    const sid = def.spriteIds[0];
-    if (sid) {
-      const sprCanvas = this.getSpriteCanvas(sid);
-      if (sprCanvas) ctx.drawImage(sprCanvas, px, py);
+  private drawItem(ctx: CanvasRenderingContext2D, def: ItemType, px: number, py: number, wx: number, wy: number) {
+    for (let th = 0; th < def.height; th++) {
+      for (let tw = 0; tw < def.width; tw++) {
+        const sid = this.getItemSpriteIndex(def, wx, wy, tw, th);
+        if (!sid) continue;
+        const sprCanvas = this.getSpriteCanvas(sid);
+        if (sprCanvas) {
+          ctx.drawImage(sprCanvas, px - tw * TILE_PX - def.dispX, py - th * TILE_PX - def.dispY);
+        }
+      }
     }
+  }
+
+  private getItemSpriteIndex(it: ItemType, wx: number, wy: number, tw: number, th: number): number {
+    const A = Math.max(1, it.anim), PZ = Math.max(1, it.patZ), PY = Math.max(1, it.patY);
+    const PX = Math.max(1, it.patX), L = Math.max(1, it.layers), H = it.height, W = it.width;
+    const a = 0, z = 0, y = wy % PY, x = wx % PX, l = 0, h = th % H, w = tw % W;
+    const idx = ((((((a * PZ + z) * PY + y) * PX + x) * L + l) * H + h) * W + w);
+    return (it.spriteIds && idx < it.spriteIds.length) ? it.spriteIds[idx] : 0;
   }
 
   /**

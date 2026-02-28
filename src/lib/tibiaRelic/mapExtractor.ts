@@ -156,7 +156,7 @@ function snapshotCreaturesForVisit(
     if (c.health <= 0) continue; // Only living creatures
     if (c.x < 30000 || c.x > 35000 || c.y < 30000 || c.y > 35000 || c.z < 0 || c.z > 15) continue;
     if (Math.abs(c.x - camX) > 20 || Math.abs(c.y - camY) > 16) continue;
-    if (c.z !== camZ) continue;
+    // Accept creatures from all visible floors (no Z filter)
     if (c.id === gs.playerId) continue;
     if (c.head !== 0 || c.body !== 0 || c.legs !== 0 || c.feet !== 0) continue;
     if (c.outfit >= 128 && c.outfit <= 143) continue;
