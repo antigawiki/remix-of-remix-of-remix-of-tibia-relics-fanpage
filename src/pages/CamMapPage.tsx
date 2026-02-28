@@ -21,24 +21,21 @@ const CHUNK_TILES = 8; // renderer chunk size (8x8 tiles = 256px)
 const DB_CHUNK = 32;  // database chunk size (32x32 tiles)
 const PAGE_SIZE = 1000;
 
-/** Preload creatures for a floor from cam_map_creatures. */
-async function preloadFloor(
+/** Load creatures for a floor. */
+async function loadCreatures(
   z: number,
-  onProgress: (loaded: number) => void,
-): Promise<{ creatureMap: Map<string, CreatureData[]> }> {
+  onProgress: (label: string, count: number) => void,
+): Promise<Map<string, CreatureData[]>> {
   const creatureMap = new Map<string, CreatureData[]>();
-
   let offset = 0;
-  let totalCreatures = 0;
+  let total = 0;
   while (true) {
     const { data, error } = await supabase
       .from('cam_map_creatures' as any)
       .select('x, y, z, name, outfit_id, direction')
       .eq('z', z)
       .range(offset, offset + PAGE_SIZE - 1);
-
     if (error || !data || data.length === 0) break;
-
     for (const row of data as any[]) {
       const cx = Math.floor(row.x / CHUNK_TILES);
       const cy = Math.floor(row.y / CHUNK_TILES);
@@ -46,15 +43,66 @@ async function preloadFloor(
       let arr = creatureMap.get(key);
       if (!arr) { arr = []; creatureMap.set(key, arr); }
       arr.push({ x: row.x, y: row.y, z: row.z, name: row.name, outfit_id: row.outfit_id, direction: row.direction });
-      totalCreatures++;
+      total++;
     }
-
-    onProgress(totalCreatures);
+    onProgress('criaturas', total);
     offset += PAGE_SIZE;
     if (data.length < PAGE_SIZE) break;
   }
+  return creatureMap;
+}
 
-  return { creatureMap };
+/** Load terrain chunks (32x32) and distribute into 8x8 sub-chunks for the renderer. */
+async function loadChunks(
+  z: number,
+  onProgress: (label: string, count: number) => void,
+): Promise<Map<string, TileData[]>> {
+  const tileMap = new Map<string, TileData[]>();
+  let offset = 0;
+  let totalTiles = 0;
+  while (true) {
+    const { data, error } = await supabase
+      .from('cam_map_chunks' as any)
+      .select('chunk_x, chunk_y, z, tiles_data')
+      .eq('z', z)
+      .range(offset, offset + PAGE_SIZE - 1);
+    if (error || !data || data.length === 0) break;
+    for (const row of data as any[]) {
+      const tilesData = row.tiles_data as Record<string, number[]>;
+      if (!tilesData) continue;
+      for (const [relKey, itemIds] of Object.entries(tilesData)) {
+        const [relXStr, relYStr] = relKey.split(',');
+        const relX = parseInt(relXStr, 10);
+        const relY = parseInt(relYStr, 10);
+        if (isNaN(relX) || isNaN(relY)) continue;
+        const absX = row.chunk_x * DB_CHUNK + relX;
+        const absY = row.chunk_y * DB_CHUNK + relY;
+        const subCX = Math.floor(absX / CHUNK_TILES);
+        const subCY = Math.floor(absY / CHUNK_TILES);
+        const key = `${subCX},${subCY}`;
+        let arr = tileMap.get(key);
+        if (!arr) { arr = []; tileMap.set(key, arr); }
+        arr.push({ x: absX, y: absY, z, items: itemIds });
+        totalTiles++;
+      }
+    }
+    onProgress('tiles', totalTiles);
+    offset += PAGE_SIZE;
+    if (data.length < PAGE_SIZE) break;
+  }
+  return tileMap;
+}
+
+/** Preload floor data (terrain + creatures) in parallel. */
+async function preloadFloor(
+  z: number,
+  onProgress: (label: string, count: number) => void,
+): Promise<{ tileMap: Map<string, TileData[]>; creatureMap: Map<string, CreatureData[]> }> {
+  const [tileMap, creatureMap] = await Promise.all([
+    loadChunks(z, onProgress),
+    loadCreatures(z, onProgress),
+  ]);
+  return { tileMap, creatureMap };
 }
 
 const CamMapPage = () => {
@@ -69,9 +117,10 @@ const CamMapPage = () => {
   const [currentFloor, setCurrentFloor] = useState(DEFAULT_Z);
   const [assetsLoading, setAssetsLoading] = useState(true);
   const [floorLoading, setFloorLoading] = useState(true);
-  const [loadedTiles, setLoadedTiles] = useState(0);
+  const [loadingStatus, setLoadingStatus] = useState('');
   const [mouseCoords, setMouseCoords] = useState<{ x: number; y: number } | null>(null);
   const [creatureCount, setCreatureCount] = useState(0);
+  const [tileCount, setTileCount] = useState(0);
 
   // Load sprite/dat data
   useEffect(() => {
@@ -107,13 +156,15 @@ const CamMapPage = () => {
     let cancelled = false;
 
     setFloorLoading(true);
-    setLoadedTiles(0);
+    setLoadingStatus('');
 
-    preloadFloor(currentFloor, (count) => {
-      if (!cancelled) setLoadedTiles(count);
-    }).then(({ creatureMap }) => {
+    preloadFloor(currentFloor, (label, count) => {
+      if (!cancelled) setLoadingStatus(`${count.toLocaleString()} ${label}`);
+    }).then(({ tileMap, creatureMap }) => {
       if (cancelled) return;
+      floorDataRef.current = tileMap;
       creatureDataRef.current = creatureMap;
+      setTileCount(Array.from(tileMap.values()).reduce((s, a) => s + a.length, 0));
       setCreatureCount(Array.from(creatureMap.values()).reduce((s, a) => s + a.length, 0));
       setFloorLoading(false);
     });
@@ -121,9 +172,9 @@ const CamMapPage = () => {
     return () => { cancelled = true; };
   }, [currentFloor, assetsLoading]);
 
-  // Get chunk tiles from memory (instant)
-  const getChunkTiles = useCallback((_chunkX: number, _chunkY: number): TileData[] => {
-    return []; // No longer rendering extracted tiles
+  // Get chunk tiles from memory
+  const getChunkTiles = useCallback((chunkX: number, chunkY: number): TileData[] => {
+    return floorDataRef.current.get(`${chunkX},${chunkY}`) || [];
   }, []);
 
   const getChunkCreatures = useCallback((chunkX: number, chunkY: number): CreatureData[] => {
@@ -288,7 +339,7 @@ const CamMapPage = () => {
             <div className="flex flex-col items-center gap-3 w-64">
               <Loader2 className="w-6 h-6 text-gold animate-spin" />
               <p className="text-sm text-muted-foreground">
-                Carregando andar... {loadedTiles.toLocaleString()} tiles
+                Carregando andar... {loadingStatus}
               </p>
               <Progress value={undefined} className="w-full h-2" />
             </div>
@@ -336,7 +387,7 @@ const CamMapPage = () => {
         {!isLoading && (
           <div className="absolute bottom-4 right-4 z-[1000] bg-card/90 border border-border/50 rounded-sm px-3 py-1.5">
             <span className="text-xs text-muted-foreground">
-              {creatureCount.toLocaleString()} criaturas neste andar
+              {tileCount.toLocaleString()} tiles | {creatureCount.toLocaleString()} criaturas
             </span>
           </div>
         )}
