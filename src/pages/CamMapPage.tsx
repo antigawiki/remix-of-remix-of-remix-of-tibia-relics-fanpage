@@ -175,13 +175,14 @@ const CamMapPage = () => {
     map.setView([-DEFAULT_CENTER_Y, DEFAULT_CENTER_X], 3);
     mapRef.current = map;
 
-    // External base map layer via proxy to bypass CORS
-    const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+    // External base map layer (direct access — img tags bypass CORS)
+    // Zoom mapping: external_zoom = leaflet_zoom + 3
+    // At leaflet zoom 4 → external zoom 7 (max native), leaflet zoom 5 is upscaled
     const ExternalTileLayer = L.TileLayer.extend({
       getTileUrl(coords: L.Coords) {
-        const z = (this as any)._clampZoom ?? coords.z;
+        const externalZoom = coords.z + 3;
         const floor = (this as any).options.floor ?? 7;
-        return `${supabaseUrl}/functions/v1/map-tile-proxy?zoom=${z}&floor=${floor}&x=${coords.x}&y=${coords.y}`;
+        return `https://st54085.ispot.cc/mapper/tibiarelic/${externalZoom}/${floor}/${coords.x}_${coords.y}.png`;
       },
     });
 
@@ -189,6 +190,7 @@ const CamMapPage = () => {
       tileSize: 256,
       minZoom: 0,
       maxZoom: 5,
+      maxNativeZoom: 4, // external zoom 7 is the max available
       noWrap: true,
       floor: DEFAULT_Z,
       errorTileUrl: '',
