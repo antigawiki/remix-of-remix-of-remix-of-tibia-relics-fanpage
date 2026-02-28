@@ -40,6 +40,7 @@ import KillStatisticsPage from "./pages/KillStatisticsPage";
 import HousesPage from "./pages/HousesPage";
 import CamPlayerPage from "./pages/CamPlayerPage";
 import CamMapPage from "./pages/CamMapPage";
+import CamBatchExtractPage from "./pages/CamBatchExtractPage";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -90,6 +91,7 @@ const App = () => (
               <Route path="/houses" element={<HousesPage />} />
               <Route path="/a3e7c9b1f2d8e4a6" element={<CamPlayerPage />} />
               <Route path="/b7d3e1a9f5c2" element={<CamMapPage />} />
+              <Route path="/b7d3e1a9f5c2/extract" element={<CamBatchExtractPage />} />
               {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
               <Route path="*" element={<NotFound />} />
             </Routes>
