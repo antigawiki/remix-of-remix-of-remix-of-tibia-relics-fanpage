@@ -50,6 +50,36 @@ export type Database = {
         }
         Relationships: []
       }
+      cam_map_creatures: {
+        Row: {
+          direction: number
+          name: string
+          outfit_id: number
+          updated_at: string
+          x: number
+          y: number
+          z: number
+        }
+        Insert: {
+          direction?: number
+          name: string
+          outfit_id?: number
+          updated_at?: string
+          x: number
+          y: number
+          z: number
+        }
+        Update: {
+          direction?: number
+          name?: string
+          outfit_id?: number
+          updated_at?: string
+          x?: number
+          y?: number
+          z?: number
+        }
+        Relationships: []
+      }
       cam_map_tiles: {
         Row: {
           items: Json

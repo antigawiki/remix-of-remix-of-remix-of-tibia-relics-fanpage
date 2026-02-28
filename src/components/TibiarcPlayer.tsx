@@ -11,7 +11,7 @@ import { DatLoader } from '@/lib/tibiaRelic/datLoader';
 import { PacketParser } from '@/lib/tibiaRelic/packetParser';
 import { GameState, type GameStateSnapshot } from '@/lib/tibiaRelic/gameState';
 import { Renderer } from '@/lib/tibiaRelic/renderer';
-import { extractMapTiles, type MapExtractionProgress } from '@/lib/tibiaRelic/mapExtractor';
+import { extractMapTiles, type MapExtractionProgress, type MapExtractionResult } from '@/lib/tibiaRelic/mapExtractor';
 import { supabase } from '@/integrations/supabase/client';
 
 
@@ -412,15 +412,15 @@ const TibiarcPlayer = ({ className }: TibiarcPlayerProps) => {
     setExtractProgress(null);
 
     try {
-      const tiles = await extractMapTiles(engine.cam, engine.dat, (p) => {
+      const result = await extractMapTiles(engine.cam, engine.dat, (p) => {
         setExtractProgress(p);
       });
 
-      // Upload to database in batches
-      const entries = Array.from(tiles.entries());
+      // Upload tiles to database in batches
+      const tileEntries = Array.from(result.tiles.entries());
       const BATCH = 500;
-      for (let i = 0; i < entries.length; i += BATCH) {
-        const batch = entries.slice(i, i + BATCH).map(([key, items]) => {
+      for (let i = 0; i < tileEntries.length; i += BATCH) {
+        const batch = tileEntries.slice(i, i + BATCH).map(([key, items]) => {
           const [x, y, z] = key.split(',').map(Number);
           return { x, y, z, items, updated_at: new Date().toISOString() };
         });
@@ -430,16 +430,31 @@ const TibiarcPlayer = ({ className }: TibiarcPlayerProps) => {
           .upsert(batch as any, { onConflict: 'x,y,z' });
 
         if (error) {
-          console.error('[MapExtract] Upsert error:', error);
+          console.error('[MapExtract] Tiles upsert error:', error);
         }
-
-        setExtractProgress(prev => prev ? {
-          ...prev,
-          percent: Math.round(100 * Math.min(i + BATCH, entries.length) / entries.length),
-        } : null);
       }
 
-      console.log(`[MapExtract] Done: ${tiles.size} tiles uploaded`);
+      // Upload creatures to database in batches
+      const creatureEntries = Array.from(result.creatures.values());
+      for (let i = 0; i < creatureEntries.length; i += BATCH) {
+        const batch = creatureEntries.slice(i, i + BATCH).map(c => ({
+          x: c.x, y: c.y, z: c.z,
+          name: c.name,
+          outfit_id: c.outfitId,
+          direction: c.direction,
+          updated_at: new Date().toISOString(),
+        }));
+
+        const { error } = await supabase
+          .from('cam_map_creatures' as any)
+          .upsert(batch as any, { onConflict: 'x,y,z,name' });
+
+        if (error) {
+          console.error('[MapExtract] Creatures upsert error:', error);
+        }
+      }
+
+      console.log(`[MapExtract] Done: ${result.tiles.size} tiles, ${result.creatures.size} creatures uploaded`);
     } catch (err) {
       console.error('[MapExtract] Failed:', err);
     } finally {

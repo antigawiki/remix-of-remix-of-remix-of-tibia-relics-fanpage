@@ -21,6 +21,15 @@ export interface TileData {
   items: number[];
 }
 
+export interface CreatureData {
+  x: number;
+  y: number;
+  z: number;
+  name: string;
+  outfit_id: number;
+  direction: number;
+}
+
 export class MapTileRenderer {
   private cache = new Map<string, HTMLCanvasElement | null>();
   private cacheOrder: string[] = [];
@@ -40,11 +49,12 @@ export class MapTileRenderer {
     chunkY: number,
     z: number,
     tiles: TileData[],
+    creatures?: CreatureData[],
   ): HTMLCanvasElement | null {
     const key = `${chunkX},${chunkY},${z}`;
     if (this.cache.has(key)) return this.cache.get(key)!;
 
-    if (tiles.length === 0) {
+    if (tiles.length === 0 && (!creatures || creatures.length === 0)) {
       this.setCache(key, null);
       return null;
     }
@@ -82,8 +92,55 @@ export class MapTileRenderer {
       }
     }
 
+    // Draw creatures on top of tiles
+    if (creatures && creatures.length > 0) {
+      for (const c of creatures) {
+        const tx = c.x - baseX;
+        const ty = c.y - baseY;
+        if (tx < 0 || tx >= CHUNK_TILES || ty < 0 || ty >= CHUNK_TILES) continue;
+        const px = tx * TILE_PX;
+        const py = ty * TILE_PX;
+        this.drawCreature(ctx, c.outfit_id, c.direction, px, py);
+      }
+    }
+
     this.setCache(key, canvas);
     return canvas;
+  }
+
+  private drawCreature(ctx: CanvasRenderingContext2D, outfitId: number, direction: number, px: number, py: number) {
+    const ot = this.dat.outfits.get(outfitId);
+    if (!ot || ot.spriteIds.length === 0) {
+      // Fallback: small colored square
+      ctx.fillStyle = '#ffcc64';
+      ctx.fillRect(px + 8, py + 8, 16, 16);
+      return;
+    }
+
+    const DIR_MAP: Record<number, number> = { 0: 0, 1: 1, 2: 2, 3: 3 };
+    const xd = DIR_MAP[direction] ?? 2;
+    const PX = Math.max(1, ot.patX);
+    const PY = Math.max(1, ot.patY);
+    const PZ = Math.max(1, ot.patZ);
+    const L = Math.max(1, ot.layers);
+    const H = ot.height, W = ot.width;
+    const A = Math.max(1, ot.anim);
+    const a = 0; // Static frame 0
+
+    for (let patY = 0; patY < PY; patY++) {
+      for (let th = 0; th < H; th++) {
+        for (let tw = 0; tw < W; tw++) {
+          const patX = xd % PX;
+          const idx = ((((((a * PZ + 0) * PY + patY) * PX + patX) * L + 0) * H + th) * W + tw);
+          const sid = idx < ot.spriteIds.length ? ot.spriteIds[idx] : 0;
+          if (!sid) continue;
+          const sprCanvas = this.getSpriteCanvas(sid);
+          if (sprCanvas) {
+            ctx.drawImage(sprCanvas, px - tw * TILE_PX - ot.dispX, py - th * TILE_PX - ot.dispY);
+          }
+        }
+      }
+    }
   }
 
   private drawItem(ctx: CanvasRenderingContext2D, def: ItemType, px: number, py: number) {
