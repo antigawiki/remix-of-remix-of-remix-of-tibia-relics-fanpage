@@ -1,59 +1,88 @@
 
 
-## Corrigir timeout na geracao dos andares 7 e 8
+## Mover a compactacao de tiles para o frontend
 
-### O que esta acontecendo
-Os andares 7 e 8 sao os mais densos (nivel do chao, cidades, etc). A funcao SQL `compact_tiles_to_chunks` processa lotes de 50 valores de `chunk_x` por vez, mas mesmo assim o volume total de dados nesses andares causa timeout no banco. O retry tambem falha pelo mesmo motivo.
+### Problema
+A funcao SQL `compact_tiles_range` ainda da timeout nos andares densos (7, 8) porque faz `jsonb_object_agg` + `GROUP BY` sobre milhares de linhas. Qualquer solucao SQL vai ter esse risco conforme o volume cresce.
 
 ### Solucao
-Dividir a compactacao em faixas menores chamadas diretamente do frontend, em vez de depender de uma unica chamada SQL que processa o andar inteiro.
+Substituir a compactacao SQL por logica no frontend:
+1. Ler tiles do banco em paginas (1000 por vez via SELECT)
+2. Agrupar em chunks de 8x8 no JavaScript (trivial e instantaneo)
+3. Salvar os chunks via `merge_cam_chunks_batch` (RPC que ja existe e faz merge inteligente)
+
+O upload de tiles continua exatamente como esta. Nenhuma tabela e apagada. Nenhum dado e perdido.
 
 ### Mudancas
 
-**1. Nova funcao SQL: `compact_tiles_range`**
-- Recebe `p_floor`, `p_min_cx`, `p_max_cx` (faixa de chunk_x a processar)
-- Processa apenas os chunks dentro dessa faixa, sem loop interno
-- Deleta apenas os chunks existentes nessa faixa antes de inserir
-- Retorna o numero de chunks criados
+**1. `CamBatchExtractPage.tsx` - Reescrever `generateMap`**
 
-**2. Atualizar `generateMap` no frontend (`CamBatchExtractPage.tsx`)**
-- Para cada andar, primeiro consulta o range de `chunk_x` existente no `cam_map_tiles`
-- Divide esse range em fatias de 20 unidades de `chunk_x`
-- Chama `compact_tiles_range(floor, min_cx, max_cx)` para cada fatia
-- Atualiza o progresso mostrando "Andar X - fatia Y/Z"
-- Remove a logica de retry (nao sera mais necessaria com fatias pequenas)
+O novo fluxo:
+```text
+Para cada andar (0-15):
+  1. SELECT x, y, items FROM cam_map_tiles WHERE z = andar (paginado, 1000 por vez)
+  2. No JS: agrupar tiles por chunk_x = floor(x/8), chunk_y = floor(y/8)
+     - Chave relativa: "relX,relY" -> items (igual ao formato atual de tiles_data)
+  3. Enviar chunks agrupados via merge_cam_chunks_batch em lotes de 200
+  4. Mostrar progresso: "Andar X - lendo tiles..." / "Andar X - salvando chunks Y/Z"
+```
+
+Beneficios:
+- Nenhuma operacao SQL pesada (apenas SELECTs simples paginados + INSERTs via RPC existente)
+- Funciona com qualquer volume de dados sem timeout
+- Preserva 100% da qualidade e detalhes (mesmos dados, mesmo formato)
+- Nao apaga nenhuma tabela, nao exige re-upload
+- O viewer (`CamMapPage.tsx`) continua lendo de `cam_map_chunks` sem mudanca alguma
+
+**2. Remover dependencia de funcoes SQL de compactacao**
+- `generateMap` nao chamara mais `compact_tiles_range` nem `compact_tiles_to_chunks`
+- As funcoes SQL continuam existindo (nao precisa apagar), apenas nao serao mais usadas
 
 ### Detalhes tecnicos
 
-```sql
--- compact_tiles_range: processa uma faixa especifica de chunk_x
-CREATE FUNCTION compact_tiles_range(p_floor int, p_min_cx int, p_max_cx int)
-RETURNS integer AS $$
-BEGIN
-  DELETE FROM cam_map_chunks
-  WHERE z = p_floor AND chunk_x >= p_min_cx AND chunk_x <= p_max_cx;
+```typescript
+// Pseudocodigo do novo generateMap
+const generateMap = async () => {
+  for (let z = 0; z <= 15; z++) {
+    // Fase 1: Ler todos os tiles deste andar
+    const chunkMap = new Map<string, Record<string, number[]>>();
+    let offset = 0;
+    while (true) {
+      const { data } = await supabase
+        .from('cam_map_tiles')
+        .select('x, y, items')
+        .eq('z', z)
+        .range(offset, offset + 999);
+      if (!data || data.length === 0) break;
+      
+      for (const tile of data) {
+        const cx = Math.floor(tile.x / 8);
+        const cy = Math.floor(tile.y / 8);
+        const key = `${cx},${cy}`;
+        const relKey = `${tile.x - cx * 8},${tile.y - cy * 8}`;
+        let chunk = chunkMap.get(key) || {};
+        chunk[relKey] = tile.items;
+        chunkMap.set(key, chunk);
+      }
+      offset += 1000;
+    }
 
-  INSERT INTO cam_map_chunks (chunk_x, chunk_y, z, tiles_data, updated_at)
-  SELECT floor(x/8)::int, floor(y/8)::int, p_floor,
-    jsonb_object_agg(...), now()
-  FROM cam_map_tiles
-  WHERE z = p_floor
-    AND floor(x/8)::int >= p_min_cx AND floor(x/8)::int <= p_max_cx
-  GROUP BY floor(x/8)::int, floor(y/8)::int;
-
-  RETURN found_count;
-END;
-$$
+    // Fase 2: Salvar chunks via RPC existente
+    const entries = Array.from(chunkMap.entries());
+    for (let j = 0; j < entries.length; j += 200) {
+      const batch = entries.slice(j, j + 200).map(([k, data]) => {
+        const [cx, cy] = k.split(',').map(Number);
+        return { cx, cy, z, data };
+      });
+      await supabase.rpc('merge_cam_chunks_batch', { chunks: batch });
+    }
+  }
+};
 ```
 
-No frontend, o fluxo passa a ser:
-```
-Para cada andar (0-15):
-  1. SELECT min(floor(x/8)), max(floor(x/8)) FROM cam_map_tiles WHERE z = andar
-  2. Dividir [min, max] em fatias de 20
-  3. Para cada fatia: chamar compact_tiles_range(andar, fatia_min, fatia_max)
-  4. Atualizar progresso
-```
-
-Isso garante que nenhuma chamada individual processe mais que ~20*8 = 160 colunas de tiles, eliminando o timeout mesmo nos andares mais densos.
-
+### O que NAO muda
+- Upload de tiles (.cam -> cam_map_tiles): identico
+- Upload de spawns (.cam -> cam_map_spawns): identico
+- Viewer (CamMapPage): le de cam_map_chunks como antes
+- Tabelas do banco: nenhuma alteracao de schema
+- Dados existentes: preservados integralmente
