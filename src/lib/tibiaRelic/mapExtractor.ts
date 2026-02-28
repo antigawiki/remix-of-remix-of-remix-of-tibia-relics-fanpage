@@ -1,9 +1,12 @@
 /**
  * Map Extractor - processes all frames of a .cam file and extracts
- * static tile data (ground items) for building the Cam Map.
+ * static tile data (ground items) and creature spawns for building the Cam Map.
  * 
- * Filters out creatures, keeping only items with stackPrio 0-5.
- * Returns a Map<string, number[]> with key "x,y,z" and value = array of item IDs.
+ * Filters out creatures from tiles, keeping only items with stackPrio 0-5.
+ * Uses persistence heuristic to filter out corpses (items seen in < 2 snapshots).
+ * Also extracts living creatures (health > 0) with outfit/position/direction.
+ * 
+ * Returns tiles Map<string, number[]> and creatures Map<string, CreatureSpawn>.
  */
 import { type CamFile } from './camParser';
 import { DatLoader } from './datLoader';
@@ -19,8 +22,22 @@ export interface MapExtractionProgress {
 
 export type ProgressCallback = (progress: MapExtractionProgress) => void;
 
+export interface CreatureSpawn {
+  x: number;
+  y: number;
+  z: number;
+  name: string;
+  outfitId: number;
+  direction: number;
+}
+
+export interface MapExtractionResult {
+  tiles: Map<string, number[]>;
+  creatures: Map<string, CreatureSpawn>;
+}
+
 /**
- * Extract all static tiles from a .cam file.
+ * Extract all static tiles and creature spawns from a .cam file.
  * Uses chunked processing via requestAnimationFrame to avoid blocking the UI.
  */
 export async function extractMapTiles(
@@ -28,7 +45,7 @@ export async function extractMapTiles(
   dat: DatLoader,
   onProgress?: ProgressCallback,
   chunkSize = 500,
-): Promise<Map<string, number[]>> {
+): Promise<MapExtractionResult> {
   const gs = new GameState();
   const parser = new PacketParser(gs, dat, {
     looktypeU16: true,
@@ -36,8 +53,13 @@ export async function extractMapTiles(
   });
   parser.seekMode = true; // No animations needed
 
-  const result = new Map<string, number[]>();
+  // Persistence counters: key "x,y,z" -> Map<itemId, snapshotCount>
+  const itemCounts = new Map<string, Map<number, number>>();
+  // Creature spawns: key "x,y,z,name" -> CreatureSpawn (last seen wins)
+  const creatureMap = new Map<string, CreatureSpawn>();
+
   let frameIdx = 0;
+  let snapshotNum = 0;
 
   return new Promise((resolve) => {
     function processChunk() {
@@ -51,14 +73,16 @@ export async function extractMapTiles(
         }
       }
 
-      // After each chunk, snapshot current tiles
-      snapshotTiles(gs, dat, result);
+      // After each chunk, snapshot current tiles and creatures
+      snapshotNum++;
+      snapshotTilesWithCounts(gs, dat, itemCounts, snapshotNum);
+      snapshotCreatures(gs, creatureMap);
 
       if (onProgress) {
         onProgress({
           processedFrames: frameIdx,
           totalFrames: cam.frames.length,
-          tilesExtracted: result.size,
+          tilesExtracted: itemCounts.size,
           percent: Math.round((frameIdx / cam.frames.length) * 100),
         });
       }
@@ -66,7 +90,9 @@ export async function extractMapTiles(
       if (frameIdx < cam.frames.length) {
         requestAnimationFrame(processChunk);
       } else {
-        resolve(result);
+        // Build final tiles using persistence filter (items seen in >= 2 snapshots)
+        const tiles = buildFilteredTiles(itemCounts, dat);
+        resolve({ tiles, creatures: creatureMap });
       }
     }
 
@@ -75,34 +101,79 @@ export async function extractMapTiles(
 }
 
 /**
- * Snapshot all tiles from the current GameState, keeping only items (no creatures).
- * Merges intelligently: keeps the version with the most items.
+ * Snapshot all tiles, incrementing per-item counters for persistence tracking.
  */
-function snapshotTiles(
+function snapshotTilesWithCounts(
   gs: GameState,
   dat: DatLoader,
-  result: Map<string, number[]>,
+  itemCounts: Map<string, Map<number, number>>,
+  _snapshotNum: number,
 ) {
   for (const [key, tileItems] of gs.tiles.entries()) {
-    // Filter to only static items (no creatures)
-    const itemIds: number[] = [];
     for (const item of tileItems) {
       if (item[0] !== 'it') continue;
       const id = item[1];
       if (id < 100 || id > 9999) continue;
       const def = dat.items.get(id);
-      // Keep ground, clip, bottom, top, and regular items
-      if (def && def.stackPrio <= 5) {
+      if (!def || def.stackPrio > 5) continue;
+
+      let counts = itemCounts.get(key);
+      if (!counts) { counts = new Map(); itemCounts.set(key, counts); }
+      counts.set(id, (counts.get(id) || 0) + 1);
+    }
+  }
+}
+
+/**
+ * Snapshot living creatures from the GameState.
+ */
+function snapshotCreatures(
+  gs: GameState,
+  creatureMap: Map<string, CreatureSpawn>,
+) {
+  for (const c of gs.creatures.values()) {
+    if (c.health <= 0) continue;
+    if (c.x === 0 && c.y === 0 && c.z === 0) continue;
+    if (!c.name || c.name === '') continue;
+    // Skip players (they have unique names but aren't spawns)
+    // Heuristic: creatures with outfit but no outfitItem are regular creatures
+    if (c.outfit === 0 && c.outfitItem === 0) continue;
+
+    const key = `${c.x},${c.y},${c.z},${c.name}`;
+    creatureMap.set(key, {
+      x: c.x,
+      y: c.y,
+      z: c.z,
+      name: c.name,
+      outfitId: c.outfit,
+      direction: c.direction,
+    });
+  }
+}
+
+/**
+ * Build final tile map, keeping only items seen in >= 2 snapshots (filters corpses).
+ * Ground tiles (stackPrio 0) are always kept (they don't decay).
+ */
+function buildFilteredTiles(
+  itemCounts: Map<string, Map<number, number>>,
+  dat: DatLoader,
+): Map<string, number[]> {
+  const result = new Map<string, number[]>();
+
+  for (const [key, counts] of itemCounts.entries()) {
+    const itemIds: number[] = [];
+    for (const [id, count] of counts.entries()) {
+      const def = dat.items.get(id);
+      // Ground tiles (stackPrio 0) always kept; others need >= 2 sightings
+      if (def && (def.stackPrio === 0 || count >= 2)) {
         itemIds.push(id);
       }
     }
-
-    if (itemIds.length === 0) continue;
-
-    // Merge: keep the version with more items (more complete tile)
-    const existing = result.get(key);
-    if (!existing || itemIds.length >= existing.length) {
+    if (itemIds.length > 0) {
       result.set(key, itemIds);
     }
   }
+
+  return result;
 }
