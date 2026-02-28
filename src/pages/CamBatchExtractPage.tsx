@@ -1,14 +1,16 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { Link } from 'react-router-dom';
-import { ArrowLeft, Upload, Loader2, CheckCircle2, XCircle, FileIcon } from 'lucide-react';
+import { ArrowLeft, Upload, Loader2, CheckCircle2, XCircle, FileIcon, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
 import { ThemeToggle } from '@/components/ThemeToggle';
 import { LanguageSelector } from '@/components/LanguageSelector';
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '@/components/ui/alert-dialog';
 import { parseCamFile, type CamFile } from '@/lib/tibiaRelic/camParser';
 import { DatLoader } from '@/lib/tibiaRelic/datLoader';
 import { extractMapTiles, type MapExtractionProgress } from '@/lib/tibiaRelic/mapExtractor';
 import { supabase } from '@/integrations/supabase/client';
+import { toast } from 'sonner';
 
 interface FileEntry {
   file: File;
@@ -181,6 +183,22 @@ const CamBatchExtractPage = () => {
     setFiles([]);
   };
 
+  const [clearing, setClearing] = useState(false);
+
+  const clearDatabase = async () => {
+    setClearing(true);
+    try {
+      const { error } = await supabase.rpc('clear_cam_map_data' as any);
+      if (error) throw error;
+      toast.success('Tabelas limpas com sucesso!');
+    } catch (err) {
+      toast.error('Erro ao limpar tabelas');
+      console.error(err);
+    } finally {
+      setClearing(false);
+    }
+  };
+
   const totalDone = files.filter(f => f.status === 'done').length;
   const totalErrors = files.filter(f => f.status === 'error').length;
   const totalTiles = files.reduce((s, f) => s + f.tiles, 0);
@@ -200,6 +218,28 @@ const CamBatchExtractPage = () => {
           </div>
         </div>
         <div className="flex items-center gap-2">
+          <AlertDialog>
+            <AlertDialogTrigger asChild>
+              <Button variant="destructive" size="sm" disabled={processing || clearing}>
+                {clearing ? <Loader2 className="w-3 h-3 mr-1 animate-spin" /> : <Trash2 className="w-3 h-3 mr-1" />}
+                Limpar DB
+              </Button>
+            </AlertDialogTrigger>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>Limpar todas as tabelas do mapa?</AlertDialogTitle>
+                <AlertDialogDescription>
+                  Isso apagará todos os dados de chunks, spawns, tiles e criaturas extraídos. Você precisará re-subir as .cam para popular o mapa novamente.
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel>Cancelar</AlertDialogCancel>
+                <AlertDialogAction onClick={clearDatabase} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
+                  Confirmar Limpeza
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
           <LanguageSelector />
           <ThemeToggle />
         </div>
