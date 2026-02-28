@@ -20,6 +20,7 @@ interface FileEntry {
 }
 
 const UPLOAD_BATCH = 50;
+const CHUNK_SIZE = 32; // 32x32 tiles per chunk
 
 const CamBatchExtractPage = () => {
   const [datLoader, setDatLoader] = useState<DatLoader | null>(null);
@@ -106,16 +107,30 @@ const CamBatchExtractPage = () => {
           idx === i ? { ...f, status: 'uploading', progress: 0, tiles: result.tiles.size, creatures: result.creatures.size } : f
         ));
 
-        // Upload tiles
-        const tileEntries = Array.from(result.tiles.entries());
-        for (let j = 0; j < tileEntries.length; j += UPLOAD_BATCH) {
+        // Group tiles into 32x32 chunks
+        const chunkMap = new Map<string, Record<string, number[]>>();
+        for (const [key, items] of result.tiles.entries()) {
+          const [x, y, z] = key.split(',').map(Number);
+          const cx = Math.floor(x / CHUNK_SIZE);
+          const cy = Math.floor(y / CHUNK_SIZE);
+          const chunkKey = `${cx},${cy},${z}`;
+          let chunk = chunkMap.get(chunkKey);
+          if (!chunk) { chunk = {}; chunkMap.set(chunkKey, chunk); }
+          const relX = x - cx * CHUNK_SIZE;
+          const relY = y - cy * CHUNK_SIZE;
+          chunk[`${relX},${relY}`] = items;
+        }
+
+        // Upload chunks
+        const chunkEntries = Array.from(chunkMap.entries());
+        for (let j = 0; j < chunkEntries.length; j += UPLOAD_BATCH) {
           if (abortRef.current) break;
-          const batch = tileEntries.slice(j, j + UPLOAD_BATCH);
-          await Promise.all(batch.map(([key, items]) => {
-            const [x, y, z] = key.split(',').map(Number);
-            return supabase.rpc('merge_cam_tile' as any, { px: x, py: y, pz: z, new_items: items });
+          const batch = chunkEntries.slice(j, j + UPLOAD_BATCH);
+          await Promise.all(batch.map(([key, data]) => {
+            const [cx, cy, z] = key.split(',').map(Number);
+            return supabase.rpc('merge_cam_chunk' as any, { px: cx, py: cy, pz: z, new_data: data });
           }));
-          const uploadPercent = Math.round(((j + UPLOAD_BATCH) / tileEntries.length) * 100);
+          const uploadPercent = Math.round(((j + UPLOAD_BATCH) / chunkEntries.length) * 100);
           setFiles(prev => prev.map((f, idx) =>
             idx === i ? { ...f, progress: Math.min(uploadPercent, 100) } : f
           ));
