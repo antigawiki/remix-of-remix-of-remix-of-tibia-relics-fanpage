@@ -194,7 +194,8 @@ const CamBatchExtractPage = () => {
     }
   };
 
-  const SLICE_SIZE = 20;
+  const CHUNK_BATCH = 200;
+  const PAGE_SIZE = 1000;
 
   const generateMap = async () => {
     setGenerating(true);
@@ -203,68 +204,83 @@ const CamBatchExtractPage = () => {
 
     try {
       for (let z = 0; z <= 15; z++) {
-        setCompactStatus(`Andar ${z} — consultando range...`);
+        if (abortRef.current) break;
 
-        // Get the chunk_x range for this floor
-        const { data: rangeData, error: rangeError } = await supabase
-          .from('cam_map_tiles')
-          .select('x')
-          .eq('z', z)
-          .order('x', { ascending: true })
-          .limit(1)
-          .single();
+        // Phase 1: Read all tiles for this floor (paginated)
+        setCompactStatus(`Andar ${z} — lendo tiles...`);
+        const chunkMap: Record<string, Record<string, unknown>> = {};
+        let offset = 0;
+        let tilesRead = 0;
 
-        if (rangeError || !rangeData) {
+        while (true) {
+          if (abortRef.current) break;
+          const { data, error } = await supabase
+            .from('cam_map_tiles')
+            .select('x, y, items')
+            .eq('z', z)
+            .range(offset, offset + PAGE_SIZE - 1);
+
+          if (error) {
+            console.error(`[Compact] Floor ${z} read error:`, error);
+            failedFloors.push(z);
+            break;
+          }
+          if (!data || data.length === 0) break;
+
+          for (const tile of data) {
+            const cx = Math.floor(tile.x / 8);
+            const cy = Math.floor(tile.y / 8);
+            const key = `${cx},${cy}`;
+            const relKey = `${tile.x - cx * 8},${tile.y - cy * 8}`;
+            if (!chunkMap[key]) chunkMap[key] = {};
+            chunkMap[key][relKey] = tile.items;
+          }
+
+          tilesRead += data.length;
+          setCompactStatus(`Andar ${z} — ${tilesRead.toLocaleString()} tiles lidos...`);
+          offset += PAGE_SIZE;
+
+          if (data.length < PAGE_SIZE) break;
+        }
+
+        const keys = Object.keys(chunkMap);
+        if (keys.length === 0) {
           console.log(`[Compact] Floor ${z}: no tiles, skipping`);
           continue;
         }
 
-        const { data: rangeMax } = await supabase
-          .from('cam_map_tiles')
-          .select('x')
-          .eq('z', z)
-          .order('x', { ascending: false })
-          .limit(1)
-          .single();
+        // Phase 2: Upload chunks via merge_cam_chunks_batch
+        const entries = keys.map(k => [k, chunkMap[k]] as [string, Record<string, unknown>]);
+        const totalBatches = Math.ceil(entries.length / CHUNK_BATCH);
 
-        if (!rangeMax) continue;
-
-        const minCx = Math.floor(rangeData.x / 8);
-        const maxCx = Math.floor(rangeMax.x / 8);
-        const slices: [number, number][] = [];
-
-        for (let start = minCx; start <= maxCx; start += SLICE_SIZE) {
-          slices.push([start, Math.min(start + SLICE_SIZE - 1, maxCx)]);
-        }
-
-        let floorOk = true;
-        for (let s = 0; s < slices.length; s++) {
+        for (let j = 0; j < entries.length; j += CHUNK_BATCH) {
           if (abortRef.current) break;
-          const [sMin, sMax] = slices[s];
-          setCompactStatus(`Andar ${z} — fatia ${s + 1}/${slices.length}`);
+          const batchNum = Math.floor(j / CHUNK_BATCH) + 1;
+          setCompactStatus(`Andar ${z} — salvando chunks ${batchNum}/${totalBatches}`);
 
-          const { data, error } = await supabase.rpc('compact_tiles_range' as any, {
-            p_floor: z,
-            p_min_cx: sMin,
-            p_max_cx: sMax,
+          const batch = entries.slice(j, j + CHUNK_BATCH).map(([k, data]) => {
+            const [cx, cy] = (k as string).split(',').map(Number);
+            return { cx, cy, z, data };
           });
 
+          const { error } = await supabase.rpc('merge_cam_chunks_batch' as any, { chunks: batch });
           if (error) {
-            console.error(`[Compact] Floor ${z} slice ${sMin}-${sMax} error:`, error);
-            floorOk = false;
-          } else if (data && data > 0) {
-            totalChunks += data;
+            console.error(`[Compact] Floor ${z} chunk upload error:`, error);
+            failedFloors.push(z);
+            break;
           }
+          totalChunks += batch.length;
         }
 
-        if (!floorOk) failedFloors.push(z);
-        else console.log(`[Compact] Floor ${z}: done`);
+        if (!failedFloors.includes(z)) {
+          console.log(`[Compact] Floor ${z}: ${entries.length} chunks from ${tilesRead} tiles`);
+        }
       }
 
       if (failedFloors.length > 0) {
         toast.error(`Mapa gerado parcialmente. Andares com erro: ${failedFloors.join(', ')}. Tente novamente.`);
       } else {
-        toast.success(`Mapa gerado! ${totalChunks} chunks criados.`);
+        toast.success(`Mapa gerado! ${totalChunks} chunks criados/atualizados.`);
       }
     } catch (err) {
       console.error('[Compact] Error:', err);
