@@ -21,7 +21,8 @@ interface FileEntry {
   error?: string;
 }
 
-const UPLOAD_BATCH = 200;
+const CHUNK_RPC_BATCH = 500; // chunks per single RPC call
+const SPAWN_RPC_BATCH = 500;
 
 const CamBatchExtractPage = () => {
   const [datLoader, setDatLoader] = useState<DatLoader | null>(null);
@@ -104,7 +105,7 @@ const CamBatchExtractPage = () => {
 
         if (abortRef.current) break;
 
-        // Upload phase - group tiles into 8x8 chunks and upload directly
+        // Upload phase - group tiles into 8x8 chunks and upload via batch RPC
         setFiles(prev => prev.map((f, idx) =>
           idx === i ? { ...f, status: 'uploading', progress: 0, tiles: result.tiles.size, creatures: result.spawns.length } : f
         ));
@@ -123,34 +124,39 @@ const CamBatchExtractPage = () => {
           chunkData[`${relX},${relY}`] = items;
         }
 
-        // Upload chunks via merge_cam_chunk
+        // Upload chunks via batch RPC (many chunks per single HTTP call)
         const chunkEntries = Array.from(chunkMap.entries());
-        for (let j = 0; j < chunkEntries.length; j += UPLOAD_BATCH) {
+        const totalSteps = Math.ceil(chunkEntries.length / CHUNK_RPC_BATCH) + Math.ceil(result.spawns.length / SPAWN_RPC_BATCH);
+        let stepsDone = 0;
+
+        for (let j = 0; j < chunkEntries.length; j += CHUNK_RPC_BATCH) {
           if (abortRef.current) break;
-          const batch = chunkEntries.slice(j, j + UPLOAD_BATCH);
-          await Promise.all(batch.map(([key, data]) => {
+          const batch = chunkEntries.slice(j, j + CHUNK_RPC_BATCH).map(([key, data]) => {
             const [cx, cy, z] = key.split(',').map(Number);
-            return supabase.rpc('merge_cam_chunk' as any, { px: cx, py: cy, pz: z, new_data: data });
-          }));
-          const uploadPercent = Math.round(((j + UPLOAD_BATCH) / chunkEntries.length) * 100);
+            return { cx, cy, z, data };
+          });
+          await supabase.rpc('merge_cam_chunks_batch' as any, { chunks: batch });
+          stepsDone++;
           setFiles(prev => prev.map((f, idx) =>
-            idx === i ? { ...f, progress: Math.min(uploadPercent, 100) } : f
+            idx === i ? { ...f, progress: Math.round((stepsDone / totalSteps) * 100) } : f
           ));
         }
 
-        // Upload spawns
-        for (let j = 0; j < result.spawns.length; j += UPLOAD_BATCH) {
+        // Upload spawns via batch RPC
+        for (let j = 0; j < result.spawns.length; j += SPAWN_RPC_BATCH) {
           if (abortRef.current) break;
-          const batch = result.spawns.slice(j, j + UPLOAD_BATCH);
-          await Promise.all(batch.map(s =>
-            supabase.rpc('merge_cam_spawn' as any, {
-              px: s.chunkX, py: s.chunkY, pz: s.z,
-              p_creature_name: s.creatureName,
-              p_outfit_id: s.outfitId,
-              p_avg_count: s.avgCount,
-              p_positions: s.positions,
-              p_visit_count: s.visitCount,
-            })
+          const batch = result.spawns.slice(j, j + SPAWN_RPC_BATCH).map(s => ({
+            px: s.chunkX, py: s.chunkY, pz: s.z,
+            creature_name: s.creatureName,
+            outfit_id: s.outfitId,
+            avg_count: s.avgCount,
+            positions: s.positions,
+            visit_count: s.visitCount,
+          }));
+          await supabase.rpc('merge_cam_spawns_batch' as any, { spawns: batch });
+          stepsDone++;
+          setFiles(prev => prev.map((f, idx) =>
+            idx === i ? { ...f, progress: Math.round((stepsDone / totalSteps) * 100) } : f
           ));
         }
 

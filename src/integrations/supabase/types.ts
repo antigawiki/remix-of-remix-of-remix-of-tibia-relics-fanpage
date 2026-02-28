@@ -758,6 +758,7 @@ export type Database = {
         Args: { new_data: Json; px: number; py: number; pz: number }
         Returns: undefined
       }
+      merge_cam_chunks_batch: { Args: { chunks: Json }; Returns: undefined }
       merge_cam_spawn: {
         Args: {
           p_avg_count: number
@@ -771,6 +772,7 @@ export type Database = {
         }
         Returns: undefined
       }
+      merge_cam_spawns_batch: { Args: { spawns: Json }; Returns: undefined }
       merge_cam_tile: {
         Args: { new_items: Json; px: number; py: number; pz: number }
         Returns: undefined
