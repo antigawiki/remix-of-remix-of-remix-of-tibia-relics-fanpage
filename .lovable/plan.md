@@ -1,71 +1,70 @@
 
 
-## Plano: Sistema de Mapeamento de Spawns por Area
+## Plano: Corrigir renderizacao de tiles e restaurar criaturas multi-floor
 
-### Conceito
+### Problemas identificados
 
-Em vez de registrar cada criatura individual (que gera problemas com mortes, duplicatas e poluicao visual), o sistema vai agregar dados de spawn por regiao. Quando o jogador passa por uma area, o extrator conta quantas criaturas de cada tipo aparecem ali. Apos multiplas passagens pela mesma area, os dados se consolidam mostrando o spawn real: "nesta regiao nascem 2 Ghouls e 1 Skeleton".
+**1. Renderizacao de tiles simplificada demais**
 
-### Design
+O `drawItem` no `mapTileRenderer.ts` so desenha `spriteIds[0]`, ignorando completamente:
+- **Multi-tile items** (width/height > 1): arvores, paredes grandes, escadas ocupam 2x2 ou 2x1 tiles. Cada sub-tile precisa do sprite correto, nao apenas o index 0.
+- **Pattern matching** (patX/patY): bordas de terreno usam patterns baseados nas coordenadas mundiais (`wx % patX`, `wy % patY`). Sem isso, todas as bordas ficam iguais e o chao fica "errado".
+- **Displacement** (dispX/dispY): itens com offset visual (ex: paredes que cobrem parcialmente o tile vizinho).
 
-#### Nova tabela: `cam_map_spawns`
+O renderer do CamPlayer (`renderer.ts`, linhas 506-521) faz tudo isso corretamente via `drawItemNative` + `getSpriteIndex`:
 
-Armazena dados agregados de spawn por chunk (32x32 tiles, mesmo grid dos tiles):
+```text
+getSpriteIndex: calcula indice com patX/patY baseado em wx/wy
+drawItemNative: itera height x width e aplica displacement + elevation
+```
 
-| Coluna | Tipo | Descricao |
-|--------|------|-----------|
-| chunk_x | integer | Coordenada X do chunk (tile_x / 32) |
-| chunk_y | integer | Coordenada Y do chunk (tile_y / 32) |
-| z | integer | Andar |
-| creature_name | text | Nome da criatura |
-| outfit_id | integer | ID do outfit para renderizar sprite |
-| avg_count | real | Quantidade media vista por passagem |
-| positions | jsonb | Array de posicoes relativas dentro do chunk `[{x,y}]` |
-| visit_count | integer | Quantas vezes o jogador passou por este chunk |
-| updated_at | timestamptz | Ultima atualizacao |
+**2. Criaturas de outros andares removidas**
 
-Chave primaria composta: `(chunk_x, chunk_y, z, creature_name)`
+No `snapshotCreaturesForVisit` (mapExtractor.ts, linha 159):
+```
+if (c.z !== camZ) continue;
+```
 
-#### Logica de Extracao (mapExtractor.ts)
-
-1. **Detectar "visitas" a chunks**: Cada vez que `camX/camY` entra em um novo chunk de 32x32, marca como uma visita a esse chunk
-2. **Contar criaturas por visita**: Para cada visita, registra quantas criaturas vivas de cada tipo estao na viewport, agrupadas por chunk
-3. **Agregar**: No final da extracao, calcula a media de criaturas por tipo por visita para cada chunk
-4. **Posicoes**: Armazena as posicoes relativas (dentro do chunk 0-31) onde cada tipo de criatura foi mais frequentemente vista
-
-O filtro de criaturas continua o mesmo: ignora players (outfit colors customizadas, outfits 128-143), ignora o jogador gravando, ignora criaturas mortas (health <= 0).
-
-#### Funcao SQL de Merge
-
-Como multiplas .cam podem cobrir a mesma area, uma funcao `merge_cam_spawn` faz media ponderada:
-- Se ja existe registro para aquele chunk+criatura, recalcula a media considerando o visit_count anterior
-- Novas posicoes sao adicionadas ao array (com dedup)
-
-#### Renderizacao (mapTileRenderer.ts)
-
-- Para cada chunk visivel, consulta os spawns daquele chunk
-- Renderiza os sprites das criaturas nas posicoes armazenadas
-- Se avg_count > 1, posiciona multiplos sprites lado a lado com espacamento de ~3-4 tiles
-- Se nao ha posicoes suficientes para a quantidade, distribui em grid dentro do chunk
-
-#### Substituicao da tabela antiga
-
-A tabela `cam_map_creatures` atual sera substituida por `cam_map_spawns`. O codigo de upload e visualizacao sera atualizado para usar a nova tabela.
+Isso filtra criaturas de andares que o player nao esta pisando, mas o GameState pode conter criaturas de andares adjacentes que sao visualmente validas. O extrator antigo nao tinha esse filtro de Z.
 
 ---
 
-### Arquivos Modificados
+### Solucao
 
-1. **Migracao SQL**: Criar tabela `cam_map_spawns` + funcao `merge_cam_spawn` + RLS policies
-2. **`src/lib/tibiaRelic/mapExtractor.ts`**: Refatorar extracao de criaturas para agregar por chunk com contagem por visita. Nova interface `SpawnData` e nova logica de snapshot baseada em visitas
-3. **`src/pages/CamMapPage.tsx`**: Atualizar upload para salvar na nova tabela e atualizar carregamento para ler de `cam_map_spawns`
-4. **`src/lib/tibiaRelic/mapTileRenderer.ts`**: Atualizar `renderChunk` para receber spawns agregados e posicionar multiplos sprites com espacamento
+#### 1. Corrigir `drawItem` no mapTileRenderer.ts
 
-### Resultado Esperado
+Reescrever `drawItem` para usar a mesma logica do CamPlayer:
+- Iterar `height x width` para itens multi-tile
+- Calcular sprite index usando `patX`, `patY` baseado nas coordenadas mundiais
+- Aplicar `dispX`/`dispY` (displacement)
+- Receber `wx`, `wy` como parametros para pattern matching
 
-- Mapa limpo mostrando apenas spawns confirmados (vistos em multiplas passagens)
-- Quantidade correta de cada tipo de criatura por area
-- Sprites posicionados de forma organizada sem sobreposicao
-- Criaturas mortas nunca aparecem (so conta health > 0)
-- Dados se acumulam de multiplas .cam files sem duplicar
+Nova assinatura: `drawItem(ctx, def, px, py, wx, wy)`
+
+Adicionar metodo `getSpriteIndex` identico ao do renderer:
+```
+getSpriteIndex(it, wx, wy, tw, th):
+  a=0, z=0, y=wy%patY, x=wx%patX, l=0
+  idx = ((((((a*PZ+z)*PY+y)*PX+x)*L+l)*H+h)*W+w)
+  return spriteIds[idx]
+```
+
+O loop de renderizacao no `renderChunk` passara `wx` e `wy` para `drawItem`.
+
+#### 2. Restaurar criaturas de andares adjacentes
+
+No `snapshotCreaturesForVisit`, remover o filtro `c.z !== camZ`. Aceitar criaturas de qualquer andar visivel (tipicamente camZ-2 a camZ+2 para underground, ou 0-7 para surface). Manter o filtro de proximidade horizontal que ja existe.
+
+---
+
+### Arquivos a modificar
+
+1. **`src/lib/tibiaRelic/mapTileRenderer.ts`**:
+   - Reescrever `drawItem` com multi-tile + pattern matching + displacement
+   - Adicionar metodo `getSpriteIndex` (copia do renderer.ts)
+   - Atualizar chamada no `renderChunk` para passar coordenadas mundiais
+
+2. **`src/lib/tibiaRelic/mapExtractor.ts`**:
+   - Remover `if (c.z !== camZ) continue;` na linha 159
+   - Manter filtro de proximidade horizontal (abs(c.x - camX) > 20, etc.)
 
