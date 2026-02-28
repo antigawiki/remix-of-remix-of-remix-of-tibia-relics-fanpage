@@ -423,7 +423,7 @@ const CamMapPage = () => {
           </div>
         )}
 
-        {/* Coordinates + Item IDs overlay */}
+        {/* Coordinates + Item IDs + Legend overlay */}
         {!isLoading && mouseCoords && (
           <div className="absolute bottom-4 left-4 z-[1000] bg-card/90 border border-border/50 rounded-sm px-3 py-1.5 max-w-sm">
             <span className="text-xs font-mono text-muted-foreground">
@@ -434,19 +434,15 @@ const CamMapPage = () => {
                 IDs: {tileItemIds.join(', ')}
               </div>
             )}
-          </div>
-        )}
-
-        {/* Legend overlay */}
-        {!isLoading && (
-          <div className="absolute bottom-4 left-4 z-[1000] bg-card/90 border border-border/50 rounded-sm px-3 py-2 flex flex-col gap-1">
-            <div className="flex items-center gap-2">
-              <span className="inline-block w-3 h-3 border-2 rounded-sm" style={{ borderColor: '#00ff88', background: 'rgba(0,255,136,0.15)' }} />
-              <span className="text-xs text-muted-foreground">Rope Hole</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <span className="inline-block w-3 h-3 border-2 rounded-sm" style={{ borderColor: '#ffcc00', background: 'rgba(255,204,0,0.15)' }} />
-              <span className="text-xs text-muted-foreground">Shovel Spot</span>
+            <div className="flex items-center gap-3 mt-1 border-t border-border/30 pt-1">
+              <div className="flex items-center gap-1">
+                <span className="inline-block w-2.5 h-2.5 border-2 rounded-sm" style={{ borderColor: '#00ff88', background: 'rgba(0,255,136,0.15)' }} />
+                <span className="text-xs text-muted-foreground">Rope</span>
+              </div>
+              <div className="flex items-center gap-1">
+                <span className="inline-block w-2.5 h-2.5 border-2 rounded-sm" style={{ borderColor: '#ffcc00', background: 'rgba(255,204,0,0.15)' }} />
+                <span className="text-xs text-muted-foreground">Shovel</span>
+              </div>
             </div>
           </div>
         )}
