@@ -1,11 +1,9 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { Link } from 'react-router-dom';
-import { ArrowLeft, Map as MapIcon, ChevronUp, ChevronDown, Loader2, Layers } from 'lucide-react';
+import { ArrowLeft, Map as MapIcon, ChevronUp, ChevronDown, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
-import { Switch } from '@/components/ui/switch';
-import { Label } from '@/components/ui/label';
 import { useTranslation } from '@/i18n';
 import { ThemeToggle } from '@/components/ThemeToggle';
 import { LanguageSelector } from '@/components/LanguageSelector';
@@ -89,11 +87,9 @@ const CamMapPage = () => {
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<L.Map | null>(null);
   const tileLayerRef = useRef<L.GridLayer | null>(null);
-  const baseLayerRef = useRef<L.TileLayer | null>(null);
   const rendererRef = useRef<MapTileRenderer | null>(null);
   const floorDataRef = useRef<Map<string, TileData[]>>(new Map());
   const creatureDataRef = useRef<Map<string, CreatureData[]>>(new Map());
-  const [showBaseMap, setShowBaseMap] = useState(true);
 
   const [currentFloor, setCurrentFloor] = useState(DEFAULT_Z);
   const [assetsLoading, setAssetsLoading] = useState(true);
@@ -175,21 +171,6 @@ const CamMapPage = () => {
     map.setView([-DEFAULT_CENTER_Y, DEFAULT_CENTER_X], 3);
     mapRef.current = map;
 
-    // External base map layer (direct access — img tags bypass CORS)
-    // zoomOffset +3: leaflet zoom 0 → external zoom 3, leaflet zoom 4 → external zoom 7
-    const baseLayer = L.tileLayer('https://st54085.ispot.cc/mapper/tibiarelic/{z}/' + DEFAULT_Z + '/{x}_{y}.png', {
-      tileSize: 256,
-      minZoom: 0,
-      maxZoom: 5,
-      maxNativeZoom: 4,
-      zoomOffset: 3,
-      noWrap: true,
-      errorTileUrl: '',
-    });
-
-    baseLayer.addTo(map);
-    baseLayerRef.current = baseLayer;
-
     map.on('mousemove', (e: L.LeafletMouseEvent) => {
       const tileX = Math.floor(e.latlng.lng);
       const tileY = Math.floor(-e.latlng.lat);
@@ -200,42 +181,14 @@ const CamMapPage = () => {
       map.remove();
       mapRef.current = null;
       tileLayerRef.current = null;
-      baseLayerRef.current = null;
     };
   }, [assetsLoading]);
 
-  // Update base layer floor when floor changes
-  useEffect(() => {
-    const baseLayer = baseLayerRef.current;
-    const map = mapRef.current;
-    if (!baseLayer || !map) return;
-    // Replace layer with new URL for the new floor
-    const wasVisible = map.hasLayer(baseLayer);
-    if (wasVisible) map.removeLayer(baseLayer);
-    const newBaseLayer = L.tileLayer('https://st54085.ispot.cc/mapper/tibiarelic/{z}/' + currentFloor + '/{x}_{y}.png', {
-      tileSize: 256,
-      minZoom: 0,
-      maxZoom: 5,
-      maxNativeZoom: 4,
-      zoomOffset: 3,
-      noWrap: true,
-      errorTileUrl: '',
-    });
-    if (wasVisible || showBaseMap) newBaseLayer.addTo(map);
-    baseLayerRef.current = newBaseLayer;
-  }, [currentFloor, showBaseMap]);
-
-  // Toggle base map visibility
-  useEffect(() => {
-    const baseLayer = baseLayerRef.current;
-    const map = mapRef.current;
-    if (!baseLayer || !map) return;
-    if (showBaseMap) {
-      if (!map.hasLayer(baseLayer)) baseLayer.addTo(map);
-    } else {
-      if (map.hasLayer(baseLayer)) map.removeLayer(baseLayer);
-    }
-  }, [showBaseMap]);
+  // Build external tile URL for a given leaflet coord
+  const getExternalTileUrl = useCallback((z: number, x: number, y: number, floor: number) => {
+    const externalZoom = z + 3;
+    return `https://st54085.ispot.cc/mapper/tibiarelic/${externalZoom}/${floor}/${x}_${y}.png`;
+  }, []);
 
   // Create/update tile layer when floor data is ready
   useEffect(() => {
@@ -250,47 +203,63 @@ const CamMapPage = () => {
 
     renderer.invalidateFloor(currentFloor);
 
+    const floor = currentFloor;
+
     const CustomTileLayer = L.GridLayer.extend({
       createTile(coords: L.Coords, done: L.DoneCallback) {
         const tile = document.createElement('canvas');
         tile.width = 256;
         tile.height = 256;
-
-        const chunksPerTile = Math.pow(2, 5 - coords.z);
-        const baseChunkX = coords.x * chunksPerTile;
-        const baseChunkY = coords.y * chunksPerTile;
         const ctx = tile.getContext('2d')!;
         ctx.imageSmoothingEnabled = false;
 
-        if (chunksPerTile === 1) {
-          const tiles = getChunkTiles(baseChunkX, baseChunkY);
-          const creatures = getChunkCreatures(baseChunkX, baseChunkY);
-          if (tiles.length > 0 || creatures.length > 0) {
-            const rendered = renderer.renderChunk(baseChunkX, baseChunkY, currentFloor, tiles, creatures);
-            if (rendered) ctx.drawImage(rendered, 0, 0, 256, 256);
-          }
-        } else {
-          const chunkPx = 256 / chunksPerTile;
-          for (let cy = 0; cy < chunksPerTile; cy++) {
-            for (let cx = 0; cx < chunksPerTile; cx++) {
-              const tcx = baseChunkX + cx;
-              const tcy = baseChunkY + cy;
-              const tiles = getChunkTiles(tcx, tcy);
-              const creatures = getChunkCreatures(tcx, tcy);
-              if (tiles.length > 0 || creatures.length > 0) {
-                const rendered = renderer.renderChunk(tcx, tcy, currentFloor, tiles, creatures);
-                if (rendered) ctx.drawImage(rendered, cx * chunkPx, cy * chunkPx, chunkPx, chunkPx);
+        // Load external base tile first, then overlay cam data
+        const img = new Image();
+        img.crossOrigin = 'anonymous';
+        img.onload = () => {
+          ctx.drawImage(img, 0, 0, 256, 256);
+          drawCamData(ctx, coords);
+          (done as any)(null, tile);
+        };
+        img.onerror = () => {
+          // No base tile — just draw cam data
+          drawCamData(ctx, coords);
+          (done as any)(null, tile);
+        };
+        img.src = getExternalTileUrl(coords.z, coords.x, coords.y, floor);
+
+        function drawCamData(c: CanvasRenderingContext2D, co: L.Coords) {
+          const chunksPerTile = Math.pow(2, 5 - co.z);
+          const baseChunkX = co.x * chunksPerTile;
+          const baseChunkY = co.y * chunksPerTile;
+
+          if (chunksPerTile === 1) {
+            const tiles = getChunkTiles(baseChunkX, baseChunkY);
+            const creatures = getChunkCreatures(baseChunkX, baseChunkY);
+            if (tiles.length > 0 || creatures.length > 0) {
+              const rendered = renderer.renderChunk(baseChunkX, baseChunkY, floor, tiles, creatures);
+              if (rendered) c.drawImage(rendered, 0, 0, 256, 256);
+            }
+          } else {
+            const chunkPx = 256 / chunksPerTile;
+            for (let cy = 0; cy < chunksPerTile; cy++) {
+              for (let cx = 0; cx < chunksPerTile; cx++) {
+                const tcx = baseChunkX + cx;
+                const tcy = baseChunkY + cy;
+                const tiles = getChunkTiles(tcx, tcy);
+                const creatures = getChunkCreatures(tcx, tcy);
+                if (tiles.length > 0 || creatures.length > 0) {
+                  const rendered = renderer.renderChunk(tcx, tcy, floor, tiles, creatures);
+                  if (rendered) c.drawImage(rendered, cx * chunkPx, cy * chunkPx, chunkPx, chunkPx);
+                }
               }
             }
           }
         }
 
-        // Synchronous — everything is in memory
-        setTimeout(() => (done as any)(null, tile), 0);
         return tile;
       },
     });
-
     const layer = new (CustomTileLayer as any)({
       tileSize: 256,
       minZoom: 0,
@@ -300,7 +269,7 @@ const CamMapPage = () => {
 
     layer.addTo(map);
     tileLayerRef.current = layer;
-  }, [currentFloor, floorLoading, getChunkTiles, getChunkCreatures]);
+  }, [currentFloor, floorLoading, getChunkTiles, getChunkCreatures, getExternalTileUrl]);
 
   const floorDisplay = 7 - currentFloor;
   const isLoading = assetsLoading || floorLoading;
@@ -375,19 +344,6 @@ const CamMapPage = () => {
               <ChevronDown className="w-4 h-4" />
             </Button>
 
-            {/* Base map toggle */}
-            <div className="flex items-center gap-1.5 mt-1 pt-1 border-t border-border/50">
-              <Switch
-                id="base-map"
-                checked={showBaseMap}
-                onCheckedChange={setShowBaseMap}
-                className="scale-75"
-              />
-              <Label htmlFor="base-map" className="text-[10px] text-muted-foreground cursor-pointer">
-                <Layers className="w-3 h-3 inline mr-0.5" />
-                Base
-              </Label>
-            </div>
           </div>
         )}
 
