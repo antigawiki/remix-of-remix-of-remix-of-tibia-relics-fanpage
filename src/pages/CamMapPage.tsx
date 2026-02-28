@@ -18,7 +18,7 @@ const DEFAULT_CENTER_X = 32369;
 const DEFAULT_CENTER_Y = 32241;
 const DEFAULT_Z = 7;
 const CHUNK_TILES = 8; // renderer chunk size (8x8 tiles = 256px)
-const DB_CHUNK = 32;  // database chunk size (32x32 tiles)
+const DB_CHUNK = 8;   // database chunk size (8x8 tiles, matches renderer)
 const PAGE_SIZE = 1000;
 
 /** Load spawns for a floor. */
@@ -91,7 +91,7 @@ async function loadSpawns(
   return spawnMap;
 }
 
-/** Load terrain chunks (32x32) and distribute into 8x8 sub-chunks for the renderer. */
+/** Load terrain chunks (8x8) directly aligned with renderer. */
 async function loadChunks(
   z: number,
   onProgress: (label: string, count: number) => void,
@@ -109,6 +109,8 @@ async function loadChunks(
     for (const row of data as any[]) {
       const tilesData = row.tiles_data as Record<string, number[]>;
       if (!tilesData) continue;
+      const key = `${row.chunk_x},${row.chunk_y}`;
+      const arr: TileData[] = [];
       for (const [relKey, itemIds] of Object.entries(tilesData)) {
         const [relXStr, relYStr] = relKey.split(',');
         const relX = parseInt(relXStr, 10);
@@ -116,14 +118,10 @@ async function loadChunks(
         if (isNaN(relX) || isNaN(relY)) continue;
         const absX = row.chunk_x * DB_CHUNK + relX;
         const absY = row.chunk_y * DB_CHUNK + relY;
-        const subCX = Math.floor(absX / CHUNK_TILES);
-        const subCY = Math.floor(absY / CHUNK_TILES);
-        const key = `${subCX},${subCY}`;
-        let arr = tileMap.get(key);
-        if (!arr) { arr = []; tileMap.set(key, arr); }
         arr.push({ x: absX, y: absY, z, items: itemIds });
         totalTiles++;
       }
+      if (arr.length > 0) tileMap.set(key, arr);
     }
     onProgress('tiles', totalTiles);
     offset += PAGE_SIZE;

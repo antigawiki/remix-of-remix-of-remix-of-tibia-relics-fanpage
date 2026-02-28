@@ -22,13 +22,13 @@ interface FileEntry {
 }
 
 const UPLOAD_BATCH = 50;
-const CHUNK_SIZE = 32; // 32x32 tiles per chunk
 
 const CamBatchExtractPage = () => {
   const [datLoader, setDatLoader] = useState<DatLoader | null>(null);
   const [assetsLoading, setAssetsLoading] = useState(true);
   const [files, setFiles] = useState<FileEntry[]>([]);
   const [processing, setProcessing] = useState(false);
+  const [compactStatus, setCompactStatus] = useState('');
   const [currentIdx, setCurrentIdx] = useState(-1);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const abortRef = useRef(false);
@@ -104,35 +104,21 @@ const CamBatchExtractPage = () => {
 
         if (abortRef.current) break;
 
-        // Upload phase
+        // Upload phase - individual tiles
         setFiles(prev => prev.map((f, idx) =>
           idx === i ? { ...f, status: 'uploading', progress: 0, tiles: result.tiles.size, creatures: result.spawns.length } : f
         ));
 
-        // Group tiles into 32x32 chunks
-        const chunkMap = new Map<string, Record<string, number[]>>();
-        for (const [key, items] of result.tiles.entries()) {
-          const [x, y, z] = key.split(',').map(Number);
-          const cx = Math.floor(x / CHUNK_SIZE);
-          const cy = Math.floor(y / CHUNK_SIZE);
-          const chunkKey = `${cx},${cy},${z}`;
-          let chunk = chunkMap.get(chunkKey);
-          if (!chunk) { chunk = {}; chunkMap.set(chunkKey, chunk); }
-          const relX = x - cx * CHUNK_SIZE;
-          const relY = y - cy * CHUNK_SIZE;
-          chunk[`${relX},${relY}`] = items;
-        }
-
-        // Upload chunks
-        const chunkEntries = Array.from(chunkMap.entries());
-        for (let j = 0; j < chunkEntries.length; j += UPLOAD_BATCH) {
+        // Upload tiles individually via merge_cam_tile
+        const tileEntries = Array.from(result.tiles.entries());
+        for (let j = 0; j < tileEntries.length; j += UPLOAD_BATCH) {
           if (abortRef.current) break;
-          const batch = chunkEntries.slice(j, j + UPLOAD_BATCH);
-          await Promise.all(batch.map(([key, data]) => {
-            const [cx, cy, z] = key.split(',').map(Number);
-            return supabase.rpc('merge_cam_chunk' as any, { px: cx, py: cy, pz: z, new_data: data });
+          const batch = tileEntries.slice(j, j + UPLOAD_BATCH);
+          await Promise.all(batch.map(([key, items]) => {
+            const [x, y, z] = key.split(',').map(Number);
+            return supabase.rpc('merge_cam_tile' as any, { px: x, py: y, pz: z, new_items: items });
           }));
-          const uploadPercent = Math.round(((j + UPLOAD_BATCH) / chunkEntries.length) * 100);
+          const uploadPercent = Math.round(((j + UPLOAD_BATCH) / tileEntries.length) * 100);
           setFiles(prev => prev.map((f, idx) =>
             idx === i ? { ...f, progress: Math.min(uploadPercent, 100) } : f
           ));
@@ -169,6 +155,23 @@ const CamBatchExtractPage = () => {
           idx === i ? { ...f, status: 'error', error: err instanceof Error ? err.message : 'Unknown error' } : f
         ));
       }
+    }
+
+    // Auto-compact tiles into 8x8 chunks
+    if (!abortRef.current) {
+      setCompactStatus('Compactando tiles em chunks 8x8...');
+      try {
+        for (let z = 0; z <= 15; z++) {
+          const { data, error } = await supabase.rpc('compact_tiles_to_chunks' as any, { p_floor: z });
+          if (error) console.error(`[Compact] Floor ${z} error:`, error);
+          else if (data && data > 0) console.log(`[Compact] Floor ${z}: ${data} chunks`);
+        }
+        toast.success('Tiles compactados em chunks 8x8!');
+      } catch (err) {
+        console.error('[Compact] Error:', err);
+        toast.error('Erro ao compactar tiles');
+      }
+      setCompactStatus('');
     }
 
     setProcessing(false);
@@ -352,14 +355,24 @@ const CamBatchExtractPage = () => {
                   ))}
                 </div>
 
+                {/* Compact status */}
+                {compactStatus && (
+                  <div className="bg-card border border-border/30 rounded-sm p-3 text-center">
+                    <div className="flex items-center justify-center gap-2">
+                      <Loader2 className="w-4 h-4 text-gold animate-spin" />
+                      <span className="text-sm text-muted-foreground">{compactStatus}</span>
+                    </div>
+                  </div>
+                )}
+
                 {/* Summary */}
-                {totalDone > 0 && !processing && (
+                {totalDone > 0 && !processing && !compactStatus && (
                   <div className="bg-card border border-border/30 rounded-sm p-3 text-center">
                     <p className="text-sm text-gold font-heading">
                       ✅ {totalDone} arquivo(s) extraído(s) — {totalTiles.toLocaleString()} tiles, {totalCreatures.toLocaleString()} criaturas
                     </p>
                     <p className="text-xs text-muted-foreground mt-1">
-                      Dados salvos no banco. Acesse o <Link to="/b7d3e1a9f5c2" className="text-gold underline">Cam Map</Link> para visualizar.
+                      Dados salvos e compactados. Acesse o <Link to="/b7d3e1a9f5c2" className="text-gold underline">Cam Map</Link> para visualizar.
                     </p>
                   </div>
                 )}
