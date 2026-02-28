@@ -67,8 +67,8 @@ export async function extractMapTiles(
   });
   parser.seekMode = true;
 
-  // Tile persistence counters
-  const itemCounts = new Map<string, Map<number, number>>();
+  // Last-write-wins tile storage
+  const latestTiles = new Map<string, number[]>();
 
   // Spawn tracking
   const chunkAccumulators = new Map<string, ChunkAccumulator>();
@@ -77,7 +77,6 @@ export async function extractMapTiles(
   let currentVisitChunks = new Map<string, ChunkVisitData>();
 
   let frameIdx = 0;
-  let snapshotNum = 0;
 
   return new Promise((resolve) => {
     function processChunk() {
@@ -91,8 +90,7 @@ export async function extractMapTiles(
         }
       }
 
-      snapshotNum++;
-      snapshotTilesWithCounts(gs, dat, itemCounts, snapshotNum);
+      snapshotTiles(gs, dat, latestTiles);
 
       // Check if player moved to a new chunk -> flush old visit
       const playerChunkX = Math.floor(gs.camX / DB_CHUNK);
@@ -113,7 +111,7 @@ export async function extractMapTiles(
         onProgress({
           processedFrames: frameIdx,
           totalFrames: cam.frames.length,
-          tilesExtracted: itemCounts.size,
+          tilesExtracted: latestTiles.size,
           percent: Math.round((frameIdx / cam.frames.length) * 100),
         });
       }
@@ -124,9 +122,8 @@ export async function extractMapTiles(
         // Flush last visit
         flushVisit(currentVisitChunks, chunkAccumulators);
 
-        const tiles = buildFilteredTiles(itemCounts, dat);
         const spawns = buildSpawnData(chunkAccumulators);
-        resolve({ tiles, spawns });
+        resolve({ tiles: latestTiles, spawns });
       }
     }
 
@@ -255,13 +252,13 @@ function buildSpawnData(accumulators: Map<string, ChunkAccumulator>): SpawnData[
 }
 
 /**
- * Snapshot tiles with persistence counting (unchanged from before).
+ * Snapshot tiles using last-write-wins: stores the complete ordered
+ * item list from the current GameState, replacing any previous data.
  */
-function snapshotTilesWithCounts(
+function snapshotTiles(
   gs: GameState,
   dat: DatLoader,
-  itemCounts: Map<string, Map<number, number>>,
-  _snapshotNum: number,
+  latestTiles: Map<string, number[]>,
 ) {
   const camX = gs.camX;
   const camY = gs.camY;
@@ -280,41 +277,18 @@ function snapshotTilesWithCounts(
       if (Math.abs(tx - camX) > 18 || Math.abs(ty - camY) > 14) continue;
     }
 
+    const items: number[] = [];
     for (const item of tileItems) {
       if (item[0] !== 'it') continue;
       const id = item[1];
       if (id < 100 || id > 9999) continue;
       const def = dat.items.get(id);
       if (!def || def.stackPrio > 5) continue;
+      items.push(id);
+    }
 
-      let counts = itemCounts.get(key);
-      if (!counts) { counts = new Map(); itemCounts.set(key, counts); }
-      counts.set(id, (counts.get(id) || 0) + 1);
+    if (items.length > 0) {
+      latestTiles.set(key, items); // Replace, don't accumulate
     }
   }
-}
-
-/**
- * Build final tile map with persistence filter.
- */
-function buildFilteredTiles(
-  itemCounts: Map<string, Map<number, number>>,
-  dat: DatLoader,
-): Map<string, number[]> {
-  const result = new Map<string, number[]>();
-
-  for (const [key, counts] of itemCounts.entries()) {
-    const itemIds: number[] = [];
-    for (const [id, count] of counts.entries()) {
-      const def = dat.items.get(id);
-      if (def) {
-        itemIds.push(id);
-      }
-    }
-    if (itemIds.length > 0) {
-      result.set(key, itemIds);
-    }
-  }
-
-  return result;
 }
