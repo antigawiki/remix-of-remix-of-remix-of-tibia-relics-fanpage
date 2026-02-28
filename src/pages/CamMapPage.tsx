@@ -93,7 +93,7 @@ const CamMapPage = () => {
   const rendererRef = useRef<MapTileRenderer | null>(null);
   const floorDataRef = useRef<Map<string, TileData[]>>(new Map());
   const creatureDataRef = useRef<Map<string, CreatureData[]>>(new Map());
-  const [showBaseMap, setShowBaseMap] = useState(false);
+  const [showBaseMap, setShowBaseMap] = useState(true);
 
   const [currentFloor, setCurrentFloor] = useState(DEFAULT_Z);
   const [assetsLoading, setAssetsLoading] = useState(true);
@@ -175,17 +175,13 @@ const CamMapPage = () => {
     map.setView([-DEFAULT_CENTER_Y, DEFAULT_CENTER_X], 3);
     mapRef.current = map;
 
-    // External base map layer
+    // External base map layer via proxy to bypass CORS
+    const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
     const ExternalTileLayer = L.TileLayer.extend({
       getTileUrl(coords: L.Coords) {
-        // The external server uses: {zoom}/{z}/{x}_{y}.png
-        // In L.CRS.Simple at zoom=5, 1 tile = 8x8 game tiles (same as our chunks)
-        // At lower zooms, tiles cover more area
         const z = (this as any)._clampZoom ?? coords.z;
         const floor = (this as any).options.floor ?? 7;
-        // Map leaflet coords to external tile coords
-        // External uses 256px tiles at zoom 0-5 with same coordinate system
-        return `https://st54085.ispot.cc/mapper/tibiarelic/${z}/${floor}/${coords.x}_${coords.y}.png`;
+        return `${supabaseUrl}/functions/v1/map-tile-proxy?zoom=${z}&floor=${floor}&x=${coords.x}&y=${coords.y}`;
       },
     });
 
