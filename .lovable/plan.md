@@ -1,99 +1,75 @@
 
 
-## Ferramenta de Depuracao em Tempo Real para o CamPlayer
+## Analise do Log de Debug e Plano de Correcao
 
-### Objetivo
+### Descobertas Criticas
 
-Criar um sistema de logging estruturado que registra TODOS os eventos relevantes do protocolo durante a reproducao de um `.cam`, permitindo identificar o momento exato em que a camera desincroniza ou o boneco para de andar. Os logs serao exibidos em um painel lateral colapsavel dentro do proprio player.
-
----
-
-### Componente 1: Sistema de Debug Logger (`src/lib/tibiaRelic/debugLogger.ts`)
-
-Novo arquivo que centraliza todos os registros de debug:
-
-```text
-- Classe DebugLogger com buffer circular (ultimos 2000 eventos)
-- Cada evento tem: timestamp (ms do .cam), tipo, dados estruturados
-- Tipos de evento:
-  - OPCODE: qual opcode foi processado
-  - MOVE_CR: from/to/cid/stackpos/fallbackUsed/walkAnimated
-  - FLOOR_CHANGE: floorUp/floorDn/mapDesc com oldZ/newZ/camXYZ
-  - SYNC_PLAYER: quando syncPlayerToCamera roda e o que mudou
-  - PLAYER_POS: opcode 0x9A (posicao explicita do player)
-  - DESYNC: quando player.z != camZ (detectado no renderer)
-  - WALK_FAIL: quando moveCr nao encontrou criatura (cid=null)
-  - TILE_UPDATE: readTileItems que afeta o player
-  - SCROLL: direcao e nova posicao da camera
-- Metodo export(): gera JSON ou texto para download
-- Flag enabled (desligado por padrao, nao impacta performance)
-```
-
-### Componente 2: Instrumentacao do PacketParser
-
-Modificar `packetParser.ts` para aceitar um `DebugLogger` opcional e registrar eventos criticos:
-
-- No `dispatch()`: registrar cada opcode processado (apenas os relevantes para mapa/movimento)
-- No `moveCr()`: registrar TODOS os detalhes — from/to, stackpos, qual fallback encontrou a criatura, se walk animation foi ativada, se cid ficou null
-- No `floorUp()`/`floorDown()`: registrar mudanca de andar com antes/depois
-- No `syncPlayerToCamera()`: registrar quando player e camera divergem e o que foi corrigido
-- No `mapDesc()`: registrar nova posicao da camera
-- No `scroll()`: registrar direcao e nova posicao
-- No opcode `0x9A` (player pos): registrar posicao recebida vs estado atual
-
-### Componente 3: Instrumentacao do Renderer
-
-Modificar `renderer.ts` para registrar:
-
-- Quando `player.z !== g.camZ` (desync detectado)
-- Valores usados para renderizacao (renderCamX/Y/Z, floorOverride)
-
-### Componente 4: Painel de Debug no UI (`src/components/CamDebugPanel.tsx`)
-
-Novo componente colapsavel no `TibiarcPlayer`:
-
-```text
-- Botao "Debug" no rodape dos controles (icone de bug)
-- Ao clicar, abre um painel abaixo do player com:
-  - Lista scrollavel dos ultimos eventos (auto-scroll)
-  - Filtros por tipo (MOVE_CR, FLOOR_CHANGE, DESYNC, WALK_FAIL)
-  - Indicadores em tempo real:
-    - camX/Y/Z atual
-    - player.x/y/z atual
-    - player.z == camZ? (verde/vermelho)
-    - Numero de criaturas ativas
-    - Ultimo moveCr: cid/from/to/fallback
-  - Botao "Exportar Log" para download do historico completo
-  - Highlight vermelho para eventos DESYNC e WALK_FAIL
-- Quando desativado, o logger fica off e nao impacta performance
-```
-
-### Componente 5: Integracao com TibiarcPlayer
-
-- Adicionar estado `debugMode` ao `TibiarcPlayer`
-- Quando ativado, instanciar `DebugLogger` e passar ao `PacketParser` e `Renderer`
-- O painel de debug usa `useRef` para acessar o logger sem causar re-renders
-- Atualiza a cada 200ms via intervalo (nao a cada frame)
+Analisando os 2000 eventos do log, identifiquei **duas causas raiz** que explicam TODOS os problemas visuais:
 
 ---
 
-### Resumo dos arquivos
+### Causa Raiz 1: syncPlayerToCamera sobrescreve a posicao correta do player
 
-| Arquivo | Acao |
-|---|---|
-| `src/lib/tibiaRelic/debugLogger.ts` | NOVO - classe DebugLogger com buffer circular |
-| `src/lib/tibiaRelic/packetParser.ts` | EDITAR - adicionar logging nos metodos criticos |
-| `src/lib/tibiaRelic/renderer.ts` | EDITAR - adicionar logging de desync |
-| `src/components/CamDebugPanel.tsx` | NOVO - painel visual de debug |
-| `src/components/TibiarcPlayer.tsx` | EDITAR - integrar debug panel e logger |
+O log mostra claramente o que acontece:
 
-### Por que isso vai ajudar
+```text
+[4535.66s] MOVE_CR cid=268 isPlayer=true ... toX=32926 toY=32592  (player vai pro sul, Y=32592)
+[4536.47s] MOVE_CR cid=268 isPlayer=true ... toX=32927 toY=32592  (player vai pro leste, Y=32592)
+[4536.47s] SCROLL dx=1 ... newCam="32927,32591"  (camera: Y=32591)
+[4536.47s] SYNC_PLAYER oldPlayerPos="32927,32592" camPos="32927,32591"  <-- SOBRESCREVE Y de 32592 para 32591!
+```
 
-Em vez de adivinhar a causa dos bugs, o painel mostra em tempo real:
-1. O momento exato em que `player.z` diverge de `camZ`
-2. Qual opcode causou a divergencia
-3. Quando `moveCr` falha em encontrar a criatura (walk animation perdida)
-4. O estado completo antes e depois de cada evento de floor change
+O `syncPlayerToCamera` e chamado a cada scroll (0x65-0x68) e FORCA `player.x/y/z = g.camX/Y/Z`. Mas o player ja tem a posicao correta via `moveCr`. Resultado: o player "pula" 1 tile na direcao errada a cada scroll.
 
-Com esses dados, podemos identificar a causa raiz real e fazer uma correcao cirurgica.
+**Correcao:** NAO chamar `syncPlayerToCamera` nos scrolls. O scroll atualiza a camera e le novos tiles, mas a posicao do player vem exclusivamente do `moveCr`. Manter `syncPlayerToCamera` apenas para `mapDesc`, `floorUp`, `floorDown` e opcode `0x9A` (teleports e mudancas de andar).
+
+---
+
+### Causa Raiz 2: WALK_FAIL em massa (~80% dos moveCr falham)
+
+O log mostra centenas de WALK_FAIL com `tileLength=1` -- o tile existe mas nao tem criatura. Isso acontece porque:
+
+1. `readMultiFloorArea` (chamado pelo scroll) reconstroi tiles a partir dos dados do protocolo
+2. Os dados do protocolo NAO incluem criaturas existentes -- elas sao entidades separadas
+3. Quando o tile e reconstruido, a referencia `['cr', cid]` da criatura e APAGADA
+4. No proximo `moveCr`, o tile de origem nao tem a criatura, entao `WALK_FAIL`
+
+O `setTilePreservingCreatures` ja existe (linha 170) mas nao esta sendo usado corretamente no `readTileItems`.
+
+**Correcao:** Ao ler tiles do protocolo (readTileItems/readMultiFloorArea), PRESERVAR as referencias de criaturas que ja estao no tile. Isso evita que criaturas "desaparecam" do tile apos um scroll.
+
+---
+
+### Plano de Implementacao
+
+**Arquivo: `src/lib/tibiaRelic/packetParser.ts`**
+
+**Mudanca 1: Remover syncPlayerToCamera do scroll**
+
+No metodo `scroll()` (linha 468), remover a chamada `this.syncPlayerToCamera()`. O scroll so atualiza `g.camX/Y` e le novos tiles. A posicao do player e mantida pelo `moveCr`.
+
+**Mudanca 2: Preservar criaturas ao ler tiles do protocolo**
+
+No `readTileItems` (ou na funcao que popula tiles durante scroll/mapDesc), ao definir um tile novo, manter as entradas `['cr', cid]` que ja existiam naquele tile. Verificar se `setTilePreservingCreatures` esta sendo usado onde o tile e inicializado antes de `readTileItems`.
+
+**Mudanca 3: Re-inserir criaturas nos tiles apos area read**
+
+Apos `readMultiFloorArea` finalizar, percorrer todas as criaturas conhecidas e garantir que cada uma tenha uma referencia `['cr', cid]` no tile correspondente a sua posicao `(c.x, c.y, c.z)`. Isso funciona como um "safety net" apos leitura de mapa.
+
+---
+
+### Resumo tecnico
+
+| Mudanca | Local | Efeito |
+|---|---|---|
+| Remover syncPlayerToCamera do scroll | `scroll()` linha 468 | Player nao pula de posicao a cada passo |
+| Preservar criaturas nos tiles | `readTileItems` / area read | Criaturas nao desaparecem apos scroll |
+| Safety net pos-area read | Apos `readMultiFloorArea` | Garante consistencia creature <-> tile |
+
+### Por que isso vai funcionar
+
+1. O log PROVA que `syncPlayerToCamera` sobrescreve a posicao correta (linhas 206-219 do log)
+2. O log PROVA que WALK_FAIL acontece porque tiles nao tem criaturas (`tileLength=1`)
+3. Ambos os problemas tem correcoes cirurgicas que nao afetam o fluxo normal do protocolo
+4. `mapDesc`, `floorUp/Down` e `0x9A` continuam sincronizando (necessario para teleports/mudanca de andar)
 
