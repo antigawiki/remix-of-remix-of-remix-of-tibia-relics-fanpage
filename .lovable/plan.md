@@ -1,189 +1,99 @@
 
 
-## Correcao dos Bugs de Camera e Walk Animation - Baseado no Codigo Fonte do tibiarc
+## Ferramenta de Depuracao em Tempo Real para o CamPlayer
 
-### Analise da Causa Raiz (referencia: tibiarc/lib/events.cpp)
+### Objetivo
 
-Comparando nosso codigo com a implementacao oficial do tibiarc, identifiquei **duas diferencas criticas** que causam ambos os bugs:
+Criar um sistema de logging estruturado que registra TODOS os eventos relevantes do protocolo durante a reproducao de um `.cam`, permitindo identificar o momento exato em que a camera desincroniza ou o boneco para de andar. Os logs serao exibidos em um painel lateral colapsavel dentro do proprio player.
 
 ---
 
-### Bug 1: Boneco para de andar (Walk Animation perdida)
+### Componente 1: Sistema de Debug Logger (`src/lib/tibiaRelic/debugLogger.ts`)
 
-**Causa raiz confirmada:** No metodo `moveCr`, o fallback 1 verifica `candidateCr.x === fx && candidateCr.y === fy && candidateCr.z === fz` antes de aceitar a criatura no stackpos. **O tibiarc NAO faz essa verificacao.** Ele simplesmente confia no stackpos:
+Novo arquivo que centraliza todos os registros de debug:
 
 ```text
-tibiarc (events.cpp, linha 90-100):
-  auto &movedObject = fromTile.GetObject(version, StackPosition);
-  if (!movedObject.IsCreature()) throw InvalidDataError();
-  creatureId = movedObject.CreatureId;
-  fromTile.RemoveObject(version, StackPosition);
-  // ^ Nenhuma verificacao de posicao! Confia no stackpos.
+- Classe DebugLogger com buffer circular (ultimos 2000 eventos)
+- Cada evento tem: timestamp (ms do .cam), tipo, dados estruturados
+- Tipos de evento:
+  - OPCODE: qual opcode foi processado
+  - MOVE_CR: from/to/cid/stackpos/fallbackUsed/walkAnimated
+  - FLOOR_CHANGE: floorUp/floorDn/mapDesc com oldZ/newZ/camXYZ
+  - SYNC_PLAYER: quando syncPlayerToCamera roda e o que mudou
+  - PLAYER_POS: opcode 0x9A (posicao explicita do player)
+  - DESYNC: quando player.z != camZ (detectado no renderer)
+  - WALK_FAIL: quando moveCr nao encontrou criatura (cid=null)
+  - TILE_UPDATE: readTileItems que afeta o player
+  - SCROLL: direcao e nova posicao da camera
+- Metodo export(): gera JSON ou texto para download
+- Flag enabled (desligado por padrao, nao impacta performance)
 ```
 
-O problema: quando `readTileItems` processa um tile (via scroll/mapDesc/tileUpd), ele atualiza `c.x/y/z` da criatura para a nova posicao do tile. Quando `moveCr` chega depois com as coordenadas ANTIGAS como origem, a verificacao `candidateCr.x === fx` FALHA porque a posicao ja foi atualizada. Resultado: `cid = null`, movimento descartado, sem animacao.
+### Componente 2: Instrumentacao do PacketParser
 
-**Correcao:** Remover a verificacao de posicao em TODOS os fallbacks do `moveCr`. Confiar no stackpos (como tibiarc faz).
+Modificar `packetParser.ts` para aceitar um `DebugLogger` opcional e registrar eventos criticos:
 
-**Arquivo: `src/lib/tibiaRelic/packetParser.ts`** - metodo `moveCr`, linhas 520-526:
+- No `dispatch()`: registrar cada opcode processado (apenas os relevantes para mapa/movimento)
+- No `moveCr()`: registrar TODOS os detalhes — from/to, stackpos, qual fallback encontrou a criatura, se walk animation foi ativada, se cid ficou null
+- No `floorUp()`/`floorDown()`: registrar mudanca de andar com antes/depois
+- No `syncPlayerToCamera()`: registrar quando player e camera divergem e o que foi corrigido
+- No `mapDesc()`: registrar nova posicao da camera
+- No `scroll()`: registrar direcao e nova posicao
+- No opcode `0x9A` (player pos): registrar posicao recebida vs estado atual
 
-Antes:
-```typescript
-if (sp >= 0 && sp < ft.length && ft[sp][0] === 'cr') {
-  const candidateCr = this.gs.creatures.get(ft[sp][1]);
-  if (candidateCr && candidateCr.x === fx && candidateCr.y === fy && candidateCr.z === fz) {
-    cid = ft[sp][1];
-    ft.splice(sp, 1);
-    this.gs.setTile(fx, fy, fz, ft);
-  }
-}
-```
+### Componente 3: Instrumentacao do Renderer
 
-Depois:
-```typescript
-if (sp >= 0 && sp < ft.length && ft[sp][0] === 'cr') {
-  cid = ft[sp][1];
-  ft.splice(sp, 1);
-  this.gs.setTile(fx, fy, fz, ft);
-}
-```
+Modificar `renderer.ts` para registrar:
 
-Mesma simplificacao no fallback 2 (linhas 530-541) -- remover a verificacao `cc.x === fx`:
+- Quando `player.z !== g.camZ` (desync detectado)
+- Valores usados para renderizacao (renderCamX/Y/Z, floorOverride)
 
-Antes:
-```typescript
-if (cid === null) {
-  for (let i = 0; i < ft.length; i++) {
-    if (ft[i][0] === 'cr') {
-      const cc = this.gs.creatures.get(ft[i][1]);
-      if (cc && cc.x === fx && cc.y === fy && cc.z === fz) {
-        cid = ft[i][1];
-        ft.splice(i, 1);
-        this.gs.setTile(fx, fy, fz, ft);
-        break;
-      }
-    }
-  }
-}
-```
+### Componente 4: Painel de Debug no UI (`src/components/CamDebugPanel.tsx`)
 
-Depois:
-```typescript
-if (cid === null) {
-  for (let i = 0; i < ft.length; i++) {
-    if (ft[i][0] === 'cr') {
-      cid = ft[i][1];
-      ft.splice(i, 1);
-      this.gs.setTile(fx, fy, fz, ft);
-      break;
-    }
-  }
-}
-```
-
----
-
-### Bug 1b: Duracao do walk incorreta
-
-**Causa raiz confirmada:** Usamos `groundSpeed = 150` hardcoded. O tibiarc usa a propriedade `Speed` do tile de destino (da DAT):
+Novo componente colapsavel no `TibiarcPlayer`:
 
 ```text
-tibiarc (events.cpp, linha 163-166):
-  creature.WalkEndTick = gamestate.CurrentTick +
-    (groundType.Properties.Speed * 1000) / movementSpeed;
+- Botao "Debug" no rodape dos controles (icone de bug)
+- Ao clicar, abre um painel abaixo do player com:
+  - Lista scrollavel dos ultimos eventos (auto-scroll)
+  - Filtros por tipo (MOVE_CR, FLOOR_CHANGE, DESYNC, WALK_FAIL)
+  - Indicadores em tempo real:
+    - camX/Y/Z atual
+    - player.x/y/z atual
+    - player.z == camZ? (verde/vermelho)
+    - Numero de criaturas ativas
+    - Ultimo moveCr: cid/from/to/fallback
+  - Botao "Exportar Log" para download do historico completo
+  - Highlight vermelho para eventos DESYNC e WALK_FAIL
+- Quando desativado, o logger fica off e nao impacta performance
 ```
 
-**Correcao:** Buscar o speed do ground tile do destino via `this.dat.items`:
+### Componente 5: Integracao com TibiarcPlayer
 
-```typescript
-// Buscar ground speed do tile de destino
-const destTile = this.gs.getTile(tx, ty, tz);
-let groundSpeed = 150; // fallback
-for (const ti of destTile) {
-  if (ti[0] === 'it') {
-    const it = this.dat.items.get(ti[1]);
-    if (it && it.isGround && it.stackPrio === 0 && it.speed > 0) {
-      groundSpeed = it.speed;
-      break;
-    }
-  }
-}
-const walkDuration = c.speed > 0
-  ? Math.max(100, Math.floor(groundSpeed * 1000 / Math.max(1, c.speed)))
-  : 300;
-```
+- Adicionar estado `debugMode` ao `TibiarcPlayer`
+- Quando ativado, instanciar `DebugLogger` e passar ao `PacketParser` e `Renderer`
+- O painel de debug usa `useRef` para acessar o logger sem causar re-renders
+- Atualiza a cada 200ms via intervalo (nao a cada frame)
 
 ---
 
-### Bug 1c: Walk animation em cross-floor e teleports deve ser instantanea
+### Resumo dos arquivos
 
-**Causa raiz confirmada:** O tibiarc desativa walk animation quando `zDifference !== 0` ou quando a distancia e maior que 1 tile. Nosso codigo so verifica `dx !== 0 || dy !== 0`.
-
-```text
-tibiarc (events.cpp, linha 137-139):
-  if (zDifference == 0 &&
-      (abs(xDifference) <= 1 && abs(yDifference) <= 1) &&
-      toTile.ObjectCount > 0) {
-      // animate walk
-  } else {
-      // instant movement (no walk)
-  }
-```
-
-**Correcao:** Adicionar as mesmas verificacoes:
-```typescript
-const dz = tz - fz;
-if (!this.seekMode && dz === 0 &&
-    (Math.abs(dx) <= 1 && Math.abs(dy) <= 1) &&
-    (dx !== 0 || dy !== 0)) {
-  // animate walk
-}
-```
-
----
-
-### Bug 2: Camera desincronizada do andar do player
-
-**Causa raiz:** Quando `moveCr` move o player para outro Z (raro, mas possivel em teleports), `player.z` muda mas `g.camZ` nao. O renderer usa `player.x/y` para centralizacao mas `g.camZ` para o andar, criando o desync.
-
-No tibiarc, `PlayerMoved` e um evento SEPARADO que atualiza `Map.Position` (equivalente a `g.camX/Y/Z`). Movimentos de criatura NAO alteram a posicao do mapa. A camera so muda via `PlayerMoved`, `MapDescription`, `FloorUp`, `FloorDown`.
-
-**Correcao mais segura (logging + safety net minimo):** Em vez de tentar sincronizar camZ no moveCr (que ja mostrou causar problemas), adicionar logging diagnostico para identificar QUANDO o desync acontece, e um safety net sutil no renderer:
-
-No `renderer.ts`, em vez de usar `player.z` para overrride (que quebrou tudo antes), adicionar um log quando detectar divergencia:
-
-```typescript
-if (player && player.z !== g.camZ && !this.floorOverride) {
-  console.warn(`[Renderer] Floor desync: player.z=${player.z} camZ=${g.camZ}`);
-}
-```
-
-E no `moveCr`, quando o player muda de Z, emitir um warning:
-
-```typescript
-if (cid === this.gs.playerId && tz !== fz) {
-  console.warn(`[moveCr] Player Z changed: ${fz} -> ${tz}, camZ=${this.gs.camZ}`);
-}
-```
-
-Isso nos permite identificar a causa raiz exata sem quebrar a renderizacao.
-
----
-
-### Resumo das mudancas
-
-| Arquivo | Mudanca |
+| Arquivo | Acao |
 |---|---|
-| `packetParser.ts` | Remover verificacao de posicao nos fallbacks do moveCr (confiar no stackpos como tibiarc) |
-| `packetParser.ts` | Usar ground tile speed da DAT para duracao do walk |
-| `packetParser.ts` | Desativar walk animation em cross-floor moves e teleports |
-| `packetParser.ts` | Logging diagnostico quando player muda de Z via moveCr |
-| `renderer.ts` | Logging diagnostico quando player.z diverge de camZ |
+| `src/lib/tibiaRelic/debugLogger.ts` | NOVO - classe DebugLogger com buffer circular |
+| `src/lib/tibiaRelic/packetParser.ts` | EDITAR - adicionar logging nos metodos criticos |
+| `src/lib/tibiaRelic/renderer.ts` | EDITAR - adicionar logging de desync |
+| `src/components/CamDebugPanel.tsx` | NOVO - painel visual de debug |
+| `src/components/TibiarcPlayer.tsx` | EDITAR - integrar debug panel e logger |
 
-### Por que esse plano vai funcionar
+### Por que isso vai ajudar
 
-1. A correcao principal (remover verificacao de posicao) e baseada DIRETAMENTE no codigo fonte do tibiarc oficial -- nao e heuristica, e como o sistema foi projetado
-2. A correcao de walk duration vai fazer as animacoes parecerem mais naturais
-3. A desativacao de walk em cross-floor previne animacoes impossveis
-4. O logging ajuda a identificar o bug de floor desync sem arriscar quebrar a renderizacao novamente
+Em vez de adivinhar a causa dos bugs, o painel mostra em tempo real:
+1. O momento exato em que `player.z` diverge de `camZ`
+2. Qual opcode causou a divergencia
+3. Quando `moveCr` falha em encontrar a criatura (walk animation perdida)
+4. O estado completo antes e depois de cada evento de floor change
+
+Com esses dados, podemos identificar a causa raiz real e fazer uma correcao cirurgica.
 
