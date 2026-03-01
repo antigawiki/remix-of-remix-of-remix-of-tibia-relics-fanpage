@@ -1,5 +1,5 @@
 import { useRef, useState, useCallback, useEffect } from 'react';
-import { Upload, Play, Pause, FastForward, RotateCcw, Loader2, ChevronUp, ChevronDown, Layers, Sparkles, Monitor, SkipBack, SkipForward } from 'lucide-react';
+import { Upload, Play, Pause, FastForward, RotateCcw, Loader2, ChevronUp, ChevronDown, Layers, Sparkles, Monitor, SkipBack, SkipForward, Eye } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Slider } from '@/components/ui/slider';
 import { useTranslation } from '@/i18n';
@@ -63,11 +63,14 @@ const TibiarcPlayer = ({ className }: TibiarcPlayerProps) => {
   const [qualityMode, setQualityMode] = useState<'classic' | 'enhanced'>('enhanced');
   const [extracting, setExtracting] = useState(false);
   const [extractProgress, setExtractProgress] = useState<MapExtractionProgress | null>(null);
+  const [spyFloor, setSpyFloor] = useState(false);
   const floorOffsetRef = useRef(0);
+  const spyFloorRef = useRef(false);
   const containerRef = useRef<HTMLDivElement>(null);
 
   // Keep ref in sync with state for animation loop access
   useEffect(() => { floorOffsetRef.current = floorOffset; }, [floorOffset]);
+  useEffect(() => { spyFloorRef.current = spyFloor; }, [spyFloor]);
   const qualityModeRef = useRef(qualityMode);
   useEffect(() => { qualityModeRef.current = qualityMode; }, [qualityMode]);
 
@@ -188,6 +191,7 @@ const TibiarcPlayer = ({ className }: TibiarcPlayerProps) => {
       }
 
       engine.renderer.smoothUpscale = qualityModeRef.current === 'enhanced';
+      engine.renderer.spyFloor = spyFloorRef.current;
       engine.renderer.incTick();
       engine.renderer.draw(canvas.width, canvas.height);
     };
@@ -599,6 +603,16 @@ const TibiarcPlayer = ({ className }: TibiarcPlayerProps) => {
 
           {/* Floor controls */}
           <div className="flex items-center gap-1.5">
+            <Button
+              variant={spyFloor ? "default" : "outline"}
+              size="icon"
+              className={`h-8 w-8 ${spyFloor ? 'bg-gold text-black hover:bg-gold/80' : 'border-border/50'}`}
+              disabled={!hasRecording}
+              onClick={() => setSpyFloor(prev => !prev)}
+              title="Spy Floor - ver através do chão"
+            >
+              <Eye className="w-3.5 h-3.5" />
+            </Button>
             <Layers className="w-3.5 h-3.5 text-muted-foreground" />
             <Button
               variant="outline"
