@@ -64,10 +64,11 @@ export class MapTileRenderer {
     tiles: TileData[],
     creatures?: CreatureData[],
     spawns?: SpawnRenderData[],
-    options?: { hideLooseItems?: boolean },
+    options?: { hideLooseItems?: boolean; belowChunks?: Set<string> },
   ): HTMLCanvasElement | null {
     const hideLoose = options?.hideLooseItems ?? false;
-    const key = `${chunkX},${chunkY},${z}${hideLoose ? ',noitems' : ''}`;
+    const hasBelowData = options?.belowChunks != null;
+    const key = `${chunkX},${chunkY},${z}${hideLoose ? ',noitems' : ''}${hasBelowData ? ',below' : ''}`;
     if (this.cache.has(key)) return this.cache.get(key)!;
 
     if (tiles.length === 0 && (!creatures || creatures.length === 0)) {
@@ -130,15 +131,19 @@ export class MapTileRenderer {
           ctx.restore();
         }
         if (hasShovelSpot) {
+          const belowChunkKey = `${Math.floor(wx / CHUNK_TILES)},${Math.floor(wy / CHUNK_TILES)}`;
+          const explored = !hasBelowData || (options!.belowChunks!.has(belowChunkKey));
+          const color = explored ? '#ffcc00' : '#ff4444';
+          const label = explored ? 'S' : 'S!';
           ctx.save();
-          ctx.strokeStyle = '#ffcc00';
+          ctx.strokeStyle = color;
           ctx.lineWidth = 2;
           ctx.strokeRect(px + 1, py + 1, TILE_PX - 2, TILE_PX - 2);
-          ctx.fillStyle = 'rgba(255, 204, 0, 0.15)';
+          ctx.fillStyle = explored ? 'rgba(255, 204, 0, 0.15)' : 'rgba(255, 68, 68, 0.2)';
           ctx.fillRect(px + 1, py + 1, TILE_PX - 2, TILE_PX - 2);
-          ctx.fillStyle = '#ffcc00';
+          ctx.fillStyle = color;
           ctx.font = '10px monospace';
-          ctx.fillText('S', px + 2, py + 10);
+          ctx.fillText(label, px + 2, py + 10);
           ctx.restore();
         }
       }

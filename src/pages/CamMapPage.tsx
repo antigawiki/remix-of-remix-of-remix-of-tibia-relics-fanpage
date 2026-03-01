@@ -131,16 +131,37 @@ async function loadChunks(
   return tileMap;
 }
 
-/** Preload floor data (terrain + spawns) in parallel. */
+/** Load chunk keys that exist on a given floor (lightweight, no tiles_data). */
+async function loadBelowChunkKeys(z: number): Promise<Set<string>> {
+  const keys = new Set<string>();
+  let offset = 0;
+  while (true) {
+    const { data, error } = await supabase
+      .from('cam_map_chunks' as any)
+      .select('chunk_x, chunk_y')
+      .eq('z', z)
+      .range(offset, offset + PAGE_SIZE - 1);
+    if (error || !data || data.length === 0) break;
+    for (const row of data as any[]) {
+      keys.add(`${row.chunk_x},${row.chunk_y}`);
+    }
+    offset += PAGE_SIZE;
+    if (data.length < PAGE_SIZE) break;
+  }
+  return keys;
+}
+
+/** Preload floor data (terrain + spawns + below chunk keys) in parallel. */
 async function preloadFloor(
   z: number,
   onProgress: (label: string, count: number) => void,
-): Promise<{ tileMap: Map<string, TileData[]>; spawnMap: Map<string, SpawnRenderData[]> }> {
-  const [tileMap, spawnMap] = await Promise.all([
+): Promise<{ tileMap: Map<string, TileData[]>; spawnMap: Map<string, SpawnRenderData[]>; belowChunks: Set<string> }> {
+  const [tileMap, spawnMap, belowChunks] = await Promise.all([
     loadChunks(z, onProgress),
     loadSpawns(z, onProgress),
+    z <= 14 ? loadBelowChunkKeys(z + 1) : Promise.resolve(new Set<string>()),
   ]);
-  return { tileMap, spawnMap };
+  return { tileMap, spawnMap, belowChunks };
 }
 
 const CamMapPage = () => {
@@ -149,8 +170,9 @@ const CamMapPage = () => {
   const mapRef = useRef<L.Map | null>(null);
   const tileLayerRef = useRef<L.GridLayer | null>(null);
   const rendererRef = useRef<MapTileRenderer | null>(null);
-  const floorDataRef = useRef<Map<string, TileData[]>>(new Map()); // kept for renderer compat
+  const floorDataRef = useRef<Map<string, TileData[]>>(new Map());
   const spawnDataRef = useRef<Map<string, SpawnRenderData[]>>(new Map());
+  const belowChunksRef = useRef<Set<string>>(new Set());
 
   const [currentFloor, setCurrentFloor] = useState(DEFAULT_Z);
   const [assetsLoading, setAssetsLoading] = useState(true);
@@ -201,10 +223,11 @@ const CamMapPage = () => {
 
     preloadFloor(currentFloor, (label, count) => {
       if (!cancelled) setLoadingStatus(`${count.toLocaleString()} ${label}`);
-    }).then(({ tileMap, spawnMap }) => {
+    }).then(({ tileMap, spawnMap, belowChunks }) => {
       if (cancelled) return;
       floorDataRef.current = tileMap;
       spawnDataRef.current = spawnMap;
+      belowChunksRef.current = belowChunks;
       setTileCount(Array.from(tileMap.values()).reduce((s, a) => s + a.length, 0));
       setSpawnCount(Array.from(spawnMap.values()).reduce((s, a) => s + a.length, 0));
       setFloorLoading(false);
@@ -309,12 +332,16 @@ const CamMapPage = () => {
           const baseChunkX = co.x * chunksPerTile;
           const baseChunkY = co.y * chunksPerTile;
 
-          const renderOpts = showLooseItems ? undefined : { hideLooseItems: true };
+          const below = belowChunksRef.current;
+          const renderOpts: any = {};
+          if (!showLooseItems) renderOpts.hideLooseItems = true;
+          if (below.size > 0) renderOpts.belowChunks = below;
+          const opts = Object.keys(renderOpts).length > 0 ? renderOpts : undefined;
           if (chunksPerTile === 1) {
             const tiles = getChunkTiles(baseChunkX, baseChunkY);
             const spawns = showSpawns ? getChunkSpawns(baseChunkX, baseChunkY) : [];
             if (tiles.length > 0 || spawns.length > 0) {
-              const rendered = renderer.renderChunk(baseChunkX, baseChunkY, floor, tiles, undefined, spawns, renderOpts);
+              const rendered = renderer.renderChunk(baseChunkX, baseChunkY, floor, tiles, undefined, spawns, opts);
               if (rendered) c.drawImage(rendered, 0, 0, 256, 256);
             }
           } else {
@@ -326,7 +353,7 @@ const CamMapPage = () => {
                 const tiles = getChunkTiles(tcx, tcy);
                 const spawns = showSpawns ? getChunkSpawns(tcx, tcy) : [];
                 if (tiles.length > 0 || spawns.length > 0) {
-                  const rendered = renderer.renderChunk(tcx, tcy, floor, tiles, undefined, spawns, renderOpts);
+                  const rendered = renderer.renderChunk(tcx, tcy, floor, tiles, undefined, spawns, opts);
                   if (rendered) c.drawImage(rendered, cx * chunkPx, cy * chunkPx, chunkPx, chunkPx);
                 }
               }
@@ -464,6 +491,10 @@ const CamMapPage = () => {
               <div className="flex items-center gap-1">
                 <span className="inline-block w-2.5 h-2.5 border-2 rounded-sm" style={{ borderColor: '#ffcc00', background: 'rgba(255,204,0,0.15)' }} />
                 <span className="text-xs text-muted-foreground">Shovel</span>
+              </div>
+              <div className="flex items-center gap-1">
+                <span className="inline-block w-2.5 h-2.5 border-2 rounded-sm" style={{ borderColor: '#ff4444', background: 'rgba(255,68,68,0.2)' }} />
+                <span className="text-xs text-muted-foreground">Inexplorado</span>
               </div>
             </div>
           </div>
