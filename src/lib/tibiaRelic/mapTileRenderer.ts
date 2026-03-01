@@ -9,6 +9,7 @@ import { SprLoader } from './sprLoader';
 import { DatLoader, type ItemType } from './datLoader';
 
 const TILE_PX = 32;
+const MAX_ELEVATION = 24;
 const CHUNK_TILES = 8;
 const CHUNK_PX = CHUNK_TILES * TILE_PX; // 256
 
@@ -104,6 +105,10 @@ export class MapTileRenderer {
         let hasRopeHole = false;
         let hasShovelSpot = false;
 
+        // Separate items by stack priority for correct draw order
+        const ground: number[] = [];  // stackPrio 0-3: ground, borders, walls
+        const normal: number[] = [];  // stackPrio 4-5: normal items
+
         for (const itemId of items) {
           if (ROPE_HOLE_IDS.has(itemId)) hasRopeHole = true;
           if (SHOVEL_SPOT_IDS.has(itemId)) hasShovelSpot = true;
@@ -111,9 +116,26 @@ export class MapTileRenderer {
           const def = this.dat.items.get(itemId);
           if (!def) continue;
           if (def.stackPrio > 5) continue;
-          // Skip loose items (corpses, loot, containers) when hideLooseItems is on
           if (hideLoose && def.stackPrio >= 4) continue;
-          this.drawItem(ctx, def, px, py, wx, wy);
+
+          if (def.stackPrio <= 3) {
+            ground.push(itemId);
+          } else {
+            normal.push(itemId);
+          }
+        }
+
+        // Normal items drawn in reverse order (like Gesior's rbegin)
+        normal.reverse();
+
+        // Draw ground first (normal order), then normal items (reversed)
+        let drawElevation = 0;
+        const allItems = [...ground, ...normal];
+        for (const itemId of allItems) {
+          const def = this.dat.items.get(itemId);
+          if (!def) continue;
+          this.drawItem(ctx, def, px - drawElevation, py - drawElevation, wx, wy);
+          drawElevation = Math.min(drawElevation + (def.elevation || 0), MAX_ELEVATION);
         }
 
         // Draw special tile overlays
@@ -218,22 +240,25 @@ export class MapTileRenderer {
   }
 
   private drawItem(ctx: CanvasRenderingContext2D, def: ItemType, px: number, py: number, wx: number, wy: number) {
-    for (let th = 0; th < def.height; th++) {
-      for (let tw = 0; tw < def.width; tw++) {
-        const sid = this.getItemSpriteIndex(def, wx, wy, tw, th);
-        if (!sid) continue;
-        const sprCanvas = this.getSpriteCanvas(sid);
-        if (sprCanvas) {
-          ctx.drawImage(sprCanvas, px - tw * TILE_PX - def.dispX, py - th * TILE_PX - def.dispY);
+    const L = Math.max(1, def.layers);
+    for (let l = 0; l < L; l++) {
+      for (let th = 0; th < def.height; th++) {
+        for (let tw = 0; tw < def.width; tw++) {
+          const sid = this.getItemSpriteIndex(def, wx, wy, tw, th, l);
+          if (!sid) continue;
+          const sprCanvas = this.getSpriteCanvas(sid);
+          if (sprCanvas) {
+            ctx.drawImage(sprCanvas, px - tw * TILE_PX - def.dispX, py - th * TILE_PX - def.dispY);
+          }
         }
       }
     }
   }
 
-  private getItemSpriteIndex(it: ItemType, wx: number, wy: number, tw: number, th: number): number {
+  private getItemSpriteIndex(it: ItemType, wx: number, wy: number, tw: number, th: number, layer: number = 0): number {
     const A = Math.max(1, it.anim), PZ = Math.max(1, it.patZ), PY = Math.max(1, it.patY);
     const PX = Math.max(1, it.patX), L = Math.max(1, it.layers), H = it.height, W = it.width;
-    const a = 0, z = 0, y = wy % PY, x = wx % PX, l = 0, h = th % H, w = tw % W;
+    const a = 0, z = 0, y = wy % PY, x = wx % PX, l = layer % L, h = th % H, w = tw % W;
     const idx = ((((((a * PZ + z) * PY + y) * PX + x) * L + l) * H + h) * W + w);
     return (it.spriteIds && idx < it.spriteIds.length) ? it.spriteIds[idx] : 0;
   }
