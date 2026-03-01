@@ -1,75 +1,52 @@
 
 
-## Analise do Log de Debug e Plano de Correcao
+## Correcao: Remover syncPlayerToCamera de floorUp/floorDown
 
-### Descobertas Criticas
+### Causa Raiz Confirmada pelo Log
 
-Analisando os 2000 eventos do log, identifiquei **duas causas raiz** que explicam TODOS os problemas visuais:
-
----
-
-### Causa Raiz 1: syncPlayerToCamera sobrescreve a posicao correta do player
-
-O log mostra claramente o que acontece:
+O log prova EXATAMENTE o que acontece:
 
 ```text
-[4535.66s] MOVE_CR cid=268 isPlayer=true ... toX=32926 toY=32592  (player vai pro sul, Y=32592)
-[4536.47s] MOVE_CR cid=268 isPlayer=true ... toX=32927 toY=32592  (player vai pro leste, Y=32592)
-[4536.47s] SCROLL dx=1 ... newCam="32927,32591"  (camera: Y=32591)
-[4536.47s] SYNC_PLAYER oldPlayerPos="32927,32592" camPos="32927,32591"  <-- SOBRESCREVE Y de 32592 para 32591!
+[12.62s] MOVE_CR cid=268 toX=32953 toY=32076 toZ=6   <-- posicao CORRETA (moveCr)
+[12.62s] 0xBE (floorUp) -> camZ--, camX++, camY++     <-- camera ajusta viewport
+[12.62s] SYNC_PLAYER oldPlayerPos="32953,32076,6" camPos="32954,32078,6"  <-- SOBRESCREVE!
+[13.55s] WALK_FAIL fromX=32953 fromY=32076 fromZ=6    <-- player nao esta mais aqui
+[14.22s] WALK_FAIL ...                                  <-- tudo quebrado daqui em diante
 ```
 
-O `syncPlayerToCamera` e chamado a cada scroll (0x65-0x68) e FORCA `player.x/y/z = g.camX/Y/Z`. Mas o player ja tem a posicao correta via `moveCr`. Resultado: o player "pula" 1 tile na direcao errada a cada scroll.
+O `floorUp` faz `camX++; camY++` como correcao de perspectiva para leitura de tiles. Isso e correto para o viewport, mas NAO representa a posicao do player. O `syncPlayerToCamera` copia essa posicao ajustada para o player, destruindo a posicao correta que `moveCr` ja definiu.
 
-**Correcao:** NAO chamar `syncPlayerToCamera` nos scrolls. O scroll atualiza a camera e le novos tiles, mas a posicao do player vem exclusivamente do `moveCr`. Manter `syncPlayerToCamera` apenas para `mapDesc`, `floorUp`, `floorDown` e opcode `0x9A` (teleports e mudancas de andar).
-
----
-
-### Causa Raiz 2: WALK_FAIL em massa (~80% dos moveCr falham)
-
-O log mostra centenas de WALK_FAIL com `tileLength=1` -- o tile existe mas nao tem criatura. Isso acontece porque:
-
-1. `readMultiFloorArea` (chamado pelo scroll) reconstroi tiles a partir dos dados do protocolo
-2. Os dados do protocolo NAO incluem criaturas existentes -- elas sao entidades separadas
-3. Quando o tile e reconstruido, a referencia `['cr', cid]` da criatura e APAGADA
-4. No proximo `moveCr`, o tile de origem nao tem a criatura, entao `WALK_FAIL`
-
-O `setTilePreservingCreatures` ja existe (linha 170) mas nao esta sendo usado corretamente no `readTileItems`.
-
-**Correcao:** Ao ler tiles do protocolo (readTileItems/readMultiFloorArea), PRESERVAR as referencias de criaturas que ja estao no tile. Isso evita que criaturas "desaparecam" do tile apos um scroll.
-
----
-
-### Plano de Implementacao
+### Correcao
 
 **Arquivo: `src/lib/tibiaRelic/packetParser.ts`**
 
-**Mudanca 1: Remover syncPlayerToCamera do scroll**
+**Mudanca 1: floorUp** (linha 738)
 
-No metodo `scroll()` (linha 468), remover a chamada `this.syncPlayerToCamera()`. O scroll so atualiza `g.camX/Y` e le novos tiles. A posicao do player e mantida pelo `moveCr`.
+Substituir `this.syncPlayerToCamera(oldZ)` por `this.cleanupDistantCreatures(g.camZ)`.
 
-**Mudanca 2: Preservar criaturas ao ler tiles do protocolo**
+O `moveCr` ja definiu player.z corretamente. O cleanup de criaturas distantes ainda e necessario, mas a sincronizacao de posicao nao.
 
-No `readTileItems` (ou na funcao que popula tiles durante scroll/mapDesc), ao definir um tile novo, manter as entradas `['cr', cid]` que ja existiam naquele tile. Verificar se `setTilePreservingCreatures` esta sendo usado onde o tile e inicializado antes de `readTileItems`.
+**Mudanca 2: floorDown** (linha 766)
 
-**Mudanca 3: Re-inserir criaturas nos tiles apos area read**
+Mesma mudanca: substituir `this.syncPlayerToCamera(oldZ)` por `this.cleanupDistantCreatures(g.camZ)`.
 
-Apos `readMultiFloorArea` finalizar, percorrer todas as criaturas conhecidas e garantir que cada uma tenha uma referencia `['cr', cid]` no tile correspondente a sua posicao `(c.x, c.y, c.z)`. Isso funciona como um "safety net" apos leitura de mapa.
+**Mudanca 3: Garantir que reinsertCreaturesOnTiles roda apos floor change**
 
----
-
-### Resumo tecnico
-
-| Mudanca | Local | Efeito |
-|---|---|---|
-| Remover syncPlayerToCamera do scroll | `scroll()` linha 468 | Player nao pula de posicao a cada passo |
-| Preservar criaturas nos tiles | `readTileItems` / area read | Criaturas nao desaparecem apos scroll |
-| Safety net pos-area read | Apos `readMultiFloorArea` | Garante consistencia creature <-> tile |
+Adicionar chamada a `this.reinsertCreaturesOnTiles()` apos o cleanup em floorUp e floorDown, garantindo que o player e outras criaturas estejam corretamente mapeados nos tiles do novo andar.
 
 ### Por que isso vai funcionar
 
-1. O log PROVA que `syncPlayerToCamera` sobrescreve a posicao correta (linhas 206-219 do log)
-2. O log PROVA que WALK_FAIL acontece porque tiles nao tem criaturas (`tileLength=1`)
-3. Ambos os problemas tem correcoes cirurgicas que nao afetam o fluxo normal do protocolo
-4. `mapDesc`, `floorUp/Down` e `0x9A` continuam sincronizando (necessario para teleports/mudanca de andar)
+1. O log PROVA que tudo funciona perfeitamente ANTES do sync no floor change (linhas 1-46)
+2. O log PROVA que TUDO quebra IMEDIATAMENTE apos o sync (linhas 59+)
+3. A unica mudanca entre "funciona" e "nao funciona" e a chamada `syncPlayerToCamera` no `floorUp`
+4. `syncPlayerToCamera` continua sendo chamado em `mapDesc` (login/teleport) e opcode `0x9A` onde e realmente necessario
+5. `cleanupDistantCreatures` continua limpando criaturas de andares distantes
+6. `reinsertCreaturesOnTiles` garante que nenhuma criatura fique sem referencia no tile
+
+### Resumo
+
+| Local | Antes | Depois |
+|---|---|---|
+| `floorUp()` linha 738 | `syncPlayerToCamera(oldZ)` | `cleanupDistantCreatures(g.camZ)` + `reinsertCreaturesOnTiles()` |
+| `floorDown()` linha 766 | `syncPlayerToCamera(oldZ)` | `cleanupDistantCreatures(g.camZ)` + `reinsertCreaturesOnTiles()` |
 
