@@ -465,7 +465,8 @@ export class PacketParser {
       g.camX = oldX; g.camY = oldY;
       throw e;
     }
-    this.syncPlayerToCamera();
+    // NOT calling syncPlayerToCamera here — scroll only updates camera coords.
+    // Player position comes exclusively from moveCr. Syncing here overwrites correct pos.
   }
 
   private tileUpd(r: Buf) {
@@ -843,23 +844,38 @@ export class PacketParser {
   // --- Tile/block readers ---
 
   private readTileItems(r: Buf, x: number, y: number, z: number): number {
+    // Preserve existing creature references that protocol data won't re-send
+    const existingTile = this.gs.getTile(x, y, z);
+    const preservedCreatures: TileItem[] = existingTile.filter(i => i[0] === 'cr');
+
     const items: TileItem[] = [];
+    const newCreatureIds = new Set<number>();
+
     while (r.left() >= 2) {
       const word = r.peek16();
       if (word >= 0xFF00) {
         r.skip(2);
+        // Re-add preserved creatures that weren't re-sent by the protocol
+        for (const pc of preservedCreatures) {
+          if (!newCreatureIds.has(pc[1])) {
+            const c = this.gs.creatures.get(pc[1]);
+            if (c && c.x === x && c.y === y && c.z === z) {
+              items.push(pc);
+            }
+          }
+        }
         this.gs.setTile(x, y, z, items);
         return word & 0xFF;
       }
       r.skip(2);
       if (word === CR_FULL) {
         const c = this.readCreatureFull(r);
-        // Dedup: remove from old tile before placing on new
         if (c.x !== x || c.y !== y || c.z !== z) {
           this.removeCreatureFromTile(c.id, c.x, c.y, c.z);
         }
         c.x = x; c.y = y; c.z = z;
         items.push(['cr', c.id]);
+        newCreatureIds.add(c.id);
       } else if (word === CR_KNOWN) {
         const c = this.readCreatureKnown(r);
         if (c.x !== x || c.y !== y || c.z !== z) {
@@ -867,6 +883,7 @@ export class PacketParser {
         }
         c.x = x; c.y = y; c.z = z;
         items.push(['cr', c.id]);
+        newCreatureIds.add(c.id);
       } else if (word === CR_OLD) {
         const cid = r.u32();
         const dir = r.u8();
@@ -878,12 +895,22 @@ export class PacketParser {
           c.direction = dir; c.x = x; c.y = y; c.z = z;
         }
         items.push(['cr', cid]);
+        newCreatureIds.add(cid);
       } else if (word >= 100 && word <= 9999) {
         const it = this.dat.items.get(word);
         if (it && (it.isStackable || it.isFluid || it.isSplash)) {
           r.u8();
         }
         items.push(['it', word]);
+      }
+    }
+    // Re-add preserved creatures at end-of-buffer too
+    for (const pc of preservedCreatures) {
+      if (!newCreatureIds.has(pc[1])) {
+        const c = this.gs.creatures.get(pc[1]);
+        if (c && c.x === x && c.y === y && c.z === z) {
+          items.push(pc);
+        }
       }
     }
     this.gs.setTile(x, y, z, items);
@@ -941,6 +968,21 @@ export class PacketParser {
       if (r.left() < 2) break;
       const offset = camZ - nz;
       skip = this.readFloorArea(r, ox, oy, nz, W, H, offset, skip);
+    }
+    // Safety net: re-insert creature references into their tiles after area read
+    this.reinsertCreaturesOnTiles();
+  }
+
+  /** Ensure every known creature has a ['cr', cid] entry on its current tile */
+  private reinsertCreaturesOnTiles() {
+    const g = this.gs;
+    for (const [cid, c] of g.creatures) {
+      const tile = g.getTile(c.x, c.y, c.z);
+      const hasCr = tile.some(i => i[0] === 'cr' && i[1] === cid);
+      if (!hasCr) {
+        tile.push(['cr', cid]);
+        g.setTile(c.x, c.y, c.z, tile);
+      }
     }
   }
 
