@@ -553,15 +553,6 @@ export class PacketParser {
         }
       }
 
-      // 4. Global fallback: find creature by stored position in gs.creatures
-      if (cid === null) {
-        for (const [id, cc] of this.gs.creatures) {
-          if (cc.x === fx && cc.y === fy && cc.z === fz) {
-            cid = id;
-            break;
-          }
-        }
-      }
     }
 
     if (cid !== null) {
@@ -583,14 +574,6 @@ export class PacketParser {
 
         c.x = tx; c.y = ty; c.z = tz;
 
-        // If player moved to a different floor, sync camera
-        if (cid === this.gs.playerId && tz !== fz) {
-          this.gs.camX = tx;
-          this.gs.camY = ty;
-          this.gs.camZ = tz;
-          this.clampCamZ();
-          this.cleanupDistantCreatures(tz);
-        }
 
         // Smooth walking (only in real-time playback, not during seek, and only if actually moving)
         if (!this.seekMode && (dx !== 0 || dy !== 0)) {

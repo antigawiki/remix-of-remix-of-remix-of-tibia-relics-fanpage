@@ -187,8 +187,7 @@ export class Renderer {
     // g.camX/Y can drift from player.x/y due to perspective shifts in floor transitions
     const renderCamX = player ? player.x : g.camX;
     const renderCamY = player ? player.y : g.camY;
-    // Safety: if player.z diverges from camZ (missed floor sync), follow the player
-    const renderCamZ = (player && !this.floorOverride && player.z !== g.camZ) ? player.z : g.camZ;
+    const renderCamZ = g.camZ;
     const z = this.floorOverride ?? renderCamZ;
 
     // Only apply walk offset to camera when player is actively walking
