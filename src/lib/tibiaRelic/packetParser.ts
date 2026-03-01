@@ -465,8 +465,7 @@ export class PacketParser {
       g.camX = oldX; g.camY = oldY;
       throw e;
     }
-    // NOT calling syncPlayerToCamera here — scroll only updates camera coords.
-    // Player position comes exclusively from moveCr. Syncing here overwrites correct pos.
+    this.syncPlayerToCamera();
   }
 
   private tileUpd(r: Buf) {
@@ -735,7 +734,8 @@ export class PacketParser {
       g.camZ = oldZ; g.camX = oldX; g.camY = oldY;
       throw e;
     }
-    this.syncPlayerToCamera(oldZ);
+    this.cleanupDistantCreatures(g.camZ);
+    this.reinsertCreaturesOnTiles();
   }
 
   private floorDown(r: Buf) {
@@ -763,7 +763,8 @@ export class PacketParser {
       g.camZ = oldZ; g.camX = oldX; g.camY = oldY;
       throw e;
     }
-    this.syncPlayerToCamera(oldZ);
+    this.cleanupDistantCreatures(g.camZ);
+    this.reinsertCreaturesOnTiles();
   }
 
   private talk(r: Buf) {
