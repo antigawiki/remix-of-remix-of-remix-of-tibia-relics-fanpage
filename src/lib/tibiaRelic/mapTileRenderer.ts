@@ -66,10 +66,12 @@ export class MapTileRenderer {
     creatures?: CreatureData[],
     spawns?: SpawnRenderData[],
     options?: { hideLooseItems?: boolean; belowChunks?: Set<string> },
+    borderTiles?: TileData[],
   ): HTMLCanvasElement | null {
     const hideLoose = options?.hideLooseItems ?? false;
     const hasBelowData = options?.belowChunks != null;
-    const key = `${chunkX},${chunkY},${z}${hideLoose ? ',noitems' : ''}${hasBelowData ? ',below' : ''}`;
+    const hasBorder = borderTiles != null && borderTiles.length > 0;
+    const key = `${chunkX},${chunkY},${z}${hideLoose ? ',noitems' : ''}${hasBelowData ? ',below' : ''}${hasBorder ? ',border' : ''}`;
     if (this.cache.has(key)) return this.cache.get(key)!;
 
     if (tiles.length === 0 && (!creatures || creatures.length === 0)) {
@@ -86,14 +88,23 @@ export class MapTileRenderer {
     const baseX = chunkX * CHUNK_TILES;
     const baseY = chunkY * CHUNK_TILES;
 
-    // Build lookup for quick access
+    // Build lookup for quick access (includes border tiles)
     const tileMap = new Map<string, number[]>();
     for (const t of tiles) {
       tileMap.set(`${t.x},${t.y}`, t.items);
     }
+    if (borderTiles) {
+      for (const t of borderTiles) {
+        if (!tileMap.has(`${t.x},${t.y}`)) {
+          tileMap.set(`${t.x},${t.y}`, t.items);
+        }
+      }
+    }
 
-    for (let ty = 0; ty < CHUNK_TILES; ty++) {
-      for (let tx = 0; tx < CHUNK_TILES; tx++) {
+    // Render expanded range: -2..CHUNK_TILES+1 to capture multi-tile sprite bleed
+    const MARGIN = 2;
+    for (let ty = -MARGIN; ty < CHUNK_TILES + MARGIN; ty++) {
+      for (let tx = -MARGIN; tx < CHUNK_TILES + MARGIN; tx++) {
         const wx = baseX + tx;
         const wy = baseY + ty;
         const items = tileMap.get(`${wx},${wy}`);
@@ -101,6 +112,8 @@ export class MapTileRenderer {
 
         const px = tx * TILE_PX;
         const py = ty * TILE_PX;
+
+        const isInside = tx >= 0 && tx < CHUNK_TILES && ty >= 0 && ty < CHUNK_TILES;
 
         let hasRopeHole = false;
         let hasShovelSpot = false;
@@ -110,8 +123,8 @@ export class MapTileRenderer {
         const normal: number[] = [];  // stackPrio 4-5: normal items
 
         for (const itemId of items) {
-          if (ROPE_HOLE_IDS.has(itemId)) hasRopeHole = true;
-          if (SHOVEL_SPOT_IDS.has(itemId)) hasShovelSpot = true;
+          if (isInside && ROPE_HOLE_IDS.has(itemId)) hasRopeHole = true;
+          if (isInside && SHOVEL_SPOT_IDS.has(itemId)) hasShovelSpot = true;
 
           const def = this.dat.items.get(itemId);
           if (!def) continue;
@@ -138,21 +151,20 @@ export class MapTileRenderer {
           drawElevation = Math.min(drawElevation + (def.elevation || 0), MAX_ELEVATION);
         }
 
-        // Draw special tile overlays
-        if (hasRopeHole) {
+        // Draw special tile overlays only for tiles inside the chunk (avoid duplication)
+        if (isInside && hasRopeHole) {
           ctx.save();
           ctx.strokeStyle = '#00ff88';
           ctx.lineWidth = 2;
           ctx.strokeRect(px + 1, py + 1, TILE_PX - 2, TILE_PX - 2);
           ctx.fillStyle = 'rgba(0, 255, 136, 0.15)';
           ctx.fillRect(px + 1, py + 1, TILE_PX - 2, TILE_PX - 2);
-          // Small rope icon indicator
           ctx.fillStyle = '#00ff88';
           ctx.font = '10px monospace';
           ctx.fillText('R', px + 2, py + 10);
           ctx.restore();
         }
-        if (hasShovelSpot) {
+        if (isInside && hasShovelSpot) {
           const belowChunkKey = `${Math.floor(wx / CHUNK_TILES)},${Math.floor(wy / CHUNK_TILES)}`;
           const explored = !hasBelowData || (options!.belowChunks!.has(belowChunkKey));
           const color = explored ? '#ffcc00' : '#ff4444';
