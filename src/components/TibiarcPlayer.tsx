@@ -11,8 +11,10 @@ import { DatLoader } from '@/lib/tibiaRelic/datLoader';
 import { PacketParser } from '@/lib/tibiaRelic/packetParser';
 import { GameState, type GameStateSnapshot } from '@/lib/tibiaRelic/gameState';
 import { Renderer } from '@/lib/tibiaRelic/renderer';
+import { DebugLogger } from '@/lib/tibiaRelic/debugLogger';
 import { extractMapTiles, type MapExtractionProgress, type MapExtractionResult } from '@/lib/tibiaRelic/mapExtractor';
 import { supabase } from '@/integrations/supabase/client';
+import CamDebugPanel from '@/components/CamDebugPanel';
 
 
 type PlayerState = 'idle' | 'loading-data' | 'ready' | 'loading-cam' | 'playing' | 'paused' | 'error';
@@ -67,6 +69,7 @@ const TibiarcPlayer = ({ className }: TibiarcPlayerProps) => {
   const floorOffsetRef = useRef(0);
   const spyFloorRef = useRef(false);
   const containerRef = useRef<HTMLDivElement>(null);
+  const debugLoggerRef = useRef<DebugLogger>(new DebugLogger());
 
   // Keep ref in sync with state for animation loop access
   useEffect(() => { floorOffsetRef.current = floorOffset; }, [floorOffset]);
@@ -123,6 +126,8 @@ const TibiarcPlayer = ({ className }: TibiarcPlayerProps) => {
         if (!ctx) return;
 
         const renderer = new Renderer(ctx, spr, dat, gs);
+        parser.debugLogger = debugLoggerRef.current;
+        renderer.debugLogger = debugLoggerRef.current;
 
         engineRef.current = {
           spr, dat, gs, parser, renderer,
@@ -203,6 +208,7 @@ const TibiarcPlayer = ({ className }: TibiarcPlayerProps) => {
   const applyTo = (engine: NonNullable<typeof engineRef.current>, targetMs: number, isSeek = false) => {
     if (!engine.cam) return;
     if (isSeek) engine.parser.seekMode = true;
+    debugLoggerRef.current.setCamMs(targetMs);
     
     const KEYFRAME_INTERVAL = 30000; // 30s
     
@@ -275,8 +281,11 @@ const TibiarcPlayer = ({ className }: TibiarcPlayerProps) => {
       // Reset game state
       engine.gs.reset();
       engine.parser = createPacketParser(engine.gs, engine.dat);
+      engine.parser.debugLogger = debugLoggerRef.current;
       engine.renderer.gs = engine.gs;
+      engine.renderer.debugLogger = debugLoggerRef.current;
       engine.renderer.clearCache();
+      debugLoggerRef.current.clear();
       engine.cam = cam;
       engine.curFrame = 0;
       engine.curMs = 0;
@@ -330,7 +339,10 @@ const TibiarcPlayer = ({ className }: TibiarcPlayerProps) => {
     engine.playing = false;
     engine.gs.reset();
     engine.parser = createPacketParser(engine.gs, engine.dat);
+    engine.parser.debugLogger = debugLoggerRef.current;
     engine.renderer.gs = engine.gs;
+    engine.renderer.debugLogger = debugLoggerRef.current;
+    debugLoggerRef.current.clear();
     engine.curFrame = 0;
     engine.curMs = 0;
     engine.keyframes = [];
@@ -375,6 +387,7 @@ const TibiarcPlayer = ({ className }: TibiarcPlayerProps) => {
       // Restore from keyframe instead of replaying from 0
       engine.gs.restore(bestKf.snap);
       engine.parser = createPacketParser(engine.gs, engine.dat);
+      engine.parser.debugLogger = debugLoggerRef.current;
       engine.renderer.gs = engine.gs;
       engine.curFrame = bestKf.frameIdx;
       engine.curMs = bestKf.ms;
@@ -382,6 +395,7 @@ const TibiarcPlayer = ({ className }: TibiarcPlayerProps) => {
       // No keyframe available — replay from start
       engine.gs.reset();
       engine.parser = createPacketParser(engine.gs, engine.dat);
+      engine.parser.debugLogger = debugLoggerRef.current;
       engine.renderer.gs = engine.gs;
       engine.curFrame = 0;
       engine.curMs = 0;
@@ -455,6 +469,20 @@ const TibiarcPlayer = ({ className }: TibiarcPlayerProps) => {
       setExtracting(false);
       setExtractProgress(null);
     }
+  }, []);
+
+  const getDebugSnapshot = useCallback(() => {
+    const engine = engineRef.current;
+    if (!engine) return null;
+    const g = engine.gs;
+    const player = g.creatures.get(g.playerId);
+    return {
+      camX: g.camX, camY: g.camY, camZ: g.camZ,
+      playerX: player?.x ?? 0, playerY: player?.y ?? 0, playerZ: player?.z ?? 0,
+      playerOnCorrectFloor: player ? player.z === g.camZ : true,
+      creatureCount: g.creatures.size,
+      lastMoveCr: debugLoggerRef.current.lastMoveCr,
+    };
   }, []);
 
   return (
@@ -719,6 +747,9 @@ const TibiarcPlayer = ({ className }: TibiarcPlayerProps) => {
           </div>
         </div>
       </div>
+
+      {/* Debug Panel */}
+      <CamDebugPanel loggerRef={debugLoggerRef} getSnapshot={getDebugSnapshot} />
     </div>
   );
 };

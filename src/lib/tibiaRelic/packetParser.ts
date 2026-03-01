@@ -8,6 +8,7 @@
 import { Buf, BufOverflowError } from './buf';
 import { DatLoader } from './datLoader';
 import { GameState, createCreature, DIR_N, DIR_E, DIR_S, DIR_W, type Creature, type TileItem } from './gameState';
+import { DebugLogger } from './debugLogger';
 
 const CR_FULL = 0x61, CR_KNOWN = 0x62, CR_OLD = 0x63;
 
@@ -21,6 +22,8 @@ export class PacketParser {
   private outfitWindowRangeU16: boolean;
   /** When true, walk animations are suppressed (used during seek/fast-replay) */
   public seekMode = false;
+
+  public debugLogger: DebugLogger | null = null;
 
   constructor(public gs: GameState, public dat: DatLoader, opts: PacketParserOptions = {}) {
     this.looktypeU16 = !!opts.looktypeU16;
@@ -104,24 +107,28 @@ export class PacketParser {
     const player = g.creatures.get(g.playerId);
     if (!player) return;
     
-    // Detect floor change: if oldCamZ was passed (from floorUp/floorDown/mapDesc),
-    // compare it against current camZ. This is reliable because readTileItems may
-    // have already updated player.z via placeCreatureOnTile before we get here.
     const floorChanged = oldCamZ !== undefined ? oldCamZ !== g.camZ : false;
     
-    // Already in sync — skip (but still do cleanup if floor changed)
+    const dl = this.debugLogger;
+    if (dl && dl.enabled) {
+      dl.log('SYNC_PLAYER', {
+        oldPlayerPos: `${player.x},${player.y},${player.z}`,
+        camPos: `${g.camX},${g.camY},${g.camZ}`,
+        oldCamZ,
+        floorChanged,
+        alreadyInSync: player.x === g.camX && player.y === g.camY && player.z === g.camZ,
+      });
+    }
+    
     if (player.x === g.camX && player.y === g.camY && player.z === g.camZ) {
       if (floorChanged) this.cleanupDistantCreatures(g.camZ);
       return;
     }
-    // Remove from old tile
     this.removeCreatureFromTile(player.id, player.x, player.y, player.z);
-    // Update position
     player.x = g.camX;
     player.y = g.camY;
     player.z = g.camZ;
-    // Place on new tile
-    this.removeCreatureFromTile(player.id, player.x, player.y, player.z); // dedup
+    this.removeCreatureFromTile(player.id, player.x, player.y, player.z);
     const tile = g.getTile(player.x, player.y, player.z);
     tile.push(['cr', player.id]);
     g.setTile(player.x, player.y, player.z, tile);
@@ -254,6 +261,14 @@ export class PacketParser {
 
   private dispatch(t: number, r: Buf): boolean {
     const g = this.gs;
+    // Log relevant opcodes
+    const dl = this.debugLogger;
+    if (dl && dl.enabled) {
+      const relevantOps = new Set([0x64,0x65,0x66,0x67,0x68,0x69,0x6a,0x6b,0x6c,0x6d,0x9a,0xbe,0xbf,0x0a]);
+      if (relevantOps.has(t)) {
+        dl.log('OPCODE', { opcode: '0x' + t.toString(16), pos: r.pos });
+      }
+    }
     // Map
     if (t === 0x64) this.mapDesc(r);
     else if (t === 0x65) this.scroll(r, 0, -1);
@@ -337,6 +352,15 @@ export class PacketParser {
     else if (t === 0x9a) {
       const [x, y, z] = this.pos3(r);
       const prevZ = g.camZ;
+      const dl2 = this.debugLogger;
+      if (dl2 && dl2.enabled) {
+        const player = g.creatures.get(g.playerId);
+        dl2.log('PLAYER_POS', {
+          received: `${x},${y},${z}`,
+          prevCam: `${g.camX},${g.camY},${g.camZ}`,
+          playerPos: player ? `${player.x},${player.y},${player.z}` : 'none',
+        });
+      }
       g.camX = x; g.camY = y; g.camZ = z;
       this.clampCamZ();
       this.syncPlayerToCamera(prevZ);
@@ -404,6 +428,11 @@ export class PacketParser {
     this.clampCamZ();
     this.gs.mapLoaded = true;
 
+    const dl = this.debugLogger;
+    if (dl && dl.enabled) {
+      dl.log('MAP_DESC', { x, y, z, prevZ, prevCam: `${this.gs.camX},${this.gs.camY}` });
+    }
+
     const { startz, endz, zstep } = this.getFloorRange(z);
     this.readMultiFloorArea(r, x - 8, y - 6, 18, 14, z, startz, endz, zstep);
     this.syncPlayerToCamera(prevZ);
@@ -416,9 +445,13 @@ export class PacketParser {
 
   private scroll(r: Buf, dx: number, dy: number) {
     const g = this.gs;
-    // Transactional: save old cam, update, read map, revert on failure
     const oldX = g.camX, oldY = g.camY;
     g.camX += dx; g.camY += dy;
+
+    const dl = this.debugLogger;
+    if (dl && dl.enabled) {
+      dl.log('SCROLL', { dx, dy, oldCam: `${oldX},${oldY},${g.camZ}`, newCam: `${g.camX},${g.camY},${g.camZ}` });
+    }
 
     const { startz, endz, zstep } = this.getFloorRange(g.camZ);
 
@@ -505,6 +538,7 @@ export class PacketParser {
 
     let cid: number | null = null;
     let fromX: number, fromY: number, fromZ: number;
+    let fallback = 'none';
 
     if (fx === 0xFFFF) {
       // Format B: 0xFFFF is ModernStacking (versions > 8.x).
@@ -521,6 +555,7 @@ export class PacketParser {
         cid = ft[sp][1];
         ft.splice(sp, 1);
         this.gs.setTile(fx, fy, fz, ft);
+        fallback = 'stackpos';
       }
 
       // 2. Fallback: first creature on tile
@@ -530,6 +565,7 @@ export class PacketParser {
             cid = ft[i][1];
             ft.splice(i, 1);
             this.gs.setTile(fx, fy, fz, ft);
+            fallback = 'first_cr';
             break;
           }
         }
@@ -540,34 +576,31 @@ export class PacketParser {
     if (cid !== null) {
       const c = this.gs.creatures.get(cid);
       if (c) {
-        // Use REAL from position for direction/offset (never 0xFFFF)
         const dx = tx - fromX!, dy = ty - fromY!;
         if (dx === 0 && dy < 0) c.direction = DIR_N;
         else if (dx > 0) c.direction = DIR_E;
         else if (dx === 0 && dy > 0) c.direction = DIR_S;
         else if (dx < 0) c.direction = DIR_W;
 
-        // Snap any previous walk before starting new one
         if (c.walking) {
           c.walking = false;
           c.walkOffsetX = 0;
           c.walkOffsetY = 0;
         }
 
-        // Log player Z changes for floor desync diagnosis
         if (cid === this.gs.playerId && tz !== fz) {
           console.warn(`[moveCr] Player Z changed: ${fz} -> ${tz}, camZ=${this.gs.camZ}`);
         }
 
         c.x = tx; c.y = ty; c.z = tz;
 
-        // Smooth walking: only same-floor, adjacent tile, non-seek
         const dz = tz - fz;
+        let walkAnimated = false;
         if (!this.seekMode && dz === 0 &&
             Math.abs(dx) <= 1 && Math.abs(dy) <= 1 &&
             (dx !== 0 || dy !== 0)) {
           c.walking = true;
-          // Get ground speed from destination tile DAT data
+          walkAnimated = true;
           const destTile = this.gs.getTile(tx, ty, tz);
           let groundSpeed = 150;
           for (const ti of destTile) {
@@ -589,11 +622,32 @@ export class PacketParser {
           c.walkOffsetY = -dy * 32;
         }
 
-        // Place on destination tile (defensive: remove duplicates first)
+        // Debug log
+        const dl = this.debugLogger;
+        if (dl && dl.enabled) {
+          dl.log('MOVE_CR', {
+            cid, isPlayer: cid === this.gs.playerId,
+            fromX: fromX!, fromY: fromY!, fromZ: fromZ!,
+            toX: tx, toY: ty, toZ: tz,
+            stackpos: sp, fallback, walkAnimated,
+            dx, dy, dz, speed: c.speed,
+          });
+        }
+
         this.removeCreatureFromTile(cid, tx, ty, tz);
         const tile = this.gs.getTile(tx, ty, tz);
         tile.push(['cr', cid]);
         this.gs.setTile(tx, ty, tz, tile);
+      }
+    } else {
+      // WALK_FAIL
+      const dl = this.debugLogger;
+      if (dl && dl.enabled) {
+        dl.log('WALK_FAIL', {
+          fromX: fx, fromY: fy, fromZ: fz,
+          toX: tx, toY: ty, toZ: tz,
+          stackpos: sp, tileLength: this.gs.getTile(fx, fy, fz).length,
+        });
       }
     }
   }
