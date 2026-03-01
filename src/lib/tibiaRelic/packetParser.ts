@@ -516,32 +516,14 @@ export class PacketParser {
       fromX = fx; fromY = fy; fromZ = fz;
       const ft = this.gs.getTile(fx, fy, fz);
 
-      // 1. Try exact stackpos
+      // 1. Try exact stackpos (trust stackpos like tibiarc — no position verification)
       if (sp >= 0 && sp < ft.length && ft[sp][0] === 'cr') {
-        const candidateCr = this.gs.creatures.get(ft[sp][1]);
-        if (candidateCr && candidateCr.x === fx && candidateCr.y === fy && candidateCr.z === fz) {
-          cid = ft[sp][1];
-          ft.splice(sp, 1);
-          this.gs.setTile(fx, fy, fz, ft);
-        }
+        cid = ft[sp][1];
+        ft.splice(sp, 1);
+        this.gs.setTile(fx, fy, fz, ft);
       }
 
-      // 2. Search by creature whose stored position matches source (only if stackpos failed)
-      if (cid === null) {
-        for (let i = 0; i < ft.length; i++) {
-          if (ft[i][0] === 'cr') {
-            const cc = this.gs.creatures.get(ft[i][1]);
-            if (cc && cc.x === fx && cc.y === fy && cc.z === fz) {
-              cid = ft[i][1];
-              ft.splice(i, 1);
-              this.gs.setTile(fx, fy, fz, ft);
-              break;
-            }
-          }
-        }
-      }
-
-      // 3. Last fallback: any creature on tile
+      // 2. Fallback: first creature on tile
       if (cid === null) {
         for (let i = 0; i < ft.length; i++) {
           if (ft[i][0] === 'cr') {
@@ -572,14 +554,34 @@ export class PacketParser {
           c.walkOffsetY = 0;
         }
 
+        // Log player Z changes for floor desync diagnosis
+        if (cid === this.gs.playerId && tz !== fz) {
+          console.warn(`[moveCr] Player Z changed: ${fz} -> ${tz}, camZ=${this.gs.camZ}`);
+        }
+
         c.x = tx; c.y = ty; c.z = tz;
 
-
-        // Smooth walking (only in real-time playback, not during seek, and only if actually moving)
-        if (!this.seekMode && (dx !== 0 || dy !== 0)) {
+        // Smooth walking: only same-floor, adjacent tile, non-seek
+        const dz = tz - fz;
+        if (!this.seekMode && dz === 0 &&
+            Math.abs(dx) <= 1 && Math.abs(dy) <= 1 &&
+            (dx !== 0 || dy !== 0)) {
           c.walking = true;
-          const groundSpeed = 150;
-          const walkDuration = c.speed > 0 ? Math.max(100, Math.floor(groundSpeed * 1000 / Math.max(1, c.speed))) : 300;
+          // Get ground speed from destination tile DAT data
+          const destTile = this.gs.getTile(tx, ty, tz);
+          let groundSpeed = 150;
+          for (const ti of destTile) {
+            if (ti[0] === 'it') {
+              const itemDat = this.dat.items.get(ti[1]);
+              if (itemDat && itemDat.isGround && itemDat.stackPrio === 0 && itemDat.speed > 0) {
+                groundSpeed = itemDat.speed;
+                break;
+              }
+            }
+          }
+          const walkDuration = c.speed > 0
+            ? Math.max(100, Math.floor(groundSpeed * 1000 / Math.max(1, c.speed)))
+            : 300;
           c.walkDuration = walkDuration;
           c.walkStartTick = performance.now();
           c.walkEndTick = c.walkStartTick + walkDuration;
