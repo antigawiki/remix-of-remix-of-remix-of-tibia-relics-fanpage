@@ -218,6 +218,8 @@ const CamBatchExtractPage = () => {
             .from('cam_map_tiles')
             .select('x, y, items')
             .eq('z', z)
+            .order('x', { ascending: true })
+            .order('y', { ascending: true })
             .range(offset, offset + PAGE_SIZE - 1);
 
           if (error) {
