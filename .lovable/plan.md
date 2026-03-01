@@ -1,68 +1,62 @@
 
 
-## Spy Floor - Ver Através do Chão no Player .cam
+## Correção de 2 Bugs no CamPlayer: Desync de Andar e Animação de Walk
 
-### O que faz
+### Bug 1: Camera mostrando andar errado (Floor Desync)
 
-Adiciona um botão "Spy Floor" no player de .cam que, ao ser ativado:
-1. Desativa a detecção de teto (`calcFirstVisibleFloor`) -- isso faz o renderer mostrar TODOS os andares, incluindo os de baixo
-2. Torna os tiles de chão (ground, `isGround === true`) semi-transparentes (25% opacidade) no andar atual
-3. Paredes, escadas, itens e criaturas permanecem 100% opacos
-4. O resultado: você consegue ver cavernas, túneis e salas escondidas por baixo do chão em tempo real durante a gravação
+**Causa raiz:** O renderer usa `g.camZ` para determinar o andar, mas `player.z` para centralizar X/Y. Quando `moveCr` move o player entre andares (ex: teleport, escada), ele atualiza `player.z` mas NAO atualiza `g.camZ`. O resultado: o renderer mostra tiles do andar antigo (camZ) mas centrado nas coordenadas do player que ja esta em outro andar.
 
-O servidor do jogo já envia dados de 2-3 andares ao redor do jogador. O renderer já renderiza múltiplos andares de baixo para cima (z+2 primeiro, depois z+1, depois z). Então o andar de baixo JÁ está sendo desenhado -- só está escondido pelo chão opaco do andar de cima.
+Exemplo: player esta no z=7 (superficie). O servidor envia um `moveCr` movendo o player para z=8 (subterraneo). `player.z` vira 8, mas `g.camZ` continua 7. O renderer desenha o mapa do andar 7 usando coordenadas do andar 8.
 
-### Como funciona visualmente
+**Correção:** No `moveCr` do `packetParser.ts`, quando a criatura movida e o player E o z muda, sincronizar `g.camZ` com o novo z do player. Tambem adicionar um safety check no renderer: se `player.z !== g.camZ` e nao ha floorOverride, usar `player.z` como floor de referencia.
 
-```text
-Renderização normal:          Com Spy Floor:
-  Floor z (opaco)               Floor z (chão transparente 25%)
-  esconde tudo abaixo           paredes/itens opacos
-                                Floor z+1 visível por baixo!
-                                Floor z+2 visível por baixo!
+**Arquivo: `src/lib/tibiaRelic/packetParser.ts`** - No metodo `moveCr`, apos `c.x = tx; c.y = ty; c.z = tz;` (linha 574), adicionar:
+```typescript
+// If player moved to a different floor, sync camera
+if (cid === this.gs.playerId && tz !== fz) {
+  const oldZ = this.gs.camZ;
+  this.gs.camX = tx;
+  this.gs.camY = ty;
+  this.gs.camZ = tz;
+  this.clampCamZ();
+  this.cleanupDistantCreatures(tz);
+}
 ```
 
-### Mudanças técnicas
-
-**Arquivo 1: `src/lib/tibiaRelic/renderer.ts`**
-
-- Adicionar propriedade pública `spyFloor: boolean = false`
-- No `getVisibleFloors()`: quando `spyFloor` ativo, ignorar `calcFirstVisibleFloor` e forçar todos os andares visíveis (de z+2 até z-2, ou 0 até 7 na superfície)
-- No Pass 1 (ground rendering, linhas 214-236): quando `spyFloor` ativo e o floor sendo desenhado é o floor atual do jogador (`fz === z`), aplicar `globalAlpha = 0.2` apenas para items com `isGround === true` e `stackPrio === 0`. Restaurar `globalAlpha = 1.0` logo após. Bordas (`stackPrio 1, 2`) e paredes (`stackPrio 3`) permanecem opacas.
-
-Mudança no Pass 1 (dentro do loop de items):
+**Arquivo: `src/lib/tibiaRelic/renderer.ts`** - No metodo `draw()`, adicionar safety check para usar `player.z` quando nao ha floorOverride e player.z difere de camZ:
 ```typescript
-// Antes de desenhar o item ground:
-const useXray = this.spyFloor && fz === z && it.isGround && it.stackPrio === 0;
-if (useXray) oc.globalAlpha = 0.2;
-
-this.drawItemNative(it, bx, by, elevationOffset, ph, wx, wy);
-
-if (useXray) oc.globalAlpha = 1.0;
+const renderCamZ = (player && !this.floorOverride && player.z !== g.camZ) ? player.z : g.camZ;
 ```
 
-Mudança no `getVisibleFloors`:
+---
+
+### Bug 2: Player para de andar (Walk Animation perdida)
+
+**Causa raiz:** No `moveCr`, o codigo tenta encontrar a criatura no tile de origem em 3 etapas (stackpos exato, posicao matching, qualquer criatura). Se TODAS falham, `cid` fica `null` e o movimento inteiro e descartado -- a criatura nao e movida, nao recebe animacao de walk, e "aparece" na proxima posicao quando o servidor atualiza o tile.
+
+Isso acontece quando o tile de origem ja foi limpo por outro pacote (ex: tileUpd, ou outro moveCr que removeu a criatura antes), OU quando as coordenadas armazenadas na criatura nao batem com o tile de origem (drift acumulado).
+
+**Correção:** Adicionar um 4o fallback no `moveCr`: se nenhuma criatura foi encontrada no tile de origem, buscar por QUALQUER criatura no `gs.creatures` cujas coordenadas armazenadas (c.x, c.y, c.z) correspondam ao tile de origem. Isso garante que mesmo que a referencia no tile tenha sido removida, o movimento ainda e processado.
+
+**Arquivo: `src/lib/tibiaRelic/packetParser.ts`** - No metodo `moveCr`, apos o fallback 3 (linha 554), adicionar:
 ```typescript
-if (this.spyFloor) {
-  if (z <= 7) {
-    // Superfície: mostrar do 7 até 0 (todos)
-    const floors: number[] = [];
-    for (let fz = 7; fz >= 0; fz--) floors.push(fz);
-    return floors;
-  } else {
-    // Subsolo: expandir range para z+2 até z-2
-    const floors: number[] = [];
-    for (let fz = Math.min(z + 2, 15); fz >= Math.max(z - 2, 0); fz--) floors.push(fz);
-    return floors;
+// 4. Global fallback: find creature by stored position
+if (cid === null) {
+  for (const [id, cc] of this.gs.creatures) {
+    if (cc.x === fx && cc.y === fy && cc.z === fz && id !== this.gs.playerId) {
+      cid = id;
+      break;
+    }
   }
 }
 ```
 
-**Arquivo 2: `src/components/TibiarcPlayer.tsx`**
+Tambem mover a logica de walk animation para DEPOIS da busca da criatura, para garantir que mesmo criaturas encontradas via fallback recebam animacao.
 
-- Adicionar estado `spyFloor` (boolean, default false)
-- Adicionar ref `spyFloorRef` sincronizado com o estado (mesmo padrão do `floorOffsetRef`)
-- No loop de animação, sincronizar: `engine.renderer.spyFloor = spyFloorRef.current`
-- Adicionar botão de toggle na barra de controles (ao lado do controle de andar), usando ícone `Eye` do lucide-react
-- Quando ativo, botão fica destacado (cor gold/accent)
-- Tooltip: "Spy Floor - ver através do chão"
+### Resumo das mudancas
+
+| Arquivo | Mudanca |
+|---|---|
+| `src/lib/tibiaRelic/packetParser.ts` | Sync camZ quando player muda de andar via moveCr; Adicionar 4o fallback para encontrar criatura |
+| `src/lib/tibiaRelic/renderer.ts` | Safety check: usar player.z quando diverge de camZ |
+
