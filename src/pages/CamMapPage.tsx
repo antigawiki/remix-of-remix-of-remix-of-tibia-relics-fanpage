@@ -35,6 +35,8 @@ async function loadSpawns(
       .from('cam_map_spawns' as any)
       .select('chunk_x, chunk_y, z, creature_name, outfit_id, avg_count, positions')
       .eq('z', z)
+      .order('chunk_x', { ascending: true })
+      .order('chunk_y', { ascending: true })
       .range(offset, offset + PAGE_SIZE - 1);
     if (error || !data || data.length === 0) break;
     for (const row of data as any[]) {
@@ -105,6 +107,8 @@ async function loadChunks(
       .from('cam_map_chunks' as any)
       .select('chunk_x, chunk_y, z, tiles_data')
       .eq('z', z)
+      .order('chunk_x', { ascending: true })
+      .order('chunk_y', { ascending: true })
       .range(offset, offset + PAGE_SIZE - 1);
     if (error || !data || data.length === 0) break;
     for (const row of data as any[]) {
@@ -140,6 +144,8 @@ async function loadBelowChunkKeys(z: number): Promise<Set<string>> {
       .from('cam_map_chunks' as any)
       .select('chunk_x, chunk_y')
       .eq('z', z)
+      .order('chunk_x', { ascending: true })
+      .order('chunk_y', { ascending: true })
       .range(offset, offset + PAGE_SIZE - 1);
     if (error || !data || data.length === 0) break;
     for (const row of data as any[]) {
