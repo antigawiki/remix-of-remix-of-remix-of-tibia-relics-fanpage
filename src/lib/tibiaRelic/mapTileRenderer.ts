@@ -306,7 +306,8 @@ export class MapTileRenderer {
   invalidateFloor(z: number) {
     const toDelete: string[] = [];
     for (const key of this.cache.keys()) {
-      if (key.endsWith(`,${z}`)) toDelete.push(key);
+      const parts = key.split(',');
+      if (parts[2] === String(z)) toDelete.push(key);
     }
     for (const k of toDelete) {
       this.cache.delete(k);
