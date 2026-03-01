@@ -465,7 +465,13 @@ export class PacketParser {
       g.camX = oldX; g.camY = oldY;
       throw e;
     }
-    this.syncPlayerToCamera();
+    // Only sync player to camera if positions are close (normal 1-tile scroll).
+    // After floor changes, cam has perspective offsets (camX++/camY++) that make it 2+ tiles
+    // away from the player — syncing in that state would corrupt the player's correct position.
+    const player = g.creatures.get(g.playerId);
+    if (player && Math.abs(player.x - g.camX) + Math.abs(player.y - g.camY) <= 1 && player.z === g.camZ) {
+      this.syncPlayerToCamera();
+    }
   }
 
   private tileUpd(r: Buf) {
@@ -568,6 +574,18 @@ export class PacketParser {
             fallback = 'first_cr';
             break;
           }
+        }
+      }
+
+      // 3. Last resort for player: tile lost creature ref (e.g. after scroll/floor area read)
+      // but the creature still exists in g.creatures — find it by proximity to source position
+      if (cid === null) {
+        const player = this.gs.creatures.get(this.gs.playerId);
+        if (player && Math.abs(player.x - fx) <= 2 && Math.abs(player.y - fy) <= 2 && player.z === fz) {
+          this.removeCreatureFromTile(player.id, player.x, player.y, player.z);
+          cid = player.id;
+          fromX = player.x; fromY = player.y; fromZ = player.z;
+          fallback = 'player_lookup';
         }
       }
 
