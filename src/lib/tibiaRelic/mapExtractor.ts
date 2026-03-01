@@ -76,11 +76,15 @@ export async function extractMapTiles(
   // Current visit data for chunks in viewport
   let currentVisitChunks = new Map<string, ChunkVisitData>();
 
+  // Track camZ to detect floor changes and skip stale tile snapshots
+  let lastCamZ = -1;
+
   let frameIdx = 0;
 
   return new Promise((resolve) => {
     function processChunk() {
       const end = Math.min(frameIdx + chunkSize, cam.frames.length);
+      const prevCamZ = gs.camZ;
 
       for (; frameIdx < end; frameIdx++) {
         try {
@@ -90,7 +94,14 @@ export async function extractMapTiles(
         }
       }
 
-      snapshotTiles(gs, dat, latestTiles);
+      // Skip tile snapshot if camZ changed during this batch —
+      // stale tiles in gs.tiles would get wrong perspective offset applied
+      const floorChanged = lastCamZ >= 0 && gs.camZ !== lastCamZ;
+      lastCamZ = gs.camZ;
+
+      if (!floorChanged) {
+        snapshotTiles(gs, dat, latestTiles);
+      }
 
       // Check if player moved to a new chunk -> flush old visit
       const playerChunkX = Math.floor(gs.camX / DB_CHUNK);
