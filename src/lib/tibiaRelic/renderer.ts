@@ -188,6 +188,10 @@ export class Renderer {
     const renderCamX = player ? player.x : g.camX;
     const renderCamY = player ? player.y : g.camY;
     const renderCamZ = g.camZ;
+    // Diagnostic: detect floor desync without overriding (to avoid map glitches)
+    if (player && player.z !== g.camZ && !this.floorOverride) {
+      console.warn(`[Renderer] Floor desync: player.z=${player.z} camZ=${g.camZ}`);
+    }
     const z = this.floorOverride ?? renderCamZ;
 
     // Only apply walk offset to camera when player is actively walking
