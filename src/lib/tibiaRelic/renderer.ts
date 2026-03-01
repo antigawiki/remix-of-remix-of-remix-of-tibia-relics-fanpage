@@ -124,6 +124,7 @@ export class Renderer {
 
   public floorOverride: number | null = null;
   public smoothUpscale: boolean = true;
+  public spyFloor: boolean = false;
 
   constructor(
     private ctx: CanvasRenderingContext2D,
@@ -227,7 +228,11 @@ export class Renderer {
             if (item[0] === 'cr') continue;
             const it = this.dat.items.get(item[1]);
             if (!it || it.stackPrio > 2) continue;
+            // Spy Floor: make ground tiles semi-transparent on current floor
+            const useXray = this.spyFloor && fz === z && it.isGround && it.stackPrio === 0;
+            if (useXray) oc.globalAlpha = 0.2;
             this.drawItemNative(it, bx, by, elevationOffset, ph, wx, wy);
+            if (useXray) oc.globalAlpha = 1.0;
             if (it.elevation > 0) elevationOffset += it.elevation;
           }
 
@@ -432,6 +437,19 @@ export class Renderer {
   }
 
   private getVisibleFloors(z: number, centerX?: number, centerY?: number): number[] {
+    // Spy Floor: bypass roof detection, show all reachable floors
+    if (this.spyFloor) {
+      if (z <= 7) {
+        const floors: number[] = [];
+        for (let fz = 7; fz >= 0; fz--) floors.push(fz);
+        return floors;
+      } else {
+        const floors: number[] = [];
+        for (let fz = Math.min(z + 2, 15); fz >= Math.max(z - 2, 0); fz--) floors.push(fz);
+        return floors;
+      }
+    }
+
     if (z <= 7) {
       const firstFloor = this.calcFirstVisibleFloor(z, centerX, centerY);
       const floors: number[] = [];
