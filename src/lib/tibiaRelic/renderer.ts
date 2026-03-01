@@ -437,20 +437,11 @@ export class Renderer {
   }
 
   private getVisibleFloors(z: number, centerX?: number, centerY?: number): number[] {
-    // Spy Floor: bypass roof detection, show floors below current
+    // Spy Floor: show current floor + deeper floors only (no roofs/upper floors)
     if (this.spyFloor) {
-      if (z <= 7) {
-        // Surface: show all surface floors (7 down to 0)
-        const floors: number[] = [];
-        for (let fz = 7; fz >= 0; fz--) floors.push(fz);
-        return floors;
-      } else {
-        // Underground: show current floor + deeper floors only (z+2 down to z)
-        // Don't show floors above (z-1, z-2) to avoid seeing surface/upper levels
-        const floors: number[] = [];
-        for (let fz = Math.min(z + 2, 15); fz >= z; fz--) floors.push(fz);
-        return floors;
-      }
+      const floors: number[] = [];
+      for (let fz = Math.min(z + 2, 15); fz >= z; fz--) floors.push(fz);
+      return floors;
     }
 
     if (z <= 7) {
