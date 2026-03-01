@@ -7,6 +7,7 @@
 import { SprLoader } from './sprLoader';
 import { DatLoader, type ItemType } from './datLoader';
 import { GameState, type TileItem, type Creature, type ActiveEffect, type ActiveProjectile, type AnimatedText } from './gameState';
+import { DebugLogger } from './debugLogger';
 
 const VP_W = 15, VP_H = 11;
 const TILE_PX = 32;
@@ -125,6 +126,7 @@ export class Renderer {
   public floorOverride: number | null = null;
   public smoothUpscale: boolean = true;
   public spyFloor: boolean = false;
+  public debugLogger: DebugLogger | null = null;
 
   constructor(
     private ctx: CanvasRenderingContext2D,
@@ -188,9 +190,17 @@ export class Renderer {
     const renderCamX = player ? player.x : g.camX;
     const renderCamY = player ? player.y : g.camY;
     const renderCamZ = g.camZ;
-    // Diagnostic: detect floor desync without overriding (to avoid map glitches)
+    // Diagnostic: detect floor desync
     if (player && player.z !== g.camZ && !this.floorOverride) {
       console.warn(`[Renderer] Floor desync: player.z=${player.z} camZ=${g.camZ}`);
+      const dl = this.debugLogger;
+      if (dl && dl.enabled) {
+        dl.log('DESYNC', {
+          playerPos: `${player.x},${player.y},${player.z}`,
+          camPos: `${g.camX},${g.camY},${g.camZ}`,
+          renderCamX, renderCamY, renderCamZ,
+        });
+      }
     }
     const z = this.floorOverride ?? renderCamZ;
 
