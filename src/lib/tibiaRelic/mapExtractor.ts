@@ -262,6 +262,7 @@ function snapshotTiles(
 ) {
   const camX = gs.camX;
   const camY = gs.camY;
+  const camZ = gs.camZ;
 
   for (const [key, tileItems] of gs.tiles.entries()) {
     const parts = key.split(',');
@@ -271,10 +272,17 @@ function snapshotTiles(
     const tz = parseInt(parts[2], 10);
 
     if (tx === 0 || ty === 0) continue;
-    if (tx < 30000 || tx > 35000 || ty < 30000 || ty > 35000 || tz < 0 || tz > 15) continue;
+
+    // Reverse perspective offset: the protocol stores adjacent floors
+    // with a visual shift of (camZ - floorZ) in both X and Y
+    const offset = camZ - tz;
+    const realX = tx - offset;
+    const realY = ty - offset;
+
+    if (realX < 30000 || realX > 35000 || realY < 30000 || realY > 35000 || tz < 0 || tz > 15) continue;
 
     if (camX > 0 && camY > 0) {
-      if (Math.abs(tx - camX) > 18 || Math.abs(ty - camY) > 14) continue;
+      if (Math.abs(realX - camX) > 18 || Math.abs(realY - camY) > 14) continue;
     }
 
     const items: number[] = [];
@@ -288,7 +296,8 @@ function snapshotTiles(
     }
 
     if (items.length > 0) {
-      latestTiles.set(key, items); // Replace, don't accumulate
+      const correctedKey = `${realX},${realY},${tz}`;
+      latestTiles.set(correctedKey, items);
     }
   }
 }
