@@ -333,6 +333,31 @@ const CamMapPage = () => {
         };
         img.src = getExternalTileUrl(coords.z, coords.x, coords.y, floor);
 
+        /** Collect border tiles from adjacent chunks (up to 2 tiles into neighbors). */
+        function collectBorderTiles(cx: number, cy: number): TileData[] {
+          const border: TileData[] = [];
+          const baseX = cx * CHUNK_TILES;
+          const baseY = cy * CHUNK_TILES;
+          // Check all 8 neighbors + the chunk itself isn't needed (already passed as tiles)
+          for (let dy = -1; dy <= 1; dy++) {
+            for (let dx = -1; dx <= 1; dx++) {
+              if (dx === 0 && dy === 0) continue;
+              const ncx = cx + dx;
+              const ncy = cy + dy;
+              const neighborTiles = getChunkTiles(ncx, ncy);
+              for (const t of neighborTiles) {
+                // Only include tiles within 2 positions of our chunk boundary
+                const relX = t.x - baseX;
+                const relY = t.y - baseY;
+                if (relX >= -2 && relX < CHUNK_TILES + 2 && relY >= -2 && relY < CHUNK_TILES + 2) {
+                  border.push(t);
+                }
+              }
+            }
+          }
+          return border;
+        }
+
         function drawCamData(c: CanvasRenderingContext2D, co: L.Coords) {
           const chunksPerTile = Math.pow(2, 5 - co.z);
           const baseChunkX = co.x * chunksPerTile;
@@ -346,8 +371,9 @@ const CamMapPage = () => {
           if (chunksPerTile === 1) {
             const tiles = getChunkTiles(baseChunkX, baseChunkY);
             const spawns = showSpawns ? getChunkSpawns(baseChunkX, baseChunkY) : [];
+            const border = collectBorderTiles(baseChunkX, baseChunkY);
             if (tiles.length > 0 || spawns.length > 0) {
-              const rendered = renderer.renderChunk(baseChunkX, baseChunkY, floor, tiles, undefined, spawns, opts);
+              const rendered = renderer.renderChunk(baseChunkX, baseChunkY, floor, tiles, undefined, spawns, opts, border);
               if (rendered) c.drawImage(rendered, 0, 0, 256, 256);
             }
           } else {
@@ -358,8 +384,9 @@ const CamMapPage = () => {
                 const tcy = baseChunkY + cy;
                 const tiles = getChunkTiles(tcx, tcy);
                 const spawns = showSpawns ? getChunkSpawns(tcx, tcy) : [];
+                const border = collectBorderTiles(tcx, tcy);
                 if (tiles.length > 0 || spawns.length > 0) {
-                  const rendered = renderer.renderChunk(tcx, tcy, floor, tiles, undefined, spawns, opts);
+                  const rendered = renderer.renderChunk(tcx, tcy, floor, tiles, undefined, spawns, opts, border);
                   if (rendered) c.drawImage(rendered, cx * chunkPx, cy * chunkPx, chunkPx, chunkPx);
                 }
               }
