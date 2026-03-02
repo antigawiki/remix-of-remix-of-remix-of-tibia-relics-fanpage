@@ -129,7 +129,7 @@ export async function extractMapTiles(
       }
 
       if (frameIdx < cam.frames.length) {
-        requestAnimationFrame(processChunk);
+        setTimeout(processChunk, 0);
       } else {
         // Flush last visit
         flushVisit(currentVisitChunks, chunkAccumulators);
@@ -139,7 +139,7 @@ export async function extractMapTiles(
       }
     }
 
-    requestAnimationFrame(processChunk);
+    setTimeout(processChunk, 0);
   });
 }
 
