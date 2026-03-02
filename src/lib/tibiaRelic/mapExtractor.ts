@@ -284,16 +284,16 @@ function snapshotTiles(
 
     if (tx === 0 || ty === 0) continue;
 
-    // Reverse perspective offset: the protocol stores adjacent floors
-    // with a visual shift of (camZ - floorZ) in both X and Y
-    const offset = camZ - tz;
-    const realX = tx - offset;
-    const realY = ty - offset;
+    // Only capture tiles on the camera's current floor.
+    // Tiles on other floors have a perspective offset baked in, and
+    // stale tiles from a previous camZ would produce incorrect offsets.
+    // Same-floor tiles always have offset 0, so tx/ty ARE the real coords.
+    if (tz !== camZ) continue;
 
-    if (realX < 30000 || realX > 35000 || realY < 30000 || realY > 35000 || tz < 0 || tz > 15) continue;
+    if (tx < 30000 || tx > 35000 || ty < 30000 || ty > 35000) continue;
 
     if (camX > 0 && camY > 0) {
-      if (Math.abs(realX - camX) > 18 || Math.abs(realY - camY) > 14) continue;
+      if (Math.abs(tx - camX) > 18 || Math.abs(ty - camY) > 14) continue;
     }
 
     const items: number[] = [];
@@ -307,7 +307,7 @@ function snapshotTiles(
     }
 
     if (items.length > 0) {
-      const correctedKey = `${realX},${realY},${tz}`;
+      const correctedKey = `${tx},${ty},${tz}`;
       latestTiles.set(correctedKey, items);
     }
   }
