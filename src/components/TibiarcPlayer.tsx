@@ -269,17 +269,17 @@ const TibiarcPlayer = ({ className }: TibiarcPlayerProps) => {
       {/* Canvas / Upload Area */}
       <div
         ref={containerRef}
-        className="relative w-full aspect-[4/3] max-w-[960px] mx-auto bg-black rounded-sm overflow-hidden border-2 border-border/50"
+        className="relative w-full aspect-[480/352] max-w-[960px] mx-auto bg-black rounded-sm overflow-hidden border-2 border-border/50"
         onDrop={handleDrop}
         onDragOver={(e) => e.preventDefault()}
       >
         <canvas
           ref={canvasRef}
           id="canvas"
-          width={640}
-          height={480}
+          width={480}
+          height={352}
           className="w-full h-full"
-          style={{ imageRendering: 'auto' }}
+          style={{ imageRendering: 'pixelated' }}
         />
 
         {/* Hidden file input */}
