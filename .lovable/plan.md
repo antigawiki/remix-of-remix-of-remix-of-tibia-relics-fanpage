@@ -1,32 +1,28 @@
 
 
-## Correcao: Titulo "tibiarc" na aba e imagem desalinhada
+## Ajustar o video WASM para preencher o container
 
-### Problemas
+### Problema
+O canvas esta fixo em 480x352 mas o WASM v7 renderiza em uma resolucao maior que inclui a area de jogo + painel inferior (com texto "Your last visit in Tibia Relic..."). O conteudo renderizado nao preenche o container, ficando reduzido.
 
-1. **Titulo da aba mostra "tibiarc"**: O JavaScript compilado pelo Emscripten (`tibiarc_player.js`) define automaticamente `document.title = "tibiarc"`. Isso sobrescreve o titulo da pagina.
-
-2. **Imagem fora do lugar / bordas cinzas**: O canvas esta configurado como `640x480` (4:3), mas o WASM renderiza na resolucao nativa de `480x352`. A area renderizada nao preenche o canvas, criando bordas cinzas.
+### Solucao
+Aumentar a resolucao do canvas para corresponder ao que o WASM v7 realmente renderiza. Pela imagem enviada, a proporcao e aproximadamente 960x704 (ou 480x352 escalado 2x). Tambem remover a restricao de `imageRendering: 'auto'` e usar `pixelated` para manter a nitidez dos pixels do jogo.
 
 ### Mudancas
 
 **`src/components/TibiarcPlayer.tsx`**
 
-1. Apos inicializar o modulo WASM, restaurar o titulo da pagina para "Tibia Relic Wiki":
-```typescript
-// Depois de: moduleRef.current = mod;
-document.title = 'Tibia Relic Wiki';
-```
-
-2. Alterar as dimensoes do canvas de `640x480` para `480x352` para corresponder a resolucao nativa do WASM:
+1. Alterar as dimensoes do canvas para 960x704 (2x da resolucao nativa) que e o que o WASM v7 espera:
 ```html
-<canvas width={480} height={352} ... />
+<canvas width={960} height={704} />
 ```
 
-3. Alterar o aspect ratio do container de `aspect-[4/3]` para a proporcao correta `480:352` (aproximadamente `30:22` ou `aspect-[480/352]`):
+2. Atualizar o aspect ratio do container para corresponder:
 ```html
-<div className="... aspect-[480/352] ..." />
+<div className="aspect-[960/704] ...">
 ```
 
-4. Adicionar um `useEffect` que restaura o titulo sempre que o Emscripten tentar muda-lo (usando MutationObserver no `<title>` ou simplesmente re-setando apos cada operacao WASM).
+3. Usar `imageRendering: 'pixelated'` para manter a nitidez dos pixels do jogo ao escalar.
+
+Se 960x704 nao for a resolucao correta, sera necessario testar com outras resolucoes comuns do Tibia (como 960x672, 800x600, etc.) ate encontrar a que elimina as bordas pretas.
 
