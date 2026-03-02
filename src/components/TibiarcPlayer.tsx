@@ -18,19 +18,20 @@ interface WasmModule {
   _free: (ptr: number) => void;
 }
 
+/** Safe wrapper for WASM ccall – swallows exceptions so the player keeps running */
+function safeCall(mod: WasmModule, name: string, returnType: string, argTypes: string[], args: any[], fallback?: any): any {
+  try {
+    return mod.ccall(name, returnType, argTypes, args);
+  } catch (e) {
+    console.warn(`[TibiarcPlayer] WASM exception in ${name}:`, e);
+    return fallback;
+  }
+}
+
 /** Copy a Uint8Array into WASM heap, returning the pointer */
 function copyToWasm(mod: WasmModule, data: Uint8Array): number {
   const ptr = mod._malloc(data.length);
   mod.HEAPU8.set(data, ptr);
-  return ptr;
-}
-
-/** Copy a string into WASM heap as null-terminated UTF-8 */
-function copyStringToWasm(mod: WasmModule, str: string): number {
-  const encoder = new TextEncoder();
-  const bytes = encoder.encode(str + '\0');
-  const ptr = mod._malloc(bytes.length);
-  mod.HEAPU8.set(bytes, ptr);
   return ptr;
 }
 
@@ -42,6 +43,7 @@ const TibiarcPlayer = ({ className }: TibiarcPlayerProps) => {
   const moduleRef = useRef<WasmModule | null>(null);
   const pollingRef = useRef<number | null>(null);
   const seekingRef = useRef(false);
+  const hideTimerRef = useRef<number | null>(null);
   const [state, setState] = useState<PlayerState>('idle');
   const [speed, setSpeed] = useState(1);
   const [fileName, setFileName] = useState('');
@@ -51,15 +53,33 @@ const TibiarcPlayer = ({ className }: TibiarcPlayerProps) => {
   const [dataLoaded, setDataLoaded] = useState(false);
   const [overlayEnabled, setOverlayEnabled] = useState(true);
   const [isFullscreen, setIsFullscreen] = useState(false);
+  const [controlsVisible, setControlsVisible] = useState(true);
 
   // Sync fullscreen state when user exits via ESC
   useEffect(() => {
     const handler = () => {
-      setIsFullscreen(!!document.fullscreenElement);
+      const fs = !!document.fullscreenElement;
+      setIsFullscreen(fs);
+      if (fs) {
+        setControlsVisible(true);
+        resetHideTimer();
+      }
     };
     document.addEventListener('fullscreenchange', handler);
     return () => document.removeEventListener('fullscreenchange', handler);
   }, []);
+
+  const resetHideTimer = useCallback(() => {
+    if (hideTimerRef.current) clearTimeout(hideTimerRef.current);
+    setControlsVisible(true);
+    hideTimerRef.current = window.setTimeout(() => {
+      setControlsVisible(false);
+    }, 3000);
+  }, []);
+
+  const handleMouseMove = useCallback(() => {
+    if (isFullscreen) resetHideTimer();
+  }, [isFullscreen, resetHideTimer]);
 
   const toggleFullscreen = useCallback(() => {
     const container = containerRef.current;
@@ -78,7 +98,6 @@ const TibiarcPlayer = ({ className }: TibiarcPlayerProps) => {
     const init = async () => {
       setState('loading-data');
       try {
-        // Load the Emscripten module script
         await new Promise<void>((resolve, reject) => {
           if ((window as any).TibiarcModule) { resolve(); return; }
           const script = document.createElement('script');
@@ -93,7 +112,6 @@ const TibiarcPlayer = ({ className }: TibiarcPlayerProps) => {
         const canvas = canvasRef.current;
         if (!canvas) return;
 
-        // Instantiate the WASM module with our canvas
         const TibiarcModuleFactory = (window as any).TibiarcModule;
         const mod: WasmModule = await TibiarcModuleFactory({
           canvas,
@@ -107,7 +125,6 @@ const TibiarcPlayer = ({ className }: TibiarcPlayerProps) => {
         if (cancelled) return;
         moduleRef.current = mod;
 
-        // Fetch data files
         const [picRes, sprRes, datRes] = await Promise.all([
           fetch('/tibiarc/data/Tibia.pic'),
           fetch('/tibiarc/data/Tibia.spr'),
@@ -121,7 +138,6 @@ const TibiarcPlayer = ({ className }: TibiarcPlayerProps) => {
         ]);
         if (cancelled) return;
 
-        // Copy to WASM and call load_data_files
         const picData = new Uint8Array(picBuf);
         const sprData = new Uint8Array(sprBuf);
         const datData = new Uint8Array(datBuf);
@@ -130,9 +146,9 @@ const TibiarcPlayer = ({ className }: TibiarcPlayerProps) => {
         const sprPtr = copyToWasm(mod, sprData);
         const datPtr = copyToWasm(mod, datData);
 
-        const result = mod.ccall('load_data_files', 'number',
+        const result = safeCall(mod, 'load_data_files', 'number',
           ['number', 'number', 'number', 'number', 'number', 'number'],
-          [picPtr, picData.length, sprPtr, sprData.length, datPtr, datData.length]);
+          [picPtr, picData.length, sprPtr, sprData.length, datPtr, datData.length], 0);
 
         mod._free(picPtr);
         mod._free(sprPtr);
@@ -155,19 +171,19 @@ const TibiarcPlayer = ({ className }: TibiarcPlayerProps) => {
     return () => { cancelled = true; };
   }, []);
 
-  // Progress polling
+  // Progress polling with try-catch
   useEffect(() => {
     if (state === 'playing') {
       pollingRef.current = window.setInterval(() => {
-        if (seekingRef.current) return; // skip during seek
+        if (seekingRef.current) return;
         const mod = moduleRef.current;
         if (!mod) return;
-        const p = mod.ccall('get_progress', 'number', [], []);
-        const playing = mod.ccall('is_playing', 'number', [], []);
+        const p = safeCall(mod, 'get_progress', 'number', [], [], 0);
+        const playing = safeCall(mod, 'is_playing', 'number', [], [], 1);
         setProgress(p);
         if (!playing) {
           setState('paused');
-          setProgress(mod.ccall('get_duration', 'number', [], []));
+          setProgress(safeCall(mod, 'get_duration', 'number', [], [], 0));
         }
       }, 100);
     }
@@ -179,14 +195,14 @@ const TibiarcPlayer = ({ className }: TibiarcPlayerProps) => {
     };
   }, [state]);
 
-  // Visibilitychange handler: re-kick WASM render loop when tab regains focus
+  // Visibilitychange handler with try-catch
   useEffect(() => {
     const handler = () => {
       if (document.visibilityState === 'visible' && state === 'playing') {
         const mod = moduleRef.current;
         if (mod) {
-          mod.ccall('pause_playback', null, [], []);
-          mod.ccall('play', null, [], []);
+          safeCall(mod, 'pause_playback', 'undefined', [], []);
+          safeCall(mod, 'play', 'undefined', [], []);
         }
       }
     };
@@ -212,13 +228,11 @@ const TibiarcPlayer = ({ className }: TibiarcPlayerProps) => {
     try {
       const buffer = await file.arrayBuffer();
       const data = new Uint8Array(buffer);
-
       const bufPtr = copyToWasm(mod, data);
 
-      // Use dedicated TibiaRelic loader (bypasses TibiacamTV format detection)
-      const dur = mod.ccall('load_recording_tibiarelic', 'number',
+      const dur = safeCall(mod, 'load_recording_tibiarelic', 'number',
         ['number', 'number', 'number', 'number', 'number'],
-        [bufPtr, data.length, 7, 72, 0]);
+        [bufPtr, data.length, 7, 72, 0], -1);
 
       mod._free(bufPtr);
 
@@ -235,7 +249,11 @@ const TibiarcPlayer = ({ className }: TibiarcPlayerProps) => {
 
       setDuration(dur);
       setProgress(0);
-      setState('paused');
+
+      // Auto-play
+      safeCall(mod, 'play', 'undefined', [], []);
+      setState('playing');
+
       console.log(`[TibiarcPlayer] Loaded ${file.name}: ${(dur / 1000).toFixed(1)}s`);
     } catch (err) {
       console.error('Failed to load .cam:', err);
@@ -255,10 +273,10 @@ const TibiarcPlayer = ({ className }: TibiarcPlayerProps) => {
     if (!mod) return;
 
     if (state === 'paused') {
-      mod.ccall('play', null, [], []);
+      safeCall(mod, 'play', 'undefined', [], []);
       setState('playing');
     } else if (state === 'playing') {
-      mod.ccall('pause_playback', null, [], []);
+      safeCall(mod, 'pause_playback', 'undefined', [], []);
       setState('paused');
     }
   };
@@ -270,7 +288,7 @@ const TibiarcPlayer = ({ className }: TibiarcPlayerProps) => {
     setSpeed(newSpeed);
     const mod = moduleRef.current;
     if (mod) {
-      mod.ccall('set_speed', null, ['number'], [newSpeed]);
+      safeCall(mod, 'set_speed', 'undefined', ['number'], [newSpeed]);
     }
   };
 
@@ -281,13 +299,13 @@ const TibiarcPlayer = ({ className }: TibiarcPlayerProps) => {
 
     seekingRef.current = true;
     const wasPlaying = state === 'playing';
-    if (wasPlaying) mod.ccall('pause_playback', null, [], []);
+    if (wasPlaying) safeCall(mod, 'pause_playback', 'undefined', [], []);
 
-    mod.ccall('seek', null, ['number'], [ms]);
+    safeCall(mod, 'seek', 'undefined', ['number'], [ms]);
     setProgress(ms);
 
     if (wasPlaying) {
-      mod.ccall('play', null, [], []);
+      safeCall(mod, 'play', 'undefined', [], []);
       setState('playing');
     }
     seekingRef.current = false;
@@ -304,183 +322,74 @@ const TibiarcPlayer = ({ className }: TibiarcPlayerProps) => {
   const isLoading = state === 'loading-data' || state === 'loading-cam';
   const hasRecording = state === 'playing' || state === 'paused';
 
-  return (
-    <div className={`flex flex-col gap-4 ${className}`}>
-      {/* Canvas / Upload Area */}
-      <div
-        ref={containerRef}
-        className="relative w-full aspect-[480/352] max-w-[960px] mx-auto bg-black rounded-sm overflow-hidden border-2 border-border/50"
-        onDrop={handleDrop}
-        onDragOver={(e) => e.preventDefault()}
-      >
-        <canvas
-          ref={canvasRef}
-          id="canvas"
-          width={480}
-          height={352}
-          className="w-full h-full"
-          style={{ imageRendering: 'auto' }}
+  // Controls component used in both normal and fullscreen modes
+  const renderControls = (overlay?: boolean) => (
+    <div className={overlay
+      ? `absolute bottom-0 left-0 right-0 bg-black/70 backdrop-blur-sm px-4 py-3 transition-opacity duration-300 ${controlsVisible ? 'opacity-100' : 'opacity-0 pointer-events-none'}`
+      : 'space-y-3'
+    }>
+      {/* Progress bar */}
+      <div className="flex items-center gap-3">
+        <span className="text-xs text-muted-foreground min-w-[40px]">
+          {formatTime(progress)}
+        </span>
+        <Slider
+          value={[progress]}
+          onValueChange={handleSeek}
+          max={duration || 100}
+          step={1000}
+          className="flex-1"
+          disabled={!hasRecording}
         />
-
-        {/* Hidden file input */}
-        <input
-          ref={fileInputRef}
-          type="file"
-          accept=".cam"
-          className="hidden"
-          onChange={(e) => {
-            const file = e.target.files?.[0];
-            if (file) handleFileSelect(file);
-            if (e.target) e.target.value = '';
-          }}
-        />
-
-        {/* Idle overlay */}
-        {(state === 'idle' || state === 'error') && dataLoaded && (
-          <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/80 gap-4">
-            <Upload className="w-12 h-12 text-gold/60" />
-            <div className="text-center space-y-2">
-              <p className="text-gold font-heading text-lg">
-                {t('camPlayer.dropFile')}
-              </p>
-              <p className="text-muted-foreground text-sm">
-                Formatos suportados: .cam (TibiaRelic)
-              </p>
-              {errorMsg && (
-                <p className="text-destructive text-sm mt-2">{errorMsg}</p>
-              )}
-            </div>
-            <Button
-              variant="outline"
-              className="mt-2 border-gold/50 text-gold hover:bg-gold/10"
-              onClick={() => fileInputRef.current?.click()}
-            >
-              {t('camPlayer.selectFile')}
-            </Button>
-          </div>
-        )}
-
-        {/* Loading overlay */}
-        {isLoading && (
-          <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/80 gap-3">
-            <Loader2 className="w-8 h-8 text-gold animate-spin" />
-            <p className="text-gold text-sm">
-              {state === 'loading-data' ? 'Carregando WASM e sprites...' : `Carregando ${fileName}...`}
-            </p>
-          </div>
-        )}
-
-        {/* File name indicator when playing */}
-        {hasRecording && (
-          <div className="absolute top-2 left-2 bg-black/60 px-2 py-1 rounded text-xs text-gold/80">
-            {fileName}
-          </div>
-        )}
+        <span className="text-xs text-muted-foreground min-w-[40px] text-right">
+          {formatTime(duration)}
+        </span>
       </div>
 
-      {/* Controls */}
-      <div className="max-w-[960px] mx-auto w-full space-y-3">
-        {/* Progress bar */}
-        <div className="flex items-center gap-3">
-          <span className="text-xs text-muted-foreground min-w-[40px]">
-            {formatTime(progress)}
-          </span>
-          <Slider
-            value={[progress]}
-            onValueChange={handleSeek}
-            max={duration || 100}
-            step={1000}
-            className="flex-1"
+      {/* Control buttons */}
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <Button variant="outline" size="icon" onClick={togglePlayback} disabled={!hasRecording} className="border-border/50">
+            {state === 'playing' ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4" />}
+          </Button>
+          <Button variant="outline" size="icon" onClick={() => handleSeek([Math.max(0, progress - 10000)])} disabled={!hasRecording} className="border-border/50" title="-10s">
+            <SkipBack className="w-4 h-4" />
+          </Button>
+          <Button variant="outline" size="icon" onClick={() => handleSeek([Math.min(duration, progress + 10000)])} disabled={!hasRecording} className="border-border/50" title="+10s">
+            <SkipForward className="w-4 h-4" />
+          </Button>
+          <Button variant="outline" size="sm" onClick={cycleSpeed} disabled={!hasRecording} className="border-border/50 min-w-[60px]">
+            <FastForward className="w-3 h-3 mr-1" />
+            {speed}x
+          </Button>
+          <Button
+            variant="outline"
+            size="icon"
+            onClick={() => {
+              const next = !overlayEnabled;
+              setOverlayEnabled(next);
+              const mod = moduleRef.current;
+              if (mod) safeCall(mod, 'set_skip_messages', 'undefined', ['number'], [next ? 0 : 1]);
+            }}
             disabled={!hasRecording}
-          />
-          <span className="text-xs text-muted-foreground min-w-[40px] text-right">
-            {formatTime(duration)}
-          </span>
+            className="border-border/50"
+            title={overlayEnabled ? 'Esconder mensagens' : 'Mostrar mensagens'}
+          >
+            {overlayEnabled ? <MessageSquare className="w-4 h-4" /> : <MessageSquareOff className="w-4 h-4" />}
+          </Button>
+          <Button variant="outline" size="icon" onClick={toggleFullscreen} disabled={!hasRecording} className="border-border/50" title={isFullscreen ? 'Sair do fullscreen' : 'Fullscreen'}>
+            {isFullscreen ? <Minimize className="w-4 h-4" /> : <Maximize className="w-4 h-4" />}
+          </Button>
         </div>
 
-        {/* Control buttons */}
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <Button
-              variant="outline"
-              size="icon"
-              onClick={togglePlayback}
-              disabled={!hasRecording}
-              className="border-border/50"
-            >
-              {state === 'playing' ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4" />}
+        <div className="flex items-center gap-2">
+          {hasRecording && !overlay && (
+            <Button variant="outline" size="sm" className="border-border/50" onClick={() => fileInputRef.current?.click()}>
+              <Upload className="w-3 h-3 mr-1" />
+              Outra .cam
             </Button>
-            <Button
-              variant="outline"
-              size="icon"
-              onClick={() => handleSeek([Math.max(0, progress - 10000)])}
-              disabled={!hasRecording}
-              className="border-border/50"
-              title="-10s"
-            >
-              <SkipBack className="w-4 h-4" />
-            </Button>
-            <Button
-              variant="outline"
-              size="icon"
-              onClick={() => handleSeek([Math.min(duration, progress + 10000)])}
-              disabled={!hasRecording}
-              className="border-border/50"
-              title="+10s"
-            >
-              <SkipForward className="w-4 h-4" />
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={cycleSpeed}
-              disabled={!hasRecording}
-              className="border-border/50 min-w-[60px]"
-            >
-              <FastForward className="w-3 h-3 mr-1" />
-              {speed}x
-            </Button>
-            <Button
-              variant="outline"
-              size="icon"
-              onClick={() => {
-                const next = !overlayEnabled;
-                setOverlayEnabled(next);
-                const mod = moduleRef.current;
-                if (mod) {
-                  mod.ccall('set_skip_messages', null, ['number'], [next ? 0 : 1]);
-                }
-              }}
-              disabled={!hasRecording}
-              className="border-border/50"
-              title={overlayEnabled ? 'Esconder mensagens' : 'Mostrar mensagens'}
-            >
-              {overlayEnabled ? <MessageSquare className="w-4 h-4" /> : <MessageSquareOff className="w-4 h-4" />}
-            </Button>
-            <Button
-              variant="outline"
-              size="icon"
-              onClick={toggleFullscreen}
-              disabled={!hasRecording}
-              className="border-border/50"
-              title={isFullscreen ? 'Sair do fullscreen' : 'Fullscreen'}
-            >
-              {isFullscreen ? <Minimize className="w-4 h-4" /> : <Maximize className="w-4 h-4" />}
-            </Button>
-          </div>
-
-          <div className="flex items-center gap-2">
-            {hasRecording && (
-              <Button
-                variant="outline"
-                size="sm"
-                className="border-border/50"
-                onClick={() => fileInputRef.current?.click()}
-              >
-                <Upload className="w-3 h-3 mr-1" />
-                Outra .cam
-              </Button>
-            )}
+          )}
+          {!overlay && (
             <span className="text-sm text-muted-foreground">
               {state === 'idle' && !dataLoaded && 'Inicializando...'}
               {state === 'idle' && dataLoaded && t('camPlayer.noFileLoaded')}
@@ -489,9 +398,95 @@ const TibiarcPlayer = ({ className }: TibiarcPlayerProps) => {
               {state === 'paused' && t('camPlayer.paused')}
               {state === 'error' && t('camPlayer.loadError')}
             </span>
-          </div>
+          )}
         </div>
       </div>
+    </div>
+  );
+
+  return (
+    <div className={`flex flex-col gap-4 ${className}`}>
+      {/* Main container – goes fullscreen */}
+      <div
+        ref={containerRef}
+        className={`relative ${isFullscreen ? 'bg-black flex items-center justify-center w-screen h-screen' : 'w-full max-w-[960px] mx-auto'}`}
+        onDrop={handleDrop}
+        onDragOver={(e) => e.preventDefault()}
+        onMouseMove={handleMouseMove}
+      >
+        {/* Canvas wrapper with aspect ratio */}
+        <div className={`relative ${isFullscreen ? 'w-full h-full flex items-center justify-center' : 'aspect-[480/352] bg-black rounded-sm overflow-hidden border-2 border-border/50'}`}>
+          <canvas
+            ref={canvasRef}
+            id="canvas"
+            width={480}
+            height={352}
+            className={isFullscreen
+              ? 'max-w-full max-h-full object-contain'
+              : 'w-full h-full'
+            }
+            style={{
+              imageRendering: 'auto',
+              ...(isFullscreen ? { aspectRatio: '480/352' } : {}),
+            }}
+          />
+
+          {/* Hidden file input */}
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept=".cam"
+            className="hidden"
+            onChange={(e) => {
+              const file = e.target.files?.[0];
+              if (file) handleFileSelect(file);
+              if (e.target) e.target.value = '';
+            }}
+          />
+
+          {/* Idle overlay */}
+          {(state === 'idle' || state === 'error') && dataLoaded && (
+            <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/80 gap-4">
+              <Upload className="w-12 h-12 text-gold/60" />
+              <div className="text-center space-y-2">
+                <p className="text-gold font-heading text-lg">{t('camPlayer.dropFile')}</p>
+                <p className="text-muted-foreground text-sm">Formatos suportados: .cam (TibiaRelic)</p>
+                {errorMsg && <p className="text-destructive text-sm mt-2">{errorMsg}</p>}
+              </div>
+              <Button variant="outline" className="mt-2 border-gold/50 text-gold hover:bg-gold/10" onClick={() => fileInputRef.current?.click()}>
+                {t('camPlayer.selectFile')}
+              </Button>
+            </div>
+          )}
+
+          {/* Loading overlay */}
+          {isLoading && (
+            <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/80 gap-3">
+              <Loader2 className="w-8 h-8 text-gold animate-spin" />
+              <p className="text-gold text-sm">
+                {state === 'loading-data' ? 'Carregando WASM e sprites...' : `Carregando ${fileName}...`}
+              </p>
+            </div>
+          )}
+
+          {/* File name indicator when playing */}
+          {hasRecording && (
+            <div className="absolute top-2 left-2 bg-black/60 px-2 py-1 rounded text-xs text-gold/80">
+              {fileName}
+            </div>
+          )}
+        </div>
+
+        {/* Fullscreen overlay controls */}
+        {isFullscreen && hasRecording && renderControls(true)}
+      </div>
+
+      {/* Normal controls (outside fullscreen) */}
+      {!isFullscreen && (
+        <div className="max-w-[960px] mx-auto w-full">
+          {renderControls(false)}
+        </div>
+      )}
     </div>
   );
 };
