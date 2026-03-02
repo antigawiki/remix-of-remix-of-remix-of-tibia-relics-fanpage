@@ -1,49 +1,41 @@
 
 
-## Fix: Correct WASM Resolution and Display Quality
+## Toggle de Overlay (Mensagens/Textos) no Player
 
-### Root Cause Analysis (from tibiarc source code)
+### O que acontece hoje
+As mensagens de chat, nomes de criaturas, textos animados e notificacoes do sistema sao renderizadas pelo `Renderer::DrawOverlay` dentro do WASM. O tibiarc ja faz pruning das mensagens (`Messages.Prune`), mas em gravacoes com muita atividade (areas movimentadas, muitos players falando), os textos se acumulam e poluem a tela.
 
-The tibiarc renderer has two separate rendering passes with **different coordinate systems**:
+### Solucao
+Adicionar um **toggle on/off** para o overlay de textos, controlavel pelo usuario via um botao na interface do player.
 
-1. **`DrawGamestate`** -- Renders tiles, creatures, effects at **fixed 32px-per-tile** positions. The game world ALWAYS occupies a 480x352 pixel area (15x11 tiles), regardless of canvas size.
+### Mudancas
 
-2. **`DrawOverlay`** -- Renders creature names, health bars, messages. It calculates scale factors:
-   ```
-   scaleX = canvas.Width / 480.0
-   scaleY = canvas.Height / 352.0
-   ```
-   All text positions are multiplied by these scale factors.
+**1. `tibiarc-player/web_player.cpp`**
+- Adicionar variavel global `g_show_overlay = true`
+- Adicionar funcao exportada `set_overlay(int enabled)` chamavel via JS
+- Na funcao `RenderFrame()`, condicionar a chamada `Renderer::DrawOverlay()` ao valor de `g_show_overlay`
 
-**This means**: If the canvas is 480x352, scale = 1.0 and everything aligns perfectly. If the canvas is ANY other size (like 640x480), the game world stays in 480x352 while text gets repositioned to 640x480 coordinates -- causing the desync you see.
-
-### The Problem with v8 WASM
-
-The compiled WASM binary (v8) may not have been built with our 480x352 changes. If it still uses 640x480 internally, the SDL texture and window are created at 640x480, but our HTML canvas is set to 480x352 -- causing a mismatch that produces both visual artifacts and quality loss.
-
-### Solution
-
-**1. Verify and fix `web_player.cpp`** -- Constants MUST be 480x352 (matching tibiarc's `NativeResolutionX/Y`):
 ```cpp
-static const int RENDER_WIDTH = 480;
-static const int RENDER_HEIGHT = 352;
+static bool g_show_overlay = true;
+
+// Nova funcao exportada
+EMSCRIPTEN_KEEPALIVE
+void set_overlay(int enabled) {
+    g_show_overlay = (enabled != 0);
+}
+
+// Em RenderFrame(), mudar para:
+if (g_show_overlay) {
+    Renderer::DrawOverlay(options, *g_gamestate, outputCanvas);
+}
 ```
-This is already correct in our source. The WASM just needs to be recompiled from this source.
 
-**2. Update `TibiarcPlayer.tsx`** -- Improve display quality:
-- Keep canvas at 480x352 (native WASM resolution)
-- Change `imageRendering` from `'pixelated'` to `'auto'` for smoother upscaling (the TibiaRelic client uses smooth filtering, not nearest-neighbor)
-- Alternatively, use a larger CSS display with `image-rendering: auto` for bilinear filtering
+**2. `src/components/TibiarcPlayer.tsx`**
+- Adicionar botao de toggle "Overlay" na barra de controles do player (ao lado dos botoes de velocidade)
+- Chamar `Module._set_overlay(value)` via WASM quando o toggle mudar
+- Icone: `MessageSquareOff` / `MessageSquare` do lucide-react
+- Estado padrao: overlay ligado (on)
 
-**3. Recompile WASM** -- The v8 binary must be rebuilt from the current `web_player.cpp` that has 480x352 constants.
-
-### File Changes
-
-**`src/components/TibiarcPlayer.tsx`**
-- Change `imageRendering: 'pixelated'` to `imageRendering: 'auto'` for smoother upscaling that matches TibiaRelic's visual quality
-- Keep canvas dimensions at `width={480} height={352}` (must match WASM constants)
-
-### After Code Change
-
-You MUST recompile the WASM using the GitHub Actions workflow to ensure the binary uses 480x352 internally. The current v8 binary may still be using 640x480, which is the primary cause of both the quality loss and the misalignment.
+### Apos as mudancas de codigo
+Voce precisara recompilar o WASM (v10) pelo GitHub Actions workflow e fazer upload dos novos arquivos `.js` e `.wasm`.
 
