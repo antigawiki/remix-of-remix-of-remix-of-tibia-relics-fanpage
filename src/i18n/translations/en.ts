@@ -540,11 +540,11 @@ export const en: TranslationKeys = {
     playing: 'Playing',
     paused: 'Paused',
     wasmNotFound: 'WASM player not built yet. Run the GitHub Actions workflow to compile.',
-    wasmInstructions: 'Go to Actions → "Build tibiarc WASM Player" → Run workflow.',
+    wasmInstructions: 'Go to Actions → "Build WASM Player" → Run workflow.',
     invalidFormat: 'Invalid format. Use .cam, .rec, .tmv2, .trp, .ttm, .yatc or .recording.',
     loadError: 'Error loading the replay file.',
     aboutTitle: 'About the Replay Player',
-    aboutDescription: 'This player uses tibiarc compiled to WebAssembly to decode and render Tibia recording files directly in your browser. Supports Tibia versions 7.11 to 8.62.',
+    aboutDescription: 'This player uses WebAssembly to decode and render Tibia recording files directly in your browser. Supports Tibia versions 7.11 to 8.62.',
   },
   xpTracker: {
     title: 'XP Tracker',
