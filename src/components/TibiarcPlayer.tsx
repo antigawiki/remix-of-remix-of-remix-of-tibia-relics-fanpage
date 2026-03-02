@@ -49,6 +49,8 @@ const TibiarcPlayer = ({ className }: TibiarcPlayerProps) => {
   const seekingRef = useRef(false);
   const seekDebounceRef = useRef<number | null>(null);
   const hideTimerRef = useRef<number | null>(null);
+  const camBufferRef = useRef<Uint8Array | null>(null);
+  const lastGoodProgressRef = useRef(0);
   const [state, setState] = useState<PlayerState>('idle');
   const [speed, setSpeed] = useState(1);
   const [fileName, setFileName] = useState('');
@@ -186,6 +188,7 @@ const TibiarcPlayer = ({ className }: TibiarcPlayerProps) => {
         const p = safeCall(mod, 'get_progress', 'number', [], [], 0);
         const playing = safeCall(mod, 'is_playing', 'number', [], [], 1);
         setProgress(p);
+        if (p > 0) lastGoodProgressRef.current = p;
         if (!playing) {
           setState('paused');
           setProgress(safeCall(mod, 'get_duration', 'number', [], [], 0));
@@ -233,6 +236,7 @@ const TibiarcPlayer = ({ className }: TibiarcPlayerProps) => {
     try {
       const buffer = await file.arrayBuffer();
       const data = new Uint8Array(buffer);
+      camBufferRef.current = data;
       const bufPtr = copyToWasm(mod, data);
 
       const dur = safeCall(mod, 'load_recording_tibiarelic', 'number',
@@ -254,6 +258,7 @@ const TibiarcPlayer = ({ className }: TibiarcPlayerProps) => {
 
       setDuration(dur);
       setProgress(0);
+      lastGoodProgressRef.current = 0;
 
       // Auto-play
       safeCall(mod, 'play', 'undefined', [], []);
@@ -297,11 +302,22 @@ const TibiarcPlayer = ({ className }: TibiarcPlayerProps) => {
     }
   };
 
+  /** Reload the .cam recording from cached buffer */
+  const reloadRecording = useCallback((mod: WasmModule): boolean => {
+    const data = camBufferRef.current;
+    if (!data) return false;
+    const bufPtr = copyToWasm(mod, data);
+    const dur = safeCall(mod, 'load_recording_tibiarelic', 'number',
+      ['number', 'number', 'number', 'number', 'number'],
+      [bufPtr, data.length, 7, 72, 0], -1);
+    mod._free(bufPtr);
+    return dur > 0;
+  }, []);
+
   const handleSeek = (val: number[]) => {
     const ms = val[0];
     setProgress(ms);
 
-    // Debounce actual WASM seek to avoid spamming exceptions
     if (seekDebounceRef.current) clearTimeout(seekDebounceRef.current);
     seekingRef.current = true;
 
@@ -312,7 +328,32 @@ const TibiarcPlayer = ({ className }: TibiarcPlayerProps) => {
       const wasPlaying = state === 'playing';
       if (wasPlaying) safeCall(mod, 'pause_playback', 'undefined', [], []);
 
-      safeCall(mod, 'seek', 'undefined', ['number'], [ms]);
+      // Use a sentinel to detect WASM exception
+      const SEEK_FAIL = '__SEEK_FAIL__';
+      let result = safeCall(mod, 'seek', 'string', ['number'], [ms], SEEK_FAIL);
+
+      if (result === SEEK_FAIL) {
+        // Seek crashed – try to recover by reloading the recording
+        console.warn('[TibiarcPlayer] Seek failed, attempting recovery…');
+        const reloaded = reloadRecording(mod);
+        if (reloaded) {
+          // Retry seek once
+          result = safeCall(mod, 'seek', 'string', ['number'], [ms], SEEK_FAIL);
+          if (result === SEEK_FAIL) {
+            // Still failing – seek to last known good position
+            console.warn('[TibiarcPlayer] Retry failed, restoring last good position');
+            reloadRecording(mod);
+            safeCall(mod, 'seek', 'undefined', ['number'], [lastGoodProgressRef.current]);
+            setProgress(lastGoodProgressRef.current);
+          } else {
+            lastGoodProgressRef.current = ms;
+          }
+        } else {
+          console.error('[TibiarcPlayer] Recovery reload failed');
+        }
+      } else {
+        lastGoodProgressRef.current = ms;
+      }
 
       if (wasPlaying) {
         safeCall(mod, 'play', 'undefined', [], []);
