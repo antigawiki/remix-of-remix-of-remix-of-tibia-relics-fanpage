@@ -47,6 +47,10 @@ static const int RENDER_WIDTH = 480;
 static const int RENDER_HEIGHT = 352;
 static bool g_skip_messages = false;
 
+// Static canvas buffers — allocated once to avoid WASM heap fragmentation
+static Canvas* g_mapCanvas = nullptr;
+static Canvas* g_outputCanvas = nullptr;
+
 // Data file buffers (kept alive for the Version object)
 static std::vector<uint8_t> g_picData;
 static std::vector<uint8_t> g_sprData;
@@ -365,23 +369,19 @@ static void RenderFrame() {
         .SkipRenderingYellingMessages = g_skip_messages
     };
 
-    Canvas mapCanvas(RENDER_WIDTH, RENDER_HEIGHT);
-    mapCanvas.DrawRectangle(Pixel(0, 0, 0), 0, 0,
-                            RENDER_WIDTH, RENDER_HEIGHT);
+    // Clear and reuse static canvas (no per-frame allocation)
+    g_mapCanvas->DrawRectangle(Pixel(0, 0, 0), 0, 0,
+                               RENDER_WIDTH, RENDER_HEIGHT);
 
-    Renderer::DrawGamestate(options, *g_gamestate, mapCanvas);
+    Renderer::DrawGamestate(options, *g_gamestate, *g_mapCanvas);
 
-    Canvas outputCanvas(RENDER_WIDTH, RENDER_HEIGHT);
+    // Fast buffer copy instead of pixel-by-pixel loop
+    memcpy(g_outputCanvas->Buffer, g_mapCanvas->Buffer,
+           RENDER_HEIGHT * g_mapCanvas->Stride);
 
-    for (int y = 0; y < RENDER_HEIGHT; y++) {
-        for (int x = 0; x < RENDER_WIDTH; x++) {
-            outputCanvas.GetPixel(x, y) = mapCanvas.GetPixel(x, y);
-        }
-    }
+    Renderer::DrawOverlay(options, *g_gamestate, *g_outputCanvas);
 
-    Renderer::DrawOverlay(options, *g_gamestate, outputCanvas);
-
-    SDL_UpdateTexture(g_texture, nullptr, outputCanvas.Buffer, outputCanvas.Stride);
+    SDL_UpdateTexture(g_texture, nullptr, g_outputCanvas->Buffer, g_outputCanvas->Stride);
     SDL_RenderClear(g_renderer);
     SDL_RenderCopy(g_renderer, g_texture, nullptr, nullptr);
     SDL_RenderPresent(g_renderer);
@@ -426,6 +426,10 @@ int main() {
     g_renderer = SDL_CreateRenderer(g_window, -1, SDL_RENDERER_ACCELERATED);
     g_texture = SDL_CreateTexture(g_renderer, SDL_PIXELFORMAT_ABGR8888,
         SDL_TEXTUREACCESS_STREAMING, RENDER_WIDTH, RENDER_HEIGHT);
+
+    // Allocate canvas buffers once to prevent WASM heap fragmentation
+    g_mapCanvas = new Canvas(RENDER_WIDTH, RENDER_HEIGHT);
+    g_outputCanvas = new Canvas(RENDER_WIDTH, RENDER_HEIGHT);
 
     SDL_SetRenderDrawColor(g_renderer, 0, 0, 0, 255);
     SDL_RenderClear(g_renderer);
