@@ -1,40 +1,57 @@
 
 
-## Simplify Cam Player: Remove Floor Controls and Spy Floor
+## Fix: Surface tiles contaminated by mid-chunk floor transitions
 
-### Overview
-Strip the cam player down to essential playback controls only: play/pause, skip forward/back 10s, speed cycle (1x-8x), and the timeline seek bar. Remove all floor-related features and the reset button.
+### Problem
+The floor change detection runs AFTER processing a batch of 500 frames, and only compares the FINAL `camZ` to the previous value. If the player transitions floors and returns within the same batch (e.g., `camZ: 7 -> 8 -> 7`), the code sees `lastCamZ=7, camZ=7` -- no change detected.
+
+However, while `camZ=8`, the protocol stores floor-7 tiles with a `+1` perspective offset baked into their X/Y coordinates. These offset tiles remain in `gs.tiles` with `tz=7`. When the snapshot runs (thinking no floor change occurred), it captures these offset tiles as legitimate floor-7 data -- placing them at wrong coordinates on the surface map.
+
+### Solution
+Move the floor change detection INSIDE the per-frame loop so that `gs.tiles` is cleared immediately when `camZ` changes, and track whether ANY floor change happened during the batch to skip the snapshot.
 
 ### Changes
 
-**File: `src/components/TibiarcPlayer.tsx`**
+**File: `src/lib/tibiaRelic/mapExtractor.ts`** (lines 82-105)
 
-1. **Remove unused imports**: `ChevronUp`, `ChevronDown`, `Layers`, `Eye`, `RotateCcw`, `Badge`, `Progress` (if no longer needed), and the map extraction imports/state
-2. **Remove state variables**: `floorOffset`, `spyFloor`, `qualityMode`, `extracting`, `extractProgress`, and their corresponding refs (`floorOffsetRef`, `spyFloorRef`, `qualityModeRef`)
-3. **Remove `useEffect` syncs** for `floorOffset`, `spyFloor`, `qualityMode` refs
-4. **Simplify animation loop** (lines 186-199): Remove the `floorOverride` logic and `spyFloor` assignment. Set `renderer.floorOverride = null` always and `renderer.spyFloor = false` always
-5. **Remove `resetPlayback` function** (lines 335-356)
-6. **Remove `handleExtractMap` function** (lines 426-472)
-7. **Remove floor control UI** (lines 632-693): The entire floor controls section with ChevronUp/Down, Layers icon, Eye button, and floor Badge
-8. **Remove reset button** (lines 591-599)
-9. **Remove quality toggle button** (lines 697-709)
-10. **Remove extract map button** and extract progress bar (lines 721-738)
-11. **Remove `CamDebugPanel`** import and rendering (line 752)
+Move `camZ` tracking into the frame processing loop:
 
-**File: `src/lib/tibiaRelic/renderer.ts`**
+```typescript
+let frameIdx = 0;
 
-12. **Remove `spyFloor` property** and its usage in `getVisibleFloors` (lines 454-458) and in the xray alpha logic (lines 246-249)
-13. **Remove `floorOverride` property** usage -- the renderer will always use `renderCamZ` directly (line 205: remove `this.floorOverride ??` prefix)
-14. **Remove floor desync warning** (lines 194-204) since floor override is gone and the diagnostic is no longer relevant
+return new Promise((resolve) => {
+  function processChunk() {
+    const end = Math.min(frameIdx + chunkSize, cam.frames.length);
+    let anyFloorChange = false;
 
-### Result
-The player will have a clean, minimal UI:
-- Play/Pause button
-- Skip Back 10s / Skip Forward 10s buttons
-- Speed cycle button (1x, 2x, 4x, 8x)
-- Timeline seek slider with timestamps
-- "Load another .cam" button
-- Status text
+    for (; frameIdx < end; frameIdx++) {
+      try {
+        parser.process(cam.frames[frameIdx].payload);
+      } catch {
+        // Skip broken frames
+      }
 
-Floor rendering will always follow `g.camZ` from the protocol with no manual override, which should also reduce the floor transition bugs since there's no competing floor logic.
+      // Detect floor change per-frame, not per-chunk
+      if (lastCamZ >= 0 && gs.camZ !== lastCamZ) {
+        gs.tiles.clear(); // Purge stale offset tiles immediately
+        anyFloorChange = true;
+      }
+      lastCamZ = gs.camZ;
+    }
+
+    // Only snapshot if no floor transitions happened during this batch
+    if (!anyFloorChange) {
+      snapshotTiles(gs, dat, latestTiles);
+    }
+
+    // ... rest unchanged (chunk tracking, creature snapshot, progress)
+```
+
+This ensures:
+1. Tiles are purged the instant `camZ` changes, even mid-batch
+2. If any floor transition occurred during the batch, we skip the snapshot entirely to avoid capturing any residual offset tiles
+3. The next batch (if camZ is stable) will snapshot clean data
+
+### Database Cleanup
+Run a SQL migration to delete surface tiles (z=7) that have item 101 (grass) appearing at coordinates where the external map already has data -- or more practically, re-extract the affected `.cam` files after the fix. Since this is a re-extraction scenario, no SQL cleanup needed if the user re-runs extraction.
 
