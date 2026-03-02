@@ -200,7 +200,7 @@ interface ScrapeResult {
 }
 
 async function scrapeCharacterAndSave(
-  supabase: ReturnType<typeof createClient>,
+  supabase: any,
   name: string
 ): Promise<ScrapeResult> {
   const result = await scrapeCharacter(name);
