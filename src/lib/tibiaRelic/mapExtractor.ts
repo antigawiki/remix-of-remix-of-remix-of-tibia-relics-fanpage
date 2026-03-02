@@ -84,23 +84,25 @@ export async function extractMapTiles(
   return new Promise((resolve) => {
     function processChunk() {
       const end = Math.min(frameIdx + chunkSize, cam.frames.length);
+      let anyFloorChange = false;
+
       for (; frameIdx < end; frameIdx++) {
         try {
           parser.process(cam.frames[frameIdx].payload);
         } catch {
           // Skip broken frames
         }
+
+        // Detect floor change per-frame, not per-chunk
+        if (lastCamZ >= 0 && gs.camZ !== lastCamZ) {
+          gs.tiles.clear(); // Purge stale offset tiles immediately
+          anyFloorChange = true;
+        }
+        lastCamZ = gs.camZ;
       }
 
-      // Detect floor change: purge stale offset tiles from previous floor
-      const floorChanged = lastCamZ >= 0 && gs.camZ !== lastCamZ;
-      lastCamZ = gs.camZ;
-
-      if (floorChanged) {
-        gs.tiles.clear(); // Purge stale offset tiles from previous camZ
-      }
-
-      if (!floorChanged) {
+      // Only snapshot if no floor transitions happened during this batch
+      if (!anyFloorChange) {
         snapshotTiles(gs, dat, latestTiles);
       }
 
