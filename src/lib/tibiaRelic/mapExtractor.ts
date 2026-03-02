@@ -73,6 +73,7 @@ export function extractMapTilesSync(
   let lastPlayerChunkKey = '';
   let currentVisitChunks = new Map<string, ChunkVisitData>();
   let lastCamZ = -1;
+  let floorStableBatches = 0;
 
   for (let frameIdx = 0; frameIdx < cam.frames.length; ) {
     const end = Math.min(frameIdx + chunkSize, cam.frames.length);
@@ -87,7 +88,13 @@ export function extractMapTilesSync(
       lastCamZ = gs.camZ;
     }
 
-    if (!anyFloorChange) snapshotTiles(gs, dat, latestTiles);
+    if (anyFloorChange) {
+      floorStableBatches = 0;
+    } else {
+      floorStableBatches++;
+    }
+
+    if (floorStableBatches >= 3) snapshotTiles(gs, dat, latestTiles);
 
     const playerChunkX = Math.floor(gs.camX / DB_CHUNK);
     const playerChunkY = Math.floor(gs.camY / DB_CHUNK);
@@ -143,6 +150,7 @@ export async function extractMapTiles(
 
   // Track camZ to detect floor changes and skip stale tile snapshots
   let lastCamZ = -1;
+  let floorStableBatches = 0;
 
   let frameIdx = 0;
 
@@ -166,8 +174,14 @@ export async function extractMapTiles(
         lastCamZ = gs.camZ;
       }
 
-      // Only snapshot if no floor transitions happened during this batch
-      if (!anyFloorChange) {
+      // Cooldown: skip snapshots for 3 batches after any floor change
+      if (anyFloorChange) {
+        floorStableBatches = 0;
+      } else {
+        floorStableBatches++;
+      }
+
+      if (floorStableBatches >= 3) {
         snapshotTiles(gs, dat, latestTiles);
       }
 
@@ -353,15 +367,19 @@ function snapshotTiles(
     if (tx === 0 || ty === 0) continue;
 
     // Only capture tiles on the camera's current floor.
-    // Tiles on other floors have a perspective offset baked in, and
-    // stale tiles from a previous camZ would produce incorrect offsets.
-    // Same-floor tiles always have offset 0, so tx/ty ARE the real coords.
     if (tz !== camZ) continue;
 
     if (tx < 30000 || tx > 35000 || ty < 30000 || ty > 35000) continue;
 
+    // Viewport validation: reject tiles whose coordinates are outside
+    // the expected 18x14 viewport centered on camera position.
+    // This catches tiles that have residual perspective offsets baked in
+    // from floor transitions (readFloorArea).
     if (camX > 0 && camY > 0) {
-      if (Math.abs(tx - camX) > 18 || Math.abs(ty - camY) > 14) continue;
+      const dx = Math.abs(tx - camX);
+      const dy = Math.abs(ty - camY);
+      // Strict viewport: Tibia 7.72 viewport is 18x14, allow small margin
+      if (dx > 10 || dy > 8) continue;
     }
 
     const items: number[] = [];

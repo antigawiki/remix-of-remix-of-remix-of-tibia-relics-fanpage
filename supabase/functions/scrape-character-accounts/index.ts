@@ -145,7 +145,7 @@ serve(async (req) => {
   }
 });
 
-async function getAllPlayerNames(supabase: ReturnType<typeof createClient>): Promise<string[]> {
+async function getAllPlayerNames(supabase: any): Promise<string[]> {
   const PAGE_SIZE = 1000;
   const allNames = new Set<string>();
   let from = 0;

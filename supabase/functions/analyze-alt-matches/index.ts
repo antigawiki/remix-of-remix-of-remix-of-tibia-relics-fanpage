@@ -231,7 +231,7 @@ serve(async (req) => {
  * Fetch ALL completed sessions using pagination to bypass Supabase's 1000-row default limit.
  */
 async function getAllSessions(
-  supabase: ReturnType<typeof createClient>
+  supabase: any
 ): Promise<{ player_name: string; login_at: string; logout_at: string }[]> {
   const PAGE_SIZE = 1000;
   const all: { player_name: string; login_at: string; logout_at: string }[] = [];
