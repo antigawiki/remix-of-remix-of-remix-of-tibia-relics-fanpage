@@ -377,16 +377,9 @@ function snapshotTiles(
 
     if (tx < 30000 || tx > 35000 || ty < 30000 || ty > 35000) continue;
 
-    // Viewport validation: reject tiles whose coordinates are outside
-    // the expected 18x14 viewport centered on camera position.
-    // This catches tiles that have residual perspective offsets baked in
-    // from floor transitions (readFloorArea).
-    if (camX > 0 && camY > 0) {
-      const dx = Math.abs(tx - camX);
-      const dy = Math.abs(ty - camY);
-      // Tibia 7.72 viewport is 18x14, half = 9x7
-      if (dx > 9 || dy > 7) continue;
-    }
+    // Floor filter (tz !== camZ above) already prevents cross-floor
+    // contamination. No viewport filter here — gs.tiles accumulates
+    // tiles from the entire path and all should be captured.
 
     const items: number[] = [];
     for (const item of tileItems) {
