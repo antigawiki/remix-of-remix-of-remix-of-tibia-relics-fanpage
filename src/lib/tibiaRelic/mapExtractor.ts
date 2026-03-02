@@ -52,7 +52,72 @@ interface ChunkAccumulator {
 }
 
 /**
+ * Synchronous extraction for use inside a Web Worker.
+ * Processes all frames in a tight loop (no yielding).
+ */
+export function extractMapTilesSync(
+  cam: CamFile,
+  dat: DatLoader,
+  onProgress?: ProgressCallback,
+  chunkSize = 500,
+): MapExtractionResult {
+  const gs = new GameState();
+  const parser = new PacketParser(gs, dat, {
+    looktypeU16: true,
+    outfitWindowRangeU16: true,
+  });
+  parser.seekMode = true;
+
+  const latestTiles = new Map<string, number[]>();
+  const chunkAccumulators = new Map<string, ChunkAccumulator>();
+  let lastPlayerChunkKey = '';
+  let currentVisitChunks = new Map<string, ChunkVisitData>();
+  let lastCamZ = -1;
+
+  for (let frameIdx = 0; frameIdx < cam.frames.length; ) {
+    const end = Math.min(frameIdx + chunkSize, cam.frames.length);
+    let anyFloorChange = false;
+
+    for (; frameIdx < end; frameIdx++) {
+      try { parser.process(cam.frames[frameIdx].payload); } catch { /* skip */ }
+      if (lastCamZ >= 0 && gs.camZ !== lastCamZ) {
+        gs.tiles.clear();
+        anyFloorChange = true;
+      }
+      lastCamZ = gs.camZ;
+    }
+
+    if (!anyFloorChange) snapshotTiles(gs, dat, latestTiles);
+
+    const playerChunkX = Math.floor(gs.camX / DB_CHUNK);
+    const playerChunkY = Math.floor(gs.camY / DB_CHUNK);
+    const playerChunkKey = `${playerChunkX},${playerChunkY},${gs.camZ}`;
+
+    if (playerChunkKey !== lastPlayerChunkKey && lastPlayerChunkKey !== '') {
+      flushVisit(currentVisitChunks, chunkAccumulators);
+      currentVisitChunks = new Map();
+    }
+    lastPlayerChunkKey = playerChunkKey;
+
+    snapshotCreaturesForVisit(gs, currentVisitChunks);
+
+    if (onProgress) {
+      onProgress({
+        processedFrames: frameIdx,
+        totalFrames: cam.frames.length,
+        tilesExtracted: latestTiles.size,
+        percent: Math.round((frameIdx / cam.frames.length) * 100),
+      });
+    }
+  }
+
+  flushVisit(currentVisitChunks, chunkAccumulators);
+  return { tiles: latestTiles, spawns: buildSpawnData(chunkAccumulators) };
+}
+
+/**
  * Extract all static tiles and spawn data from a .cam file.
+ * Async version using setTimeout for main-thread usage.
  */
 export async function extractMapTiles(
   cam: CamFile,
