@@ -1,50 +1,33 @@
 
 
-## Corrigir cores rosadas e posição da câmera no player WASM
+## Corrigir gaps na extração de tiles (snapshot muito infrequente)
 
-### Problema 1: Tela rosada (canais R e B trocados)
+### Diagnóstico
 
-O `Pixel` struct do tibiarc armazena bytes na memória como: `R, G, B, A` (nessa ordem).
+Analisando os dados no banco, confirmei que existem lacunas reais na extração. Exemplo no eixo X entre 32711-32717 (7 tiles de gap). O total de 24k tiles em z=7 para uma area de 1156x1356 confirma cobertura muito esparsa.
 
-O SDL texture usa `SDL_PIXELFORMAT_RGBA8888`, que em sistemas little-endian (como WASM) espera bytes na memória como `A, B, G, R` -- ou seja, inverte a ordem. Resultado: R e B ficam trocados, gerando o tom rosa/magenta.
+### Causa raiz
 
-**Correção**: Trocar para `SDL_PIXELFORMAT_ABGR8888`, que em little-endian espera bytes na memória como `R, G, B, A` -- exatamente o que o Pixel struct produz.
+O `snapshotTiles` (que salva tiles do GameState para o resultado final) so roda quando `floorStableBatches >= 2`, ou seja, a cada **1000 frames** (2 batches de 500). Nesse intervalo, o jogador caminha 5-10+ tiles, e como o snapshot so captura tiles dentro do viewport de 18x14 ao redor da camera **naquele momento**, os tiles das posicoes intermediarias sao perdidos.
 
-### Problema 2: Câmera deslocada
+Antes de hoje, o threshold era provavelmente 1 (ou inexistente), fazendo snapshot a cada 500 frames. A mudanca para threshold >= 2 dobrou o intervalo entre snapshots, criando gaps sistematicos.
 
-O código atual usa:
-```cpp
-Renderer::Options options{
-    .Width = RENDER_WIDTH,          // 640
-    .Height = RENDER_HEIGHT - 128   // 352
-};
-```
+### Solucao
 
-O `NativeResolutionX` do tibiarc é **480** e `NativeResolutionY` é **352**. O map canvas é criado com essas dimensões nativas (480x352), mas o Options.Width é 640 -- causando desalinhamento entre a área renderizada e o canvas.
+Reduzir o threshold de `floorStableBatches >= 2` para `floorStableBatches >= 1` no `mapExtractor.ts`. Isso significa:
+- Snapshot a cada **500 frames** (1 batch) apos estabilidade
+- Apenas **1 batch de cooldown** (500 frames) apos mudanca de andar
+- O `gs.tiles.clear()` ja purga tiles contaminados, entao 1 batch de cooldown e suficiente
 
-**Correção**: Usar as constantes nativas do Renderer para o Options e o canvas, depois copiar para o output canvas com escala ou posicionamento correto:
+### Mudancas
 
-```text
-Options.Width  = Renderer::NativeResolutionX  (480)
-Options.Height = Renderer::NativeResolutionY  (352)
-```
-
-### Mudanças no arquivo
-
-**`tibiarc-player/web_player.cpp`**:
-
-1. **Linha 422**: Trocar `SDL_PIXELFORMAT_RGBA8888` por `SDL_PIXELFORMAT_ABGR8888`
-2. **Linhas 355-358**: Corrigir Options para usar as dimensões nativas do Renderer:
-   ```cpp
-   Renderer::Options options{
-       .Width = Renderer::NativeResolutionX,
-       .Height = Renderer::NativeResolutionY
-   };
-   ```
+**`src/lib/tibiaRelic/mapExtractor.ts`** - 2 alteracoes (sync e async):
+- Linha 97: `floorStableBatches >= 2` -> `floorStableBatches >= 1`
+- Linha 187: `floorStableBatches >= 2` -> `floorStableBatches >= 1`
 
 ### Resultado esperado
 
-- Cores corretas (sem tom rosa)
-- Câmera centralizada na posição correta do jogador
-- O WASM precisará ser **recompilado** via GitHub Actions após essas mudanças
+- Dobro da frequencia de snapshots (a cada 500 frames vs 1000)
+- Gaps de 7+ tiles eliminados (max gap agora seria ~3-5 tiles)
+- Cooldown pos-floor-change mantido (1 batch) para evitar contaminacao
 
