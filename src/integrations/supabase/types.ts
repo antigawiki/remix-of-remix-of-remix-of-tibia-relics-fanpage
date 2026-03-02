@@ -852,7 +852,7 @@ export type Database = {
         Args: { new_items: Json; px: number; py: number; pz: number }
         Returns: undefined
       }
-      merge_cam_tiles_batch: { Args: { tiles: Json }; Returns: undefined }
+      merge_cam_tiles_batch: { Args: { tiles: Json }; Returns: number }
     }
     Enums: {
       app_role: "admin" | "moderator" | "user"
