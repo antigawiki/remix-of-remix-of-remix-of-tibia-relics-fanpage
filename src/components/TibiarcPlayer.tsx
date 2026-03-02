@@ -279,7 +279,7 @@ const TibiarcPlayer = ({ className }: TibiarcPlayerProps) => {
           width={480}
           height={352}
           className="w-full h-full"
-          style={{ imageRendering: 'pixelated' }}
+          style={{ imageRendering: 'auto' }}
         />
 
         {/* Hidden file input */}
