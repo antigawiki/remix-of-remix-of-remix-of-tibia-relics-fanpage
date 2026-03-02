@@ -1,129 +1,82 @@
 
 
-## Adaptar tibiarc WASM para o formato TibiaRelic
+## Fix: Replicate JS Heuristic in C++ WASM Parser
 
-### Problema
+### Root Cause
 
-O tibiarc reconhece `.cam` como formato **TibiacamTV**, que usa header de 32 bytes + LZMA compression. Os arquivos `.cam` do TibiaRelic tem estrutura completamente diferente (header 12 bytes, frames raw sem compressao). Quando o WASM tenta parsear um TibiaRelic `.cam`, ele tenta descomprimir LZMA em dados raw e crasheia com uma excecao C++.
+The JS-based parser (`packetParser.ts`) successfully handles TibiaRelic `.cam` files because it inspects the **first byte of each frame payload** to decide how to parse it:
 
-### Solucao
+- If `firstByte < 0x0A`: the payload starts with a **TCP u16 length prefix** -- it reads the length, then parses opcodes within the sub-packet boundaries
+- Otherwise: the payload contains **direct opcodes** -- it parses them as-is
 
-Adicionar uma funcao dedicada `load_recording_tibiarelic` no `web_player.cpp` que parseia o formato TibiaRelic diretamente, alimentando os frames no Parser/Gamestate do tibiarc sem passar pelo `Recordings::Read`.
+The C++ `load_recording_tibiarelic` function **always skips 2 bytes** assuming every frame has a TCP length prefix. This corrupts frames that contain direct opcodes, causing `memory access out of bounds`.
 
-### Mudancas
+Additionally, the JS parser handles **multiple sub-packets per frame** in TCP mode (a loop reading u16 length + opcodes until the frame ends), while the C++ code only reads one sub-packet.
 
-#### 1. `tibiarc-player/web_player.cpp` - Nova funcao de carregamento TibiaRelic
+### Solution
 
-Adicionar uma funcao C exportada `load_recording_tibiarelic` que:
-
-1. Le o header TibiaRelic (12 bytes): u32 version, f32 fps, 4 bytes extras
-2. Itera pelos frames: u64 timestamp_ms + u16 payload_size + payload
-3. Alimenta cada payload no `Parser` e `Demuxer` do tibiarc (header size 2 para reassemblar pacotes TCP)
-4. Constroi um `Recording` com os frames parseados
-5. Inicializa o `Gamestate` e faz o fast-forward ate o player estar inicializado
-
-A funcao recebe os mesmos parametros que `load_recording_with_version` mas sabe que o formato e TibiaRelic.
+Update `load_recording_tibiarelic` in `web_player.cpp` to replicate the JS heuristic:
 
 ```text
-// Pseudo-codigo da nova funcao:
-EMSCRIPTEN_KEEPALIVE
-int load_recording_tibiarelic(const uint8_t *buf, int len,
-                               int ver_major, int ver_minor, int ver_patch) {
-    // 1. Parse header (12 bytes)
-    uint32_t version = read_u32_le(buf, 0);
-    float fps = read_f32_le(buf, 4);
-    int pos = 12;
+For each frame payload:
+  1. Read the first byte
+  2. If firstByte < 0x0A (not a valid Tibia opcode):
+     - TCP demux mode: loop reading u16 length prefix + feeding sub-packets to Parser::Parse
+  3. Else:
+     - Direct mode: feed the entire payload to Parser::Parse as-is
+```
 
-    // 2. Create Version with data files
-    VersionTriplet triplet(ver_major, ver_minor, ver_patch);
-    g_version = make_unique<Version>(triplet, picReader, sprReader, datReader);
+### File Changes
 
-    // 3. Parse frames into Recording
-    Parser parser(*g_version, false);
-    Demuxer demuxer(2);  // TCP-style 2-byte header
-    auto recording = make_unique<Recording>();
+**`tibiarc-player/web_player.cpp`** -- Replace the frame parsing loop (lines 214-228) with:
 
-    uint64_t ts0 = 0;
-    bool first = true;
-
-    while (pos + 10 <= len) {
-        uint64_t ts = read_u64_le(buf, pos);
-        uint16_t sz = read_u16_le(buf, pos + 8);
-        pos += 10;
-
-        if (sz == 0 || pos + sz > len) break;
-        if (first) { ts0 = ts; first = false; }
-
-        auto timestamp = chrono::milliseconds(ts - ts0);
-        DataReader fragment(sz, buf + pos);
-
-        demuxer.Submit(timestamp, fragment,
-            [&](DataReader packetReader, auto ts) {
-                recording->Frames.emplace_back(ts, parser.Parse(packetReader));
-            });
-
-        pos += sz;
+```cpp
+// Replicate JS heuristic: check first byte to decide parsing mode
+if (sz > 0) {
+    try {
+        uint8_t firstByte = buf[pos];
+        
+        if (firstByte < 0x0A && sz >= 2) {
+            // TCP demux mode: loop through sub-packets
+            int subPos = 0;
+            while (subPos + 2 <= sz) {
+                uint16_t subLen = read_u16_le(buf + pos + subPos);
+                subPos += 2;
+                if (subLen == 0) continue;
+                if (subPos + subLen > sz) break;
+                
+                DataReader packetReader(subLen, buf + pos + subPos);
+                auto events = parser.Parse(packetReader);
+                if (!events.empty()) {
+                    recording->Frames.emplace_back(timestamp, std::move(events));
+                    parsedFrames++;
+                }
+                subPos += subLen;
+            }
+        } else {
+            // Direct opcode mode: feed entire payload
+            DataReader packetReader(sz, buf + pos);
+            auto events = parser.Parse(packetReader);
+            if (!events.empty()) {
+                recording->Frames.emplace_back(timestamp, std::move(events));
+                parsedFrames++;
+            }
+        }
+    } catch (...) {
+        // Skip unparseable frames
     }
-
-    demuxer.Finish();
-
-    // 4. Set runtime and initialize gamestate
-    recording->Runtime = recording->Frames.back().Timestamp;
-    g_recording = move(recording);
-    g_gamestate = make_unique<Gamestate>(*g_version);
-
-    // 5. Fast-forward until player initialized
-    // ... (same logic as existing load_recording)
-
-    return (int)(g_recording->Runtime.count());
 }
 ```
 
-#### 2. `tibiarc-player/web_player.cpp` - Export nova funcao
+This exactly mirrors the logic in `packetParser.ts` lines 182-244 that has been working correctly for the JS-based extractor.
 
-Adicionar `_load_recording_tibiarelic` a lista de `EXPORTED_FUNCTIONS`.
+### Why This Fixes the Crash
 
-#### 3. `.github/workflows/build-tibiarc.yml` - Atualizar exports
+- Frames with direct opcodes (e.g., `0x64` mapDesc, `0x6a` addThing) are no longer corrupted by skipping their first 2 bytes
+- TCP-wrapped frames are properly demuxed with the u16 length loop, handling multiple sub-packets per frame
+- The `try/catch` around each frame ensures one bad frame doesn't crash the entire loading process
 
-Adicionar `_load_recording_tibiarelic` ao parametro `-s EXPORTED_FUNCTIONS` e adicionar `-fexceptions` ao build para capturar erros graciosamente em vez de crashear.
+### After Implementation
 
-```text
-EXPORTED_FUNCTIONS='[
-  "_main","_load_data_files","_load_recording",
-  "_load_recording_tibiarelic",
-  "_play","_pause_playback","_set_speed",
-  "_get_progress","_get_duration","_seek",
-  "_is_playing","_malloc","_free"
-]'
-```
-
-Adicionar `-fexceptions -s DISABLE_EXCEPTION_CATCHING=0` para suportar try/catch no WASM.
-
-#### 4. `src/components/TibiarcPlayer.tsx` - Chamar funcao TibiaRelic
-
-Alterar a chamada de `load_recording_with_version` para `load_recording_tibiarelic`:
-
-```typescript
-// Antes:
-const dur = mod.ccall('load_recording_with_version', 'number',
-  ['number', 'number', 'number', 'number', 'number', 'number'],
-  [bufPtr, data.length, namePtr, 7, 72, 0]);
-
-// Depois:
-const dur = mod.ccall('load_recording_tibiarelic', 'number',
-  ['number', 'number', 'number', 'number', 'number'],
-  [bufPtr, data.length, 7, 72, 0]);
-```
-
-### Proximos passos apos implementacao
-
-Sera necessario **recompilar o WASM** executando o workflow do GitHub Actions apos o merge das mudancas no `web_player.cpp`. O build vai gerar novos `tibiarc_player.js` e `tibiarc_player.wasm` com suporte ao formato TibiaRelic.
-
-### Resumo dos arquivos
-
-| Arquivo | Mudanca |
-|---------|---------|
-| `tibiarc-player/web_player.cpp` | Adicionar `load_recording_tibiarelic` com parser dedicado para formato TibiaRelic |
-| `.github/workflows/build-tibiarc.yml` | Adicionar export da nova funcao + flags de excecao |
-| `src/components/TibiarcPlayer.tsx` | Chamar `load_recording_tibiarelic` em vez de `load_recording_with_version` |
+The WASM needs to be **recompiled** via the GitHub Actions workflow after merging these changes.
 
