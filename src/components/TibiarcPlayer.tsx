@@ -1,5 +1,5 @@
 import { useRef, useState, useCallback, useEffect } from 'react';
-import { Upload, Play, Pause, FastForward, Loader2, SkipBack, SkipForward, MessageSquare, MessageSquareOff } from 'lucide-react';
+import { Upload, Play, Pause, FastForward, Loader2, SkipBack, SkipForward, MessageSquare, MessageSquareOff, Maximize, Minimize } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Slider } from '@/components/ui/slider';
 import { useTranslation } from '@/i18n';
@@ -50,6 +50,26 @@ const TibiarcPlayer = ({ className }: TibiarcPlayerProps) => {
   const [duration, setDuration] = useState(0);
   const [dataLoaded, setDataLoaded] = useState(false);
   const [overlayEnabled, setOverlayEnabled] = useState(true);
+  const [isFullscreen, setIsFullscreen] = useState(false);
+
+  // Sync fullscreen state when user exits via ESC
+  useEffect(() => {
+    const handler = () => {
+      setIsFullscreen(!!document.fullscreenElement);
+    };
+    document.addEventListener('fullscreenchange', handler);
+    return () => document.removeEventListener('fullscreenchange', handler);
+  }, []);
+
+  const toggleFullscreen = useCallback(() => {
+    const container = containerRef.current;
+    if (!container) return;
+    if (!document.fullscreenElement) {
+      container.requestFullscreen().catch(() => {});
+    } else {
+      document.exitFullscreen().catch(() => {});
+    }
+  }, []);
 
   // Load WASM module + data files on mount
   useEffect(() => {
@@ -436,6 +456,16 @@ const TibiarcPlayer = ({ className }: TibiarcPlayerProps) => {
               title={overlayEnabled ? 'Esconder mensagens' : 'Mostrar mensagens'}
             >
               {overlayEnabled ? <MessageSquare className="w-4 h-4" /> : <MessageSquareOff className="w-4 h-4" />}
+            </Button>
+            <Button
+              variant="outline"
+              size="icon"
+              onClick={toggleFullscreen}
+              disabled={!hasRecording}
+              className="border-border/50"
+              title={isFullscreen ? 'Sair do fullscreen' : 'Fullscreen'}
+            >
+              {isFullscreen ? <Minimize className="w-4 h-4" /> : <Maximize className="w-4 h-4" />}
             </Button>
           </div>
 
