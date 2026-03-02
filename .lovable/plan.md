@@ -1,82 +1,81 @@
 
 
-## Fix: Replicate JS Heuristic in C++ WASM Parser
+## Corrigir perda massiva de tiles no upload (5-10% salvos)
 
-### Root Cause
+### Causa raiz
 
-The JS-based parser (`packetParser.ts`) successfully handles TibiaRelic `.cam` files because it inspects the **first byte of each frame payload** to decide how to parse it:
+A função SQL `merge_cam_tiles_batch` executa um **loop PL/pgSQL com INSERT individual** para cada tile:
 
-- If `firstByte < 0x0A`: the payload starts with a **TCP u16 length prefix** -- it reads the length, then parses opcodes within the sub-packet boundaries
-- Otherwise: the payload contains **direct opcodes** -- it parses them as-is
+```sql
+FOR t IN SELECT * FROM jsonb_array_elements(tiles) LOOP
+    INSERT INTO cam_map_tiles ... ON CONFLICT ... DO UPDATE ...
+END LOOP;
+```
 
-The C++ `load_recording_tibiarelic` function **always skips 2 bytes** assuming every frame has a TCP length prefix. This corrupts frames that contain direct opcodes, causing `memory access out of bounds`.
+Com 200 tiles por batch e 300k tiles totais = **1500 chamadas RPC sequenciais**, cada uma executando 200 INSERTs individuais. Qualquer chamada que exceda o timeout falha silenciosamente, mesmo com retries, porque a operacao inteira e lenta demais.
 
-Additionally, the JS parser handles **multiple sub-packets per frame** in TCP mode (a loop reading u16 length + opcodes until the frame ends), while the C++ code only reads one sub-packet.
+### Solucao em 2 partes
 
-### Solution
+#### 1. Migracao SQL: Reescrever `merge_cam_tiles_batch` com bulk INSERT
 
-Update `load_recording_tibiarelic` in `web_player.cpp` to replicate the JS heuristic:
+Substituir o loop por uma unica operacao `INSERT ... SELECT FROM jsonb_to_recordset(...)`:
+
+```sql
+CREATE OR REPLACE FUNCTION public.merge_cam_tiles_batch(tiles jsonb)
+RETURNS integer
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path TO 'public'
+AS $$
+DECLARE
+  affected integer;
+BEGIN
+  INSERT INTO cam_map_tiles (x, y, z, items, updated_at)
+  SELECT
+    (t.x)::integer,
+    (t.y)::integer,
+    (t.z)::integer,
+    t.items,
+    now()
+  FROM jsonb_to_recordset(tiles) AS t(x integer, y integer, z integer, items jsonb)
+  ON CONFLICT (x, y, z) DO UPDATE SET items = EXCLUDED.items, updated_at = now();
+
+  GET DIAGNOSTICS affected = ROW_COUNT;
+  RETURN affected;
+END;
+$$;
+```
+
+Isso e **10-50x mais rapido** que o loop porque o Postgres executa tudo em uma unica operacao bulk. A funcao agora retorna o numero de rows afetadas para validacao.
+
+#### 2. Frontend: Upload paralelo + contadores de sucesso/falha
+
+Modificar `src/pages/CamBatchExtractPage.tsx`:
+
+- **Aumentar batch para 500** tiles (possivel com o bulk INSERT rapido)
+- **Upload paralelo**: enviar 3 batches simultaneamente com `Promise.all`
+- **Contadores visiveis**: mostrar na UI quantos tiles foram salvos vs falharam
+- **Usar o retorno da RPC** para validar quantos tiles foram realmente inseridos
 
 ```text
-For each frame payload:
-  1. Read the first byte
-  2. If firstByte < 0x0A (not a valid Tibia opcode):
-     - TCP demux mode: loop reading u16 length prefix + feeding sub-packets to Parser::Parse
-  3. Else:
-     - Direct mode: feed the entire payload to Parser::Parse as-is
+Mudancas no arquivo:
+- TILE_RPC_BATCH: 200 -> 500
+- Adicionar PARALLEL_UPLOADS = 3
+- Loop de upload: processar 3 batches por vez com Promise.all
+- Acumular totalSaved e totalFailed a partir do retorno da RPC
+- Exibir contadores na UI durante e apos o upload
 ```
 
-### File Changes
+### Arquivos modificados
 
-**`tibiarc-player/web_player.cpp`** -- Replace the frame parsing loop (lines 214-228) with:
+| Arquivo | Tipo | Descricao |
+|---------|------|-----------|
+| Migracao SQL | DB | Reescrever `merge_cam_tiles_batch` com bulk INSERT, retornar row count |
+| `src/pages/CamBatchExtractPage.tsx` | Frontend | Batch 500, upload paralelo x3, contadores sucesso/falha |
 
-```cpp
-// Replicate JS heuristic: check first byte to decide parsing mode
-if (sz > 0) {
-    try {
-        uint8_t firstByte = buf[pos];
-        
-        if (firstByte < 0x0A && sz >= 2) {
-            // TCP demux mode: loop through sub-packets
-            int subPos = 0;
-            while (subPos + 2 <= sz) {
-                uint16_t subLen = read_u16_le(buf + pos + subPos);
-                subPos += 2;
-                if (subLen == 0) continue;
-                if (subPos + subLen > sz) break;
-                
-                DataReader packetReader(subLen, buf + pos + subPos);
-                auto events = parser.Parse(packetReader);
-                if (!events.empty()) {
-                    recording->Frames.emplace_back(timestamp, std::move(events));
-                    parsedFrames++;
-                }
-                subPos += subLen;
-            }
-        } else {
-            // Direct opcode mode: feed entire payload
-            DataReader packetReader(sz, buf + pos);
-            auto events = parser.Parse(packetReader);
-            if (!events.empty()) {
-                recording->Frames.emplace_back(timestamp, std::move(events));
-                parsedFrames++;
-            }
-        }
-    } catch (...) {
-        // Skip unparseable frames
-    }
-}
-```
+### Resultado esperado
 
-This exactly mirrors the logic in `packetParser.ts` lines 182-244 that has been working correctly for the JS-based extractor.
-
-### Why This Fixes the Crash
-
-- Frames with direct opcodes (e.g., `0x64` mapDesc, `0x6a` addThing) are no longer corrupted by skipping their first 2 bytes
-- TCP-wrapped frames are properly demuxed with the u16 length loop, handling multiple sub-packets per frame
-- The `try/catch` around each frame ensures one bad frame doesn't crash the entire loading process
-
-### After Implementation
-
-The WASM needs to be **recompiled** via the GitHub Actions workflow after merging these changes.
+- **300k tiles em ~1-2 min** (vs 12+ min antes)
+- **Zero perda silenciosa**: cada batch retorna quantos tiles salvou
+- **Visibilidade**: contadores na UI mostram exatamente o que foi salvo vs falhou
 
