@@ -1,43 +1,77 @@
+## Sistema de Enquetes Anonimas
+
+### Visao Geral
+
+Criar um sistema de enquetes (polls) onde usuarios votam anonimamente, com protecao contra voto duplicado via fingerprint do navegador (combinacao de IP + User-Agent hash). A primeira enquete sera "O que você mais quer ver por aqui?" com 4 opcoes.
+
+### Banco de Dados
+
+**Tabela `polls**` - Armazena as enquetes
 
 
-## Correcao: Bordas de Montanhas Quebradas no Mapa
+| Coluna     | Tipo        | Descricao                                                          |
+| ---------- | ----------- | ------------------------------------------------------------------ |
+| id         | uuid (PK)   | ID da enquete                                                      |
+| title      | text        | Titulo da enquete                                                  |
+| options    | jsonb       | Array de opcoes (ex: `[{"key":"a","label":"Entrevista..."}, ...]`) |
+| active     | boolean     | Se a enquete esta aberta para votos                                |
+| created_at | timestamptz | Data de criacao                                                    |
 
-### Causa Raiz
 
-Itens multi-tile no Tibia (como bordas de montanhas) possuem `width > 1` ou `height > 1`. Quando desenhados, o sprite se estende para a **esquerda e para cima** a partir da posicao do tile. Exemplo: um item com `width=2` no tile (baseX+8, baseY) (primeiro tile do chunk vizinho a direita) desenha seus pixels em `px=256` e `px=224`. O pixel 224 esta DENTRO do chunk atual, mas o item pertence ao chunk vizinho.
+**Tabela `poll_votes**` - Armazena os votos
 
-O **cam player** resolve isso renderizando tiles extras alem do viewport (`tx=-1` ate `VP_W+3`). O **mapa** renderiza exatamente 8x8 tiles por chunk, sem margem. Resultado: sprites de itens nos chunks vizinhos que deveriam "sangrar" para dentro do chunk atual sao cortados, criando bordas quebradas.
 
-### Solucao
+| Coluna     | Tipo               | Descricao                                        |
+| ---------- | ------------------ | ------------------------------------------------ |
+| id         | uuid (PK)          | ID do voto                                       |
+| poll_id    | uuid (FK -> polls) | Referencia a enquete                             |
+| option_key | text               | Chave da opcao votada (a, b, c, d)               |
+| voter_hash | text               | Hash anonimo (IP + User-Agent via edge function) |
+| created_at | timestamptz        | Data do voto                                     |
+| UNIQUE     | &nbsp;             | (poll_id, voter_hash) - impede voto duplicado    |
 
-Duas mudancas cirurgicas:
 
-**Arquivo 1: `src/lib/tibiaRelic/mapTileRenderer.ts`**
+RLS: SELECT publico em ambas. INSERT em poll_votes publico. Sem UPDATE/DELETE para votos.
 
-Modificar o metodo `renderChunk` para aceitar um parametro opcional `borderTiles: TileData[]` contendo tiles dos chunks adjacentes (ate 2 tiles alem da borda). Expandir o loop de renderizacao de `tx=0..7` para `tx=-2..9, ty=-2..9`. Os tiles fora do range 0-7 serao buscados no `borderTiles`. A area de desenho continua sendo 256x256 -- sprites que caem fora do canvas sao automaticamente clippados pelo browser.
+### Edge Function: `cast-vote`
 
-Mudancas especificas:
-- Adicionar parametro `borderTiles?: TileData[]` na assinatura de `renderChunk`
-- Mesclar `borderTiles` no `tileMap` lookup (mesmo Map, tiles com coordenadas absolutas)
-- Mudar os loops de `for ty=0..CHUNK_TILES-1` para `for ty=-2..CHUNK_TILES+1`
-- NAO desenhar overlays (rope/shovel) para tiles fora do chunk (evita duplicacao)
+- Recebe `poll_id` e `option_key`
+- Extrai IP do request header + User-Agent
+- Gera hash SHA-256 do combo (anonimo, nao reversivel)
+- Insere na `poll_votes` com `ON CONFLICT` para rejeitar voto duplicado
+- Retorna sucesso ou "ja votou"
 
-**Arquivo 2: `src/pages/CamMapPage.tsx`**
+### Frontend
 
-No `drawCamData`, ao chamar `renderer.renderChunk`, coletar tiles dos 8 chunks adjacentes (cima, baixo, esquerda, direita, e diagonais) e passar como `borderTiles`. Filtrar apenas tiles que estao a ate 2 posicoes da borda do chunk sendo renderizado.
+**Componente `PollBox.tsx**`
 
-Mudancas especificas:
-- Criar funcao helper `getBorderTiles(chunkX, chunkY)` que coleta tiles relevantes dos chunks vizinhos
-- Passar resultado como `borderTiles` ao `renderChunk`
+- Exibe titulo da enquete e as opcoes como radio buttons no estilo retro do site (news-box style)
+- Ao votar, chama a edge function
+- Apos votar (ou se ja votou), mostra os resultados com barras de progresso e porcentagens
+- Salva no localStorage que ja votou (UX hint, a protecao real e no backend)
 
-### Impacto em Performance
+**Integracao na Index.tsx**
 
-Minimo. Para cada chunk, adicionamos no maximo ~40 tiles extras (perimetro de 2 tiles de largura ao redor do chunk 8x8). O calculo de sprites e o mesmo, e a maioria desses tiles ja esta em memoria. O cache do renderer continua funcionando normalmente.
+- Adicionar o `PollBox` na pagina inicial, entre o Welcome e as News, com um section-divider
 
-### Resumo
+### Dados Iniciais
 
-| Arquivo | Acao | Descricao |
-|---|---|---|
-| `mapTileRenderer.ts` | EDITAR | Aceitar borderTiles, expandir loop de renderizacao |
-| `CamMapPage.tsx` | EDITAR | Coletar tiles vizinhos e passar ao renderer |
+Inserir a primeira enquete via migration seed:
 
+- Titulo: "O que voce mais quer ver por aqui?"
+- Opcoes:
+  - a: Entrevista com personagens do Relic
+  - b: Jornal com um resumo do que aconteceu no servidor
+  - c: Sistema de sugestoes e votacao da melhor sugestao pra ser levada ate a staff
+  - d: Dicas de hunt
+
+### Resumo de Arquivos
+
+
+| Arquivo                                 | Acao                             |
+| --------------------------------------- | -------------------------------- |
+| Migration SQL                           | CRIAR tabelas polls e poll_votes |
+| `supabase/functions/cast-vote/index.ts` | CRIAR edge function              |
+| `src/components/PollBox.tsx`            | CRIAR componente                 |
+| `src/hooks/usePoll.ts`                  | CRIAR hook para fetch/vote       |
+| `src/pages/Index.tsx`                   | EDITAR - adicionar PollBox       |
