@@ -50,19 +50,6 @@ const TibiarcPlayer = ({ className }: TibiarcPlayerProps) => {
   const [duration, setDuration] = useState(0);
   const [dataLoaded, setDataLoaded] = useState(false);
 
-  // Prevent Emscripten from overwriting document.title
-  useEffect(() => {
-    const titleEl = document.querySelector('title');
-    if (!titleEl) return;
-    const observer = new MutationObserver(() => {
-      if (document.title !== 'Tibia Relic Wiki') {
-        document.title = 'Tibia Relic Wiki';
-      }
-    });
-    observer.observe(titleEl, { childList: true, characterData: true, subtree: true });
-    return () => observer.disconnect();
-  }, []);
-
   // Load WASM module + data files on mount
   useEffect(() => {
     let cancelled = false;
@@ -98,7 +85,6 @@ const TibiarcPlayer = ({ className }: TibiarcPlayerProps) => {
 
         if (cancelled) return;
         moduleRef.current = mod;
-        document.title = 'Tibia Relic Wiki';
 
         // Fetch data files
         const [picRes, sprRes, datRes] = await Promise.all([
@@ -135,7 +121,6 @@ const TibiarcPlayer = ({ className }: TibiarcPlayerProps) => {
 
         setDataLoaded(true);
         setState('idle');
-        document.title = 'Tibia Relic Wiki';
         console.log('[TibiarcPlayer] WASM module + data files loaded');
       } catch (err) {
         if (cancelled) return;
@@ -284,17 +269,17 @@ const TibiarcPlayer = ({ className }: TibiarcPlayerProps) => {
       {/* Canvas / Upload Area */}
       <div
         ref={containerRef}
-        className="relative w-full aspect-[960/704] max-w-[960px] mx-auto bg-black rounded-sm overflow-hidden border-2 border-border/50"
+        className="relative w-full aspect-[4/3] max-w-[960px] mx-auto bg-black rounded-sm overflow-hidden border-2 border-border/50"
         onDrop={handleDrop}
         onDragOver={(e) => e.preventDefault()}
       >
         <canvas
           ref={canvasRef}
           id="canvas"
-          width={960}
-          height={704}
+          width={640}
+          height={480}
           className="w-full h-full"
-          style={{ imageRendering: 'pixelated' }}
+          style={{ imageRendering: 'auto' }}
         />
 
         {/* Hidden file input */}
