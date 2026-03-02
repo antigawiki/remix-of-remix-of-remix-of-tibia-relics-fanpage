@@ -19,8 +19,9 @@ interface FileEntry {
   error?: string;
 }
 
-const TILE_RPC_BATCH = 500;
-const SPAWN_RPC_BATCH = 500;
+const TILE_RPC_BATCH = 200;
+const SPAWN_RPC_BATCH = 200;
+const MAX_RETRIES = 3;
 
 const CamBatchExtractPage = () => {
   const [datBuffer, setDatBuffer] = useState<ArrayBuffer | null>(null);
@@ -126,21 +127,31 @@ const CamBatchExtractPage = () => {
         const totalSteps = Math.ceil(tileCount / TILE_RPC_BATCH) + Math.ceil(spawnCount / SPAWN_RPC_BATCH);
         let stepsDone = 0;
 
-        // Upload tiles via batch RPC
+        // Upload tiles via batch RPC with error handling + retries
         for (let j = 0; j < tileCount; j += TILE_RPC_BATCH) {
           if (abortRef.current) break;
           const batch = tiles.slice(j, j + TILE_RPC_BATCH).map(([key, items]) => {
             const [x, y, z] = key.split(',').map(Number);
             return { x, y, z, items };
           });
-          await supabase.rpc('merge_cam_tiles_batch' as any, { tiles: batch });
+          let success = false;
+          for (let attempt = 0; attempt < MAX_RETRIES && !success; attempt++) {
+            const { error } = await supabase.rpc('merge_cam_tiles_batch' as any, { tiles: batch });
+            if (error) {
+              console.error(`[BatchExtract] Tile batch ${j}-${j + batch.length} attempt ${attempt + 1} error:`, error.message);
+              if (attempt < MAX_RETRIES - 1) await new Promise(r => setTimeout(r, 1000 * (attempt + 1)));
+            } else {
+              success = true;
+            }
+          }
+          if (!success) console.error(`[BatchExtract] FAILED tile batch ${j}-${j + batch.length} after ${MAX_RETRIES} retries`);
           stepsDone++;
           setFiles(prev => prev.map((f, idx) =>
             idx === i ? { ...f, progress: Math.round((stepsDone / totalSteps) * 100) } : f
           ));
         }
 
-        // Upload spawns via batch RPC
+        // Upload spawns via batch RPC with error handling + retries
         for (let j = 0; j < spawnCount; j += SPAWN_RPC_BATCH) {
           if (abortRef.current) break;
           const batch = spawns.slice(j, j + SPAWN_RPC_BATCH).map((s: any) => ({
@@ -151,7 +162,17 @@ const CamBatchExtractPage = () => {
             positions: s.positions,
             visit_count: s.visitCount,
           }));
-          await supabase.rpc('merge_cam_spawns_batch' as any, { spawns: batch });
+          let success = false;
+          for (let attempt = 0; attempt < MAX_RETRIES && !success; attempt++) {
+            const { error } = await supabase.rpc('merge_cam_spawns_batch' as any, { spawns: batch });
+            if (error) {
+              console.error(`[BatchExtract] Spawn batch ${j}-${j + batch.length} attempt ${attempt + 1} error:`, error.message);
+              if (attempt < MAX_RETRIES - 1) await new Promise(r => setTimeout(r, 1000 * (attempt + 1)));
+            } else {
+              success = true;
+            }
+          }
+          if (!success) console.error(`[BatchExtract] FAILED spawn batch ${j}-${j + batch.length} after ${MAX_RETRIES} retries`);
           stepsDone++;
           setFiles(prev => prev.map((f, idx) =>
             idx === i ? { ...f, progress: Math.round((stepsDone / totalSteps) * 100) } : f
@@ -162,9 +183,9 @@ const CamBatchExtractPage = () => {
           idx === i ? { ...f, status: 'done', progress: 100 } : f
         ));
 
-        console.log(`[BatchExtract] ${files[i].file.name}: ${tileCount} tiles, ${spawnCount} spawns`);
+        console.log(`[BatchExtract] ${files[i].file.name}: extracted ${tileCount} tiles, ${spawnCount} spawns — uploaded successfully`);
 
-        await new Promise(r => setTimeout(r, 100));
+        await new Promise(r => setTimeout(r, 200));
 
       } catch (err) {
         console.error(`[BatchExtract] Error processing ${files[i].file.name}:`, err);
