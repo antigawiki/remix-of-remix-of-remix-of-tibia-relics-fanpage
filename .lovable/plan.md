@@ -1,57 +1,89 @@
 
 
-## Fix: Surface tiles contaminated by mid-chunk floor transitions
+## Cam Player: Switch to TibiaRC WASM + Cam Map: Web Worker for Background Extraction
 
-### Problem
-The floor change detection runs AFTER processing a batch of 500 frames, and only compares the FINAL `camZ` to the previous value. If the player transitions floors and returns within the same batch (e.g., `camZ: 7 -> 8 -> 7`), the code sees `lastCamZ=7, camZ=7` -- no change detected.
+### The Root Problem with the Player
 
-However, while `camZ=8`, the protocol stores floor-7 tiles with a `+1` perspective offset baked into their X/Y coordinates. These offset tiles remain in `gs.tiles` with `tz=7`. When the snapshot runs (thinking no floor change occurred), it captures these offset tiles as legitimate floor-7 data -- placing them at wrong coordinates on the surface map.
+The current cam player uses a **custom JavaScript packet parser** that manually interprets every byte of the Tibia 7.72 protocol. This approach is inherently fragile:
 
-### Solution
-Move the floor change detection INSIDE the per-frame loop so that `gs.tiles` is cleared immediately when `camZ` changes, and track whether ANY floor change happened during the batch to skip the snapshot.
+- **Byte drift**: A single unknown opcode or misinterpreted payload causes all subsequent packets to parse incorrectly, leading to desync (player freezes while the world keeps moving).
+- **Floor transitions**: The protocol uses perspective offsets during floor changes that are extremely hard to replicate correctly in JS -- this is why tiles from other floors keep appearing.
+- **Performance**: Every frame creates/modifies JS objects, triggers garbage collection, and relies on `performance.now()` for walk animations. At higher speeds (4x, 8x), frames pile up faster than the parser can process.
 
-### Changes
+### How TibiaRC Does It
 
-**File: `src/lib/tibiaRelic/mapExtractor.ts`** (lines 82-105)
+TibiaRC already has a **complete, battle-tested C++ implementation** compiled to WASM (`tibiarc_player.js` + `tibiarc_player.wasm`) that is already in the project! It:
 
-Move `camZ` tracking into the frame processing loop:
+- Uses the official tibiarc library with full protocol support (no byte drift, no floor bugs)
+- Renders via SDL2/Emscripten directly to a canvas
+- Has built-in play/pause, speed control, and seek functionality
+- Handles all floor transitions, creature movement, and animations natively
 
-```typescript
-let frameIdx = 0;
+The WASM player exposes these JS functions: `load_data_files()`, `load_recording()`, `play()`, `pause_playback()`, `set_speed()`, `seek()`, `get_progress()`, `get_duration()`, `is_playing()`.
 
-return new Promise((resolve) => {
-  function processChunk() {
-    const end = Math.min(frameIdx + chunkSize, cam.frames.length);
-    let anyFloorChange = false;
+### Plan
 
-    for (; frameIdx < end; frameIdx++) {
-      try {
-        parser.process(cam.frames[frameIdx].payload);
-      } catch {
-        // Skip broken frames
-      }
+#### Part 1: Replace JS Player with TibiaRC WASM Player
 
-      // Detect floor change per-frame, not per-chunk
-      if (lastCamZ >= 0 && gs.camZ !== lastCamZ) {
-        gs.tiles.clear(); // Purge stale offset tiles immediately
-        anyFloorChange = true;
-      }
-      lastCamZ = gs.camZ;
-    }
+**File: `src/components/TibiarcPlayer.tsx`** -- Full rewrite
 
-    // Only snapshot if no floor transitions happened during this batch
-    if (!anyFloorChange) {
-      snapshotTiles(gs, dat, latestTiles);
-    }
+Strip out all the custom JS engine (GameState, PacketParser, Renderer, DebugLogger, keyframes, snapshot system) and replace with a thin wrapper around the WASM module:
 
-    // ... rest unchanged (chunk tracking, creature snapshot, progress)
+1. On mount, load the WASM module and call `load_data_files()` with Tibia.pic, Tibia.spr, Tibia.dat
+2. When user loads a .cam file, pass the raw bytes to `load_recording()` (which returns duration in ms, or -1 if version detection fails)
+3. Play/Pause calls `play()` / `pause_playback()`
+4. Speed control calls `set_speed(n)`
+5. Seek calls `seek(ms)`
+6. A polling interval reads `get_progress()` to update the seek bar
+7. The WASM renders directly to a canvas element via SDL2/Emscripten -- our code just sizes the canvas
+
+The UI stays identical: Play/Pause, Skip +/-10s, Speed cycle (1x-8x), timeline seek bar.
+
+**Removed files/imports** (no longer needed for the player):
+- No more imports of `packetParser`, `gameState`, `renderer`, `debugLogger`, `camParser`, `sprLoader`, `datLoader`
+- No more `engineRef` with keyframes, snapshots, animation loop
+- No more `requestAnimationFrame` loop -- WASM has its own `emscripten_set_main_loop`
+
+#### Part 2: Web Worker for Background Cam Map Extraction
+
+**Problem**: `setTimeout(..., 0)` gets throttled to 1s+ intervals when the browser tab is in background, making extraction freeze.
+
+**Solution**: Move the extraction processing into a **Web Worker** that runs independently of the main thread.
+
+**New file: `src/lib/tibiaRelic/extractionWorker.ts`**
+
+A dedicated Web Worker that:
+1. Receives the .cam file buffer + .dat file buffer via `postMessage`
+2. Runs `extractMapTiles()` internally (the worker has its own event loop, unaffected by tab visibility)
+3. Posts progress updates back to the main thread
+4. Posts the final result (tiles + spawns) back when done
+
+**File: `src/lib/tibiaRelic/mapExtractor.ts`** -- Minor change
+
+Replace `setTimeout(processChunk, 0)` with synchronous processing inside the worker (no need for yielding since it's off the main thread). The worker processes all frames in a tight loop, posting progress every N frames.
+
+**File: `src/pages/CamBatchExtractPage.tsx`** -- Update to use Worker
+
+Instead of calling `extractMapTiles()` directly, create a Worker instance and communicate via messages:
+```
+worker.postMessage({ camBuffer, datBuffer })
+worker.onmessage = (e) => { /* progress or result */ }
 ```
 
-This ensures:
-1. Tiles are purged the instant `camZ` changes, even mid-batch
-2. If any floor transition occurred during the batch, we skip the snapshot entirely to avoid capturing any residual offset tiles
-3. The next batch (if camZ is stable) will snapshot clean data
+### Summary of Benefits
 
-### Database Cleanup
-Run a SQL migration to delete surface tiles (z=7) that have item 101 (grass) appearing at coordinates where the external map already has data -- or more practically, re-extract the affected `.cam` files after the fix. Since this is a re-extraction scenario, no SQL cleanup needed if the user re-runs extraction.
+| Issue | Current | After |
+|-------|---------|-------|
+| Player desync | Frequent (JS byte drift) | None (native C++ parser) |
+| Floor transitions | Buggy (perspective offset errors) | Correct (tibiarc handles natively) |
+| Walk animations | Sometimes freeze | Smooth (native tick system) |
+| Background extraction | Stops when tab hidden | Continues (Web Worker) |
+| Code complexity | ~2000 lines of custom parser+renderer | ~150 lines WASM wrapper |
+
+### Technical Notes
+
+- The WASM player uses SDL2 rendered to an Emscripten canvas. We need to ensure the canvas element ID matches what Emscripten expects (typically `#canvas` or configured via `Module.canvas`).
+- The `load_recording_with_version` function accepts manual version override (7, 72, 0 for TibiaRelic).
+- Web Workers cannot access DOM, so all Supabase uploads remain on the main thread -- only the CPU-intensive extraction moves to the worker.
+- The existing `.cam` parser and game state modules remain in the codebase since the map extractor still needs them.
 
