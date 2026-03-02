@@ -353,14 +353,13 @@ static void RenderFrame() {
     if (!g_gamestate || !g_recording) return;
 
     Renderer::Options options{
-        .Width = Renderer::NativeResolutionX,
-        .Height = Renderer::NativeResolutionY
+        .Width = RENDER_WIDTH,
+        .Height = RENDER_HEIGHT - 128
     };
 
-    Canvas mapCanvas(Renderer::NativeResolutionX, Renderer::NativeResolutionY);
+    Canvas mapCanvas(RENDER_WIDTH, RENDER_HEIGHT - 128);
     mapCanvas.DrawRectangle(Pixel(0, 0, 0), 0, 0,
-                            Renderer::NativeResolutionX,
-                            Renderer::NativeResolutionY);
+                            RENDER_WIDTH, RENDER_HEIGHT - 128);
 
     Renderer::DrawGamestate(options, *g_gamestate, mapCanvas);
 
