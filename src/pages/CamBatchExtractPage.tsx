@@ -281,7 +281,7 @@ const CamBatchExtractPage = () => {
       {/* Top bar */}
       <div className="bg-card border-b border-border/50 px-4 py-3 flex items-center justify-between">
         <div className="flex items-center gap-3">
-          <Link to="/b7d3e1a9f5c2" className="text-gold hover:text-gold/80 transition-colors">
+          <Link to="/f9a2c8d4e7b1" className="text-gold hover:text-gold/80 transition-colors">
             <ArrowLeft className="w-5 h-5" />
           </Link>
           <div className="flex items-center gap-2">
@@ -454,7 +454,7 @@ const CamBatchExtractPage = () => {
                       ✅ {totalDone} arquivo(s) extraído(s) — {totalTiles.toLocaleString()} tiles, {totalCreatures.toLocaleString()} criaturas
                     </p>
                     <p className="text-xs text-muted-foreground mt-1">
-                      Dados salvos e compactados. Acesse o <Link to="/b7d3e1a9f5c2" className="text-gold underline">Cam Map</Link> para visualizar.
+                      Dados salvos e compactados. Acesse o <Link to="/f9a2c8d4e7b1" className="text-gold underline">Cam Map</Link> para visualizar.
                     </p>
                   </div>
                 )}

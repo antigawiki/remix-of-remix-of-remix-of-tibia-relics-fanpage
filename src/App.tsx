@@ -92,8 +92,8 @@ const App = () => (
               <Route path="/houses" element={<HousesPage />} />
               <Route path="/polls" element={<PollsPage />} />
               <Route path="/a3e7c9b1f2d8e4a6" element={<CamPlayerPage />} />
-              <Route path="/b7d3e1a9f5c2" element={<CamMapPage />} />
-              <Route path="/b7d3e1a9f5c2/extract" element={<CamBatchExtractPage />} />
+              <Route path="/f9a2c8d4e7b1" element={<CamMapPage />} />
+              <Route path="/f9a2c8d4e7b1/extract" element={<CamBatchExtractPage />} />
               {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
               <Route path="*" element={<NotFound />} />
             </Routes>
