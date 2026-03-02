@@ -1,29 +1,65 @@
 
 
-## Adicionar botao de fullscreen ao player
+## Correcoes no Cam Player: Crashes, Fullscreen e Auto-play
 
-### O que sera feito
+### 1. Crashes "Uncaught 2409064" -- Fix no lado JS
 
-Adicionar um botao com icone de fullscreen (Maximize/Minimize do lucide-react) na barra de controles do player. Ao clicar, o container do canvas entra em modo fullscreen usando a Fullscreen API nativa do browser.
+O `try-catch` no C++ nao esta funcionando porque provavelmente as excecoes C++ nao estao habilitadas no build do Emscripten (flag `-fno-exceptions` ou ausencia de `-fwasm-exceptions`). Os numeros sao ponteiros de excecao do WASM que propagam para o JS como erros nao tratados.
 
-### Detalhes tecnicos
+**Solucao**: Envolver TODAS as chamadas `ccall` no JavaScript com `try-catch`. Isso inclui:
+- O polling de progresso (`get_progress`, `is_playing`) no `setInterval`
+- O handler de `visibilitychange` (`pause_playback`, `play`)
+- O `togglePlayback`, `cycleSpeed`, `handleSeek`
+- Os callbacks de overlay e fullscreen
 
-**Arquivo: `src/components/TibiarcPlayer.tsx`**
+Isso garante que mesmo que o WASM lance uma excecao, o player continua funcionando.
 
-1. Importar `Maximize` e `Minimize` do lucide-react
-2. Adicionar state `isFullscreen` (boolean)
-3. Criar funcao `toggleFullscreen` que:
-   - Usa `containerRef.current.requestFullscreen()` para entrar
-   - Usa `document.exitFullscreen()` para sair
-4. Adicionar listener de `fullscreenchange` no `useEffect` para sincronizar o state quando o usuario sai do fullscreen via ESC
-5. Adicionar o botao na barra de controles (ao lado do botao de mensagens), habilitado apenas quando `hasRecording` e true
-6. Adicionar CSS para que em fullscreen o canvas ocupe toda a tela: usar pseudo-classe `:fullscreen` via style ou classe condicional
+### 2. Fullscreen com proporcao e controles sobrepostos
 
-O container (`containerRef`) ja existe e envolve o canvas -- basta chamar `requestFullscreen()` nele. O canvas ja tem `w-full h-full` entao se adapta automaticamente ao tamanho do container em fullscreen.
+Atualmente o fullscreen apenas estica o container. Baseado na imagem de referencia, o comportamento ideal e:
+- Fundo preto preenchendo toda a tela
+- Canvas centralizado mantendo a proporcao 480:352
+- Controles (play, skip, speed, mensagens, fullscreen) sobrepostos na parte inferior do canvas, como uma barra semi-transparente
+- Barra de progresso tambem inclusa no overlay
+- Controles aparecem ao passar o mouse e somem apos alguns segundos
 
-### Mudancas
+**Mudancas**:
+- Mover o `containerRef` para envolver tanto o canvas quanto os controles
+- Adicionar classes condicionais quando `isFullscreen` esta ativo: fundo preto, canvas com `object-contain`, controles posicionados absolutamente na parte inferior
+- Usar CSS `aspect-ratio` e `max-height: 100vh` / `max-width: 100vw` para manter proporcao
 
-| Arquivo | Mudanca |
+### 3. Auto-play ao selecionar arquivo
+
+Apos o carregamento bem-sucedido de um `.cam`, em vez de ir para `paused`, chamar `play()` e setar estado para `playing` automaticamente.
+
+**Mudanca**: No `handleFileSelect`, apos setar `duration` e `progress`, chamar `mod.ccall('play')` e `setState('playing')` em vez de `setState('paused')`.
+
+### Detalhes tecnicos -- Arquivo: `src/components/TibiarcPlayer.tsx`
+
+| Mudanca | Descricao |
 |---|---|
-| `src/components/TibiarcPlayer.tsx` | Importar icones, adicionar state + handler de fullscreen, listener de evento, botao na UI |
+| Try-catch em ccall | Envolver todos os `mod.ccall(...)` em blocos try-catch para evitar que excecoes WASM matem o player |
+| Fullscreen layout | Reestruturar JSX para que em fullscreen: container ocupe tela toda com bg preto, canvas centralizado com aspect-ratio, controles sobrepostos em barra na parte inferior |
+| Auto-play | Apos `load_recording_tibiarelic` sucesso, chamar `play()` e setar estado `playing` |
+| Ocultar controles | Em fullscreen, mostrar controles ao mover o mouse, esconder apos 3s de inatividade |
+
+### Estrutura do fullscreen
+
+```text
++------------------------------------------+
+|                                          |
+|            (fundo preto)                 |
+|                                          |
+|     +----------------------------+       |
+|     |                            |       |
+|     |    Canvas 480:352          |       |
+|     |    (centralizado)          |       |
+|     |                            |       |
+|     +----------------------------+       |
+|     | [>] [|<] [>|] [>>1x] [msg] [fs]|  |
+|     | |====progress bar=========|    |   |
+|     +----------------------------+       |
+|                                          |
++------------------------------------------+
+```
 
