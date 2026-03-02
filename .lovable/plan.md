@@ -1,45 +1,50 @@
 
-## Correção de 2 Bugs: Map Extractor + Cam Player
+## Separar toggle de mensagens do toggle de nomes
 
-### Bug 1: Tiles duplicados/deslocados no Map Extractor
+### Problema
+O botao de "esconder chat" atual desliga `DrawOverlay` por completo, o que remove mensagens de chat **E** nomes de criaturas/jogadores. O usuario quer esconder apenas as mensagens, mantendo os nomes visiveis.
 
-**Causa raiz:** Quando o floor muda, `parser.process()` ja executou o novo MAP_DESC que sobrescreveu `gs.tiles` com coordenadas deslocadas (perspective offsets). O snapshot feito DEPOIS captura tiles com posicoes erradas.
+### Solucao
 
-**Fix em `src/lib/tibiaRelic/mapExtractor.ts`** (sync e async):
-- Remover o snapshot contaminado no momento da troca de floor (linhas 100-107 e 193-200)
-- Quando detectar floor change: apenas limpar `gs.tiles` e resetar estabilidade
-- O snapshot estavel do batch anterior ja capturou o floor antigo corretamente
+A biblioteca tibiarc ja tem flags separadas no `Renderer::Options`:
+- `SkipRenderingMessages` - mensagens de chat
+- `SkipRenderingYellingMessages` - gritos
+- `SkipRenderingPlayerNames` - nomes de jogadores
+- `SkipRenderingNonPlayerNames` - nomes de criaturas/NPCs
+- `SkipRenderingCreatureHealthBars` - barras de vida
+
+### Mudancas
+
+**1. `tibiarc-player/web_player.cpp`**
+- Remover `g_show_overlay` global
+- Adicionar `g_skip_messages` global (default false)
+- Alterar `set_overlay(int)` para `set_skip_messages(int)` que seta `g_skip_messages`
+- Em `RenderFrame()`: sempre chamar `DrawOverlay`, mas setar `options.SkipRenderingMessages = g_skip_messages` e `options.SkipRenderingYellingMessages = g_skip_messages` antes de renderizar
+- Manter `DrawOverlay` sempre ativo para que nomes continuem aparecendo
+
+**2. `src/components/TibiarcPlayer.tsx`**
+- Trocar chamada `mod.ccall('set_overlay', ...)` por `mod.ccall('set_skip_messages', ...)`
+- Inverter a logica: quando chat desligado, chamar `set_skip_messages(1)` (skip=true)
+- Labels e icones ja estao corretos ("Esconder mensagens" / "Mostrar mensagens")
+
+**3. Recompilar WASM**
+- Apos editar o `.cpp`, o usuario precisara recompilar o WASM e fazer upload do novo `tibiarc_player.wasm`
+
+### Resumo das alteracoes no C++
 
 ```text
-ANTES (bugado):
-  if (lastCamZ >= 0 && gs.camZ !== lastCamZ) {
-    gs.camZ = lastCamZ;          // restaura Z antigo
-    snapshotTiles(gs, dat, ...); // captura tiles JA CONTAMINADOS pelo novo MAP_DESC
-    gs.camZ = newZ;
-    gs.tiles.clear();
-  }
+// ANTES:
+static bool g_show_overlay = true;
+void set_overlay(int enabled) { g_show_overlay = (enabled != 0); }
+if (g_show_overlay) { Renderer::DrawOverlay(options, *g_gamestate, outputCanvas); }
 
-DEPOIS (corrigido):
-  if (lastCamZ >= 0 && gs.camZ !== lastCamZ) {
-    gs.tiles.clear();            // limpa tiles contaminados, sem snapshot
-    anyFloorChange = true;
-  }
+// DEPOIS:
+static bool g_skip_messages = false;
+void set_skip_messages(int skip) { g_skip_messages = (skip != 0); }
+options.SkipRenderingMessages = g_skip_messages;
+options.SkipRenderingYellingMessages = g_skip_messages;
+Renderer::DrawOverlay(options, *g_gamestate, outputCanvas); // sempre chamado
 ```
 
-### Bug 2: Race condition no seek + tela preta no Cam Player
-
-**Fix em `src/components/TibiarcPlayer.tsx`:**
-
-1. **seekingRef** - Nova ref booleana para proteger o polling durante seek
-   - `handleSeek` seta `seekingRef = true` antes de pausar, e `false` depois de dar play
-   - O intervalo de polling ignora ticks enquanto `seekingRef.current === true`
-
-2. **preserveDrawingBuffer** - Passar `webglContextAttributes: { preserveDrawingBuffer: true }` na inicializacao do modulo WASM para evitar buffer limpo entre frames
-
-3. **visibilitychange handler** - Ao voltar para a aba, se o player estava tocando, faz pause+play rapido para re-acordar o loop de renderizacao do WASM
-
-### Apos aplicar
-
-1. Limpar banco de dados (Limpar DB)
-2. Re-extrair todos os arquivos .cam
-3. Regenerar mapa (Gerar Mapa)
+### Nota
+Apos editar `web_player.cpp`, voce precisara recompilar com Emscripten e fazer upload do novo `.wasm`. O Lovable pode editar o `.cpp` e o `.tsx`, mas a compilacao do WASM precisa ser feita externamente.
