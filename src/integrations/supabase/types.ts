@@ -617,6 +617,62 @@ export type Database = {
         }
         Relationships: []
       }
+      poll_votes: {
+        Row: {
+          created_at: string
+          id: string
+          option_key: string
+          poll_id: string
+          voter_hash: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          option_key: string
+          poll_id: string
+          voter_hash: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          option_key?: string
+          poll_id?: string
+          voter_hash?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "poll_votes_poll_id_fkey"
+            columns: ["poll_id"]
+            isOneToOne: false
+            referencedRelation: "polls"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      polls: {
+        Row: {
+          active: boolean
+          created_at: string
+          id: string
+          options: Json
+          title: string
+        }
+        Insert: {
+          active?: boolean
+          created_at?: string
+          id?: string
+          options?: Json
+          title: string
+        }
+        Update: {
+          active?: boolean
+          created_at?: string
+          id?: string
+          options?: Json
+          title?: string
+        }
+        Relationships: []
+      }
       profiles: {
         Row: {
           created_at: string | null

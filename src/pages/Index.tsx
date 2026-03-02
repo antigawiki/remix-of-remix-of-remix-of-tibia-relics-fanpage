@@ -1,5 +1,6 @@
 import MainLayout from '@/layouts/MainLayout';
 import NewsBox from '@/components/NewsBox';
+import PollBox from '@/components/PollBox';
 import ServerInfo from '@/components/ServerInfo';
 import { useTranslation } from '@/i18n';
 
@@ -38,6 +39,9 @@ const Index = () => {
             </div>
           </div>
         </section>
+
+        {/* Poll */}
+        <PollBox />
 
         {/* News Feed */}
         <section>

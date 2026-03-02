@@ -2,3 +2,6 @@ project_id = "rmofmkjmzwkxjzfirbpt"
 
 [functions.map-tile-proxy]
 verify_jwt = false
+
+[functions.cast-vote]
+verify_jwt = false
