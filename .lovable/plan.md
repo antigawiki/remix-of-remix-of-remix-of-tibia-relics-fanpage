@@ -1,40 +1,49 @@
 
 
-## Fix: Use native Tibia 7.72 viewport resolution (480x352)
+## Fix: Correct WASM Resolution and Display Quality
 
-### Problem
-The tibiarc renderer internally uses the Tibia 7.72 game viewport size: **15 tiles wide x 11 tiles tall x 32px = 480x352 pixels**. The current code passes 640x480 to both `DrawGamestate` and `DrawOverlay`, causing:
+### Root Cause Analysis (from tibiarc source code)
 
-1. **Visual desync** -- The game world renders at 480x352 (tile viewport limit), but text overlays (creature names, messages) are positioned based on 640x480 coordinates, so they appear offset from their actual positions.
-2. **Stutters** -- Every frame copies 307,200 pixels instead of 168,960 (1.8x overhead), plus the renderer may attempt to fill unused canvas area.
+The tibiarc renderer has two separate rendering passes with **different coordinate systems**:
+
+1. **`DrawGamestate`** -- Renders tiles, creatures, effects at **fixed 32px-per-tile** positions. The game world ALWAYS occupies a 480x352 pixel area (15x11 tiles), regardless of canvas size.
+
+2. **`DrawOverlay`** -- Renders creature names, health bars, messages. It calculates scale factors:
+   ```
+   scaleX = canvas.Width / 480.0
+   scaleY = canvas.Height / 352.0
+   ```
+   All text positions are multiplied by these scale factors.
+
+**This means**: If the canvas is 480x352, scale = 1.0 and everything aligns perfectly. If the canvas is ANY other size (like 640x480), the game world stays in 480x352 while text gets repositioned to 640x480 coordinates -- causing the desync you see.
+
+### The Problem with v8 WASM
+
+The compiled WASM binary (v8) may not have been built with our 480x352 changes. If it still uses 640x480 internally, the SDL texture and window are created at 640x480, but our HTML canvas is set to 480x352 -- causing a mismatch that produces both visual artifacts and quality loss.
 
 ### Solution
-Change `RENDER_WIDTH` and `RENDER_HEIGHT` to the native resolution (480x352). The CSS `w-full h-full` on the canvas already scales it to fill the container, so it will still display at full size with crisp pixel scaling.
 
-### Changes
-
-**1. `tibiarc-player/web_player.cpp`**
-
-Change the resolution constants (line 46-47):
+**1. Verify and fix `web_player.cpp`** -- Constants MUST be 480x352 (matching tibiarc's `NativeResolutionX/Y`):
 ```cpp
-static const int RENDER_WIDTH = 480;   // Was: 640
-static const int RENDER_HEIGHT = 352;  // Was: 480
+static const int RENDER_WIDTH = 480;
+static const int RENDER_HEIGHT = 352;
 ```
+This is already correct in our source. The WASM just needs to be recompiled from this source.
 
-No other changes needed in the C++ -- all uses of `RENDER_WIDTH`/`RENDER_HEIGHT` (canvas creation, texture, render loop) will automatically pick up the correct values.
+**2. Update `TibiarcPlayer.tsx`** -- Improve display quality:
+- Keep canvas at 480x352 (native WASM resolution)
+- Change `imageRendering` from `'pixelated'` to `'auto'` for smoother upscaling (the TibiaRelic client uses smooth filtering, not nearest-neighbor)
+- Alternatively, use a larger CSS display with `image-rendering: auto` for bilinear filtering
 
-**2. `src/components/TibiarcPlayer.tsx`**
+**3. Recompile WASM** -- The v8 binary must be rebuilt from the current `web_player.cpp` that has 480x352 constants.
 
-Update the HTML canvas dimensions and aspect ratio to match (lines 272-283):
-- Change `aspect-[4/3]` to `aspect-[480/352]` (or approximately `aspect-[15/11]`)
-- Change `<canvas width={640} height={480}>` to `<canvas width={480} height={352}>`
-- Set `imageRendering: 'pixelated'` for crisp upscaling of pixel art
+### File Changes
 
-### Why this fixes both issues
-- Game tiles and text overlays will both use the same 480x352 coordinate space -- no more desync
-- 45% fewer pixels to process per frame -- eliminates stutters
-- Pixel-perfect rendering matching the original Tibia 7.72 client viewport
+**`src/components/TibiarcPlayer.tsx`**
+- Change `imageRendering: 'pixelated'` to `imageRendering: 'auto'` for smoother upscaling that matches TibiaRelic's visual quality
+- Keep canvas dimensions at `width={480} height={352}` (must match WASM constants)
 
-### After code changes
-You will need to re-run the **Build WASM Player** GitHub Actions workflow to compile the updated C++ into new `.js` and `.wasm` files.
+### After Code Change
+
+You MUST recompile the WASM using the GitHub Actions workflow to ensure the binary uses 480x352 internally. The current v8 binary may still be using 640x480, which is the primary cause of both the quality loss and the misalignment.
 
