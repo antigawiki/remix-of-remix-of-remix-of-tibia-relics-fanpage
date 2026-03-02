@@ -212,15 +212,36 @@ int load_recording_tibiarelic(const uint8_t *buf, int len,
 
             auto timestamp = std::chrono::milliseconds((int64_t)(ts - ts0));
 
-            // TibiaRelic frames: raw server TCP data with 2-byte length prefix
-            // Skip the 2-byte length prefix and parse the payload
-            if (sz > 2) {
+            // Replicate JS heuristic: check first byte to decide parsing mode
+            if (sz > 0) {
                 try {
-                    DataReader packetReader(sz - 2, buf + pos + 2);
-                    auto events = parser.Parse(packetReader);
-                    if (!events.empty()) {
-                        recording->Frames.emplace_back(timestamp, std::move(events));
-                        parsedFrames++;
+                    uint8_t firstByte = buf[pos];
+                    
+                    if (firstByte < 0x0A && sz >= 2) {
+                        // TCP demux mode: loop through sub-packets
+                        int subPos = 0;
+                        while (subPos + 2 <= (int)sz) {
+                            uint16_t subLen = read_u16_le(buf + pos + subPos);
+                            subPos += 2;
+                            if (subLen == 0) continue;
+                            if (subPos + subLen > (int)sz) break;
+                            
+                            DataReader packetReader(subLen, buf + pos + subPos);
+                            auto events = parser.Parse(packetReader);
+                            if (!events.empty()) {
+                                recording->Frames.emplace_back(timestamp, std::move(events));
+                                parsedFrames++;
+                            }
+                            subPos += subLen;
+                        }
+                    } else {
+                        // Direct opcode mode: feed entire payload
+                        DataReader packetReader(sz, buf + pos);
+                        auto events = parser.Parse(packetReader);
+                        if (!events.empty()) {
+                            recording->Frames.emplace_back(timestamp, std::move(events));
+                            parsedFrames++;
+                        }
                     }
                 } catch (...) {
                     // Skip unparseable frames
