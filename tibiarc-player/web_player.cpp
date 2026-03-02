@@ -353,8 +353,8 @@ static void RenderFrame() {
     if (!g_gamestate || !g_recording) return;
 
     Renderer::Options options{
-        .Width = RENDER_WIDTH,
-        .Height = RENDER_HEIGHT - 128
+        .Width = Renderer::NativeResolutionX,
+        .Height = Renderer::NativeResolutionY
     };
 
     Canvas mapCanvas(Renderer::NativeResolutionX, Renderer::NativeResolutionY);
@@ -419,7 +419,7 @@ int main() {
         SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
         RENDER_WIDTH, RENDER_HEIGHT, 0);
     g_renderer = SDL_CreateRenderer(g_window, -1, SDL_RENDERER_ACCELERATED);
-    g_texture = SDL_CreateTexture(g_renderer, SDL_PIXELFORMAT_RGBA8888,
+    g_texture = SDL_CreateTexture(g_renderer, SDL_PIXELFORMAT_ABGR8888,
         SDL_TEXTUREACCESS_STREAMING, RENDER_WIDTH, RENDER_HEIGHT);
 
     SDL_SetRenderDrawColor(g_renderer, 0, 0, 0, 255);
