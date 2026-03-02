@@ -1,82 +1,56 @@
 
 
-## Correcao: Tiles perdidos entre snapshots por causa do gs.tiles.clear()
+## Fix: Game scene not filling full canvas
 
-### Problema identificado
+### Problem
+In `web_player.cpp`, the `RenderFrame()` function renders the game world (tiles, creatures) at **640x352** pixels (RENDER_HEIGHT - 128), reserving 128px for the original Tibia client's bottom panel (inventory, hotkeys, etc.). However, since we're a standalone player without a client UI, this creates a gap -- the game scene appears "shrunk" while text overlays (names, messages) are positioned correctly on the full 640x480 canvas.
 
-O bug esta na linha 85 do `mapExtractor.ts`. Quando uma mudanca de andar e detectada, `gs.tiles.clear()` e chamado **imediatamente**, sem antes salvar os tiles acumulados em `latestTiles`. Isso significa que todos os tiles acumulados desde o ultimo snapshot sao **perdidos para sempre**.
+### Fix
+Change `RenderFrame()` to use the full canvas height for the game scene, removing the `-128` offset since we don't render the Tibia client bottom panel.
 
-Fluxo atual:
-```text
-[Batch N: 500 frames processados]
-  -> jogador anda no andar 7, acumulando tiles em gs.tiles
-  -> no frame 300, muda para andar 8
-  -> gs.tiles.clear() -- PERDE todos os tiles do andar 7!
-  -> frames 301-500 acumulam tiles do andar 8
-[Fim do batch]
-  -> anyFloorChange = true, floorStableBatches = 0
-  -> NAO faz snapshot (precisa >= 1 batch estavel)
+### Changes
 
-[Batch N+1: 500 frames sem mudanca de andar]
-  -> floorStableBatches = 1
-  -> snapshot -- mas so captura tiles do andar 8 (os do 7 ja foram apagados)
-```
+**`tibiarc-player/web_player.cpp`** (lines 355-374)
 
-Resultado: grandes trechos do caminho percorrido sao perdidos, gerando gaps no mapa.
+Replace the render logic to use full height:
 
-### Correcao
+```cpp
+static void RenderFrame() {
+    if (!g_gamestate || !g_recording) return;
 
-Chamar `snapshotTiles()` **antes** de `gs.tiles.clear()` para salvar os tiles acumulados do andar atual antes de limpar. O filtro `tz !== camZ` dentro de `snapshotTiles` ja garante que so tiles do andar correto (o anterior, antes da mudanca) sejam capturados.
+    Renderer::Options options{
+        .Width = RENDER_WIDTH,
+        .Height = RENDER_HEIGHT    // Was: RENDER_HEIGHT - 128
+    };
 
-### Mudancas
+    Canvas mapCanvas(RENDER_WIDTH, RENDER_HEIGHT);  // Was: RENDER_HEIGHT - 128
+    mapCanvas.DrawRectangle(Pixel(0, 0, 0), 0, 0,
+                            RENDER_WIDTH, RENDER_HEIGHT);  // Was: RENDER_HEIGHT - 128
 
-**`src/lib/tibiaRelic/mapExtractor.ts`**
+    Renderer::DrawGamestate(options, *g_gamestate, mapCanvas);
 
-1. Na funcao `extractMapTilesSync` (linha 84-86), adicionar snapshot antes do clear:
+    Canvas outputCanvas(RENDER_WIDTH, RENDER_HEIGHT);
+    // Skip DrawClientBackground - not needed for standalone player
 
-```typescript
-if (lastCamZ >= 0 && gs.camZ !== lastCamZ) {
-  // Salvar tiles do andar anterior ANTES de limpar
-  snapshotTiles(gs, dat, latestTiles);
-  gs.tiles.clear();
-  anyFloorChange = true;
+    for (int y = 0; y < RENDER_HEIGHT; y++) {
+        for (int x = 0; x < RENDER_WIDTH; x++) {
+            outputCanvas.GetPixel(x, y) = mapCanvas.GetPixel(x, y);
+        }
+    }
+
+    Renderer::DrawOverlay(options, *g_gamestate, outputCanvas);
+
+    SDL_UpdateTexture(g_texture, nullptr, outputCanvas.Buffer, outputCanvas.Stride);
+    SDL_RenderClear(g_renderer);
+    SDL_RenderCopy(g_renderer, g_texture, nullptr, nullptr);
+    SDL_RenderPresent(g_renderer);
 }
 ```
 
-Nota: `snapshotTiles` filtra por `tz !== camZ`. Neste ponto, `gs.camZ` ja mudou para o novo andar, mas `lastCamZ` ainda aponta para o antigo. Os tiles em `gs.tiles` sao do andar antigo (`lastCamZ`). Como `camZ` ja e o novo valor, o filtro `tz !== camZ` vai **rejeitar** os tiles antigos.
+Key changes:
+1. `RENDER_HEIGHT - 128` becomes `RENDER_HEIGHT` (3 occurrences)
+2. Remove `DrawClientBackground` call (it draws the Tibia client chrome which we don't need)
 
-Correcao necessaria: precisamos fazer o snapshot usando `lastCamZ` como referencia, nao `gs.camZ`. Duas opcoes:
-
-**Opcao escolhida**: Temporariamente restaurar `gs.camZ` ao valor antigo para o snapshot, ou passar o Z diretamente. A solucao mais limpa e salvar o camZ atual, restaurar o antigo, snapshot, e restaurar:
-
-```typescript
-if (lastCamZ >= 0 && gs.camZ !== lastCamZ) {
-  const newZ = gs.camZ;
-  gs.camZ = lastCamZ; // Temporariamente volta ao andar antigo
-  snapshotTiles(gs, dat, latestTiles); // Captura tiles do andar antigo
-  gs.camZ = newZ; // Restaura
-  gs.tiles.clear();
-  anyFloorChange = true;
-}
-```
-
-2. A mesma correcao na funcao `extractMapTiles` (versao async), linhas 173-175:
-
-```typescript
-if (lastCamZ >= 0 && gs.camZ !== lastCamZ) {
-  const newZ = gs.camZ;
-  gs.camZ = lastCamZ;
-  snapshotTiles(gs, dat, latestTiles);
-  gs.camZ = newZ;
-  gs.tiles.clear();
-  anyFloorChange = true;
-}
-```
-
-### Por que isso resolve
-
-- Nenhum tile acumulado entre snapshots sera perdido
-- O filtro `tz !== camZ` (com camZ temporariamente setado ao andar antigo) garante que so tiles do andar correto sejam salvos
-- A limpeza de `gs.tiles` continua acontecendo apos o snapshot, evitando contaminacao cross-floor
-- Isso explica porque "antes demorava mais e extraia corretamente" -- o comportamento antigo provavelmente nao limpava tiles tao agressivamente
+### After code change
+You'll need to re-run the **Build WASM Player** GitHub Actions workflow to compile the updated `web_player.cpp` into new `.js` and `.wasm` files, then upload them back to the project.
 
