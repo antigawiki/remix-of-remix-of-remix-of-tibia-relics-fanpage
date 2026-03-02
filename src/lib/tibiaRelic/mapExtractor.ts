@@ -84,8 +84,6 @@ export async function extractMapTiles(
   return new Promise((resolve) => {
     function processChunk() {
       const end = Math.min(frameIdx + chunkSize, cam.frames.length);
-      const prevCamZ = gs.camZ;
-
       for (; frameIdx < end; frameIdx++) {
         try {
           parser.process(cam.frames[frameIdx].payload);
@@ -94,10 +92,13 @@ export async function extractMapTiles(
         }
       }
 
-      // Skip tile snapshot if camZ changed during this batch —
-      // stale tiles in gs.tiles would get wrong perspective offset applied
+      // Detect floor change: purge stale offset tiles from previous floor
       const floorChanged = lastCamZ >= 0 && gs.camZ !== lastCamZ;
       lastCamZ = gs.camZ;
+
+      if (floorChanged) {
+        gs.tiles.clear(); // Purge stale offset tiles from previous camZ
+      }
 
       if (!floorChanged) {
         snapshotTiles(gs, dat, latestTiles);
