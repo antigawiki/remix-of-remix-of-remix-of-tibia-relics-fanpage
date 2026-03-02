@@ -428,7 +428,7 @@ const TibiarcPlayer = ({ className }: TibiarcPlayerProps) => {
                 setOverlayEnabled(next);
                 const mod = moduleRef.current;
                 if (mod) {
-                  mod.ccall('set_overlay', null, ['number'], [next ? 1 : 0]);
+                  mod.ccall('set_skip_messages', null, ['number'], [next ? 0 : 1]);
                 }
               }}
               disabled={!hasRecording}

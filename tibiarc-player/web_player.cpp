@@ -45,7 +45,7 @@ static double g_lastFrameTime = 0;
 
 static const int RENDER_WIDTH = 480;
 static const int RENDER_HEIGHT = 352;
-static bool g_show_overlay = true;
+static bool g_skip_messages = false;
 
 // Data file buffers (kept alive for the Version object)
 static std::vector<uint8_t> g_picData;
@@ -349,8 +349,8 @@ int is_playing() {
 }
 
 EMSCRIPTEN_KEEPALIVE
-void set_overlay(int enabled) {
-    g_show_overlay = (enabled != 0);
+void set_skip_messages(int skip) {
+    g_skip_messages = (skip != 0);
 }
 
 } // extern "C"
@@ -360,7 +360,9 @@ static void RenderFrame() {
 
     Renderer::Options options{
         .Width = RENDER_WIDTH,
-        .Height = RENDER_HEIGHT
+        .Height = RENDER_HEIGHT,
+        .SkipRenderingMessages = g_skip_messages,
+        .SkipRenderingYellingMessages = g_skip_messages
     };
 
     Canvas mapCanvas(RENDER_WIDTH, RENDER_HEIGHT);
@@ -377,9 +379,7 @@ static void RenderFrame() {
         }
     }
 
-    if (g_show_overlay) {
-        Renderer::DrawOverlay(options, *g_gamestate, outputCanvas);
-    }
+    Renderer::DrawOverlay(options, *g_gamestate, outputCanvas);
 
     SDL_UpdateTexture(g_texture, nullptr, outputCanvas.Buffer, outputCanvas.Stride);
     SDL_RenderClear(g_renderer);
