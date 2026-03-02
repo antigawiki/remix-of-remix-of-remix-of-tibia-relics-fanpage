@@ -738,7 +738,7 @@ export class PacketParser {
       if (g.camZ === 7) {
         let skip = 0;
         for (let nz = 5; nz >= 0; nz--) {
-          const offset = 2 + nz;
+          const offset = 8 - nz;
           skip = this.readFloorArea(r, g.camX - 8, g.camY - 6, nz, 18, 14, offset, skip);
         }
       } else if (g.camZ > 7) {

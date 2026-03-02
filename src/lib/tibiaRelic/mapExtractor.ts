@@ -401,9 +401,9 @@ function snapshotTiles(
 
     if (tx < 30000 || tx > 35000 || ty < 30000 || ty > 35000) continue;
 
-    // Floor filter (tz !== camZ above) already prevents cross-floor
-    // contamination. No viewport filter here — gs.tiles accumulates
-    // tiles from the entire path and all should be captured.
+    // Viewport radius filter: only capture tiles near the camera
+    // to prevent stale/displaced tiles from entering the output
+    if (Math.abs(tx - camX) > 40 || Math.abs(ty - camY) > 40) continue;
 
     let items: number[] = [];
     for (const item of tileItems) {
