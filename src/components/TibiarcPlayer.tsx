@@ -76,7 +76,11 @@ const TibiarcPlayer = ({ className }: TibiarcPlayerProps) => {
         const TibiarcModuleFactory = (window as any).TibiarcModule;
         const mod: WasmModule = await TibiarcModuleFactory({
           canvas,
-          locateFile: (path: string) => `/tibiarc/${path}`,
+          locateFile: (path: string) => {
+            // The compiled JS may reference the original wasm filename
+            if (path.endsWith('.wasm')) return '/tibiarc/tibiarc_player.wasm';
+            return `/tibiarc/${path}`;
+          },
         });
 
         if (cancelled) return;
