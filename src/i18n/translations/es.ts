@@ -610,5 +610,14 @@ export const es: TranslationKeys = {
     closed: 'Cerrada',
     viewAll: 'Ver todas',
     alreadyVoted: 'Ya votaste en esta encuesta',
+    content: {
+      poll1: {
+        title: '¿Qué es lo que más quieres ver aquí?',
+        option_a: 'Entrevistas con personajes del Relic',
+        option_b: 'Periódico con un resumen de lo que pasó en el servidor',
+        option_c: 'Sistema de sugerencias y votación de la mejor idea para llevar al staff',
+        option_d: 'Consejos de caza',
+      },
+    },
   },
 };

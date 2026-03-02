@@ -14,6 +14,14 @@ import { Skeleton } from '@/components/ui/skeleton';
 
 const localeMap = { pt: ptBR, en: enUS, es, pl };
 
+const resolveLabel = (label: string, t: (key: string) => string): string => {
+  if (label.startsWith('poll.content.')) {
+    const resolved = t(label);
+    return resolved !== label ? resolved : label;
+  }
+  return label;
+};
+
 const PollsPage = () => {
   const { t, language } = useTranslation();
   const { polls, allResults, loading } = usePolls();
@@ -120,7 +128,7 @@ const PollCard = ({ poll, results, totalVotes, language }: PollCardProps) => {
   return (
     <article className="news-box animate-fade-in">
       <header className="news-box-header flex items-center justify-between">
-        <h3 className="font-semibold">{poll.title}</h3>
+        <h3 className="font-semibold">{resolveLabel(poll.title, t)}</h3>
         <div className="flex items-center gap-2">
           {isExpired || !poll.active ? (
             <Badge variant="destructive" className="text-xs">{t('poll.closed')}</Badge>
@@ -153,7 +161,7 @@ const PollCard = ({ poll, results, totalVotes, language }: PollCardProps) => {
                   className="flex items-start gap-2 cursor-pointer text-sm leading-relaxed hover:text-gold transition-colors"
                 >
                   <RadioGroupItem value={opt.key} className="mt-0.5 shrink-0" />
-                  <span>{opt.label}</span>
+                  <span>{resolveLabel(opt.label, t)}</span>
                 </label>
               ))}
             </RadioGroup>

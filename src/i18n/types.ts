@@ -610,5 +610,14 @@ export interface TranslationKeys {
     closed: string;
     viewAll: string;
     alreadyVoted: string;
+    content: {
+      [key: string]: {
+        title: string;
+        option_a: string;
+        option_b: string;
+        option_c: string;
+        option_d: string;
+      };
+    };
   };
 }

@@ -610,5 +610,14 @@ export const en: TranslationKeys = {
     closed: 'Closed',
     viewAll: 'View all',
     alreadyVoted: 'You already voted on this poll',
+    content: {
+      poll1: {
+        title: 'What do you most want to see here?',
+        option_a: 'Interviews with Relic characters',
+        option_b: 'Newsletter with a summary of what happened on the server',
+        option_c: 'Suggestion system with voting for the best idea to bring to staff',
+        option_d: 'Hunting tips',
+      },
+    },
   },
 };

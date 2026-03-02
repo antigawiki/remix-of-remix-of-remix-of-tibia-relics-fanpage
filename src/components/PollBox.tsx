@@ -10,6 +10,15 @@ import { Badge } from '@/components/ui/badge';
 
 const localeMap = { pt: ptBR, en: enUS, es, pl };
 
+/** Resolve a label that might be an i18n key (e.g. "poll.content.poll1.title") or plain text */
+const resolveLabel = (label: string, t: (key: string) => string): string => {
+  if (label.startsWith('poll.content.')) {
+    const resolved = t(label);
+    return resolved !== label ? resolved : label;
+  }
+  return label;
+};
+
 const PollBox = () => {
   const { t, language } = useTranslation();
   const { poll, results, totalVotes, loading, hasVoted, voting, castVote, isExpired, showResults } = usePoll();
@@ -37,7 +46,7 @@ const PollBox = () => {
       </div>
       <article className="news-box animate-fade-in">
         <header className="news-box-header flex items-center justify-between">
-          <h3 className="font-semibold">{poll.title}</h3>
+          <h3 className="font-semibold">{resolveLabel(poll.title, t)}</h3>
           {isExpired || !poll.active ? (
             <Badge variant="destructive" className="text-xs">{t('poll.ended')}</Badge>
           ) : poll.ends_at ? (
@@ -56,7 +65,7 @@ const PollBox = () => {
                     className="flex items-start gap-2 cursor-pointer text-sm leading-relaxed hover:text-gold transition-colors"
                   >
                     <RadioGroupItem value={opt.key} className="mt-0.5 shrink-0" />
-                    <span>{opt.label}</span>
+                    <span>{resolveLabel(opt.label, t)}</span>
                   </label>
                 ))}
               </RadioGroup>
@@ -94,7 +103,7 @@ export const PollResults = ({ poll, results, totalVotes }: PollResultsProps) => 
         return (
           <div key={opt.key} className="space-y-1">
             <div className="flex justify-between text-sm">
-              <span className="leading-relaxed">{opt.label}</span>
+              <span className="leading-relaxed">{resolveLabel(opt.label, t)}</span>
               <span className="text-gold font-semibold shrink-0 ml-2">{pct}%</span>
             </div>
             <div className="w-full h-3 bg-secondary rounded-sm overflow-hidden">
