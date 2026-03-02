@@ -1,5 +1,5 @@
 import { useRef, useState, useCallback, useEffect } from 'react';
-import { Upload, Play, Pause, FastForward, Loader2, SkipBack, SkipForward } from 'lucide-react';
+import { Upload, Play, Pause, FastForward, Loader2, SkipBack, SkipForward, MessageSquare, MessageSquareOff } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Slider } from '@/components/ui/slider';
 import { useTranslation } from '@/i18n';
@@ -49,6 +49,7 @@ const TibiarcPlayer = ({ className }: TibiarcPlayerProps) => {
   const [progress, setProgress] = useState(0);
   const [duration, setDuration] = useState(0);
   const [dataLoaded, setDataLoaded] = useState(false);
+  const [overlayEnabled, setOverlayEnabled] = useState(true);
 
   // Load WASM module + data files on mount
   useEffect(() => {
@@ -399,6 +400,23 @@ const TibiarcPlayer = ({ className }: TibiarcPlayerProps) => {
             >
               <FastForward className="w-3 h-3 mr-1" />
               {speed}x
+            </Button>
+            <Button
+              variant="outline"
+              size="icon"
+              onClick={() => {
+                const next = !overlayEnabled;
+                setOverlayEnabled(next);
+                const mod = moduleRef.current;
+                if (mod) {
+                  mod.ccall('set_overlay', null, ['number'], [next ? 1 : 0]);
+                }
+              }}
+              disabled={!hasRecording}
+              className="border-border/50"
+              title={overlayEnabled ? 'Esconder mensagens' : 'Mostrar mensagens'}
+            >
+              {overlayEnabled ? <MessageSquare className="w-4 h-4" /> : <MessageSquareOff className="w-4 h-4" />}
             </Button>
           </div>
 

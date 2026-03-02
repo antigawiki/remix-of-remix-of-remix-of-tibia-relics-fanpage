@@ -63,7 +63,7 @@ jobs:
             -fexceptions \
             -s USE_SDL=2 \
             -s ALLOW_MEMORY_GROWTH=1 \
-            -s EXPORTED_FUNCTIONS='["_main","_load_data_files","_load_recording","_load_recording_tibiarelic","_play","_pause_playback","_set_speed","_get_progress","_get_duration","_seek","_is_playing","_malloc","_free"]' \
+            -s EXPORTED_FUNCTIONS='["_main","_load_data_files","_load_recording","_load_recording_tibiarelic","_play","_pause_playback","_set_speed","_get_progress","_get_duration","_seek","_is_playing","_set_overlay","_malloc","_free"]' \
             -s EXPORTED_RUNTIME_METHODS='["ccall","cwrap","HEAPU8"]' \
             -s DISABLE_EXCEPTION_CATCHING=0 \
             -s ASYNCIFY=0 \

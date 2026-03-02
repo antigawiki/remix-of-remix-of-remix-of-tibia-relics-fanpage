@@ -45,6 +45,7 @@ static double g_lastFrameTime = 0;
 
 static const int RENDER_WIDTH = 480;
 static const int RENDER_HEIGHT = 352;
+static bool g_show_overlay = true;
 
 // Data file buffers (kept alive for the Version object)
 static std::vector<uint8_t> g_picData;
@@ -347,6 +348,11 @@ int is_playing() {
     return g_playing ? 1 : 0;
 }
 
+EMSCRIPTEN_KEEPALIVE
+void set_overlay(int enabled) {
+    g_show_overlay = (enabled != 0);
+}
+
 } // extern "C"
 
 static void RenderFrame() {
@@ -371,7 +377,9 @@ static void RenderFrame() {
         }
     }
 
-    Renderer::DrawOverlay(options, *g_gamestate, outputCanvas);
+    if (g_show_overlay) {
+        Renderer::DrawOverlay(options, *g_gamestate, outputCanvas);
+    }
 
     SDL_UpdateTexture(g_texture, nullptr, outputCanvas.Buffer, outputCanvas.Stride);
     SDL_RenderClear(g_renderer);
