@@ -94,7 +94,7 @@ export function extractMapTilesSync(
       floorStableBatches++;
     }
 
-    if (floorStableBatches >= 6) snapshotTiles(gs, dat, latestTiles);
+    if (floorStableBatches >= 2) snapshotTiles(gs, dat, latestTiles);
 
     const playerChunkX = Math.floor(gs.camX / DB_CHUNK);
     const playerChunkY = Math.floor(gs.camY / DB_CHUNK);
@@ -117,6 +117,9 @@ export function extractMapTilesSync(
       });
     }
   }
+
+  // Final snapshot to capture any remaining tiles
+  if (floorStableBatches > 0) snapshotTiles(gs, dat, latestTiles);
 
   flushVisit(currentVisitChunks, chunkAccumulators);
   return { tiles: latestTiles, spawns: buildSpawnData(chunkAccumulators) };
@@ -181,7 +184,7 @@ export async function extractMapTiles(
         floorStableBatches++;
       }
 
-      if (floorStableBatches >= 6) {
+      if (floorStableBatches >= 2) {
         snapshotTiles(gs, dat, latestTiles);
       }
 
@@ -212,6 +215,9 @@ export async function extractMapTiles(
       if (frameIdx < cam.frames.length) {
         setTimeout(processChunk, 0);
       } else {
+        // Final snapshot before resolving
+        if (floorStableBatches > 0) snapshotTiles(gs, dat, latestTiles);
+
         // Flush last visit
         flushVisit(currentVisitChunks, chunkAccumulators);
 
