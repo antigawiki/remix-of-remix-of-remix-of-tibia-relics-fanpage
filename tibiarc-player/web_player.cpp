@@ -354,21 +354,19 @@ static void RenderFrame() {
 
     Renderer::Options options{
         .Width = RENDER_WIDTH,
-        .Height = RENDER_HEIGHT - 128
+        .Height = RENDER_HEIGHT
     };
 
-    Canvas mapCanvas(RENDER_WIDTH, RENDER_HEIGHT - 128);
+    Canvas mapCanvas(RENDER_WIDTH, RENDER_HEIGHT);
     mapCanvas.DrawRectangle(Pixel(0, 0, 0), 0, 0,
-                            RENDER_WIDTH, RENDER_HEIGHT - 128);
+                            RENDER_WIDTH, RENDER_HEIGHT);
 
     Renderer::DrawGamestate(options, *g_gamestate, mapCanvas);
 
     Canvas outputCanvas(RENDER_WIDTH, RENDER_HEIGHT);
-    Renderer::DrawClientBackground(*g_gamestate, outputCanvas,
-                                   0, 0, RENDER_WIDTH, RENDER_HEIGHT);
 
-    for (int y = 0; y < std::min(mapCanvas.Height, outputCanvas.Height); y++) {
-        for (int x = 0; x < std::min(mapCanvas.Width, outputCanvas.Width); x++) {
+    for (int y = 0; y < RENDER_HEIGHT; y++) {
+        for (int x = 0; x < RENDER_WIDTH; x++) {
             outputCanvas.GetPixel(x, y) = mapCanvas.GetPixel(x, y);
         }
     }
