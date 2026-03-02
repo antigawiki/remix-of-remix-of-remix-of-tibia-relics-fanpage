@@ -1,44 +1,45 @@
 
-## Fix: Tile Duplication and Misplacement in Map Extraction
+## Correção de 2 Bugs: Map Extractor + Cam Player
 
-### Confirmed Bug: `floorUp` Perspective Offset Inversion
+### Bug 1: Tiles duplicados/deslocados no Map Extractor
 
-In `packetParser.ts`, when transitioning from underground to surface (camZ becomes 7), the offset formula is **inverted** compared to OTClient.
+**Causa raiz:** Quando o floor muda, `parser.process()` ja executou o novo MAP_DESC que sobrescreveu `gs.tiles` com coordenadas deslocadas (perspective offsets). O snapshot feito DEPOIS captura tiles com posicoes erradas.
 
-**OTClient (correct):**
+**Fix em `src/lib/tibiaRelic/mapExtractor.ts`** (sync e async):
+- Remover o snapshot contaminado no momento da troca de floor (linhas 100-107 e 193-200)
+- Quando detectar floor change: apenas limpar `gs.tiles` e resetar estabilidade
+- O snapshot estavel do batch anterior ja capturou o floor antigo corretamente
+
 ```text
-for i = 5 down to 0:
-    offset = 8 - i    // floor 5 -> offset 3, floor 0 -> offset 8
+ANTES (bugado):
+  if (lastCamZ >= 0 && gs.camZ !== lastCamZ) {
+    gs.camZ = lastCamZ;          // restaura Z antigo
+    snapshotTiles(gs, dat, ...); // captura tiles JA CONTAMINADOS pelo novo MAP_DESC
+    gs.camZ = newZ;
+    gs.tiles.clear();
+  }
+
+DEPOIS (corrigido):
+  if (lastCamZ >= 0 && gs.camZ !== lastCamZ) {
+    gs.tiles.clear();            // limpa tiles contaminados, sem snapshot
+    anyFloorChange = true;
+  }
 ```
 
-**Our code (wrong):**
-```text
-for nz = 5 down to 0:
-    offset = 2 + nz   // floor 5 -> offset 7, floor 0 -> offset 2
-```
+### Bug 2: Race condition no seek + tela preta no Cam Player
 
-This stores floor 0-5 tiles at wrong (X,Y) positions in `gs.tiles` during every underground-to-surface transition. While these tiles are on floors 0-5 (filtered by Z in snapshotTiles), the corrupted state in `gs.tiles` can indirectly affect subsequent operations.
+**Fix em `src/components/TibiarcPlayer.tsx`:**
 
-### Protective Measure: Viewport Radius Filter in `snapshotTiles`
+1. **seekingRef** - Nova ref booleana para proteger o polling durante seek
+   - `handleSeek` seta `seekingRef = true` antes de pausar, e `false` depois de dar play
+   - O intervalo de polling ignora ticks enquanto `seekingRef.current === true`
 
-Currently, `snapshotTiles` captures ALL tiles in `gs.tiles` that match camZ, including stale tiles from positions visited thousands of frames ago. During multi-floor reads, the perspective offset system creates tiles on other floors at shifted coordinates. In edge cases (parser errors, truncated packets), these could leak into wrong positions.
+2. **preserveDrawingBuffer** - Passar `webglContextAttributes: { preserveDrawingBuffer: true }` na inicializacao do modulo WASM para evitar buffer limpo entre frames
 
-Adding a viewport radius filter (e.g., 40 tiles from camera center) ensures only tiles near the player's current position are captured, preventing stale or misplaced tiles from entering the output.
+3. **visibilitychange handler** - Ao voltar para a aba, se o player estava tocando, faz pause+play rapido para re-acordar o loop de renderizacao do WASM
 
-### Changes
+### Apos aplicar
 
-**1. `src/lib/tibiaRelic/packetParser.ts`** - Fix `floorUp` offset formula
-- Line ~742: Change `const offset = 2 + nz;` to `const offset = 8 - nz;`
-- This matches OTClient's `setFloorDescription(msg, ..., i, ..., 8 - i, skip)`
-
-**2. `src/lib/tibiaRelic/mapExtractor.ts`** - Add viewport radius filter in `snapshotTiles`
-- Before storing a tile, verify it's within a reasonable distance (40 tiles) from the camera position
-- This prevents stale/displaced tiles from being captured regardless of source
-
-**3. Database cleanup** - Clear and re-extract
-- After code fixes, the user should clear the database and re-extract all .cam files to rebuild with corrected data
-
-### After Changes
-1. Clear database (Limpar DB)
-2. Re-extract all .cam files
-3. Regenerate map (Gerar Mapa)
+1. Limpar banco de dados (Limpar DB)
+2. Re-extrair todos os arquivos .cam
+3. Regenerar mapa (Gerar Mapa)
