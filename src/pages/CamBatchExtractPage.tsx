@@ -6,9 +6,7 @@ import { Progress } from '@/components/ui/progress';
 import { ThemeToggle } from '@/components/ThemeToggle';
 import { LanguageSelector } from '@/components/LanguageSelector';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '@/components/ui/alert-dialog';
-import { parseCamFile, type CamFile } from '@/lib/tibiaRelic/camParser';
-import { DatLoader } from '@/lib/tibiaRelic/datLoader';
-import { extractMapTiles, type MapExtractionProgress } from '@/lib/tibiaRelic/mapExtractor';
+import { type WorkerMessage, type WorkerRequest } from '@/lib/tibiaRelic/extractionWorker';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 
@@ -25,7 +23,7 @@ const TILE_RPC_BATCH = 500;
 const SPAWN_RPC_BATCH = 500;
 
 const CamBatchExtractPage = () => {
-  const [datLoader, setDatLoader] = useState<DatLoader | null>(null);
+  const [datBuffer, setDatBuffer] = useState<ArrayBuffer | null>(null);
   const [assetsLoading, setAssetsLoading] = useState(true);
   const [files, setFiles] = useState<FileEntry[]>([]);
   const [processing, setProcessing] = useState(false);
@@ -33,18 +31,16 @@ const CamBatchExtractPage = () => {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const abortRef = useRef(false);
 
-  // Load dat on mount
+  // Load dat buffer on mount
   useEffect(() => {
     let cancelled = false;
     (async () => {
       try {
         const datRes = await fetch('/tibiarc/data/Tibia.dat');
         if (!datRes.ok) throw new Error('Tibia.dat not found');
-        const datBuf = await datRes.arrayBuffer();
+        const buf = await datRes.arrayBuffer();
         if (cancelled) return;
-        const dat = new DatLoader();
-        dat.load(datBuf);
-        setDatLoader(dat);
+        setDatBuffer(buf);
         setAssetsLoading(false);
       } catch (err) {
         console.error('[BatchExtract] Failed to load dat:', err);
@@ -68,7 +64,7 @@ const CamBatchExtractPage = () => {
   }, []);
 
   const processAll = useCallback(async () => {
-    if (!datLoader || files.length === 0) return;
+    if (!datBuffer || files.length === 0) return;
     setProcessing(true);
     abortRef.current = false;
 
@@ -84,39 +80,56 @@ const CamBatchExtractPage = () => {
       ));
 
       try {
-        // Parse .cam
-        const buffer = await files[i].file.arrayBuffer();
-        const cam = parseCamFile(buffer);
+        const camBuffer = await files[i].file.arrayBuffer();
 
-        if (cam.frames.length === 0) {
-          setFiles(prev => prev.map((f, idx) =>
-            idx === i ? { ...f, status: 'error', error: 'Empty .cam file' } : f
-          ));
-          continue;
-        }
+        // Run extraction in a Web Worker
+        const { tiles, spawns } = await new Promise<{ tiles: Array<[string, number[]]>; spawns: any[] }>((resolve, reject) => {
+          const worker = new Worker(
+            new URL('@/lib/tibiaRelic/extractionWorker.ts', import.meta.url),
+            { type: 'module' }
+          );
 
-        // Extract tiles & creatures
-        const result = await extractMapTiles(cam, datLoader, (p: MapExtractionProgress) => {
-          setFiles(prev => prev.map((f, idx) =>
-            idx === i ? { ...f, progress: p.percent, tiles: p.tilesExtracted } : f
-          ));
+          worker.onmessage = (e: MessageEvent<WorkerMessage>) => {
+            const msg = e.data;
+            if (msg.type === 'progress') {
+              setFiles(prev => prev.map((f, idx) =>
+                idx === i ? { ...f, progress: msg.percent, tiles: msg.tilesExtracted } : f
+              ));
+            } else if (msg.type === 'result') {
+              worker.terminate();
+              resolve({ tiles: msg.tiles, spawns: msg.spawns });
+            } else if (msg.type === 'error') {
+              worker.terminate();
+              reject(new Error(msg.message));
+            }
+          };
+
+          worker.onerror = (err) => {
+            worker.terminate();
+            reject(new Error(err.message || 'Worker error'));
+          };
+
+          const req: WorkerRequest = { camBuffer, datBuffer: datBuffer.slice(0) };
+          worker.postMessage(req, [camBuffer]);
         });
 
         if (abortRef.current) break;
 
-        // Upload phase - individual tiles via batch RPC
+        // Upload phase
+        const tileCount = tiles.length;
+        const spawnCount = spawns.length;
+
         setFiles(prev => prev.map((f, idx) =>
-          idx === i ? { ...f, status: 'uploading', progress: 0, tiles: result.tiles.size, creatures: result.spawns.length } : f
+          idx === i ? { ...f, status: 'uploading', progress: 0, tiles: tileCount, creatures: spawnCount } : f
         ));
 
-        // Upload tiles via batch RPC (many tiles per single HTTP call)
-        const tileEntries = Array.from(result.tiles.entries());
-        const totalSteps = Math.ceil(tileEntries.length / TILE_RPC_BATCH) + Math.ceil(result.spawns.length / SPAWN_RPC_BATCH);
+        const totalSteps = Math.ceil(tileCount / TILE_RPC_BATCH) + Math.ceil(spawnCount / SPAWN_RPC_BATCH);
         let stepsDone = 0;
 
-        for (let j = 0; j < tileEntries.length; j += TILE_RPC_BATCH) {
+        // Upload tiles via batch RPC
+        for (let j = 0; j < tileCount; j += TILE_RPC_BATCH) {
           if (abortRef.current) break;
-          const batch = tileEntries.slice(j, j + TILE_RPC_BATCH).map(([key, items]) => {
+          const batch = tiles.slice(j, j + TILE_RPC_BATCH).map(([key, items]) => {
             const [x, y, z] = key.split(',').map(Number);
             return { x, y, z, items };
           });
@@ -128,9 +141,9 @@ const CamBatchExtractPage = () => {
         }
 
         // Upload spawns via batch RPC
-        for (let j = 0; j < result.spawns.length; j += SPAWN_RPC_BATCH) {
+        for (let j = 0; j < spawnCount; j += SPAWN_RPC_BATCH) {
           if (abortRef.current) break;
-          const batch = result.spawns.slice(j, j + SPAWN_RPC_BATCH).map(s => ({
+          const batch = spawns.slice(j, j + SPAWN_RPC_BATCH).map((s: any) => ({
             px: s.chunkX, py: s.chunkY, pz: s.z,
             creature_name: s.creatureName,
             outfit_id: s.outfitId,
@@ -149,9 +162,8 @@ const CamBatchExtractPage = () => {
           idx === i ? { ...f, status: 'done', progress: 100 } : f
         ));
 
-        console.log(`[BatchExtract] ${files[i].file.name}: ${result.tiles.size} tiles, ${result.spawns.length} spawns`);
+        console.log(`[BatchExtract] ${files[i].file.name}: ${tileCount} tiles, ${spawnCount} spawns`);
 
-        // Small delay between files to let GC run
         await new Promise(r => setTimeout(r, 100));
 
       } catch (err) {
@@ -162,11 +174,9 @@ const CamBatchExtractPage = () => {
       }
     }
 
-    // Auto-compact removed — user triggers "Gerar Mapa" manually
-
     setProcessing(false);
     setCurrentIdx(-1);
-  }, [datLoader, files]);
+  }, [datBuffer, files]);
 
   const clearFiles = () => {
     if (processing) {

@@ -3,14 +3,6 @@ import { Upload, Play, Pause, FastForward, Loader2, SkipBack, SkipForward } from
 import { Button } from '@/components/ui/button';
 import { Slider } from '@/components/ui/slider';
 import { useTranslation } from '@/i18n';
-import { parseCamFile, type CamFile } from '@/lib/tibiaRelic/camParser';
-import { SprLoader } from '@/lib/tibiaRelic/sprLoader';
-import { DatLoader } from '@/lib/tibiaRelic/datLoader';
-import { PacketParser } from '@/lib/tibiaRelic/packetParser';
-import { GameState, type GameStateSnapshot } from '@/lib/tibiaRelic/gameState';
-import { Renderer } from '@/lib/tibiaRelic/renderer';
-import { DebugLogger } from '@/lib/tibiaRelic/debugLogger';
-
 
 type PlayerState = 'idle' | 'loading-data' | 'ready' | 'loading-cam' | 'playing' | 'paused' | 'error';
 
@@ -18,36 +10,37 @@ interface TibiarcPlayerProps {
   className?: string;
 }
 
-/** TibiaRelic 7.72 always uses u16 looktypes — no heuristic detection */
-const createPacketParser = (gs: GameState, dat: DatLoader) =>
-  new PacketParser(gs, dat, {
-    looktypeU16: true,
-    outfitWindowRangeU16: true,
-  });
+interface WasmModule {
+  ccall: (name: string, returnType: string, argTypes: string[], args: any[]) => any;
+  cwrap: (name: string, returnType: string, argTypes: string[]) => (...args: any[]) => any;
+  HEAPU8: Uint8Array;
+  _malloc: (size: number) => number;
+  _free: (ptr: number) => void;
+}
+
+/** Copy a Uint8Array into WASM heap, returning the pointer */
+function copyToWasm(mod: WasmModule, data: Uint8Array): number {
+  const ptr = mod._malloc(data.length);
+  mod.HEAPU8.set(data, ptr);
+  return ptr;
+}
+
+/** Copy a string into WASM heap as null-terminated UTF-8 */
+function copyStringToWasm(mod: WasmModule, str: string): number {
+  const encoder = new TextEncoder();
+  const bytes = encoder.encode(str + '\0');
+  const ptr = mod._malloc(bytes.length);
+  mod.HEAPU8.set(bytes, ptr);
+  return ptr;
+}
 
 const TibiarcPlayer = ({ className }: TibiarcPlayerProps) => {
   const { t } = useTranslation();
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
-
-  const engineRef = useRef<{
-    spr: SprLoader;
-    dat: DatLoader;
-    gs: GameState;
-    parser: PacketParser;
-    renderer: Renderer;
-    cam: CamFile | null;
-    curFrame: number;
-    curMs: number;
-    wallT0: number;
-    camT0Ms: number;
-    speed: number;
-    playing: boolean;
-    rafId: number | null;
-    _lastProgressUpdate: number;
-    keyframes: { ms: number; frameIdx: number; snap: GameStateSnapshot }[];
-    lastKeyframeMs: number;
-  } | null>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const moduleRef = useRef<WasmModule | null>(null);
+  const pollingRef = useRef<number | null>(null);
 
   const [state, setState] = useState<PlayerState>('idle');
   const [speed, setSpeed] = useState(1);
@@ -56,169 +49,109 @@ const TibiarcPlayer = ({ className }: TibiarcPlayerProps) => {
   const [progress, setProgress] = useState(0);
   const [duration, setDuration] = useState(0);
   const [dataLoaded, setDataLoaded] = useState(false);
-  const containerRef = useRef<HTMLDivElement>(null);
-  const debugLoggerRef = useRef<DebugLogger>(new DebugLogger());
 
-  // Dynamic canvas sizing via ResizeObserver
-  useEffect(() => {
-    const container = containerRef.current;
-    const canvas = canvasRef.current;
-    if (!container || !canvas) return;
-
-    const ro = new ResizeObserver((entries) => {
-      for (const entry of entries) {
-        const { width, height } = entry.contentRect;
-        const dpr = window.devicePixelRatio || 1;
-        const w = Math.round(width * dpr);
-        const h = Math.round(height * dpr);
-        if (w > 0 && h > 0 && (canvas.width !== w || canvas.height !== h)) {
-          canvas.width = w;
-          canvas.height = h;
-        }
-      }
-    });
-    ro.observe(container);
-    return () => ro.disconnect();
-  }, []);
-
-  // Load Tibia data files on mount
+  // Load WASM module + data files on mount
   useEffect(() => {
     let cancelled = false;
-    const loadData = async () => {
+
+    const init = async () => {
       setState('loading-data');
       try {
-        const [sprRes, datRes] = await Promise.all([
-          fetch('/tibiarc/data/Tibia.spr'),
-          fetch('/tibiarc/data/Tibia.dat'),
-        ]);
-        if (!sprRes.ok || !datRes.ok) throw new Error('Tibia data files not found');
-        const [sprBuf, datBuf] = await Promise.all([sprRes.arrayBuffer(), datRes.arrayBuffer()]);
-        if (cancelled) return;
+        // Load the Emscripten module script
+        await new Promise<void>((resolve, reject) => {
+          if ((window as any).TibiarcModule) { resolve(); return; }
+          const script = document.createElement('script');
+          script.src = '/tibiarc/tibiarc_player.js';
+          script.onload = () => resolve();
+          script.onerror = () => reject(new Error('Failed to load tibiarc WASM script'));
+          document.head.appendChild(script);
+        });
 
-        const spr = new SprLoader();
-        spr.load(sprBuf);
-        const dat = new DatLoader();
-        dat.load(datBuf);
-        const gs = new GameState();
-        const parser = createPacketParser(gs, dat);
+        if (cancelled) return;
 
         const canvas = canvasRef.current;
         if (!canvas) return;
-        const ctx = canvas.getContext('2d');
-        if (!ctx) return;
 
-        const renderer = new Renderer(ctx, spr, dat, gs);
-        parser.debugLogger = debugLoggerRef.current;
-        renderer.debugLogger = debugLoggerRef.current;
+        // Instantiate the WASM module with our canvas
+        const TibiarcModuleFactory = (window as any).TibiarcModule;
+        const mod: WasmModule = await TibiarcModuleFactory({
+          canvas,
+          locateFile: (path: string) => `/tibiarc/${path}`,
+        });
 
-        engineRef.current = {
-          spr, dat, gs, parser, renderer,
-          cam: null, curFrame: 0, curMs: 0,
-          wallT0: 0, camT0Ms: 0, speed: 1,
-          playing: false, rafId: null, _lastProgressUpdate: 0,
-          keyframes: [], lastKeyframeMs: -Infinity,
-        };
+        if (cancelled) return;
+        moduleRef.current = mod;
+
+        // Fetch data files
+        const [picRes, sprRes, datRes] = await Promise.all([
+          fetch('/tibiarc/data/Tibia.pic'),
+          fetch('/tibiarc/data/Tibia.spr'),
+          fetch('/tibiarc/data/Tibia.dat'),
+        ]);
+        if (!picRes.ok || !sprRes.ok || !datRes.ok) throw new Error('Tibia data files not found');
+        const [picBuf, sprBuf, datBuf] = await Promise.all([
+          picRes.arrayBuffer(),
+          sprRes.arrayBuffer(),
+          datRes.arrayBuffer(),
+        ]);
+        if (cancelled) return;
+
+        // Copy to WASM and call load_data_files
+        const picData = new Uint8Array(picBuf);
+        const sprData = new Uint8Array(sprBuf);
+        const datData = new Uint8Array(datBuf);
+
+        const picPtr = copyToWasm(mod, picData);
+        const sprPtr = copyToWasm(mod, sprData);
+        const datPtr = copyToWasm(mod, datData);
+
+        const result = mod.ccall('load_data_files', 'number',
+          ['number', 'number', 'number', 'number', 'number', 'number'],
+          [picPtr, picData.length, sprPtr, sprData.length, datPtr, datData.length]);
+
+        mod._free(picPtr);
+        mod._free(sprPtr);
+        mod._free(datPtr);
+
+        if (result !== 1) throw new Error('Failed to initialize tibiarc data files');
 
         setDataLoaded(true);
         setState('idle');
-        console.log(`[TibiarcPlayer] Loaded: ${spr.count} sprites, ${dat.items.size} items, ${dat.outfits.size} outfits`);
+        console.log('[TibiarcPlayer] WASM module + data files loaded');
       } catch (err) {
         if (cancelled) return;
-        console.error('[TibiarcPlayer] Failed to load data:', err);
-        setErrorMsg(err instanceof Error ? err.message : 'Failed to load data');
+        console.error('[TibiarcPlayer] Init failed:', err);
+        setErrorMsg(err instanceof Error ? err.message : 'Failed to load WASM');
         setState('error');
       }
     };
-    loadData();
+
+    init();
     return () => { cancelled = true; };
   }, []);
 
-  // Animation loop
+  // Progress polling
   useEffect(() => {
-    let rafId: number;
-
-    const loop = (_time: number) => {
-      rafId = requestAnimationFrame(loop);
-
-      const engine = engineRef.current;
-      if (!engine) return;
-
-      const canvas = canvasRef.current;
-      if (!canvas) return;
-
-      if (engine.playing && engine.cam) {
-        const now = performance.now();
-        const elapsed = (now - engine.wallT0) / 1000;
-        const target = Math.floor(engine.camT0Ms + elapsed * 1000 * engine.speed);
-
-        if (target >= engine.cam.totalMs) {
-          applyTo(engine, engine.cam.totalMs);
-          engine.playing = false;
+    if (state === 'playing') {
+      pollingRef.current = window.setInterval(() => {
+        const mod = moduleRef.current;
+        if (!mod) return;
+        const p = mod.ccall('get_progress', 'number', [], []);
+        const playing = mod.ccall('is_playing', 'number', [], []);
+        setProgress(p);
+        if (!playing) {
           setState('paused');
-          setProgress(engine.curMs);
-        } else {
-          applyTo(engine, target);
-          if (!engine._lastProgressUpdate || now - engine._lastProgressUpdate > 100) {
-            engine._lastProgressUpdate = now;
-            setProgress(engine.curMs);
-          }
+          setProgress(mod.ccall('get_duration', 'number', [], []));
         }
+      }, 100);
+    }
+    return () => {
+      if (pollingRef.current) {
+        clearInterval(pollingRef.current);
+        pollingRef.current = null;
       }
-
-      // Always follow protocol floor — no overrides
-      engine.renderer.floorOverride = null;
-      engine.renderer.smoothUpscale = true;
-      engine.renderer.incTick();
-      engine.renderer.draw(canvas.width, canvas.height);
     };
-
-    rafId = requestAnimationFrame(loop);
-    return () => cancelAnimationFrame(rafId);
-  }, []);
-
-  const applyTo = (engine: NonNullable<typeof engineRef.current>, targetMs: number, isSeek = false) => {
-    if (!engine.cam) return;
-    if (isSeek) engine.parser.seekMode = true;
-    debugLoggerRef.current.setCamMs(targetMs);
-    
-    const KEYFRAME_INTERVAL = 30000;
-    
-    while (engine.curFrame < engine.cam.frames.length) {
-      const frame = engine.cam.frames[engine.curFrame];
-      if (frame.timestamp > targetMs) break;
-      try { engine.parser.process(frame.payload); } catch { /* skip */ }
-      engine.curFrame++;
-      
-      if (!isSeek && frame.timestamp - engine.lastKeyframeMs >= KEYFRAME_INTERVAL) {
-        engine.keyframes.push({
-          ms: frame.timestamp,
-          frameIdx: engine.curFrame,
-          snap: engine.gs.snapshot(),
-        });
-        engine.lastKeyframeMs = frame.timestamp;
-      }
-    }
-    engine.curMs = targetMs;
-    if (isSeek) {
-      engine.parser.seekMode = false;
-      for (const [cid, c] of engine.gs.creatures.entries()) {
-        c.walking = false;
-        c.walkOffsetX = 0;
-        c.walkOffsetY = 0;
-        if (cid === engine.gs.playerId) continue;
-        const tile = engine.gs.getTile(c.x, c.y, c.z);
-        const onTile = tile.some(i => i[0] === 'cr' && i[1] === cid);
-        if (!onTile) {
-          if (c.x !== 0 || c.y !== 0 || c.z !== 0) {
-            tile.push(['cr', cid]);
-            engine.gs.setTile(c.x, c.y, c.z, tile);
-          } else {
-            engine.gs.creatures.delete(cid);
-          }
-        }
-      }
-    }
-  };
+  }, [state]);
 
   const handleFileSelect = useCallback(async (file: File) => {
     const ext = '.' + file.name.split('.').pop()?.toLowerCase();
@@ -228,8 +161,8 @@ const TibiarcPlayer = ({ className }: TibiarcPlayerProps) => {
       return;
     }
 
-    const engine = engineRef.current;
-    if (!engine) return;
+    const mod = moduleRef.current;
+    if (!mod) return;
 
     setFileName(file.name);
     setErrorMsg('');
@@ -237,36 +170,34 @@ const TibiarcPlayer = ({ className }: TibiarcPlayerProps) => {
 
     try {
       const buffer = await file.arrayBuffer();
-      const cam = parseCamFile(buffer);
+      const data = new Uint8Array(buffer);
 
-      if (cam.frames.length === 0) {
+      const bufPtr = copyToWasm(mod, data);
+      const namePtr = copyStringToWasm(mod, file.name);
+
+      // Use load_recording_with_version with 7.72.0 for TibiaRelic
+      const dur = mod.ccall('load_recording_with_version', 'number',
+        ['number', 'number', 'number', 'number', 'number', 'number'],
+        [bufPtr, data.length, namePtr, 7, 72, 0]);
+
+      mod._free(bufPtr);
+      mod._free(namePtr);
+
+      if (dur === -1) {
+        setErrorMsg('Versão do .cam não detectada');
+        setState('error');
+        return;
+      }
+      if (dur === 0) {
         setErrorMsg(t('camPlayer.loadError'));
         setState('error');
         return;
       }
 
-      engine.gs.reset();
-      engine.parser = createPacketParser(engine.gs, engine.dat);
-      engine.parser.debugLogger = debugLoggerRef.current;
-      engine.renderer.gs = engine.gs;
-      engine.renderer.debugLogger = debugLoggerRef.current;
-      engine.renderer.clearCache();
-      debugLoggerRef.current.clear();
-      engine.cam = cam;
-      engine.curFrame = 0;
-      engine.curMs = 0;
-      engine.keyframes = [];
-      engine.lastKeyframeMs = -Infinity;
-      engine.renderer.floorOverride = null;
-
-      applyTo(engine, 0, true);
-
-      setDuration(cam.totalMs);
+      setDuration(dur);
       setProgress(0);
       setState('paused');
-
-      console.log(`[TibiarcPlayer] Loaded ${cam.frames.length} frames, ${(cam.totalMs / 1000).toFixed(1)}s, parser=u16`);
-
+      console.log(`[TibiarcPlayer] Loaded ${file.name}: ${(dur / 1000).toFixed(1)}s`);
     } catch (err) {
       console.error('Failed to load .cam:', err);
       setErrorMsg(err instanceof Error ? err.message : t('camPlayer.loadError'));
@@ -281,17 +212,14 @@ const TibiarcPlayer = ({ className }: TibiarcPlayerProps) => {
   }, [handleFileSelect]);
 
   const togglePlayback = () => {
-    const engine = engineRef.current;
-    if (!engine || !engine.cam) return;
+    const mod = moduleRef.current;
+    if (!mod) return;
 
     if (state === 'paused') {
-      engine.wallT0 = performance.now();
-      engine.camT0Ms = engine.curMs;
-      engine.speed = speed;
-      engine.playing = true;
+      mod.ccall('play', null, [], []);
       setState('playing');
     } else if (state === 'playing') {
-      engine.playing = false;
+      mod.ccall('pause_playback', null, [], []);
       setState('paused');
     }
   };
@@ -301,52 +229,25 @@ const TibiarcPlayer = ({ className }: TibiarcPlayerProps) => {
     const currentIndex = speeds.indexOf(speed);
     const newSpeed = speeds[(currentIndex + 1) % speeds.length];
     setSpeed(newSpeed);
-    const engine = engineRef.current;
-    if (engine && engine.playing) {
-      engine.wallT0 = performance.now();
-      engine.camT0Ms = engine.curMs;
-      engine.speed = newSpeed;
+    const mod = moduleRef.current;
+    if (mod) {
+      mod.ccall('set_speed', null, ['number'], [newSpeed]);
     }
   };
 
   const handleSeek = (val: number[]) => {
     const ms = val[0];
-    const engine = engineRef.current;
-    if (!engine || !engine.cam) return;
+    const mod = moduleRef.current;
+    if (!mod) return;
 
-    const wasPlaying = engine.playing;
-    engine.playing = false;
+    const wasPlaying = state === 'playing';
+    if (wasPlaying) mod.ccall('pause_playback', null, [], []);
 
-    let bestKf: (typeof engine.keyframes)[number] | null = null;
-    for (const kf of engine.keyframes) {
-      if (kf.ms <= ms) bestKf = kf;
-      else break;
-    }
-
-    if (bestKf) {
-      engine.gs.restore(bestKf.snap);
-      engine.parser = createPacketParser(engine.gs, engine.dat);
-      engine.parser.debugLogger = debugLoggerRef.current;
-      engine.renderer.gs = engine.gs;
-      engine.curFrame = bestKf.frameIdx;
-      engine.curMs = bestKf.ms;
-    } else {
-      engine.gs.reset();
-      engine.parser = createPacketParser(engine.gs, engine.dat);
-      engine.parser.debugLogger = debugLoggerRef.current;
-      engine.renderer.gs = engine.gs;
-      engine.curFrame = 0;
-      engine.curMs = 0;
-    }
-
-    applyTo(engine, ms, true);
+    mod.ccall('seek', null, ['number'], [ms]);
     setProgress(ms);
 
     if (wasPlaying) {
-      engine.wallT0 = performance.now();
-      engine.camT0Ms = ms;
-      engine.speed = speed;
-      engine.playing = true;
+      mod.ccall('play', null, [], []);
     }
   };
 
@@ -366,12 +267,15 @@ const TibiarcPlayer = ({ className }: TibiarcPlayerProps) => {
       {/* Canvas / Upload Area */}
       <div
         ref={containerRef}
-        className="relative w-full aspect-[15/11] max-w-[960px] mx-auto bg-black rounded-sm overflow-hidden border-2 border-border/50"
+        className="relative w-full aspect-[4/3] max-w-[960px] mx-auto bg-black rounded-sm overflow-hidden border-2 border-border/50"
         onDrop={handleDrop}
         onDragOver={(e) => e.preventDefault()}
       >
         <canvas
           ref={canvasRef}
+          id="canvas"
+          width={640}
+          height={480}
           className="w-full h-full"
           style={{ imageRendering: 'auto' }}
         />
@@ -419,7 +323,7 @@ const TibiarcPlayer = ({ className }: TibiarcPlayerProps) => {
           <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/80 gap-3">
             <Loader2 className="w-8 h-8 text-gold animate-spin" />
             <p className="text-gold text-sm">
-              {state === 'loading-data' ? 'Carregando sprites e definições...' : `Carregando ${fileName}...`}
+              {state === 'loading-data' ? 'Carregando WASM e sprites...' : `Carregando ${fileName}...`}
             </p>
           </div>
         )}
