@@ -38,6 +38,22 @@ export interface MapExtractionResult {
 
 const DB_CHUNK = 32;
 
+/**
+ * Surface-only item IDs that should NEVER appear on underground floors (Z >= 8).
+ * These are grass tiles, surface borders, and ground variants that leak through
+ * during multi-floor map reads due to perspective offset contamination.
+ */
+const SURFACE_ONLY_ITEMS: Set<number> = new Set([
+  // Grass tiles
+  101, 102, 103, 104, 105, 106,
+  // Surface border/ground tiles
+  351, 352, 353, 354, 355, 356,
+  // Border variants
+  405, 406, 407, 408, 409, 410, 411, 412, 413, 414, 415,
+  416, 417, 418, 419, 420, 421, 422, 423, 424, 425, 426,
+  427, 428, 429, 430,
+]);
+
 // Per-visit creature count for a chunk
 interface ChunkVisitData {
   // creature_name -> { count, outfitId, positions: Set<"x,y"> }
@@ -389,7 +405,7 @@ function snapshotTiles(
     // contamination. No viewport filter here — gs.tiles accumulates
     // tiles from the entire path and all should be captured.
 
-    const items: number[] = [];
+    let items: number[] = [];
     for (const item of tileItems) {
       if (item[0] !== 'it') continue;
       const id = item[1];
@@ -397,6 +413,11 @@ function snapshotTiles(
       const def = dat.items.get(id);
       if (!def || def.stackPrio > 5) continue;
       items.push(id);
+    }
+
+    // Filter out surface-only items on underground floors
+    if (camZ >= 8) {
+      items = items.filter(id => !SURFACE_ONLY_ITEMS.has(id));
     }
 
     if (items.length > 0) {
