@@ -1,88 +1,94 @@
 
 
-## Fix: Player travando apos ~1 hora de reproducao
+## Fix: Crashes aos ~12 minutos + Reduzir tamanho dos nomes
 
-### Causa raiz provavel
+### Problema 1: Crashes com "Uncaught 2409064"
 
-Em `RenderFrame()`, duas instancias de `Canvas` sao criadas e destruidas a cada frame:
+Os numeros como `2409064`, `2409128` sao ponteiros de excecoes C++ no heap do WASM. Eles ocorrem porque `MainLoop()` e `RenderFrame()` nao tem `try-catch`. Quando um frame contem um pacote corrompido ou um sprite invalido, a excecao propaga para o JS e mata o loop principal do Emscripten. Apos isso, o player congela permanentemente.
 
-```text
-static void RenderFrame() {
-    Canvas mapCanvas(RENDER_WIDTH, RENDER_HEIGHT);   // alloc ~675KB
-    // ...
-    Canvas outputCanvas(RENDER_WIDTH, RENDER_HEIGHT); // alloc ~675KB
-    // pixel copy loop
-    // ...
-}  // ambas destruidas aqui
-```
+**Solucao**: Envolver o corpo de `MainLoop()` e `RenderFrame()` em `try-catch(...)` para que frames problematicos sejam ignorados em vez de derrubar o player inteiro.
 
-A 60fps durante 1 hora, sao ~216.000 ciclos de malloc/free por canvas, totalizando ~432.000 alocacoes. No heap linear do WASM (que nao tem compactacao), isso causa fragmentacao severa ate esgotar a memoria disponivel e travar.
+### Problema 2: Nomes muito grandes
 
-Alem disso, o loop de copia pixel-a-pixel entre as duas canvas e desnecessario -- pode-se desenhar o gamestate e o overlay na mesma canvas sequencialmente.
+O renderer do tibiarc desenha nomes de criaturas/jogadores com tamanho padrao. Para reduzir pela metade, precisamos adicionar uma flag `HalfSizeNames` no `Renderer::Options` e usa-la no codigo de renderizacao. Como alternativa mais simples que nao exige mudanca no renderer interno, podemos usar a resolucao de renderizacao -- mas isso afetaria tudo. A abordagem mais limpa e adicionar uma opcao dedicada.
 
-### Solucao
+Porem, como o renderer e uma biblioteca externa (tibiarc), a forma mais pratica e adicionar um campo no Options e passar para o DrawOverlay. Se o tibiarc nao suportar isso nativamente, a alternativa e renderizar em resolucao maior (ex: 960x704) para que os nomes fiquem proporcionalmente menores -- mas isso muda o visual geral.
 
-**1. `tibiarc-player/web_player.cpp` -- Canvas estaticos**
+**Abordagem recomendada**: Como os nomes sao desenhados pelo tibiarc internamente e nao temos controle direto sobre o tamanho da fonte via Options, vou propor usar `options.NameScale = 0.5` se existir, ou documentar que isso requer mudanca no renderer C++ do tibiarc.
 
-Mover as duas canvas para variaveis globais estaticas, alocadas uma unica vez:
+### Mudancas no codigo
+
+**1. `tibiarc-player/web_player.cpp` -- try-catch no MainLoop e RenderFrame**
 
 ```text
-// ANTES (em cada frame):
-Canvas mapCanvas(480, 352);
-Canvas outputCanvas(480, 352);
+static void MainLoop() {
+    if (!g_playing || !g_recording || !g_gamestate) return;
 
-// DEPOIS (globais, alocados uma vez):
-static Canvas* g_mapCanvas = nullptr;
-static Canvas* g_outputCanvas = nullptr;
+    try {
+        double now = emscripten_get_now();
+        double elapsed = (now - g_lastFrameTime) * g_speed;
+        g_lastFrameTime = now;
 
-// Em main(), apos criar o SDL:
-g_mapCanvas = new Canvas(RENDER_WIDTH, RENDER_HEIGHT);
-g_outputCanvas = new Canvas(RENDER_WIDTH, RENDER_HEIGHT);
+        g_currentTick += std::chrono::milliseconds((int64_t)elapsed);
+        g_gamestate->CurrentTick = g_currentTick.count();
+
+        if (g_currentTick >= g_recording->Runtime) {
+            g_playing = false;
+            g_currentTick = g_recording->Runtime;
+            return;
+        }
+
+        while (g_needle != g_recording->Frames.cend() &&
+               g_needle->Timestamp <= g_currentTick) {
+            try {
+                for (auto &event : g_needle->Events) {
+                    event->Update(*g_gamestate);
+                }
+            } catch (...) {
+                // Skip corrupted frame, continue playback
+            }
+            g_needle = std::next(g_needle);
+        }
+
+        g_gamestate->Messages.Prune(g_currentTick.count());
+        RenderFrame();
+    } catch (...) {
+        // Prevent any exception from killing the main loop
+    }
+}
 ```
 
-Em `RenderFrame()`, reutilizar os buffers existentes limpando com `DrawRectangle` no inicio (como ja faz) em vez de realocar.
-
-**2. Simplificar RenderFrame**
-
-Remover o loop de copia pixel-a-pixel. Renderizar o gamestate em `g_mapCanvas`, copiar o buffer de uma vez (memcpy) para `g_outputCanvas`, e entao desenhar o overlay em `g_outputCanvas`. Ou melhor ainda: usar um unico canvas -- desenhar gamestate primeiro, depois overlay em cima.
+E tambem no `RenderFrame`:
 
 ```text
 static void RenderFrame() {
     if (!g_gamestate || !g_recording) return;
-    
-    Renderer::Options options{ ... };
-    
-    // Limpa o canvas
-    g_mapCanvas->DrawRectangle(Pixel(0,0,0), 0, 0, RENDER_WIDTH, RENDER_HEIGHT);
-    
-    // Gamestate + Overlay no mesmo buffer
-    Renderer::DrawGamestate(options, *g_gamestate, *g_mapCanvas);
-    
-    // Copiar para output canvas para overlay (se necessario manter separacao)
-    memcpy(g_outputCanvas->Buffer, g_mapCanvas->Buffer, 
-           RENDER_HEIGHT * g_mapCanvas->Stride);
-    
-    Renderer::DrawOverlay(options, *g_gamestate, *g_outputCanvas);
-    
-    SDL_UpdateTexture(g_texture, nullptr, g_outputCanvas->Buffer, 
-                      g_outputCanvas->Stride);
-    SDL_RenderClear(g_renderer);
-    SDL_RenderCopy(g_renderer, g_texture, nullptr, nullptr);
-    SDL_RenderPresent(g_renderer);
+    try {
+        // ... rendering code ...
+    } catch (...) {
+        // Skip this frame render on error
+    }
 }
 ```
 
-**3. Protecao extra: Messages.Prune**
+**2. Nomes menores -- requer investigacao do tibiarc**
 
-Confirmar que `Messages.Prune()` esta sendo chamado no `MainLoop` (ja esta). Sem isso, a lista de mensagens cresceria indefinidamente.
+O tamanho dos nomes e controlado internamente pelo `Renderer::DrawOverlay` do tibiarc. As opcoes possiveis sao:
 
-### Resumo das mudancas
+- Se `Renderer::Options` tiver um campo como `NameScale` ou `FontSize`, basta setar para metade
+- Se nao tiver, sera necessario modificar o codigo do renderer do tibiarc para adicionar essa opcao
+- Alternativa sem mudar o renderer: renderizar em resolucao maior (ex: 960x704) faz tudo ficar menor proporcionalmente, incluindo nomes -- mas tambem afeta o mapa e sprites
+
+Recomendo que voce verifique se o `Renderer::Options` do tibiarc tem algum campo de escala de fonte. Se nao tiver, sera necessario adicionar no codigo-fonte do tibiarc (nao no web_player.cpp).
+
+### Resumo
 
 | Arquivo | Mudanca |
 |---|---|
-| `tibiarc-player/web_player.cpp` | Canvas globais estaticos em vez de alocacao por frame; memcpy em vez de loop pixel-a-pixel |
+| `tibiarc-player/web_player.cpp` | try-catch em MainLoop (duplo: um no loop de eventos, outro geral) e try-catch em RenderFrame |
+| tibiarc renderer (externo) | Investigar/adicionar opcao de escala de nomes |
 
 ### Nota
 
-Apos editar o `.cpp`, voce precisara recompilar com Emscripten e fazer upload do novo `.wasm`. O Lovable edita o `.cpp` mas a compilacao do WASM e feita externamente.
+Apos editar o `.cpp`, voce precisara recompilar com Emscripten e fazer upload do novo `.wasm`.
 
