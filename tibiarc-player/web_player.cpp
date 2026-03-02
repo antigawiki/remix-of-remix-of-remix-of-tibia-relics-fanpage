@@ -222,12 +222,7 @@ int load_recording_tibiarelic(const uint8_t *buf, int len,
             frameCount++;
         }
 
-        demuxer.Finish([&](DataReader packetReader, std::chrono::milliseconds pktTs) {
-            auto events = parser.Parse(packetReader);
-            if (!events.empty()) {
-                recording->Frames.emplace_back(pktTs, std::move(events));
-            }
-        });
+        demuxer.Finish();
 
         if (recording->Frames.empty()) {
             printf("[tibiarc] No frames parsed from TibiaRelic file\n");
