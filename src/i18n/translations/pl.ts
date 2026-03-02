@@ -540,11 +540,11 @@ export const pl: TranslationKeys = {
     playing: 'Odtwarzanie',
     paused: 'Wstrzymany',
     wasmNotFound: 'Odtwarzacz WASM jeszcze nie skompilowany. Uruchom workflow GitHub Actions.',
-    wasmInstructions: 'Przejdź do Actions → "Build tibiarc WASM Player" → Run workflow.',
+    wasmInstructions: 'Przejdź do Actions → "Build WASM Player" → Run workflow.',
     invalidFormat: 'Nieprawidłowy format. Użyj .cam, .rec, .tmv2, .trp, .ttm, .yatc lub .recording.',
     loadError: 'Błąd podczas ładowania pliku powtórki.',
     aboutTitle: 'O Odtwarzaczu Powtórek',
-    aboutDescription: 'Ten odtwarzacz używa tibiarc skompilowanego do WebAssembly do dekodowania i renderowania plików nagrań Tibii bezpośrednio w przeglądarce. Obsługuje wersje Tibia od 7.11 do 8.62.',
+    aboutDescription: 'Ten odtwarzacz używa WebAssembly do dekodowania i renderowania plików nagrań Tibii bezpośrednio w przeglądarce. Obsługuje wersje Tibia od 7.11 do 8.62.',
   },
   xpTracker: {
     title: 'XP Tracker',
