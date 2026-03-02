@@ -94,7 +94,7 @@ export function extractMapTilesSync(
       floorStableBatches++;
     }
 
-    if (floorStableBatches >= 2) snapshotTiles(gs, dat, latestTiles);
+    if (floorStableBatches >= 1) snapshotTiles(gs, dat, latestTiles);
 
     const playerChunkX = Math.floor(gs.camX / DB_CHUNK);
     const playerChunkY = Math.floor(gs.camY / DB_CHUNK);
@@ -184,7 +184,7 @@ export async function extractMapTiles(
         floorStableBatches++;
       }
 
-      if (floorStableBatches >= 2) {
+      if (floorStableBatches >= 1) {
         snapshotTiles(gs, dat, latestTiles);
       }
 
