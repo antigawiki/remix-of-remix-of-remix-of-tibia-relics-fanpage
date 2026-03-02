@@ -189,14 +189,17 @@ int load_recording_tibiarelic(const uint8_t *buf, int len,
 
         printf("[tibiarc] Using Tibia version: %d.%d.%d\n", ver_major, ver_minor, ver_patch);
 
-        // 3. Parse frames using Parser + Demuxer
+        // 3. Parse frames - each TibiaRelic frame is a raw TCP segment.
+        //    Some frames contain a 2-byte length prefix (TCP-style), some
+        //    are raw opcodes. We try both approaches: first as a direct
+        //    packet (skip first 2 bytes as length), fallback to raw opcode.
         Parser parser(*g_version, false);
-        Demuxer demuxer(2);  // TCP-style 2-byte length header
         auto recording = std::make_unique<Recordings::Recording>();
 
         uint64_t ts0 = 0;
         bool first = true;
         int frameCount = 0;
+        int parsedFrames = 0;
 
         while (pos + 10 <= len) {
             uint64_t ts = read_u64_le(buf + pos);
@@ -208,21 +211,25 @@ int load_recording_tibiarelic(const uint8_t *buf, int len,
             if (first) { ts0 = ts; first = false; }
 
             auto timestamp = std::chrono::milliseconds((int64_t)(ts - ts0));
-            DataReader fragment(sz, buf + pos);
 
-            demuxer.Submit(timestamp, fragment,
-                [&](DataReader packetReader, std::chrono::milliseconds pktTs) {
+            // TibiaRelic frames: raw server TCP data with 2-byte length prefix
+            // Skip the 2-byte length prefix and parse the payload
+            if (sz > 2) {
+                try {
+                    DataReader packetReader(sz - 2, buf + pos + 2);
                     auto events = parser.Parse(packetReader);
                     if (!events.empty()) {
-                        recording->Frames.emplace_back(pktTs, std::move(events));
+                        recording->Frames.emplace_back(timestamp, std::move(events));
+                        parsedFrames++;
                     }
-                });
+                } catch (...) {
+                    // Skip unparseable frames
+                }
+            }
 
             pos += sz;
             frameCount++;
         }
-
-        demuxer.Finish();
 
         if (recording->Frames.empty()) {
             printf("[tibiarc] No frames parsed from TibiaRelic file\n");
@@ -232,8 +239,8 @@ int load_recording_tibiarelic(const uint8_t *buf, int len,
         // 4. Set runtime
         recording->Runtime = recording->Frames.back().Timestamp;
 
-        printf("[tibiarc] TibiaRelic parsed: %d raw frames -> %zu game frames, %lld ms\n",
-               frameCount, recording->Frames.size(), recording->Runtime.count());
+        printf("[tibiarc] TibiaRelic parsed: %d raw frames -> %d parsed -> %zu game frames, %lld ms\n",
+               frameCount, parsedFrames, recording->Frames.size(), recording->Runtime.count());
 
         g_recording = std::move(recording);
         g_gamestate = std::make_unique<Gamestate>(*g_version);
