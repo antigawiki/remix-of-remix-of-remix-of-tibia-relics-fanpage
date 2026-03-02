@@ -94,7 +94,7 @@ export function extractMapTilesSync(
       floorStableBatches++;
     }
 
-    if (floorStableBatches >= 3) snapshotTiles(gs, dat, latestTiles);
+    if (floorStableBatches >= 6) snapshotTiles(gs, dat, latestTiles);
 
     const playerChunkX = Math.floor(gs.camX / DB_CHUNK);
     const playerChunkY = Math.floor(gs.camY / DB_CHUNK);
@@ -181,7 +181,7 @@ export async function extractMapTiles(
         floorStableBatches++;
       }
 
-      if (floorStableBatches >= 3) {
+      if (floorStableBatches >= 6) {
         snapshotTiles(gs, dat, latestTiles);
       }
 
@@ -378,8 +378,8 @@ function snapshotTiles(
     if (camX > 0 && camY > 0) {
       const dx = Math.abs(tx - camX);
       const dy = Math.abs(ty - camY);
-      // Strict viewport: Tibia 7.72 viewport is 18x14, allow small margin
-      if (dx > 10 || dy > 8) continue;
+      // Tibia 7.72 viewport is 18x14, half = 9x7
+      if (dx > 9 || dy > 7) continue;
     }
 
     const items: number[] = [];
