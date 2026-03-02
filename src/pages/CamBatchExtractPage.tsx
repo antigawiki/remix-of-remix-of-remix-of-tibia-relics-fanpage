@@ -194,98 +194,38 @@ const CamBatchExtractPage = () => {
     }
   };
 
-  const CHUNK_BATCH = 200;
-  const PAGE_SIZE = 1000;
-
   const generateMap = async () => {
     setGenerating(true);
-    const failedFloors: number[] = [];
     let totalChunks = 0;
+    const failedFloors: number[] = [];
 
     try {
       for (let z = 0; z <= 15; z++) {
         if (abortRef.current) break;
+        setCompactStatus(`Gerando andar ${z}...`);
 
-        // Phase 1: Read all tiles for this floor (paginated)
-        setCompactStatus(`Andar ${z} — lendo tiles...`);
-        const chunkMap: Record<string, Record<string, unknown>> = {};
-        let offset = 0;
-        let tilesRead = 0;
+        const { data, error } = await supabase.rpc(
+          'generate_map_chunks' as any,
+          { p_floor: z }
+        );
 
-        while (true) {
-          if (abortRef.current) break;
-          const { data, error } = await supabase
-            .from('cam_map_tiles')
-            .select('x, y, items')
-            .eq('z', z)
-            .order('x', { ascending: true })
-            .order('y', { ascending: true })
-            .range(offset, offset + PAGE_SIZE - 1);
-
-          if (error) {
-            console.error(`[Compact] Floor ${z} read error:`, error);
-            failedFloors.push(z);
-            break;
-          }
-          if (!data || data.length === 0) break;
-
-          for (const tile of data) {
-            const cx = Math.floor(tile.x / 8);
-            const cy = Math.floor(tile.y / 8);
-            const key = `${cx},${cy}`;
-            const relKey = `${tile.x - cx * 8},${tile.y - cy * 8}`;
-            if (!chunkMap[key]) chunkMap[key] = {};
-            chunkMap[key][relKey] = tile.items;
-          }
-
-          tilesRead += data.length;
-          setCompactStatus(`Andar ${z} — ${tilesRead.toLocaleString()} tiles lidos...`);
-          offset += PAGE_SIZE;
-
-          if (data.length < PAGE_SIZE) break;
-        }
-
-        const keys = Object.keys(chunkMap);
-        if (keys.length === 0) {
-          console.log(`[Compact] Floor ${z}: no tiles, skipping`);
+        if (error) {
+          console.error(`Floor ${z} error:`, error);
+          failedFloors.push(z);
           continue;
         }
 
-        // Phase 2: Upload chunks via merge_cam_chunks_batch
-        const entries = keys.map(k => [k, chunkMap[k]] as [string, Record<string, unknown>]);
-        const totalBatches = Math.ceil(entries.length / CHUNK_BATCH);
-
-        for (let j = 0; j < entries.length; j += CHUNK_BATCH) {
-          if (abortRef.current) break;
-          const batchNum = Math.floor(j / CHUNK_BATCH) + 1;
-          setCompactStatus(`Andar ${z} — salvando chunks ${batchNum}/${totalBatches}`);
-
-          const batch = entries.slice(j, j + CHUNK_BATCH).map(([k, data]) => {
-            const [cx, cy] = (k as string).split(',').map(Number);
-            return { cx, cy, z, data };
-          });
-
-          const { error } = await supabase.rpc('merge_cam_chunks_batch' as any, { chunks: batch });
-          if (error) {
-            console.error(`[Compact] Floor ${z} chunk upload error:`, error);
-            failedFloors.push(z);
-            break;
-          }
-          totalChunks += batch.length;
-        }
-
-        if (!failedFloors.includes(z)) {
-          console.log(`[Compact] Floor ${z}: ${entries.length} chunks from ${tilesRead} tiles`);
-        }
+        const chunks = data as number;
+        totalChunks += chunks;
+        setCompactStatus(`Andar ${z}: ${chunks} chunks`);
       }
 
       if (failedFloors.length > 0) {
-        toast.error(`Mapa gerado parcialmente. Andares com erro: ${failedFloors.join(', ')}. Tente novamente.`);
+        toast.error(`Erro nos andares: ${failedFloors.join(', ')}`);
       } else {
-        toast.success(`Mapa gerado! ${totalChunks} chunks criados/atualizados.`);
+        toast.success(`Mapa gerado! ${totalChunks} chunks.`);
       }
     } catch (err) {
-      console.error('[Compact] Error:', err);
       toast.error('Erro ao gerar mapa');
     } finally {
       setCompactStatus('');
