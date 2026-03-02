@@ -362,29 +362,33 @@ void set_skip_messages(int skip) {
 static void RenderFrame() {
     if (!g_gamestate || !g_recording) return;
 
-    Renderer::Options options{
-        .Width = RENDER_WIDTH,
-        .Height = RENDER_HEIGHT,
-        .SkipRenderingMessages = g_skip_messages,
-        .SkipRenderingYellingMessages = g_skip_messages
-    };
+    try {
+        Renderer::Options options{
+            .Width = RENDER_WIDTH,
+            .Height = RENDER_HEIGHT,
+            .SkipRenderingMessages = g_skip_messages,
+            .SkipRenderingYellingMessages = g_skip_messages
+        };
 
-    // Clear and reuse static canvas (no per-frame allocation)
-    g_mapCanvas->DrawRectangle(Pixel(0, 0, 0), 0, 0,
-                               RENDER_WIDTH, RENDER_HEIGHT);
+        // Clear and reuse static canvas (no per-frame allocation)
+        g_mapCanvas->DrawRectangle(Pixel(0, 0, 0), 0, 0,
+                                   RENDER_WIDTH, RENDER_HEIGHT);
 
-    Renderer::DrawGamestate(options, *g_gamestate, *g_mapCanvas);
+        Renderer::DrawGamestate(options, *g_gamestate, *g_mapCanvas);
 
-    // Fast buffer copy instead of pixel-by-pixel loop
-    memcpy(g_outputCanvas->Buffer, g_mapCanvas->Buffer,
-           RENDER_HEIGHT * g_mapCanvas->Stride);
+        // Fast buffer copy instead of pixel-by-pixel loop
+        memcpy(g_outputCanvas->Buffer, g_mapCanvas->Buffer,
+               RENDER_HEIGHT * g_mapCanvas->Stride);
 
-    Renderer::DrawOverlay(options, *g_gamestate, *g_outputCanvas);
+        Renderer::DrawOverlay(options, *g_gamestate, *g_outputCanvas);
 
-    SDL_UpdateTexture(g_texture, nullptr, g_outputCanvas->Buffer, g_outputCanvas->Stride);
-    SDL_RenderClear(g_renderer);
-    SDL_RenderCopy(g_renderer, g_texture, nullptr, nullptr);
-    SDL_RenderPresent(g_renderer);
+        SDL_UpdateTexture(g_texture, nullptr, g_outputCanvas->Buffer, g_outputCanvas->Stride);
+        SDL_RenderClear(g_renderer);
+        SDL_RenderCopy(g_renderer, g_texture, nullptr, nullptr);
+        SDL_RenderPresent(g_renderer);
+    } catch (...) {
+        // Skip this frame render on error
+    }
 }
 
 static void MainLoop() {
@@ -392,29 +396,37 @@ static void MainLoop() {
         return;
     }
 
-    double now = emscripten_get_now();
-    double elapsed = (now - g_lastFrameTime) * g_speed;
-    g_lastFrameTime = now;
+    try {
+        double now = emscripten_get_now();
+        double elapsed = (now - g_lastFrameTime) * g_speed;
+        g_lastFrameTime = now;
 
-    g_currentTick += std::chrono::milliseconds((int64_t)elapsed);
-    g_gamestate->CurrentTick = g_currentTick.count();
+        g_currentTick += std::chrono::milliseconds((int64_t)elapsed);
+        g_gamestate->CurrentTick = g_currentTick.count();
 
-    if (g_currentTick >= g_recording->Runtime) {
-        g_playing = false;
-        g_currentTick = g_recording->Runtime;
-        return;
-    }
-
-    while (g_needle != g_recording->Frames.cend() &&
-           g_needle->Timestamp <= g_currentTick) {
-        for (auto &event : g_needle->Events) {
-            event->Update(*g_gamestate);
+        if (g_currentTick >= g_recording->Runtime) {
+            g_playing = false;
+            g_currentTick = g_recording->Runtime;
+            return;
         }
-        g_needle = std::next(g_needle);
-    }
 
-    g_gamestate->Messages.Prune(g_currentTick.count());
-    RenderFrame();
+        while (g_needle != g_recording->Frames.cend() &&
+               g_needle->Timestamp <= g_currentTick) {
+            try {
+                for (auto &event : g_needle->Events) {
+                    event->Update(*g_gamestate);
+                }
+            } catch (...) {
+                // Skip corrupted frame, continue playback
+            }
+            g_needle = std::next(g_needle);
+        }
+
+        g_gamestate->Messages.Prune(g_currentTick.count());
+        RenderFrame();
+    } catch (...) {
+        // Prevent any exception from killing the main loop
+    }
 }
 
 int main() {
