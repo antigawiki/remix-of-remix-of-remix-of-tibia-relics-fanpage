@@ -593,4 +593,22 @@ export interface TranslationKeys {
       usingRegion: string;
     };
   };
+  poll: {
+    sectionTitle: string;
+    vote: string;
+    voting: string;
+    votes: string;
+    vote_singular: string;
+    total: string;
+    ended: string;
+    endsAt: string;
+    allPolls: string;
+    noPolls: string;
+    pageTitle: string;
+    pageDescription: string;
+    active: string;
+    closed: string;
+    viewAll: string;
+    alreadyVoted: string;
+  };
 }

@@ -20,6 +20,39 @@ Deno.serve(async (req) => {
       );
     }
 
+    const supabase = createClient(
+      Deno.env.get('SUPABASE_URL')!,
+      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
+    );
+
+    // Validate poll is active and not expired
+    const { data: poll, error: pollError } = await supabase
+      .from('polls')
+      .select('id, active, ends_at')
+      .eq('id', poll_id)
+      .single();
+
+    if (pollError || !poll) {
+      return new Response(
+        JSON.stringify({ error: 'poll_not_found', message: 'Enquete não encontrada' }),
+        { status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    if (!poll.active) {
+      return new Response(
+        JSON.stringify({ error: 'poll_closed', message: 'Esta enquete está encerrada' }),
+        { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    if (poll.ends_at && new Date(poll.ends_at) < new Date()) {
+      return new Response(
+        JSON.stringify({ error: 'poll_expired', message: 'Esta enquete já expirou' }),
+        { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
     // Extract IP and User-Agent for anonymous fingerprint
     const ip = req.headers.get('x-forwarded-for')?.split(',')[0]?.trim()
       || req.headers.get('x-real-ip')
@@ -33,11 +66,6 @@ Deno.serve(async (req) => {
     const hashArray = Array.from(new Uint8Array(hashBuffer));
     const voterHash = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
 
-    const supabase = createClient(
-      Deno.env.get('SUPABASE_URL')!,
-      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
-    );
-
     // Insert vote with ON CONFLICT to reject duplicates
     const { error } = await supabase
       .from('poll_votes')
@@ -45,7 +73,6 @@ Deno.serve(async (req) => {
 
     if (error) {
       if (error.code === '23505') {
-        // Unique constraint violation = already voted
         return new Response(
           JSON.stringify({ error: 'already_voted', message: 'Você já votou nesta enquete!' }),
           { status: 409, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
