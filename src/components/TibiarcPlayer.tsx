@@ -19,11 +19,15 @@ interface WasmModule {
 }
 
 /** Safe wrapper for WASM ccall – swallows exceptions so the player keeps running */
+const _warnedFns = new Set<string>();
 function safeCall(mod: WasmModule, name: string, returnType: string, argTypes: string[], args: any[], fallback?: any): any {
   try {
     return mod.ccall(name, returnType, argTypes, args);
   } catch (e) {
-    console.warn(`[TibiarcPlayer] WASM exception in ${name}:`, e);
+    if (!_warnedFns.has(name)) {
+      console.warn(`[TibiarcPlayer] WASM exception in ${name} (further suppressed):`, e);
+      _warnedFns.add(name);
+    }
     return fallback;
   }
 }
@@ -43,6 +47,7 @@ const TibiarcPlayer = ({ className }: TibiarcPlayerProps) => {
   const moduleRef = useRef<WasmModule | null>(null);
   const pollingRef = useRef<number | null>(null);
   const seekingRef = useRef(false);
+  const seekDebounceRef = useRef<number | null>(null);
   const hideTimerRef = useRef<number | null>(null);
   const [state, setState] = useState<PlayerState>('idle');
   const [speed, setSpeed] = useState(1);
@@ -294,21 +299,26 @@ const TibiarcPlayer = ({ className }: TibiarcPlayerProps) => {
 
   const handleSeek = (val: number[]) => {
     const ms = val[0];
-    const mod = moduleRef.current;
-    if (!mod) return;
-
-    seekingRef.current = true;
-    const wasPlaying = state === 'playing';
-    if (wasPlaying) safeCall(mod, 'pause_playback', 'undefined', [], []);
-
-    safeCall(mod, 'seek', 'undefined', ['number'], [ms]);
     setProgress(ms);
 
-    if (wasPlaying) {
-      safeCall(mod, 'play', 'undefined', [], []);
-      setState('playing');
-    }
-    seekingRef.current = false;
+    // Debounce actual WASM seek to avoid spamming exceptions
+    if (seekDebounceRef.current) clearTimeout(seekDebounceRef.current);
+    seekingRef.current = true;
+
+    seekDebounceRef.current = window.setTimeout(() => {
+      const mod = moduleRef.current;
+      if (!mod) { seekingRef.current = false; return; }
+
+      const wasPlaying = state === 'playing';
+      if (wasPlaying) safeCall(mod, 'pause_playback', 'undefined', [], []);
+
+      safeCall(mod, 'seek', 'undefined', ['number'], [ms]);
+
+      if (wasPlaying) {
+        safeCall(mod, 'play', 'undefined', [], []);
+      }
+      seekingRef.current = false;
+    }, 150);
   };
 
   const formatTime = (ms: number) => {
