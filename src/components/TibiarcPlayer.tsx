@@ -41,7 +41,7 @@ const TibiarcPlayer = ({ className }: TibiarcPlayerProps) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const moduleRef = useRef<WasmModule | null>(null);
   const pollingRef = useRef<number | null>(null);
-
+  const seekingRef = useRef(false);
   const [state, setState] = useState<PlayerState>('idle');
   const [speed, setSpeed] = useState(1);
   const [fileName, setFileName] = useState('');
@@ -78,10 +78,10 @@ const TibiarcPlayer = ({ className }: TibiarcPlayerProps) => {
         const mod: WasmModule = await TibiarcModuleFactory({
           canvas,
           locateFile: (path: string) => {
-            // The compiled JS may reference the original wasm filename
             if (path.endsWith('.wasm')) return '/tibiarc/tibiarc_player.wasm';
             return `/tibiarc/${path}`;
           },
+          webglContextAttributes: { preserveDrawingBuffer: true },
         });
 
         if (cancelled) return;
@@ -139,6 +139,7 @@ const TibiarcPlayer = ({ className }: TibiarcPlayerProps) => {
   useEffect(() => {
     if (state === 'playing') {
       pollingRef.current = window.setInterval(() => {
+        if (seekingRef.current) return; // skip during seek
         const mod = moduleRef.current;
         if (!mod) return;
         const p = mod.ccall('get_progress', 'number', [], []);
@@ -156,6 +157,21 @@ const TibiarcPlayer = ({ className }: TibiarcPlayerProps) => {
         pollingRef.current = null;
       }
     };
+  }, [state]);
+
+  // Visibilitychange handler: re-kick WASM render loop when tab regains focus
+  useEffect(() => {
+    const handler = () => {
+      if (document.visibilityState === 'visible' && state === 'playing') {
+        const mod = moduleRef.current;
+        if (mod) {
+          mod.ccall('pause_playback', null, [], []);
+          mod.ccall('play', null, [], []);
+        }
+      }
+    };
+    document.addEventListener('visibilitychange', handler);
+    return () => document.removeEventListener('visibilitychange', handler);
   }, [state]);
 
   const handleFileSelect = useCallback(async (file: File) => {
@@ -243,6 +259,7 @@ const TibiarcPlayer = ({ className }: TibiarcPlayerProps) => {
     const mod = moduleRef.current;
     if (!mod) return;
 
+    seekingRef.current = true;
     const wasPlaying = state === 'playing';
     if (wasPlaying) mod.ccall('pause_playback', null, [], []);
 
@@ -251,7 +268,9 @@ const TibiarcPlayer = ({ className }: TibiarcPlayerProps) => {
 
     if (wasPlaying) {
       mod.ccall('play', null, [], []);
+      setState('playing');
     }
+    seekingRef.current = false;
   };
 
   const formatTime = (ms: number) => {

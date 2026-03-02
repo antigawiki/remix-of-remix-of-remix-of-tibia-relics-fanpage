@@ -98,10 +98,6 @@ export function extractMapTilesSync(
     for (; frameIdx < end; frameIdx++) {
       try { parser.process(cam.frames[frameIdx].payload); } catch { /* skip */ }
       if (lastCamZ >= 0 && gs.camZ !== lastCamZ) {
-        const newZ = gs.camZ;
-        gs.camZ = lastCamZ;
-        snapshotTiles(gs, dat, latestTiles);
-        gs.camZ = newZ;
         gs.tiles.clear();
         anyFloorChange = true;
       }
@@ -191,10 +187,6 @@ export async function extractMapTiles(
 
         // Detect floor change per-frame, not per-chunk
         if (lastCamZ >= 0 && gs.camZ !== lastCamZ) {
-          const newZ = gs.camZ;
-          gs.camZ = lastCamZ;
-          snapshotTiles(gs, dat, latestTiles);
-          gs.camZ = newZ;
           gs.tiles.clear();
           anyFloorChange = true;
         }
