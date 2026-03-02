@@ -1,10 +1,8 @@
 import { useRef, useState, useCallback, useEffect } from 'react';
-import { Upload, Play, Pause, FastForward, RotateCcw, Loader2, ChevronUp, ChevronDown, Layers, Sparkles, Monitor, SkipBack, SkipForward, Eye } from 'lucide-react';
+import { Upload, Play, Pause, FastForward, Loader2, SkipBack, SkipForward } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Slider } from '@/components/ui/slider';
 import { useTranslation } from '@/i18n';
-import { Badge } from '@/components/ui/badge';
-import { Progress } from '@/components/ui/progress';
 import { parseCamFile, type CamFile } from '@/lib/tibiaRelic/camParser';
 import { SprLoader } from '@/lib/tibiaRelic/sprLoader';
 import { DatLoader } from '@/lib/tibiaRelic/datLoader';
@@ -12,9 +10,6 @@ import { PacketParser } from '@/lib/tibiaRelic/packetParser';
 import { GameState, type GameStateSnapshot } from '@/lib/tibiaRelic/gameState';
 import { Renderer } from '@/lib/tibiaRelic/renderer';
 import { DebugLogger } from '@/lib/tibiaRelic/debugLogger';
-import { extractMapTiles, type MapExtractionProgress, type MapExtractionResult } from '@/lib/tibiaRelic/mapExtractor';
-import { supabase } from '@/integrations/supabase/client';
-import CamDebugPanel from '@/components/CamDebugPanel';
 
 
 type PlayerState = 'idle' | 'loading-data' | 'ready' | 'loading-cam' | 'playing' | 'paused' | 'error';
@@ -61,21 +56,8 @@ const TibiarcPlayer = ({ className }: TibiarcPlayerProps) => {
   const [progress, setProgress] = useState(0);
   const [duration, setDuration] = useState(0);
   const [dataLoaded, setDataLoaded] = useState(false);
-  const [floorOffset, setFloorOffset] = useState(0);
-  const [qualityMode, setQualityMode] = useState<'classic' | 'enhanced'>('enhanced');
-  const [extracting, setExtracting] = useState(false);
-  const [extractProgress, setExtractProgress] = useState<MapExtractionProgress | null>(null);
-  const [spyFloor, setSpyFloor] = useState(false);
-  const floorOffsetRef = useRef(0);
-  const spyFloorRef = useRef(false);
   const containerRef = useRef<HTMLDivElement>(null);
   const debugLoggerRef = useRef<DebugLogger>(new DebugLogger());
-
-  // Keep ref in sync with state for animation loop access
-  useEffect(() => { floorOffsetRef.current = floorOffset; }, [floorOffset]);
-  useEffect(() => { spyFloorRef.current = spyFloor; }, [spyFloor]);
-  const qualityModeRef = useRef(qualityMode);
-  useEffect(() => { qualityModeRef.current = qualityMode; }, [qualityMode]);
 
   // Dynamic canvas sizing via ResizeObserver
   useEffect(() => {
@@ -176,7 +158,6 @@ const TibiarcPlayer = ({ className }: TibiarcPlayerProps) => {
           setProgress(engine.curMs);
         } else {
           applyTo(engine, target);
-          // Throttle React state updates to ~10Hz to avoid jank
           if (!engine._lastProgressUpdate || now - engine._lastProgressUpdate > 100) {
             engine._lastProgressUpdate = now;
             setProgress(engine.curMs);
@@ -184,19 +165,9 @@ const TibiarcPlayer = ({ className }: TibiarcPlayerProps) => {
         }
       }
 
-      // Update floor override from ref to stay in sync
-      const floorOffsetVal = floorOffsetRef.current;
-      if (floorOffsetVal !== 0) {
-        const player = engine.gs.creatures.get(engine.gs.playerId);
-        const baseZ = player ? player.z : engine.gs.camZ;
-        const targetZ = Math.max(0, Math.min(15, baseZ + floorOffsetVal));
-        engine.renderer.floorOverride = targetZ;
-      } else {
-        engine.renderer.floorOverride = null;
-      }
-
-      engine.renderer.smoothUpscale = qualityModeRef.current === 'enhanced';
-      engine.renderer.spyFloor = spyFloorRef.current;
+      // Always follow protocol floor — no overrides
+      engine.renderer.floorOverride = null;
+      engine.renderer.smoothUpscale = true;
       engine.renderer.incTick();
       engine.renderer.draw(canvas.width, canvas.height);
     };
@@ -210,7 +181,7 @@ const TibiarcPlayer = ({ className }: TibiarcPlayerProps) => {
     if (isSeek) engine.parser.seekMode = true;
     debugLoggerRef.current.setCamMs(targetMs);
     
-    const KEYFRAME_INTERVAL = 30000; // 30s
+    const KEYFRAME_INTERVAL = 30000;
     
     while (engine.curFrame < engine.cam.frames.length) {
       const frame = engine.cam.frames[engine.curFrame];
@@ -218,7 +189,6 @@ const TibiarcPlayer = ({ className }: TibiarcPlayerProps) => {
       try { engine.parser.process(frame.payload); } catch { /* skip */ }
       engine.curFrame++;
       
-      // Save keyframes every 30s during normal (non-seek) playback
       if (!isSeek && frame.timestamp - engine.lastKeyframeMs >= KEYFRAME_INTERVAL) {
         engine.keyframes.push({
           ms: frame.timestamp,
@@ -231,17 +201,14 @@ const TibiarcPlayer = ({ className }: TibiarcPlayerProps) => {
     engine.curMs = targetMs;
     if (isSeek) {
       engine.parser.seekMode = false;
-      // Clear walk animations, prune stale creatures, and re-insert missing ones
       for (const [cid, c] of engine.gs.creatures.entries()) {
         c.walking = false;
         c.walkOffsetX = 0;
         c.walkOffsetY = 0;
-        // Remove orphaned creatures not on any tile (except player)
         if (cid === engine.gs.playerId) continue;
         const tile = engine.gs.getTile(c.x, c.y, c.z);
         const onTile = tile.some(i => i[0] === 'cr' && i[1] === cid);
         if (!onTile) {
-          // If creature has a valid position, re-insert it on its tile
           if (c.x !== 0 || c.y !== 0 || c.z !== 0) {
             tile.push(['cr', cid]);
             engine.gs.setTile(c.x, c.y, c.z, tile);
@@ -278,7 +245,6 @@ const TibiarcPlayer = ({ className }: TibiarcPlayerProps) => {
         return;
       }
 
-      // Reset game state
       engine.gs.reset();
       engine.parser = createPacketParser(engine.gs, engine.dat);
       engine.parser.debugLogger = debugLoggerRef.current;
@@ -292,9 +258,7 @@ const TibiarcPlayer = ({ className }: TibiarcPlayerProps) => {
       engine.keyframes = [];
       engine.lastKeyframeMs = -Infinity;
       engine.renderer.floorOverride = null;
-      setFloorOffset(0);
 
-      // Apply first frames to get initial map
       applyTo(engine, 0, true);
 
       setDuration(cam.totalMs);
@@ -332,29 +296,6 @@ const TibiarcPlayer = ({ className }: TibiarcPlayerProps) => {
     }
   };
 
-  const resetPlayback = () => {
-    const engine = engineRef.current;
-    if (!engine || !engine.cam) return;
-
-    engine.playing = false;
-    engine.gs.reset();
-    engine.parser = createPacketParser(engine.gs, engine.dat);
-    engine.parser.debugLogger = debugLoggerRef.current;
-    engine.renderer.gs = engine.gs;
-    engine.renderer.debugLogger = debugLoggerRef.current;
-    debugLoggerRef.current.clear();
-    engine.curFrame = 0;
-    engine.curMs = 0;
-    engine.keyframes = [];
-    engine.lastKeyframeMs = -Infinity;
-    applyTo(engine, 0, true);
-
-    setProgress(0);
-    setFloorOffset(0);
-    engine.renderer.floorOverride = null;
-    setState('paused');
-  };
-
   const cycleSpeed = () => {
     const speeds = [1, 2, 4, 8];
     const currentIndex = speeds.indexOf(speed);
@@ -376,7 +317,6 @@ const TibiarcPlayer = ({ className }: TibiarcPlayerProps) => {
     const wasPlaying = engine.playing;
     engine.playing = false;
 
-    // Find nearest keyframe before target
     let bestKf: (typeof engine.keyframes)[number] | null = null;
     for (const kf of engine.keyframes) {
       if (kf.ms <= ms) bestKf = kf;
@@ -384,7 +324,6 @@ const TibiarcPlayer = ({ className }: TibiarcPlayerProps) => {
     }
 
     if (bestKf) {
-      // Restore from keyframe instead of replaying from 0
       engine.gs.restore(bestKf.snap);
       engine.parser = createPacketParser(engine.gs, engine.dat);
       engine.parser.debugLogger = debugLoggerRef.current;
@@ -392,7 +331,6 @@ const TibiarcPlayer = ({ className }: TibiarcPlayerProps) => {
       engine.curFrame = bestKf.frameIdx;
       engine.curMs = bestKf.ms;
     } else {
-      // No keyframe available — replay from start
       engine.gs.reset();
       engine.parser = createPacketParser(engine.gs, engine.dat);
       engine.parser.debugLogger = debugLoggerRef.current;
@@ -423,68 +361,6 @@ const TibiarcPlayer = ({ className }: TibiarcPlayerProps) => {
   const isLoading = state === 'loading-data' || state === 'loading-cam';
   const hasRecording = state === 'playing' || state === 'paused';
 
-  const handleExtractMap = useCallback(async () => {
-    const engine = engineRef.current;
-    if (!engine || !engine.cam) return;
-    setExtracting(true);
-    setExtractProgress(null);
-
-    try {
-      const result = await extractMapTiles(engine.cam, engine.dat, (p) => {
-        setExtractProgress(p);
-      });
-
-      // Upload tiles to database using merge function (accumulates items)
-      const tileEntries = Array.from(result.tiles.entries());
-      const BATCH = 50;
-      for (let i = 0; i < tileEntries.length; i += BATCH) {
-        const batch = tileEntries.slice(i, i + BATCH);
-        await Promise.all(batch.map(([key, items]) => {
-          const [x, y, z] = key.split(',').map(Number);
-          return supabase.rpc('merge_cam_tile' as any, {
-            px: x, py: y, pz: z, new_items: items,
-          });
-        }));
-      }
-
-      // Upload spawns to database in batches
-      for (let i = 0; i < result.spawns.length; i += BATCH) {
-        const batch = result.spawns.slice(i, i + BATCH);
-        await Promise.all(batch.map(s =>
-          supabase.rpc('merge_cam_spawn' as any, {
-            px: s.chunkX, py: s.chunkY, pz: s.z,
-            p_creature_name: s.creatureName,
-            p_outfit_id: s.outfitId,
-            p_avg_count: s.avgCount,
-            p_positions: s.positions,
-            p_visit_count: s.visitCount,
-          })
-        ));
-      }
-
-      console.log(`[MapExtract] Done: ${result.tiles.size} tiles, ${result.spawns.length} spawns uploaded`);
-    } catch (err) {
-      console.error('[MapExtract] Failed:', err);
-    } finally {
-      setExtracting(false);
-      setExtractProgress(null);
-    }
-  }, []);
-
-  const getDebugSnapshot = useCallback(() => {
-    const engine = engineRef.current;
-    if (!engine) return null;
-    const g = engine.gs;
-    const player = g.creatures.get(g.playerId);
-    return {
-      camX: g.camX, camY: g.camY, camZ: g.camZ,
-      playerX: player?.x ?? 0, playerY: player?.y ?? 0, playerZ: player?.z ?? 0,
-      playerOnCorrectFloor: player ? player.z === g.camZ : true,
-      creatureCount: g.creatures.size,
-      lastMoveCr: debugLoggerRef.current.lastMoveCr,
-    };
-  }, []);
-
   return (
     <div className={`flex flex-col gap-4 ${className}`}>
       {/* Canvas / Upload Area */}
@@ -497,10 +373,10 @@ const TibiarcPlayer = ({ className }: TibiarcPlayerProps) => {
         <canvas
           ref={canvasRef}
           className="w-full h-full"
-          style={{ imageRendering: qualityMode === 'classic' ? 'pixelated' : 'auto' }}
+          style={{ imageRendering: 'auto' }}
         />
 
-        {/* Hidden file input - always in DOM */}
+        {/* Hidden file input */}
         <input
           ref={fileInputRef}
           type="file"
@@ -591,15 +467,6 @@ const TibiarcPlayer = ({ className }: TibiarcPlayerProps) => {
             <Button
               variant="outline"
               size="icon"
-              onClick={resetPlayback}
-              disabled={!hasRecording}
-              className="border-border/50"
-            >
-              <RotateCcw className="w-4 h-4" />
-            </Button>
-            <Button
-              variant="outline"
-              size="icon"
               onClick={() => handleSeek([Math.max(0, progress - 10000)])}
               disabled={!hasRecording}
               className="border-border/50"
@@ -629,112 +496,17 @@ const TibiarcPlayer = ({ className }: TibiarcPlayerProps) => {
             </Button>
           </div>
 
-          {/* Floor controls */}
-          <div className="flex items-center gap-1.5">
-            <Button
-              variant={spyFloor ? "default" : "outline"}
-              size="icon"
-              className={`h-8 w-8 ${spyFloor ? 'bg-gold text-black hover:bg-gold/80' : 'border-border/50'}`}
-              disabled={!hasRecording}
-              onClick={() => setSpyFloor(prev => !prev)}
-              title="Spy Floor - ver através do chão"
-            >
-              <Eye className="w-3.5 h-3.5" />
-            </Button>
-            <Layers className="w-3.5 h-3.5 text-muted-foreground" />
-            <Button
-              variant="outline"
-              size="icon"
-              className="border-border/50 h-8 w-8"
-              disabled={!hasRecording}
-              onClick={() => setFloorOffset(prev => {
-                const engine = engineRef.current;
-                if (!engine) return prev;
-                const newZ = engine.gs.camZ + prev - 1;
-                return newZ >= 0 ? prev - 1 : prev;
-              })}
-              title="Floor acima"
-            >
-              <ChevronUp className="w-3.5 h-3.5" />
-            </Button>
-            <Badge variant="outline" className="min-w-[70px] justify-center text-xs font-mono">
-              {(() => {
-                const realZ = engineRef.current ? Math.max(0, Math.min(15, engineRef.current.gs.camZ + floorOffset)) : null;
-                if (realZ === null) return 'Floor ?';
-                const display = 7 - realZ;
-                return `Floor ${display > 0 ? '+' : ''}${display}`;
-              })()}
-            </Badge>
-            <Button
-              variant="outline"
-              size="icon"
-              className="border-border/50 h-8 w-8"
-              disabled={!hasRecording}
-              onClick={() => setFloorOffset(prev => {
-                const engine = engineRef.current;
-                if (!engine) return prev;
-                const newZ = engine.gs.camZ + prev + 1;
-                return newZ <= 15 ? prev + 1 : prev;
-              })}
-              title="Floor abaixo"
-            >
-              <ChevronDown className="w-3.5 h-3.5" />
-            </Button>
-            {floorOffset !== 0 && (
-              <Button
-                variant="ghost"
-                size="sm"
-                className="h-8 px-2 text-xs"
-                onClick={() => setFloorOffset(0)}
-              >
-                Reset
-              </Button>
-            )}
-          </div>
-
           <div className="flex items-center gap-2">
-            {/* Quality toggle */}
-            <Button
-              variant="outline"
-              size="sm"
-              className="border-border/50 min-w-[90px]"
-              onClick={() => setQualityMode(prev => prev === 'classic' ? 'enhanced' : 'classic')}
-              title={qualityMode === 'classic' ? 'Modo Clássico (DX5)' : 'Modo Enhanced (DX9)'}
-            >
-              {qualityMode === 'classic' ? (
-                <><Monitor className="w-3 h-3 mr-1" />Classic</>
-              ) : (
-                <><Sparkles className="w-3 h-3 mr-1" />Enhanced</>
-              )}
-            </Button>
             {hasRecording && (
-              <>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="border-border/50"
-                  onClick={() => fileInputRef.current?.click()}
-                >
-                  <Upload className="w-3 h-3 mr-1" />
-                  Outra .cam
-                </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="border-gold/50 text-gold hover:bg-gold/10"
-                  onClick={handleExtractMap}
-                  disabled={extracting}
-                >
-                  {extracting ? (
-                    <><Loader2 className="w-3 h-3 mr-1 animate-spin" />{extractProgress ? `${extractProgress.percent}%` : 'Extraindo...'}</>
-                  ) : (
-                    <>🗺️ Extrair Mapa</>
-                  )}
-                </Button>
-              </>
-            )}
-            {extracting && extractProgress && (
-              <Progress value={extractProgress.percent} className="w-24 h-2" />
+              <Button
+                variant="outline"
+                size="sm"
+                className="border-border/50"
+                onClick={() => fileInputRef.current?.click()}
+              >
+                <Upload className="w-3 h-3 mr-1" />
+                Outra .cam
+              </Button>
             )}
             <span className="text-sm text-muted-foreground">
               {state === 'idle' && !dataLoaded && 'Inicializando...'}
@@ -747,9 +519,6 @@ const TibiarcPlayer = ({ className }: TibiarcPlayerProps) => {
           </div>
         </div>
       </div>
-
-      {/* Debug Panel */}
-      <CamDebugPanel loggerRef={debugLoggerRef} getSnapshot={getDebugSnapshot} />
     </div>
   );
 };

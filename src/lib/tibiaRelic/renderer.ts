@@ -125,7 +125,6 @@ export class Renderer {
 
   public floorOverride: number | null = null;
   public smoothUpscale: boolean = true;
-  public spyFloor: boolean = false;
   public debugLogger: DebugLogger | null = null;
 
   constructor(
@@ -190,18 +189,6 @@ export class Renderer {
     const renderCamX = player ? player.x : g.camX;
     const renderCamY = player ? player.y : g.camY;
     const renderCamZ = g.camZ;
-    // Diagnostic: detect floor desync
-    if (player && player.z !== g.camZ && !this.floorOverride) {
-      console.warn(`[Renderer] Floor desync: player.z=${player.z} camZ=${g.camZ}`);
-      const dl = this.debugLogger;
-      if (dl && dl.enabled) {
-        dl.log('DESYNC', {
-          playerPos: `${player.x},${player.y},${player.z}`,
-          camPos: `${g.camX},${g.camY},${g.camZ}`,
-          renderCamX, renderCamY, renderCamZ,
-        });
-      }
-    }
     const z = this.floorOverride ?? renderCamZ;
 
     // Only apply walk offset to camera when player is actively walking
@@ -242,11 +229,7 @@ export class Renderer {
             if (item[0] === 'cr') continue;
             const it = this.dat.items.get(item[1]);
             if (!it || it.stackPrio > 2) continue;
-            // Spy Floor: make ground tiles semi-transparent on current floor
-            const useXray = this.spyFloor && fz === z && it.isGround && it.stackPrio === 0;
-            if (useXray) oc.globalAlpha = 0.2;
             this.drawItemNative(it, bx, by, elevationOffset, ph, wx, wy);
-            if (useXray) oc.globalAlpha = 1.0;
             if (it.elevation > 0) elevationOffset += it.elevation;
           }
 
@@ -451,13 +434,6 @@ export class Renderer {
   }
 
   private getVisibleFloors(z: number, centerX?: number, centerY?: number): number[] {
-    // Spy Floor: show current floor + deeper floors only (no roofs/upper floors)
-    if (this.spyFloor) {
-      const floors: number[] = [];
-      for (let fz = Math.min(z + 2, 15); fz >= z; fz--) floors.push(fz);
-      return floors;
-    }
-
     if (z <= 7) {
       const firstFloor = this.calcFirstVisibleFloor(z, centerX, centerY);
       const floors: number[] = [];
