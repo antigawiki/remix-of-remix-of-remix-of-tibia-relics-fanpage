@@ -811,6 +811,17 @@ export type Database = {
       }
       compact_tiles_to_chunks: { Args: { p_floor: number }; Returns: number }
       generate_map_chunks: { Args: { p_floor: number }; Returns: number }
+      generate_map_chunks_range: {
+        Args: { p_floor: number; p_max_cx: number; p_min_cx: number }
+        Returns: number
+      }
+      get_tile_chunk_range: {
+        Args: { p_floor: number }
+        Returns: {
+          max_cx: number
+          min_cx: number
+        }[]
+      }
       has_role: {
         Args: {
           _role: Database["public"]["Enums"]["app_role"]

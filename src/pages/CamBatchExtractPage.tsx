@@ -198,26 +198,55 @@ const CamBatchExtractPage = () => {
     setGenerating(true);
     let totalChunks = 0;
     const failedFloors: number[] = [];
+    const RANGE_SIZE = 3;
 
     try {
       for (let z = 0; z <= 15; z++) {
         if (abortRef.current) break;
-        setCompactStatus(`Gerando andar ${z}...`);
+        setCompactStatus(`Andar ${z}: obtendo limites...`);
 
-        const { data, error } = await supabase.rpc(
-          'generate_map_chunks' as any,
+        // Get chunk_x range for this floor
+        const { data: rangeData, error: rangeErr } = await supabase.rpc(
+          'get_tile_chunk_range' as any,
           { p_floor: z }
         );
 
-        if (error) {
-          console.error(`Floor ${z} error:`, error);
-          failedFloors.push(z);
+        if (rangeErr || !rangeData || (Array.isArray(rangeData) && rangeData.length === 0)) {
+          // No tiles on this floor
+          setCompactStatus(`Andar ${z}: vazio`);
           continue;
         }
 
-        const chunks = data as number;
-        totalChunks += chunks;
-        setCompactStatus(`Andar ${z}: ${chunks} chunks`);
+        const range = Array.isArray(rangeData) ? rangeData[0] : rangeData;
+        const minCx = range.min_cx as number;
+        const maxCx = range.max_cx as number;
+
+        if (minCx == null || maxCx == null) {
+          continue;
+        }
+
+        let floorChunks = 0;
+        for (let cx = minCx; cx <= maxCx; cx += RANGE_SIZE) {
+          if (abortRef.current) break;
+          const endCx = Math.min(cx + RANGE_SIZE - 1, maxCx);
+          setCompactStatus(`Andar ${z}: chunks ${cx}-${endCx}...`);
+
+          const { data, error } = await supabase.rpc(
+            'generate_map_chunks_range' as any,
+            { p_floor: z, p_min_cx: cx, p_max_cx: endCx }
+          );
+
+          if (error) {
+            console.error(`Floor ${z} range ${cx}-${endCx} error:`, error);
+            failedFloors.push(z);
+            break;
+          }
+
+          floorChunks += (data as number) || 0;
+        }
+
+        totalChunks += floorChunks;
+        setCompactStatus(`Andar ${z}: ${floorChunks} chunks ✓`);
       }
 
       if (failedFloors.length > 0) {
