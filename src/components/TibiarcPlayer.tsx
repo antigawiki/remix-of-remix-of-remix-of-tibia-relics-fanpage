@@ -177,15 +177,13 @@ const TibiarcPlayer = ({ className }: TibiarcPlayerProps) => {
       const data = new Uint8Array(buffer);
 
       const bufPtr = copyToWasm(mod, data);
-      const namePtr = copyStringToWasm(mod, file.name);
 
-      // Use load_recording_with_version with 7.72.0 for TibiaRelic
-      const dur = mod.ccall('load_recording_with_version', 'number',
-        ['number', 'number', 'number', 'number', 'number', 'number'],
-        [bufPtr, data.length, namePtr, 7, 72, 0]);
+      // Use dedicated TibiaRelic loader (bypasses TibiacamTV format detection)
+      const dur = mod.ccall('load_recording_tibiarelic', 'number',
+        ['number', 'number', 'number', 'number', 'number'],
+        [bufPtr, data.length, 7, 72, 0]);
 
       mod._free(bufPtr);
-      mod._free(namePtr);
 
       if (dur === -1) {
         setErrorMsg('Versão do .cam não detectada');

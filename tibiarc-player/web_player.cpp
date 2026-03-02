@@ -15,6 +15,8 @@
 #include "gamestate.hpp"
 #include "canvas.hpp"
 #include "datareader.hpp"
+#include "parser.hpp"
+#include "demuxer.hpp"
 
 #include <memory>
 #include <chrono>
@@ -52,13 +54,41 @@ static std::vector<uint8_t> g_datData;
 // --- Forward declarations ---
 static void RenderFrame();
 static void MainLoop();
+static void FastForwardToPlayer();
+
+// --- Helper: fast-forward until player is initialized ---
+static void FastForwardToPlayer() {
+    while (!g_gamestate->Creatures.contains(g_gamestate->Player.Id) &&
+           g_needle != g_recording->Frames.cend()) {
+        for (auto &event : g_needle->Events) {
+            event->Update(*g_gamestate);
+        }
+        g_needle = std::next(g_needle);
+    }
+}
+
+// --- Little-endian helpers ---
+static uint16_t read_u16_le(const uint8_t *p) {
+    return (uint16_t)p[0] | ((uint16_t)p[1] << 8);
+}
+
+static uint32_t read_u32_le(const uint8_t *p) {
+    return (uint32_t)p[0] | ((uint32_t)p[1] << 8) |
+           ((uint32_t)p[2] << 16) | ((uint32_t)p[3] << 24);
+}
+
+static uint64_t read_u64_le(const uint8_t *p) {
+    return (uint64_t)read_u32_le(p) | ((uint64_t)read_u32_le(p + 4) << 32);
+}
+
+static float read_f32_le(const uint8_t *p) {
+    float f;
+    memcpy(&f, p, 4);
+    return f;
+}
 
 // --- Exported JS functions ---
 extern "C" {
-
-// Forward declare so load_recording can call it
-int load_recording_with_version(const uint8_t *buf, int len, const char *filename,
-                                 int ver_major, int ver_minor, int ver_patch);
 
 EMSCRIPTEN_KEEPALIVE
 int load_data_files(const uint8_t *picBuf, int picLen,
@@ -80,12 +110,7 @@ int load_data_files(const uint8_t *picBuf, int picLen,
 
 EMSCRIPTEN_KEEPALIVE
 int load_recording(const uint8_t *buf, int len, const char *filename) {
-    return load_recording_with_version(buf, len, filename, 0, 0, 0);
-}
-
-EMSCRIPTEN_KEEPALIVE
-int load_recording_with_version(const uint8_t *buf, int len, const char *filename,
-                                 int ver_major, int ver_minor, int ver_patch) {
+    // Forward to version-based loader with auto-detect
     try {
         if (g_picData.empty() || g_sprData.empty() || g_datData.empty()) {
             printf("[tibiarc] Data files not loaded yet\n");
@@ -93,74 +118,144 @@ int load_recording_with_version(const uint8_t *buf, int len, const char *filenam
         }
 
         DataReader reader(len, buf);
-
-        // Guess format from filename
         auto format = Recordings::GuessFormat(filename, reader);
 
         VersionTriplet triplet;
-        bool hasManualVersion = (ver_major > 0);
-
-        if (hasManualVersion) {
-            triplet = VersionTriplet(ver_major, ver_minor, ver_patch);
-            printf("[tibiarc] Using manual version: %d.%d.%d\n",
-                   ver_major, ver_minor, ver_patch);
-        } else {
-            // Try to auto-detect version from the recording
-            if (!Recordings::QueryTibiaVersion(format, reader, triplet)) {
-                printf("[tibiarc] Could not determine recording version. "
-                       "Please specify the version manually.\n");
-                return -1;  // -1 = version detection failed
-            }
-            printf("[tibiarc] Detected version: %s\n",
-                   static_cast<std::string>(triplet).c_str());
+        if (!Recordings::QueryTibiaVersion(format, reader, triplet)) {
+            printf("[tibiarc] Could not determine recording version.\n");
+            return -1;
         }
 
-        // Create version with data files
         DataReader picReader(g_picData.size(), g_picData.data());
         DataReader sprReader(g_sprData.size(), g_sprData.data());
         DataReader datReader(g_datData.size(), g_datData.data());
-
         g_version = std::make_unique<Version>(triplet, picReader, sprReader, datReader);
 
-        // Re-create reader since GuessFormat/QueryTibiaVersion may have consumed it
         DataReader reader2(len, buf);
         auto [recording, partial] = Recordings::Read(
             format, reader2, *g_version, Recordings::Recovery::None);
 
-        if (partial) {
-            printf("[tibiarc] Warning: Recording is partial\n");
-        }
+        if (partial) printf("[tibiarc] Warning: Recording is partial\n");
 
         g_recording = std::move(recording);
         g_gamestate = std::make_unique<Gamestate>(*g_version);
-
-        // Initialize
         g_needle = g_recording->Frames.cbegin();
         g_currentTick = std::chrono::milliseconds::zero();
         g_playing = false;
 
-        // Fast-forward until player is initialized
-        while (!g_gamestate->Creatures.contains(g_gamestate->Player.Id) &&
-               g_needle != g_recording->Frames.cend()) {
-            for (auto &event : g_needle->Events) {
-                event->Update(*g_gamestate);
-            }
-            g_needle = std::next(g_needle);
-        }
-
-        printf("[tibiarc] Recording loaded: %lld ms runtime, %zu frames\n",
-               g_recording->Runtime.count(),
-               g_recording->Frames.size());
-
-        // Render first frame
+        FastForwardToPlayer();
         RenderFrame();
 
+        printf("[tibiarc] Recording loaded: %lld ms, %zu frames\n",
+               g_recording->Runtime.count(), g_recording->Frames.size());
         return (int)(g_recording->Runtime.count());
     } catch (const std::exception &e) {
         printf("[tibiarc] Error: %s\n", e.what());
         return 0;
     } catch (...) {
         printf("[tibiarc] Unknown error loading recording\n");
+        return 0;
+    }
+}
+
+EMSCRIPTEN_KEEPALIVE
+int load_recording_tibiarelic(const uint8_t *buf, int len,
+                               int ver_major, int ver_minor, int ver_patch) {
+    try {
+        if (g_picData.empty() || g_sprData.empty() || g_datData.empty()) {
+            printf("[tibiarc] Data files not loaded yet\n");
+            return 0;
+        }
+
+        if (len < 12) {
+            printf("[tibiarc] TibiaRelic file too small (%d bytes)\n", len);
+            return 0;
+        }
+
+        // 1. Parse TibiaRelic header (12 bytes)
+        uint32_t fileVersion = read_u32_le(buf);
+        float fps = read_f32_le(buf + 4);
+        // bytes 8-11: extra/reserved
+        int pos = 12;
+
+        printf("[tibiarc] TibiaRelic header: version=%u fps=%.1f\n", fileVersion, fps);
+
+        // 2. Create Version with Tibia data files
+        VersionTriplet triplet(ver_major, ver_minor, ver_patch);
+        DataReader picReader(g_picData.size(), g_picData.data());
+        DataReader sprReader(g_sprData.size(), g_sprData.data());
+        DataReader datReader(g_datData.size(), g_datData.data());
+        g_version = std::make_unique<Version>(triplet, picReader, sprReader, datReader);
+
+        printf("[tibiarc] Using Tibia version: %d.%d.%d\n", ver_major, ver_minor, ver_patch);
+
+        // 3. Parse frames using Parser + Demuxer
+        Parser parser(*g_version, false);
+        Demuxer demuxer(2);  // TCP-style 2-byte length header
+        auto recording = std::make_unique<Recordings::Recording>();
+
+        uint64_t ts0 = 0;
+        bool first = true;
+        int frameCount = 0;
+
+        while (pos + 10 <= len) {
+            uint64_t ts = read_u64_le(buf + pos);
+            uint16_t sz = read_u16_le(buf + pos + 8);
+            pos += 10;
+
+            if (sz == 0 || pos + sz > len) break;
+
+            if (first) { ts0 = ts; first = false; }
+
+            auto timestamp = std::chrono::milliseconds((int64_t)(ts - ts0));
+            DataReader fragment(sz, buf + pos);
+
+            demuxer.Submit(timestamp, fragment,
+                [&](DataReader packetReader, std::chrono::milliseconds pktTs) {
+                    auto events = parser.Parse(packetReader);
+                    if (!events.empty()) {
+                        recording->Frames.emplace_back(pktTs, std::move(events));
+                    }
+                });
+
+            pos += sz;
+            frameCount++;
+        }
+
+        demuxer.Finish([&](DataReader packetReader, std::chrono::milliseconds pktTs) {
+            auto events = parser.Parse(packetReader);
+            if (!events.empty()) {
+                recording->Frames.emplace_back(pktTs, std::move(events));
+            }
+        });
+
+        if (recording->Frames.empty()) {
+            printf("[tibiarc] No frames parsed from TibiaRelic file\n");
+            return 0;
+        }
+
+        // 4. Set runtime
+        recording->Runtime = recording->Frames.back().Timestamp;
+
+        printf("[tibiarc] TibiaRelic parsed: %d raw frames -> %zu game frames, %lld ms\n",
+               frameCount, recording->Frames.size(), recording->Runtime.count());
+
+        g_recording = std::move(recording);
+        g_gamestate = std::make_unique<Gamestate>(*g_version);
+        g_needle = g_recording->Frames.cbegin();
+        g_currentTick = std::chrono::milliseconds::zero();
+        g_playing = false;
+
+        // 5. Fast-forward until player initialized
+        FastForwardToPlayer();
+        RenderFrame();
+
+        return (int)(g_recording->Runtime.count());
+    } catch (const std::exception &e) {
+        printf("[tibiarc] TibiaRelic error: %s\n", e.what());
+        return 0;
+    } catch (...) {
+        printf("[tibiarc] Unknown error loading TibiaRelic recording\n");
         return 0;
     }
 }
@@ -207,14 +302,7 @@ void seek(double ms) {
         g_needle = g_recording->Frames.cbegin();
         g_currentTick = std::chrono::milliseconds::zero();
 
-        // Fast-forward player init
-        while (!g_gamestate->Creatures.contains(g_gamestate->Player.Id) &&
-               g_needle != g_recording->Frames.cend()) {
-            for (auto &event : g_needle->Events) {
-                event->Update(*g_gamestate);
-            }
-            g_needle = std::next(g_needle);
-        }
+        FastForwardToPlayer();
     }
 
     // Fast-forward to target
@@ -241,10 +329,9 @@ int is_playing() {
 static void RenderFrame() {
     if (!g_gamestate || !g_recording) return;
 
-    // Render to tibiarc canvas
     Renderer::Options options{
         .Width = RENDER_WIDTH,
-        .Height = RENDER_HEIGHT - 128  // Leave space for interface
+        .Height = RENDER_HEIGHT - 128
     };
 
     Canvas mapCanvas(Renderer::NativeResolutionX, Renderer::NativeResolutionY);
@@ -254,12 +341,10 @@ static void RenderFrame() {
 
     Renderer::DrawGamestate(options, *g_gamestate, mapCanvas);
 
-    // Create output canvas matching SDL texture
     Canvas outputCanvas(RENDER_WIDTH, RENDER_HEIGHT);
     Renderer::DrawClientBackground(*g_gamestate, outputCanvas,
                                    0, 0, RENDER_WIDTH, RENDER_HEIGHT);
 
-    // Copy map to output (simple blit for now)
     for (int y = 0; y < std::min(mapCanvas.Height, outputCanvas.Height); y++) {
         for (int x = 0; x < std::min(mapCanvas.Width, outputCanvas.Width); x++) {
             outputCanvas.GetPixel(x, y) = mapCanvas.GetPixel(x, y);
@@ -268,7 +353,6 @@ static void RenderFrame() {
 
     Renderer::DrawOverlay(options, *g_gamestate, outputCanvas);
 
-    // Update SDL texture
     SDL_UpdateTexture(g_texture, nullptr, outputCanvas.Buffer, outputCanvas.Stride);
     SDL_RenderClear(g_renderer);
     SDL_RenderCopy(g_renderer, g_texture, nullptr, nullptr);
@@ -287,14 +371,12 @@ static void MainLoop() {
     g_currentTick += std::chrono::milliseconds((int64_t)elapsed);
     g_gamestate->CurrentTick = g_currentTick.count();
 
-    // Check if playback is done
     if (g_currentTick >= g_recording->Runtime) {
         g_playing = false;
         g_currentTick = g_recording->Runtime;
         return;
     }
 
-    // Process events up to current tick
     while (g_needle != g_recording->Frames.cend() &&
            g_needle->Timestamp <= g_currentTick) {
         for (auto &event : g_needle->Events) {
