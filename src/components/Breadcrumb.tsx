@@ -28,6 +28,7 @@ const Breadcrumb = () => {
       '/top-gainers': t('navigation.topGainers'),
       '/runes': t('pages.runes.title'),
       '/xp-tracker': t('xpTracker.title'),
+      '/polls': t('poll.pageTitle'),
       '/admin': 'Admin',
     };
     return routeMap[path] || path;

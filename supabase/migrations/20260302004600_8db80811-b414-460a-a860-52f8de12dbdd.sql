@@ -1,0 +1,1 @@
+ALTER TABLE public.polls ADD COLUMN ends_at timestamptz;

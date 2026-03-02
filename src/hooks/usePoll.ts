@@ -11,6 +11,8 @@ interface Poll {
   title: string;
   options: PollOption[];
   active: boolean;
+  ends_at: string | null;
+  created_at: string;
 }
 
 interface PollResults {
@@ -25,11 +27,13 @@ export function usePoll() {
   const [hasVoted, setHasVoted] = useState(false);
   const [voting, setVoting] = useState(false);
 
+  const isExpired = poll?.ends_at ? new Date(poll.ends_at) < new Date() : false;
+  const showResults = hasVoted || isExpired || (poll ? !poll.active : false);
+
   const fetchPoll = useCallback(async () => {
     const { data, error } = await supabase
       .from('polls')
       .select('*')
-      .eq('active', true)
       .order('created_at', { ascending: false })
       .limit(1)
       .single();
@@ -44,10 +48,11 @@ export function usePoll() {
       title: data.title,
       options: data.options as unknown as PollOption[],
       active: data.active,
+      ends_at: (data as any).ends_at ?? null,
+      created_at: data.created_at,
     };
     setPoll(pollData);
 
-    // Check localStorage for vote hint
     const voted = localStorage.getItem(`poll_voted_${data.id}`);
     if (voted) setHasVoted(true);
 
@@ -81,7 +86,6 @@ export function usePoll() {
       });
 
       if (res.error) {
-        // Try to parse the error body
         const body = res.data;
         if (body?.error === 'already_voted') {
           setHasVoted(true);
@@ -104,5 +108,55 @@ export function usePoll() {
     fetchPoll();
   }, [fetchPoll]);
 
-  return { poll, results, totalVotes, loading, hasVoted, voting, castVote };
+  return { poll, results, totalVotes, loading, hasVoted, voting, castVote, isExpired, showResults };
+}
+
+export function usePolls() {
+  const [polls, setPolls] = useState<Poll[]>([]);
+  const [allResults, setAllResults] = useState<Record<string, { results: PollResults; total: number }>>({});
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const fetch = async () => {
+      const { data, error } = await supabase
+        .from('polls')
+        .select('*')
+        .order('created_at', { ascending: false });
+
+      if (error || !data) {
+        setLoading(false);
+        return;
+      }
+
+      const pollsList: Poll[] = data.map((d) => ({
+        id: d.id,
+        title: d.title,
+        options: d.options as unknown as PollOption[],
+        active: d.active,
+        ends_at: (d as any).ends_at ?? null,
+        created_at: d.created_at,
+      }));
+      setPolls(pollsList);
+
+      // Fetch all votes
+      const { data: votes } = await supabase
+        .from('poll_votes')
+        .select('poll_id, option_key');
+
+      if (votes) {
+        const grouped: Record<string, { results: PollResults; total: number }> = {};
+        votes.forEach((v) => {
+          if (!grouped[v.poll_id]) grouped[v.poll_id] = { results: {}, total: 0 };
+          grouped[v.poll_id].results[v.option_key] = (grouped[v.poll_id].results[v.option_key] || 0) + 1;
+          grouped[v.poll_id].total++;
+        });
+        setAllResults(grouped);
+      }
+
+      setLoading(false);
+    };
+    fetch();
+  }, []);
+
+  return { polls, allResults, loading };
 }
