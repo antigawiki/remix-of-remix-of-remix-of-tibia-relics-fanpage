@@ -29,7 +29,6 @@ const CamBatchExtractPage = () => {
   const [assetsLoading, setAssetsLoading] = useState(true);
   const [files, setFiles] = useState<FileEntry[]>([]);
   const [processing, setProcessing] = useState(false);
-  const [compactStatus, setCompactStatus] = useState('');
   const [currentIdx, setCurrentIdx] = useState(-1);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const abortRef = useRef(false);
@@ -178,6 +177,8 @@ const CamBatchExtractPage = () => {
   };
 
   const [generating, setGenerating] = useState(false);
+  const [generateProgress, setGenerateProgress] = useState(0);
+  const [generateDetail, setGenerateDetail] = useState('');
   const [clearing, setClearing] = useState(false);
 
   const clearDatabase = async () => {
@@ -196,24 +197,27 @@ const CamBatchExtractPage = () => {
 
   const generateMap = async () => {
     setGenerating(true);
+    setGenerateProgress(0);
+    setGenerateDetail('Verificando andares...');
     let totalChunks = 0;
     const failedFloors: number[] = [];
     const RANGE_SIZE = 3;
+    const TOTAL_FLOORS = 16;
 
     try {
       for (let z = 0; z <= 15; z++) {
         if (abortRef.current) break;
-        setCompactStatus(`Andar ${z}: obtendo limites...`);
+        const floorPercent = (z / TOTAL_FLOORS) * 100;
+        setGenerateProgress(floorPercent);
+        setGenerateDetail(`Andar ${z <= 7 ? 7 - z : -(z - 7)}: obtendo limites...`);
 
-        // Get chunk_x range for this floor
         const { data: rangeData, error: rangeErr } = await supabase.rpc(
           'get_tile_chunk_range' as any,
           { p_floor: z }
         );
 
         if (rangeErr || !rangeData || (Array.isArray(rangeData) && rangeData.length === 0)) {
-          // No tiles on this floor
-          setCompactStatus(`Andar ${z}: vazio`);
+          setGenerateDetail(`Andar ${z <= 7 ? 7 - z : -(z - 7)}: vazio`);
           continue;
         }
 
@@ -221,15 +225,19 @@ const CamBatchExtractPage = () => {
         const minCx = range.min_cx as number;
         const maxCx = range.max_cx as number;
 
-        if (minCx == null || maxCx == null) {
-          continue;
-        }
+        if (minCx == null || maxCx == null) continue;
 
+        const totalRanges = Math.ceil((maxCx - minCx + 1) / RANGE_SIZE);
+        let rangeIdx = 0;
         let floorChunks = 0;
+
         for (let cx = minCx; cx <= maxCx; cx += RANGE_SIZE) {
           if (abortRef.current) break;
           const endCx = Math.min(cx + RANGE_SIZE - 1, maxCx);
-          setCompactStatus(`Andar ${z}: chunks ${cx}-${endCx}...`);
+          const rangeProgress = totalRanges > 0 ? rangeIdx / totalRanges : 0;
+          const progressInFloor = rangeProgress / TOTAL_FLOORS * 100;
+          setGenerateProgress(floorPercent + progressInFloor);
+          setGenerateDetail(`Andar ${z <= 7 ? 7 - z : -(z - 7)}: chunks ${cx}-${endCx} (${rangeIdx + 1}/${totalRanges})`);
 
           const { data, error } = await supabase.rpc(
             'generate_map_chunks_range' as any,
@@ -243,12 +251,13 @@ const CamBatchExtractPage = () => {
           }
 
           floorChunks += (data as number) || 0;
+          rangeIdx++;
         }
 
         totalChunks += floorChunks;
-        setCompactStatus(`Andar ${z}: ${floorChunks} chunks ✓`);
       }
 
+      setGenerateProgress(100);
       if (failedFloors.length > 0) {
         toast.error(`Erro nos andares: ${failedFloors.join(', ')}`);
       } else {
@@ -257,7 +266,7 @@ const CamBatchExtractPage = () => {
     } catch (err) {
       toast.error('Erro ao gerar mapa');
     } finally {
-      setCompactStatus('');
+      setGenerateDetail('');
       setGenerating(false);
     }
   };
@@ -424,18 +433,22 @@ const CamBatchExtractPage = () => {
                   ))}
                 </div>
 
-                {/* Compact status */}
-                {compactStatus && (
-                  <div className="bg-card border border-border/30 rounded-sm p-3 text-center">
-                    <div className="flex items-center justify-center gap-2">
-                      <Loader2 className="w-4 h-4 text-gold animate-spin" />
-                      <span className="text-sm text-muted-foreground">{compactStatus}</span>
+                {/* Generate map progress */}
+                {generating && (
+                  <div className="bg-card border border-border/30 rounded-sm p-3 space-y-2">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <Loader2 className="w-4 h-4 text-gold animate-spin" />
+                        <span className="text-sm text-muted-foreground">{generateDetail}</span>
+                      </div>
+                      <span className="text-sm font-mono text-gold">{Math.round(generateProgress)}%</span>
                     </div>
+                    <Progress value={generateProgress} className="h-2" />
                   </div>
                 )}
 
                 {/* Summary */}
-                {totalDone > 0 && !processing && !compactStatus && (
+                {totalDone > 0 && !processing && !generating && (
                   <div className="bg-card border border-border/30 rounded-sm p-3 text-center">
                     <p className="text-sm text-gold font-heading">
                       ✅ {totalDone} arquivo(s) extraído(s) — {totalTiles.toLocaleString()} tiles, {totalCreatures.toLocaleString()} criaturas
