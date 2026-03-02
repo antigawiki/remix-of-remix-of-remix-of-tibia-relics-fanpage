@@ -43,8 +43,8 @@ static double g_speed = 1.0;
 static std::chrono::milliseconds g_currentTick{0};
 static double g_lastFrameTime = 0;
 
-static const int RENDER_WIDTH = 640;
-static const int RENDER_HEIGHT = 480;
+static const int RENDER_WIDTH = 480;
+static const int RENDER_HEIGHT = 352;
 
 // Data file buffers (kept alive for the Version object)
 static std::vector<uint8_t> g_picData;
