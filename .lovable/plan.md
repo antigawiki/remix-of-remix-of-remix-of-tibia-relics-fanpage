@@ -1,77 +1,96 @@
-## Sistema de Enquetes Anonimas
-
-### Visao Geral
-
-Criar um sistema de enquetes (polls) onde usuarios votam anonimamente, com protecao contra voto duplicado via fingerprint do navegador (combinacao de IP + User-Agent hash). A primeira enquete sera "O que você mais quer ver por aqui?" com 4 opcoes.
-
-### Banco de Dados
-
-**Tabela `polls**` - Armazena as enquetes
 
 
-| Coluna     | Tipo        | Descricao                                                          |
-| ---------- | ----------- | ------------------------------------------------------------------ |
-| id         | uuid (PK)   | ID da enquete                                                      |
-| title      | text        | Titulo da enquete                                                  |
-| options    | jsonb       | Array de opcoes (ex: `[{"key":"a","label":"Entrevista..."}, ...]`) |
-| active     | boolean     | Se a enquete esta aberta para votos                                |
-| created_at | timestamptz | Data de criacao                                                    |
+## Enquetes: Traducao + Pagina Dedicada + Prazo de Encerramento
 
+### Resumo
 
-**Tabela `poll_votes**` - Armazena os votos
+Adicionar suporte completo de traducao ao sistema de enquetes, criar uma pagina dedicada `/polls` com historico de todas as enquetes, adicionar campo `ends_at` para prazo de encerramento, e ajustar a logica para mostrar resultados quando a enquete expirou ou o usuario ja votou.
 
+### 1. Banco de Dados
 
-| Coluna     | Tipo               | Descricao                                        |
-| ---------- | ------------------ | ------------------------------------------------ |
-| id         | uuid (PK)          | ID do voto                                       |
-| poll_id    | uuid (FK -> polls) | Referencia a enquete                             |
-| option_key | text               | Chave da opcao votada (a, b, c, d)               |
-| voter_hash | text               | Hash anonimo (IP + User-Agent via edge function) |
-| created_at | timestamptz        | Data do voto                                     |
-| UNIQUE     | &nbsp;             | (poll_id, voter_hash) - impede voto duplicado    |
+**Alterar tabela `polls`** - adicionar coluna de prazo:
 
+```sql
+ALTER TABLE polls ADD COLUMN ends_at timestamptz;
+```
 
-RLS: SELECT publico em ambas. INSERT em poll_votes publico. Sem UPDATE/DELETE para votos.
+Enquetes sem `ends_at` ficam abertas indefinidamente (retrocompativel). A logica de "enquete ativa" passa a considerar `active = true AND (ends_at IS NULL OR ends_at > now())`.
 
-### Edge Function: `cast-vote`
+### 2. Traducoes (i18n)
 
-- Recebe `poll_id` e `option_key`
-- Extrai IP do request header + User-Agent
-- Gera hash SHA-256 do combo (anonimo, nao reversivel)
-- Insere na `poll_votes` com `ON CONFLICT` para rejeitar voto duplicado
-- Retorna sucesso ou "ja votou"
+Adicionar secao `poll` no sistema de traducao (types.ts + 4 arquivos de idioma):
 
-### Frontend
+| Chave | PT | EN | ES | PL |
+|---|---|---|---|---|
+| poll.sectionTitle | Enquete | Poll | Encuesta | Ankieta |
+| poll.vote | Votar | Vote | Votar | Glosuj |
+| poll.voting | Votando... | Voting... | Votando... | Glosowanie... |
+| poll.votes | votos | votes | votos | glosow |
+| poll.vote_singular | voto | vote | voto | glos |
+| poll.total | Total | Total | Total | Razem |
+| poll.ended | Encerrada | Ended | Finalizada | Zakonczona |
+| poll.endsAt | Encerra em | Ends in | Finaliza en | Konczy sie za |
+| poll.allPolls | Todas as Enquetes | All Polls | Todas las Encuestas | Wszystkie Ankiety |
+| poll.noPolls | Nenhuma enquete disponivel | No polls available | Sin encuestas | Brak ankiet |
+| poll.pageTitle | Enquetes | Polls | Encuestas | Ankiety |
+| poll.pageDescription | Historico de enquetes... | Poll history... | Historial... | Historia ankiet... |
+| poll.active | Ativa | Active | Activa | Aktywna |
+| poll.closed | Encerrada | Closed | Cerrada | Zamknieta |
+| poll.viewAll | Ver todas | View all | Ver todas | Zobacz wszystkie |
 
-**Componente `PollBox.tsx**`
+As opcoes da enquete no banco continuam em portugues (sao conteudo, nao UI). Se futuramente quiser opcoes multi-idioma, as `options` do JSONB podem ter `label_pt`, `label_en`, etc.
 
-- Exibe titulo da enquete e as opcoes como radio buttons no estilo retro do site (news-box style)
-- Ao votar, chama a edge function
-- Apos votar (ou se ja votou), mostra os resultados com barras de progresso e porcentagens
-- Salva no localStorage que ja votou (UX hint, a protecao real e no backend)
+### 3. Componente PollBox.tsx (Refatorar)
 
-**Integracao na Index.tsx**
+- Substituir todas as strings hardcoded por chamadas `t('poll.xxx')`
+- Adicionar logica de prazo: se `poll.ends_at` existe e ja passou, mostrar resultados automaticamente (sem opcao de votar)
+- Mostrar badge "Encerrada" ou countdown "Encerra em X dias"
+- Adicionar link "Ver todas" apontando para `/polls`
 
-- Adicionar o `PollBox` na pagina inicial, entre o Welcome e as News, com um section-divider
+### 4. Hook usePoll.ts (Refatorar)
 
-### Dados Iniciais
+- Adicionar `ends_at` a interface `Poll`
+- Alterar query: buscar a enquete mais recente (nao necessariamente ativa -- a ultima criada)
+- Calcular `isExpired` baseado em `ends_at`
+- Se `isExpired` ou `hasVoted`, mostrar resultados
+- Criar novo hook `usePolls()` para a pagina de listagem (busca todas as enquetes ordenadas por data)
 
-Inserir a primeira enquete via migration seed:
+### 5. Pagina /polls (Nova)
 
-- Titulo: "O que voce mais quer ver por aqui?"
-- Opcoes:
-  - a: Entrevista com personagens do Relic
-  - b: Jornal com um resumo do que aconteceu no servidor
-  - c: Sistema de sugestoes e votacao da melhor sugestao pra ser levada ate a staff
-  - d: Dicas de hunt
+- Listagem de todas as enquetes, da mais recente para a mais antiga
+- Cada enquete mostra: titulo, status (Ativa/Encerrada), data de criacao, prazo
+- Se ativa e nao votou: permite votar inline
+- Se encerrada ou ja votou: mostra resultados com barras de progresso
+- Estilo consistente com o restante do site (wood-panel, maroon-header)
+
+### 6. Navegacao
+
+- Adicionar link "Enquetes" no Sidebar esquerdo (entre Quests e Calculators)
+- Adicionar rota `/polls` no App.tsx
+
+### 7. Edge Function cast-vote
+
+- Adicionar verificacao de `ends_at`: rejeitar votos em enquetes expiradas
+- Verificar `active = true` antes de aceitar o voto
+
+### 8. Atualizar enquete existente
+
+- Definir `ends_at` da primeira enquete para daqui a 7 dias (via insert tool, nao migration)
 
 ### Resumo de Arquivos
 
+| Arquivo | Acao |
+|---|---|
+| Migration SQL | EDITAR tabela polls (add ends_at) |
+| `src/i18n/types.ts` | EDITAR - adicionar secao poll |
+| `src/i18n/translations/pt.ts` | EDITAR - adicionar traducoes poll |
+| `src/i18n/translations/en.ts` | EDITAR - adicionar traducoes poll |
+| `src/i18n/translations/es.ts` | EDITAR - adicionar traducoes poll |
+| `src/i18n/translations/pl.ts` | EDITAR - adicionar traducoes poll |
+| `src/hooks/usePoll.ts` | EDITAR - adicionar ends_at, isExpired, usePolls |
+| `src/components/PollBox.tsx` | EDITAR - traducao + prazo + link ver todas |
+| `src/pages/PollsPage.tsx` | CRIAR - pagina de listagem |
+| `src/components/Sidebar.tsx` | EDITAR - adicionar link Enquetes |
+| `src/App.tsx` | EDITAR - adicionar rota /polls |
+| `supabase/functions/cast-vote/index.ts` | EDITAR - validar ends_at |
 
-| Arquivo                                 | Acao                             |
-| --------------------------------------- | -------------------------------- |
-| Migration SQL                           | CRIAR tabelas polls e poll_votes |
-| `supabase/functions/cast-vote/index.ts` | CRIAR edge function              |
-| `src/components/PollBox.tsx`            | CRIAR componente                 |
-| `src/hooks/usePoll.ts`                  | CRIAR hook para fetch/vote       |
-| `src/pages/Index.tsx`                   | EDITAR - adicionar PollBox       |
