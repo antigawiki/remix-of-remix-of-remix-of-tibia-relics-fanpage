@@ -1,89 +1,64 @@
 
 
-## Cam Player: Switch to TibiaRC WASM + Cam Map: Web Worker for Background Extraction
+## Fix: Extractor Floor Contamination + WASM Player Files + Build Errors
 
-### The Root Problem with the Player
+### Problem Analysis
 
-The current cam player uses a **custom JavaScript packet parser** that manually interprets every byte of the Tibia 7.72 protocol. This approach is inherently fragile:
+The map extractor still uses the JS packet parser. After `floorDown`/`floorUp`, tiles for the current floor (`camZ`) are stored with perspective offsets (-1, -2, etc.) baked into their X/Y coordinates. Even though `gs.tiles.clear()` fires on floor change, the tiles repopulated by subsequent frames in nearby batches may still carry residual offset data from the transition.
 
-- **Byte drift**: A single unknown opcode or misinterpreted payload causes all subsequent packets to parse incorrectly, leading to desync (player freezes while the world keeps moving).
-- **Floor transitions**: The protocol uses perspective offsets during floor changes that are extremely hard to replicate correctly in JS -- this is why tiles from other floors keep appearing.
-- **Performance**: Every frame creates/modifies JS objects, triggers garbage collection, and relies on `performance.now()` for walk animations. At higher speeds (4x, 8x), frames pile up faster than the parser can process.
-
-### How TibiaRC Does It
-
-TibiaRC already has a **complete, battle-tested C++ implementation** compiled to WASM (`tibiarc_player.js` + `tibiarc_player.wasm`) that is already in the project! It:
-
-- Uses the official tibiarc library with full protocol support (no byte drift, no floor bugs)
-- Renders via SDL2/Emscripten directly to a canvas
-- Has built-in play/pause, speed control, and seek functionality
-- Handles all floor transitions, creature movement, and animations natively
-
-The WASM player exposes these JS functions: `load_data_files()`, `load_recording()`, `play()`, `pause_playback()`, `set_speed()`, `seek()`, `get_progress()`, `get_duration()`, `is_playing()`.
+The current `anyFloorChange` flag only skips the CURRENT batch. The very next batch sees `camZ` as stable and snapshots tiles that may still contain offset data from the floor transition's `readFloorArea`.
 
 ### Plan
 
-#### Part 1: Replace JS Player with TibiaRC WASM Player
+#### 1. Copy uploaded WASM player files to project
 
-**File: `src/components/TibiarcPlayer.tsx`** -- Full rewrite
+Copy `tibiarc_player-3.js` and `tibiarc_player-3.wasm` to `public/tibiarc/` (replacing existing `tibiarc_player.js` and `tibiarc_player.wasm`).
 
-Strip out all the custom JS engine (GameState, PacketParser, Renderer, DebugLogger, keyframes, snapshot system) and replace with a thin wrapper around the WASM module:
+#### 2. Add floor-change cooldown in the extractor
 
-1. On mount, load the WASM module and call `load_data_files()` with Tibia.pic, Tibia.spr, Tibia.dat
-2. When user loads a .cam file, pass the raw bytes to `load_recording()` (which returns duration in ms, or -1 if version detection fails)
-3. Play/Pause calls `play()` / `pause_playback()`
-4. Speed control calls `set_speed(n)`
-5. Seek calls `seek(ms)`
-6. A polling interval reads `get_progress()` to update the seek bar
-7. The WASM renders directly to a canvas element via SDL2/Emscripten -- our code just sizes the canvas
+**File: `src/lib/tibiaRelic/mapExtractor.ts`** (both sync and async versions)
 
-The UI stays identical: Play/Pause, Skip +/-10s, Speed cycle (1x-8x), timeline seek bar.
+After a floor change is detected, set a cooldown counter (e.g., 3 batches). Skip `snapshotTiles` until the cooldown expires. This gives the parser time to fully rebuild the viewport with correct-offset data from scroll packets.
 
-**Removed files/imports** (no longer needed for the player):
-- No more imports of `packetParser`, `gameState`, `renderer`, `debugLogger`, `camParser`, `sprLoader`, `datLoader`
-- No more `engineRef` with keyframes, snapshots, animation loop
-- No more `requestAnimationFrame` loop -- WASM has its own `emscripten_set_main_loop`
+```text
+Before:
+  if (!anyFloorChange) snapshotTiles(...)
 
-#### Part 2: Web Worker for Background Cam Map Extraction
-
-**Problem**: `setTimeout(..., 0)` gets throttled to 1s+ intervals when the browser tab is in background, making extraction freeze.
-
-**Solution**: Move the extraction processing into a **Web Worker** that runs independently of the main thread.
-
-**New file: `src/lib/tibiaRelic/extractionWorker.ts`**
-
-A dedicated Web Worker that:
-1. Receives the .cam file buffer + .dat file buffer via `postMessage`
-2. Runs `extractMapTiles()` internally (the worker has its own event loop, unaffected by tab visibility)
-3. Posts progress updates back to the main thread
-4. Posts the final result (tiles + spawns) back when done
-
-**File: `src/lib/tibiaRelic/mapExtractor.ts`** -- Minor change
-
-Replace `setTimeout(processChunk, 0)` with synchronous processing inside the worker (no need for yielding since it's off the main thread). The worker processes all frames in a tight loop, posting progress every N frames.
-
-**File: `src/pages/CamBatchExtractPage.tsx`** -- Update to use Worker
-
-Instead of calling `extractMapTiles()` directly, create a Worker instance and communicate via messages:
-```
-worker.postMessage({ camBuffer, datBuffer })
-worker.onmessage = (e) => { /* progress or result */ }
+After:
+  if (anyFloorChange) {
+    floorStableBatches = 0;
+  } else {
+    floorStableBatches++;
+  }
+  // Only snapshot after 3+ stable batches since last floor change
+  if (floorStableBatches >= 3) {
+    snapshotTiles(...)
+  }
 ```
 
-### Summary of Benefits
+#### 3. Add tile-floor validation in snapshotTiles
 
-| Issue | Current | After |
-|-------|---------|-------|
-| Player desync | Frequent (JS byte drift) | None (native C++ parser) |
-| Floor transitions | Buggy (perspective offset errors) | Correct (tibiarc handles natively) |
-| Walk animations | Sometimes freeze | Smooth (native tick system) |
-| Background extraction | Stops when tab hidden | Continues (Web Worker) |
-| Code complexity | ~2000 lines of custom parser+renderer | ~150 lines WASM wrapper |
+Add a secondary guard: when capturing tiles for underground floors (z > 7), verify the tile coordinates are within the expected viewport bounds relative to `camX/camY`. Also, for each tile, check that the tile key's Z matches the expected floor. Reject tiles whose coordinates suggest they came from a different floor's perspective offset.
 
-### Technical Notes
+Specifically, compute `expectedOffset = camZ - tz`. For `tz === camZ`, offset should be 0. If a tile's position relative to the camera center doesn't match a zero-offset viewport (18x14 centered on camX, camY), skip it.
 
-- The WASM player uses SDL2 rendered to an Emscripten canvas. We need to ensure the canvas element ID matches what Emscripten expects (typically `#canvas` or configured via `Module.canvas`).
-- The `load_recording_with_version` function accepts manual version override (7, 72, 0 for TibiaRelic).
-- Web Workers cannot access DOM, so all Supabase uploads remain on the main thread -- only the CPU-intensive extraction moves to the worker.
-- The existing `.cam` parser and game state modules remain in the codebase since the map extractor still needs them.
+#### 4. Fix build errors in edge functions
+
+These are pre-existing TypeScript errors unrelated to the extractor:
+
+- **`cast-vote/index.ts`**: Change `err.message` to `(err as Error).message`
+- **`analyze-alt-matches/index.ts`**, **`scrape-character-accounts/index.ts`**, **`track-online-players/index.ts`**: Add type annotations to fix Supabase client type inference issues (cast to `any` where needed)
+
+### Files to Modify
+
+| File | Change |
+|------|--------|
+| `public/tibiarc/tibiarc_player.js` | Replace with uploaded WASM JS |
+| `public/tibiarc/tibiarc_player.wasm` | Replace with uploaded WASM binary |
+| `src/lib/tibiaRelic/mapExtractor.ts` | Add cooldown + viewport validation |
+| `src/lib/tibiaRelic/extractionWorker.ts` | No changes needed (already uses sync version) |
+| `supabase/functions/cast-vote/index.ts` | Fix `err` type |
+| `supabase/functions/analyze-alt-matches/index.ts` | Fix Supabase client type |
+| `supabase/functions/scrape-character-accounts/index.ts` | Fix Supabase client type |
+| `supabase/functions/track-online-players/index.ts` | Fix Supabase client type |
 
