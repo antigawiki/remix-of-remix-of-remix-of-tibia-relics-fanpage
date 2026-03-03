@@ -46,12 +46,8 @@ const DB_CHUNK = 32;
 const SURFACE_ONLY_ITEMS: Set<number> = new Set([
   // Grass tiles
   101, 102, 103, 104, 105, 106,
-  // Surface border/ground tiles
-  351, 352, 353, 354, 355, 356,
-  // Border variants
-  405, 406, 407, 408, 409, 410, 411, 412, 413, 414, 415,
-  416, 417, 418, 419, 420, 421, 422, 423, 424, 425, 426,
-  427, 428, 429, 430,
+  // Sand/beach tiles
+  107, 108, 109, 110, 111, 112, 113, 114,
 ]);
 
 // Per-visit creature count for a chunk
@@ -110,7 +106,7 @@ export function extractMapTilesSync(
       floorStableBatches++;
     }
 
-    if (floorStableBatches >= 1) snapshotTiles(gs, dat, latestTiles);
+    if (floorStableBatches >= 3) snapshotTiles(gs, dat, latestTiles);
 
     const playerChunkX = Math.floor(gs.camX / DB_CHUNK);
     const playerChunkY = Math.floor(gs.camY / DB_CHUNK);
@@ -200,7 +196,7 @@ export async function extractMapTiles(
         floorStableBatches++;
       }
 
-      if (floorStableBatches >= 1) {
+      if (floorStableBatches >= 3) {
         snapshotTiles(gs, dat, latestTiles);
       }
 
@@ -410,6 +406,13 @@ function snapshotTiles(
     // Filter out surface-only items on underground floors
     if (camZ >= 8) {
       items = items.filter(id => !SURFACE_ONLY_ITEMS.has(id));
+
+      // Reject tiles without a ground item on underground floors (desync contamination)
+      const hasGround = items.some(id => {
+        const d = dat.items.get(id);
+        return d && d.stackPrio === 0;
+      });
+      if (!hasGround) continue;
     }
 
     if (items.length > 0) {
