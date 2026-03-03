@@ -1,39 +1,83 @@
 
-## Fix: Tela preta ao voltar de area problematica no cam player
 
-### Causa raiz
+## Fix robusto: Tela preta no cam player apos frames corrompidos
 
-Dois bugs no sistema de seek:
+### Diagnostico
 
-1. **Deteccao de falha quebrada**: O C++ `seek()` retorna `void`, mas o JavaScript chama com tipo de retorno `'string'` e compara com um sentinela `SEEK_FAIL`. Como `void` retorna `undefined` (nunca igual a `SEEK_FAIL`), o seek SEMPRE parece ter sucesso. A logica de retry/recuperacao nunca executa.
+O C++ `RenderFrame()` renderiza tela preta quando os tiles ao redor do player estao vazios. Isso acontece quando:
+1. Um opcode `mapDesc` (0x64) ou `floorChange` (0xbe/0xbf) limpa tiles existentes
+2. O parse do restante do pacote falha (buffer overflow, dados corrompidos)
+3. Resultado: player existe, camera correta, mas zero tiles = tela preta com mensagens flutuando
 
-2. **Reset incompleto**: O `g_gamestate->Reset()` no C++ pode nao limpar todo o estado interno. Apos processar frames corrompidos (area ~1:10:00), a corrupcao persiste mesmo fazendo Reset e reprocessando ate o minuto 48.
+### Problemas no fix atual
 
-### Solucao
+1. **`safeCall` engole excecoes**: O `try-catch` no `handleSeek` nunca dispara porque `safeCall` ja captura internamente. O fallback para `lastGoodProgressRef` e codigo morto.
 
-Mudar a estrategia de seek no JavaScript para **sempre recarregar a gravacao** antes de qualquer seek. O `reloadRecording()` chama `load_recording_tibiarelic` no C++, que cria um `Gamestate` totalmente novo (`std::make_unique<Gamestate>`). Isso garante estado 100% limpo.
+2. **Playback continuo nao tem protecao**: O `MainLoop` do C++ processa frames corrompidos sem nenhuma recuperacao. Se o player chegar no minuto 59+ durante o play normal, o estado corrompe igualmente.
 
-### Mudancas em `src/components/TibiarcPlayer.tsx`
+3. **O reload funciona em teoria**: Quando fazemos `reloadRecording` + `seek(48min)`, o C++ cria um gamestate novo e processa apenas frames 0-48min, nunca tocando os frames corrompidos. Isso DEVERIA funcionar.
 
-**Substituir o `handleSeek`** para:
+### Solucao em 3 partes
 
-1. **Sempre chamar `reloadRecording(mod)`** antes do seek, nao apenas nos retries
-2. **Remover a deteccao de falha baseada em retorno** (seek retorna void, nao tem como detectar falha pelo retorno)
-3. **Usar try-catch** para detectar se o seek crashou (excecao WASM)
-4. **Manter `lastGoodProgressRef`** para fallback se o seek causar excecao
+#### Parte 1: Validacao pos-seek no C++ (via nova funcao exportada)
 
-Logica simplificada:
+Adicionar uma funcao `validate_state()` ao `web_player.cpp` que retorna um status code:
+- 0 = OK (player existe + tiles nao vazios ao redor)
+- 1 = player creature nao existe
+- 2 = tiles vazios ao redor do player
+
+Entretanto, como nao podemos recompilar o WASM agora, usaremos uma abordagem JS-only.
+
+#### Parte 2: Deteccao de corrupcao pos-seek (JS-only)
+
+Apos cada seek, verificar se o canvas esta "vazio" (tela preta). Tecnica: ler pixels do canvas via `getImageData` e verificar se a maioria e preta. Se sim, o seek corrompeu o estado.
+
+Mudanca em `handleSeek` no `TibiarcPlayer.tsx`:
 
 ```text
-1. Pausar playback
-2. Recarregar gravacao (estado limpo)
-3. Tentar seek para posicao desejada
-4. Se excecao: recarregar + seek para lastGoodProgress
-5. Retomar playback se estava tocando
+1. Reload recording (estado limpo)
+2. Seek para posicao desejada
+3. Aguardar 50ms para renderizar
+4. Verificar canvas - se >95% pixels pretos:
+   a. Tentar seek +5s (pular area problematica)
+   b. Se ainda preto, seek +15s
+   c. Se ainda preto, restaurar lastGoodProgress
+5. Retomar playback
 ```
 
-Isso elimina completamente o problema de "estado corrompido persistente" porque cada seek comeca de um estado virgem.
+#### Parte 3: Protecao durante playback continuo
 
-### Impacto em performance
+Adicionar ao polling de progresso (que roda a cada 100ms) uma verificacao do canvas. Se detectar tela preta durante playback:
+1. Pausar
+2. Reload recording
+3. Seek para posicao atual + 5s (pular a area problematica)
+4. Retomar playback
 
-O `reloadRecording` re-parseia a gravacao inteira, mas isso leva menos de 100ms mesmo para arquivos grandes (o console mostra parsing de 26k frames quase instantaneo). O debounce de 150ms ja absorve esse custo.
+Isso cria um "auto-skip" que pula automaticamente areas corrompidas da .cam.
+
+### Mudancas tecnicas
+
+**Arquivo: `src/components/TibiarcPlayer.tsx`**
+
+1. Nova funcao `isCanvasBlack()`:
+   - Usa `canvasRef.current.getContext('2d').getImageData()`
+   - Amostra ~100 pixels em grid para performance
+   - Retorna true se >90% sao pretos (RGBA ~0,0,0)
+
+2. Atualizar `handleSeek`:
+   - Remover o try-catch inutilmorto (safeCall ja engole excecoes)
+   - Apos seek + pequeno delay, verificar canvas
+   - Se preto: tentar offsets crescentes (+5s, +15s, +30s)
+   - Log de warning quando skip ocorre
+
+3. Atualizar polling de progresso (useEffect do `state === 'playing'`):
+   - A cada 2s (nao 100ms para nao impactar performance), verificar canvas
+   - Se preto por 2 checks consecutivos: auto-skip +5s
+   - Mostrar toast/log informando que area problematica foi pulada
+
+### Limitacoes
+
+- A deteccao por pixels tem um delay de ~50ms apos o seek
+- Areas legitivamente escuras do jogo (cavernas totalmente negras) podem triggerar false positives - mitigado verificando se ha QUALQUER pixel nao-preto (ate cavernas tem tiles com cor)
+- Nao resolve a causa raiz no WASM (precisaria recompilar) mas contorna efetivamente
+
