@@ -1,83 +1,98 @@
 
 
-## Fix robusto: Tela preta no cam player apos frames corrompidos
+## Analise dos bytes do .cam e plano de acao
 
-### Diagnostico
+### O que descobri
 
-O C++ `RenderFrame()` renderiza tela preta quando os tiles ao redor do player estao vazios. Isso acontece quando:
-1. Um opcode `mapDesc` (0x64) ou `floorChange` (0xbe/0xbf) limpa tiles existentes
-2. O parse do restante do pacote falha (buffer overflow, dados corrompidos)
-3. Resultado: player existe, camera correta, mas zero tiles = tela preta com mensagens flutuando
+O arquivo `.cam` **nao esta corrompido**. O problema esta no parser C++ do tibiarc (compilado no WASM), que e diferente do parser JS que voce ja tem no projeto. O C++ usa `Parser::Parse()` da biblioteca tibiarc, que foi projetada para protocolos Tibia genericos -- nao para o protocolo customizado do TibiaRelic 7.72.
 
-### Problemas no fix atual
+Diferencas conhecidas entre o parser C++ (tibiarc) e o JS (`packetParser.ts`):
 
-1. **`safeCall` engole excecoes**: O `try-catch` no `handleSeek` nunca dispara porque `safeCall` ja captura internamente. O fallback para `lastGoodProgressRef` e codigo morto.
+- **Statement GUID no talk (0xAA)**: O JS le 4 bytes extras que o TibiaRelic envia. O C++ provavelmente nao.
+- **readStats (0xA0)**: O JS faz `skip(20)` (sem stamina). O C++ pode esperar um tamanho diferente.
+- **Heuristica TCP/direct**: Ambos implementam, mas com logica ligeiramente diferente.
+- **CreatureUnpass (0x92), MultiUseDelay (0xA6)**: Handlers customizados no JS que podem nao existir no C++.
 
-2. **Playback continuo nao tem protecao**: O `MainLoop` do C++ processa frames corrompidos sem nenhuma recuperacao. Se o player chegar no minuto 59+ durante o play normal, o estado corrompe igualmente.
+Quando um desses opcodes e interpretado com tamanho errado, o parser perde o alinhamento dos bytes. Todos os opcodes seguintes ficam "deslocados" e o estado do jogo corrompe -- tiles sao limpos, criaturas somem, tela preta.
 
-3. **O reload funciona em teoria**: Quando fazemos `reloadRecording` + `seek(48min)`, o C++ cria um gamestate novo e processa apenas frames 0-48min, nunca tocando os frames corrompidos. Isso DEVERIA funcionar.
+### A boa noticia
 
-### Solucao em 3 partes
+Voce ja tem **todos os componentes** para um player 100% JavaScript:
 
-#### Parte 1: Validacao pos-seek no C++ (via nova funcao exportada)
+| Componente | Arquivo | Status |
+|---|---|---|
+| Parser .cam | `camParser.ts` | Completo |
+| Parser protocolo | `packetParser.ts` | Completo, testado com map extraction |
+| Estado do jogo | `gameState.ts` | Completo (tiles, criaturas, camera) |
+| Loader sprites | `sprLoader.ts` | Completo |
+| Loader .dat | `datLoader.ts` | Completo |
+| Renderer | `renderer.ts` | Completo (items, criaturas, efeitos, projeteis, texto animado, HUD) |
 
-Adicionar uma funcao `validate_state()` ao `web_player.cpp` que retorna um status code:
-- 0 = OK (player existe + tiles nao vazios ao redor)
-- 1 = player creature nao existe
-- 2 = tiles vazios ao redor do player
+O unico componente que falta e o **loop de playback** -- a logica que processa frames na hora certa e chama o renderer.
 
-Entretanto, como nao podemos recompilar o WASM agora, usaremos uma abordagem JS-only.
+### Plano: Player JS puro (substituir o WASM)
 
-#### Parte 2: Deteccao de corrupcao pos-seek (JS-only)
+#### 1. Criar `src/components/JsCamPlayer.tsx`
 
-Apos cada seek, verificar se o canvas esta "vazio" (tela preta). Tecnica: ler pixels do canvas via `getImageData` e verificar se a maioria e preta. Se sim, o seek corrompeu o estado.
+Novo componente que substitui o `TibiarcPlayer` na pagina `CamPlayerPage`:
 
-Mudanca em `handleSeek` no `TibiarcPlayer.tsx`:
+- Carrega `Tibia.spr`, `Tibia.dat` (mesmos arquivos que o WASM usa, ~3MB total)
+- Ao receber um `.cam`, usa `parseCamFile()` para extrair frames
+- Cria `GameState` + `PacketParser` + `Renderer`
+- Implementa loop de playback com `requestAnimationFrame`:
 
 ```text
-1. Reload recording (estado limpo)
-2. Seek para posicao desejada
-3. Aguardar 50ms para renderizar
-4. Verificar canvas - se >95% pixels pretos:
-   a. Tentar seek +5s (pular area problematica)
-   b. Se ainda preto, seek +15s
-   c. Se ainda preto, restaurar lastGoodProgress
-5. Retomar playback
+Cada frame de animacao:
+  1. Calcular tempo decorrido (com speed multiplier)
+  2. Processar todos os frames .cam ate o timestamp atual
+  3. Chamar renderer.draw() no canvas
 ```
 
-#### Parte 3: Protecao durante playback continuo
+- Seek: resetar `GameState`, reprocessar frames 0 ate target timestamp
+- Controles: play/pause, speed (1x/2x/4x/8x), slider de progresso, fullscreen
 
-Adicionar ao polling de progresso (que roda a cada 100ms) uma verificacao do canvas. Se detectar tela preta durante playback:
-1. Pausar
-2. Reload recording
-3. Seek para posicao atual + 5s (pular a area problematica)
-4. Retomar playback
+#### 2. Otimizacao de seek com snapshots
 
-Isso cria um "auto-skip" que pula automaticamente areas corrompidas da .cam.
+Para evitar reprocessar milhares de frames em cada seek:
 
-### Mudancas tecnicas
+- A cada ~30s de playback, salvar um snapshot do `GameState` (ja tem `snapshot()/restore()`)
+- No seek, restaurar o snapshot mais proximo anterior ao target e processar apenas os frames restantes
+- Isso reduz o tempo de seek de "processar 26k frames" para "processar ~500 frames"
 
-**Arquivo: `src/components/TibiarcPlayer.tsx`**
+#### 3. Substituir na pagina
 
-1. Nova funcao `isCanvasBlack()`:
-   - Usa `canvasRef.current.getContext('2d').getImageData()`
-   - Amostra ~100 pixels em grid para performance
-   - Retorna true se >90% sao pretos (RGBA ~0,0,0)
+Atualizar `CamPlayerPage.tsx` para usar `JsCamPlayer` em vez de `TibiarcPlayer`.
 
-2. Atualizar `handleSeek`:
-   - Remover o try-catch inutilmorto (safeCall ja engole excecoes)
-   - Apos seek + pequeno delay, verificar canvas
-   - Se preto: tentar offsets crescentes (+5s, +15s, +30s)
-   - Log de warning quando skip ocorre
+### Vantagens
 
-3. Atualizar polling de progresso (useEffect do `state === 'playing'`):
-   - A cada 2s (nao 100ms para nao impactar performance), verificar canvas
-   - Se preto por 2 checks consecutivos: auto-skip +5s
-   - Mostrar toast/log informando que area problematica foi pulada
+- **Controle total** sobre o parsing -- qualquer opcode pode ser ajustado
+- **Zero dependencia de WASM** -- sem problemas de compilacao/recompilacao
+- **Debugging facil** -- console.log em qualquer ponto do parser
+- **Ja testado** -- o mesmo parser JS funciona perfeitamente para extracao de mapa
 
-### Limitacoes
+### Detalhes tecnicos
 
-- A deteccao por pixels tem um delay de ~50ms apos o seek
-- Areas legitivamente escuras do jogo (cavernas totalmente negras) podem triggerar false positives - mitigado verificando se ha QUALQUER pixel nao-preto (ate cavernas tem tiles com cor)
-- Nao resolve a causa raiz no WASM (precisaria recompilar) mas contorna efetivamente
+**Loop de playback:**
+```text
+requestAnimationFrame callback:
+  elapsed = (now - lastTime) * speed
+  currentMs += elapsed
+  while (frameIndex < frames.length && frames[frameIndex].timestamp <= currentMs):
+    parser.process(frames[frameIndex].payload)
+    frameIndex++
+  renderer.incTick()
+  renderer.draw(canvasWidth, canvasHeight)
+```
+
+**Seek:**
+```text
+1. Encontrar snapshot mais proximo (ou resetar GameState se nenhum)
+2. Processar frames do snapshot ate target
+3. Renderizar frame atual
+```
+
+**Performance esperada:**
+- O parser JS processa ~26k frames em <200ms (ja medido na extracao de mapa)
+- O renderer JS ja roda a 60fps no canvas (testado)
+- Seek sem snapshot: ~200ms. Com snapshots a cada 30s: ~20ms.
 
