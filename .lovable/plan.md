@@ -1,42 +1,67 @@
 
 
-## Fix: Erro de compilação do WASM
+## Diagnóstico Profundo: Desync, White Sprites e Mensagens
 
-O erro do build é claro:
+### 1. Mensagens ainda aparecendo na tela
 
-```
-field designator 'SkipRenderingCreatureNames' does not refer to any field in type 'Renderer::Options'
-```
+**Causa confirmada:** O `web_player.cpp` atual liga `SkipRenderingPlayerNames` ao mesmo flag `g_skip_messages`. O usuário confirmou que esconder mensagens **não deve** esconder nomes de criaturas.
 
-O struct `Renderer::Options` do tibiarc **não tem** `SkipRenderingCreatureNames` nem `SkipRenderingCreatureIcons`. Além disso, os campos estão fora da ordem de declaração (warnings `-Wreorder-init-list`).
+Mas o problema principal é outro: mesmo com todos os flags de skip ativados, as mensagens continuam. Isso indica que o tibiarc tem caminhos de renderização adicionais não cobertos pelos flags atuais. A função `DrawOverlay` provavelmente renderiza:
+- Speech bubbles (chat sobre a cabeça dos players)
+- Animated text (dano, healing, XP)
+- Status messages
 
-### Correção no `web_player.cpp`
+Esses podem ter flags adicionais no struct `Renderer::Options` que não estamos usando, ou podem ser renderizados incondicionalmente pelo tibiarc.
 
-Remover os campos inexistentes e reordenar para seguir a ordem do struct. Baseado nos erros, os campos válidos e sua ordem de declaração são:
+**Fix no `web_player.cpp`:**
+1. Separar `SkipRenderingPlayerNames = false` (sempre visível)
+2. Investigar o `renderer.hpp` do fork para campos adicionais do struct Options
+3. Se não houver flag para speech bubbles: patch no `DrawOverlay` para skip quando `g_skip_messages = true`, ou adicionar `g_gamestate->Messages.Prune(0)` forçado antes de cada `RenderFrame` quando skip está ativo (limpa todas as mensagens pendentes)
 
-1. `Width`
-2. `Height`
-3. `SkipRenderingMessages`
-4. `SkipRenderingPlayerNames`
-5. `SkipRenderingYellingMessages`
-6. `SkipRenderingCreatureHealthBars`
-7. `SkipRenderingStatusBars`
+### 2. Desync e Multi-Floor Reading
 
-O bloco `Renderer::Options` deve ficar:
+**Análise do sistema atual:**
+O `getFloorRange` no JS parser lê:
+- Superfície (z ≤ 7): floors 7→0 (8 andares), como o OTClient padrão
+- Subsolo (z > 7): z-2 até z+2 (5 andares)
 
-```cpp
-Renderer::Options options{
-    .Width = RENDER_WIDTH,
-    .Height = RENDER_HEIGHT,
-    .SkipRenderingMessages = g_skip_messages,
-    .SkipRenderingPlayerNames = g_skip_messages,
-    .SkipRenderingYellingMessages = g_skip_messages,
-    .SkipRenderingCreatureHealthBars = false,
-    .SkipRenderingStatusBars = g_skip_messages,
-};
-```
+O protocolo Tibia envia tiles com sentinelas `0xFF00+` que indicam "skip N tiles". O skip count é propagado entre andares (`readFloorArea` retorna skip). Isso é correto para o protocolo padrão.
 
-Isso remove `SkipRenderingCreatureNames` e `SkipRenderingCreatureIcons` (não existem), e reordena os campos para `PlayerNames` antes de `YellingMessages` (conforme a ordem de declaração indicada pelos warnings).
+**Possível causa de desync:** O TibiaRelic é um servidor customizado 7.72. Se ele enviar **menos andares** que o esperado (ex: só 3 andares em vez de 8 na superfície), o parser continuaria lendo bytes do próximo opcode como se fossem tiles, corrompendo todo o stream.
 
-Após o commit, rodar o workflow novamente.
+**Evidência:** Os problemas de desync acontecem especialmente durante:
+- `mapDesc` (0x64) que lê múltiplos andares
+- `scroll` (0x65-0x68) que também lê multi-floor
+- `floorUp`/`floorDown` (0xBE/0xBF)
+
+**Fix proposto:** Adicionar instrumentação ao parser JS para contar quantos bytes cada `readMultiFloorArea` consome vs. quantos estavam disponíveis. Isso revelará se o parser está consumindo demais (desync) ou de menos (dados residuais). Essa informação permitirá ajustar `getFloorRange` para o formato real do TibiaRelic.
+
+Nota: Isso afeta apenas as ferramentas JS (cam-analyzer, cam-map). O player WASM usa o parser C++ do tibiarc que tem sua própria lógica de multi-floor.
+
+### 3. White Sprites no Cam Map
+
+**Análise:** O `SprLoader` lê o count como `u16` (linha 19), correto para 7.72. Sprites com offset 0 retornam null, e `getSpriteCanvas` retorna null, fazendo `drawImage` não ser chamado. Portanto, tiles "brancos" não são sprites brancos — são tiles sem nenhum sprite válido, mostrando o fundo transparente do canvas (que o Leaflet renderiza como branco/cinza).
+
+**Causas possíveis:**
+- Item IDs corrompidos vindos do parser desync (cascata do problema #2)
+- Item IDs que existem no .dat mas cujos spriteIds apontam para sprites inexistentes no .spr
+- Tiles com dados de andares errados (perspectiva) gravados no banco
+
+**Fix:** Antes de gravar tiles no banco durante a extração, validar que pelo menos o ground tile tem sprites resolvíveis. Tiles sem ground válido devem ser descartados.
+
+### Plano de Mudanças
+
+**Fase 1 — `web_player.cpp` (recompilação necessária):**
+- `SkipRenderingPlayerNames = false` (sempre visível, separado de mensagens)
+- Antes de `DrawOverlay`, se `g_skip_messages`: chamar `g_gamestate->Messages.Prune(g_currentTick.count() + 999999)` para limpar todas as mensagens pendentes, garantindo que nenhuma speech bubble seja desenhada
+- Verificar no `renderer.hpp` se existem flags adicionais como `SkipRenderingAnimatedText`
+
+**Fase 2 — Diagnóstico de multi-floor (JS):**
+- Adicionar logging ao `readMultiFloorArea` para medir bytes consumidos por floor
+- Comparar com o comportamento esperado para identificar desalinhamento
+- Criar um modo "single-floor" no parser para testes comparativos
+
+**Fase 3 — Validação de sprites na extração:**
+- No pipeline de extração de tiles, filtrar tiles cujo ground sprite não é resolvível pelo SprLoader
+- Isso elimina os quadrados brancos sem afetar a cobertura de tiles válidos
 
