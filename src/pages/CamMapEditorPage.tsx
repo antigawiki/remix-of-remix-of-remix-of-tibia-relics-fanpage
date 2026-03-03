@@ -346,6 +346,9 @@ const CamMapEditorPage = () => {
     map.setView([-DEFAULT_CENTER_Y, DEFAULT_CENTER_X], 3);
     mapRef.current = map;
 
+    // Leaflet needs a size recalc after flex layout settles
+    setTimeout(() => map.invalidateSize(), 100);
+
     // Click to edit tile
     map.on('click', (e: L.LeafletMouseEvent) => {
       const tileX = Math.floor(e.latlng.lng);
