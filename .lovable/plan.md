@@ -1,45 +1,68 @@
 
 
-## Fix: Recuperacao apos falha de seek no WASM
+## Fix: WASM Seek Crashes — Recompilacao Necessaria
 
 ### Problema raiz
 
-O `seek` no C++ faz `g_gamestate->Reset()` e re-processa todos os frames ate o ponto desejado. Se qualquer frame causa uma excecao, o gamestate fica corrompido e o player congela. O `safeCall` captura a excecao no JS, mas o estado interno do WASM ja esta inconsistente -- o canvas para de atualizar.
+O crash acontece porque a funcao `seek()` no C++ processa frames SEM try-catch individual. Quando um frame contem tiles/itens nao reconhecidos, o parser do tibiarc lanca uma excecao. No `MainLoop`, cada frame tem try-catch e frames corrompidos sao pulados. No `seek`, nao — uma excecao mata todo o seek.
 
-Sem recompilar o WASM, nao da para corrigir isso no C++. A solucao e tratar no JS.
+Alem disso, a biblioteca `libtibiarc.a` e compilada via CMake SEM `-fexceptions`, entao as excecoes lancadas dentro do parser nao sao catchable pelo `web_player.cpp`. Elas viram traps do WASM (os numeros tipo "2409064").
 
-### Solucao: Recuperacao automatica apos falha de seek
+### Solucao: Duas mudancas
 
-**Arquivo: `src/components/TibiarcPlayer.tsx`**
+**1. Arquivo: `tibiarc-player/web_player.cpp`** — Adicionar try-catch por frame no `seek()` e `FastForwardToPlayer()`, identico ao que ja existe no `MainLoop`:
 
-1. **Guardar o buffer do arquivo .cam em um ref** (`camBufferRef`) para poder recarregar sem pedir o arquivo de novo
+```cpp
+// seek() — linha 337-343, mudar para:
+while (g_needle != g_recording->Frames.cend() &&
+       g_needle->Timestamp <= target) {
+    try {
+        for (auto &event : g_needle->Events) {
+            event->Update(*g_gamestate);
+        }
+    } catch (...) {
+        // Skip corrupted frame during seek
+    }
+    g_needle = std::next(g_needle);
+}
 
-2. **Na funcao `handleSeek`**: apos chamar `safeCall(mod, 'seek', ...)`, verificar se retornou o fallback (indicando excecao). Se sim:
-   - Recarregar o recording chamando `load_recording_tibiarelic` novamente com o buffer salvo
-   - Tentar seek de novo (uma unica vez)
-   - Se falhar de novo, manter a posicao atual e continuar playback normal
-
-3. **Skip forward/back (-10s/+10s)**: mesma logica de recuperacao
-
-4. **Seek somente para frente quando possivel**: se o ponto desejado e maior que o atual, o C++ nao precisa fazer reset (so avanca frames). Isso evita o caminho de codigo que causa crash. Adicionar logica para detectar isso e so recarregar quando o seek for para tras.
-
-### Mudancas
-
-| Arquivo | Mudanca |
-|---|---|
-| `src/components/TibiarcPlayer.tsx` | Adicionar `camBufferRef` para guardar dados do .cam; modificar `handleSeek` para detectar falha e recarregar recording; logica de retry com limite de 1 tentativa |
-
-### Detalhes da implementacao
-
-```text
-handleSeek(ms):
-  1. Se ms >= progresso_atual -> seek forward (seguro, sem reset)
-  2. Se ms < progresso_atual -> seek backward (perigoso)
-     a. Chamar seek via safeCall
-     b. Se falhar (retorna fallback):
-        - Re-chamar load_recording_tibiarelic com camBufferRef
-        - Tentar seek novamente
-        - Se falhar de novo, desistir e manter posicao atual
-     c. Sempre restaurar playback se estava tocando
+// FastForwardToPlayer() — linha 65-73, mudar para:
+while (!g_gamestate->Creatures.contains(g_gamestate->Player.Id) &&
+       g_needle != g_recording->Frames.cend()) {
+    try {
+        for (auto &event : g_needle->Events) {
+            event->Update(*g_gamestate);
+        }
+    } catch (...) {
+        // Skip corrupted frame
+    }
+    g_needle = std::next(g_needle);
+}
 ```
+
+**2. Arquivo: `.github/workflows/build-tibiarc.yml`** — Adicionar `-fexceptions` e `-DCMAKE_CXX_FLAGS=-fexceptions` na compilacao da biblioteca tibiarc para que as excecoes lancadas dentro do parser sejam catchable:
+
+```yaml
+emcmake cmake .. \
+  -DTIBIARC_NO_LIBAV=ON \
+  ...
+  -DCMAKE_CXX_FLAGS="-fexceptions"
+```
+
+### Por que isso resolve
+
+- Com `-fexceptions` na libtibiarc, as excecoes do parser (itens/tiles desconhecidos) propagam corretamente ate o try-catch no web_player.cpp
+- Com try-catch por frame no `seek()`, frames problematicos sao pulados (identico ao comportamento do `MainLoop` e do parser JS antigo)
+- O seek nao crasheia mais — apenas pula os frames com dados nao reconhecidos
+
+### Sequencia
+
+1. Editar `tibiarc-player/web_player.cpp` — adicionar try-catch no seek e FastForwardToPlayer
+2. Editar `.github/workflows/build-tibiarc.yml` — adicionar -fexceptions na compilacao da lib
+3. Rodar o workflow no GitHub Actions para recompilar
+4. Commit automatico dos arquivos .wasm/.js atualizados
+
+### Nota
+
+Apos aprovar, farei as edicoes nos dois arquivos. Depois sera necessario rodar o workflow `Build tibiarc WASM Player` no GitHub Actions para gerar o novo `tibiarc_player.wasm` e `tibiarc_player.js`.
 
