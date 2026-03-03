@@ -30,6 +30,15 @@ const Breadcrumb = () => {
       '/xp-tracker': t('xpTracker.title'),
       '/polls': t('poll.pageTitle'),
       '/admin': 'Admin',
+      '/cam-analyzer': 'Cam Packet Analyzer',
+      '/cam-player': 'Cam Player',
+      '/cam-batch-extract': 'Cam Batch Extract',
+      '/cam-map': 'Cam Map',
+      '/latest-deaths': t('navigation.latestDeaths') || 'Latest Deaths',
+      '/kill-statistics': 'Kill Statistics',
+      '/hunt-admin': 'Hunt Admin',
+      '/import': 'Import',
+      '/alt-detector': 'Alt Detector',
     };
     return routeMap[path] || path;
   };
