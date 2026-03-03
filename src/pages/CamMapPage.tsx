@@ -1,6 +1,8 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { Link } from 'react-router-dom';
-import { ArrowLeft, Map as MapIcon, ChevronUp, ChevronDown, Loader2, Bug, Package } from 'lucide-react';
+import { ArrowLeft, Map as MapIcon, ChevronUp, ChevronDown, Loader2, Bug, Package, Pencil } from 'lucide-react';
+import { SpriteSidebar } from '@/components/cam-editor/SpriteSidebar';
+import { TileEditPanel } from '@/components/cam-editor/TileEditPanel';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
@@ -190,6 +192,9 @@ const CamMapPage = () => {
   const [tileCount, setTileCount] = useState(0);
   const [showSpawns, setShowSpawns] = useState(true);
   const [showLooseItems, setShowLooseItems] = useState(true);
+  const [editMode, setEditMode] = useState(false);
+  const [selectedItemId, setSelectedItemId] = useState<number | null>(null);
+  const [editingTile, setEditingTile] = useState<{ x: number; y: number; z: number; items: number[] } | null>(null);
 
   // Load sprite/dat data
   useEffect(() => {
@@ -271,7 +276,6 @@ const CamMapPage = () => {
       const tileY = Math.floor(-e.latlng.lat);
       setMouseCoords({ x: tileX, y: tileY });
 
-      // Look up item IDs for this tile from memory
       const subCX = Math.floor(tileX / CHUNK_TILES);
       const subCY = Math.floor(tileY / CHUNK_TILES);
       const chunkTiles = floorDataRef.current.get(`${subCX},${subCY}`);
@@ -281,6 +285,21 @@ const CamMapPage = () => {
       } else {
         setTileItemIds([]);
       }
+    });
+
+    map.on('click', (e: L.LeafletMouseEvent) => {
+      const tileX = Math.floor(e.latlng.lng);
+      const tileY = Math.floor(-e.latlng.lat);
+      const cx = Math.floor(tileX / CHUNK_TILES);
+      const cy = Math.floor(tileY / CHUNK_TILES);
+      const chunkTiles = floorDataRef.current.get(`${cx},${cy}`);
+      const tile = chunkTiles?.find(t => t.x === tileX && t.y === tileY);
+      setEditingTile({
+        x: tileX,
+        y: tileY,
+        z: currentFloor,
+        items: tile ? [...tile.items] : [],
+      });
     });
 
     return () => {
@@ -411,6 +430,34 @@ const CamMapPage = () => {
   const floorDisplay = 7 - currentFloor;
   const isLoading = assetsLoading || floorLoading;
 
+  // Invalidate map size when edit mode toggles (sidebar appears/disappears)
+  useEffect(() => {
+    if (mapRef.current) {
+      setTimeout(() => mapRef.current?.invalidateSize(), 150);
+    }
+  }, [editMode]);
+
+  // Handle tile saved from editor
+  const handleTileSaved = useCallback((x: number, y: number, z: number, newItems: number[]) => {
+    const cx = Math.floor(x / CHUNK_TILES);
+    const cy = Math.floor(y / CHUNK_TILES);
+    const key = `${cx},${cy}`;
+    const chunkTiles = floorDataRef.current.get(key) || [];
+    const existing = chunkTiles.find(t => t.x === x && t.y === y);
+    if (existing) {
+      existing.items = newItems;
+    } else {
+      chunkTiles.push({ x, y, z, items: newItems });
+      floorDataRef.current.set(key, chunkTiles);
+    }
+    // Invalidate renderer cache for this chunk and redraw
+    rendererRef.current?.invalidateFloor(z);
+    if (tileLayerRef.current) {
+      tileLayerRef.current.redraw();
+    }
+    setEditingTile(null);
+  }, []);
+
   return (
     <div className="min-h-screen bg-background flex flex-col">
       {/* Top bar */}
@@ -426,9 +473,6 @@ const CamMapPage = () => {
           <Link to="/f9a2c8d4e7b1/extract" className="text-xs text-muted-foreground hover:text-gold transition-colors ml-4">
             📦 Batch Extract
           </Link>
-          <Link to="/f9a2c8d4e7b1/editor" className="text-xs text-muted-foreground hover:text-gold transition-colors">
-            ✏️ Editor
-          </Link>
         </div>
         <div className="flex items-center gap-2">
           <LanguageSelector />
@@ -436,114 +480,150 @@ const CamMapPage = () => {
         </div>
       </div>
 
-      {/* Map container */}
-      <div className="flex-1 relative">
-        {assetsLoading ? (
-          <div className="absolute inset-0 flex items-center justify-center bg-background">
-            <div className="flex flex-col items-center gap-3">
-              <Loader2 className="w-8 h-8 text-gold animate-spin" />
-              <p className="text-sm text-muted-foreground">Carregando sprites...</p>
-            </div>
-          </div>
-        ) : (
-          <div ref={mapContainerRef} className="absolute inset-0" style={{ background: '#1a2420' }} />
+      {/* Main content: sidebar + map */}
+      <div className="flex-1 flex">
+        {/* Edit mode sidebar */}
+        {editMode && !assetsLoading && rendererRef.current && (
+          <SpriteSidebar
+            renderer={rendererRef.current}
+            selectedItemId={selectedItemId}
+            onSelect={setSelectedItemId}
+            onClose={() => setEditMode(false)}
+          />
         )}
 
-        {/* Floor loading overlay */}
-        {!assetsLoading && floorLoading && (
-          <div className="absolute inset-0 z-[1001] flex items-center justify-center bg-background/80 backdrop-blur-sm">
-            <div className="flex flex-col items-center gap-3 w-64">
-              <Loader2 className="w-6 h-6 text-gold animate-spin" />
-              <p className="text-sm text-muted-foreground">
-                Carregando andar... {loadingStatus}
-              </p>
-              <Progress value={undefined} className="w-full h-2" />
+        {/* Map container */}
+        <div className="flex-1 relative">
+          <div
+            ref={mapContainerRef}
+            className="absolute inset-0"
+            style={{ background: '#1a2420', visibility: assetsLoading ? 'hidden' : 'visible' }}
+          />
+
+          {assetsLoading && (
+            <div className="absolute inset-0 flex items-center justify-center bg-background z-10">
+              <div className="flex flex-col items-center gap-3">
+                <Loader2 className="w-8 h-8 text-gold animate-spin" />
+                <p className="text-sm text-muted-foreground">Carregando sprites...</p>
+              </div>
             </div>
-          </div>
-        )}
+          )}
 
-        {/* Floor controls overlay */}
-        {!isLoading && (
-          <div className="absolute top-4 right-4 z-[1000] flex flex-col items-center gap-2 bg-card/90 border border-border/50 rounded-sm p-2">
-            <Button
-              variant="outline"
-              size="icon"
-              className="border-border/50 h-8 w-8"
-              onClick={() => setCurrentFloor(prev => Math.max(0, prev - 1))}
-              disabled={currentFloor <= 0}
-            >
-              <ChevronUp className="w-4 h-4" />
-            </Button>
-            <Badge variant="outline" className="min-w-[60px] justify-center text-xs font-mono">
-              {floorDisplay > 0 ? `+${floorDisplay}` : floorDisplay}
-            </Badge>
-            <Button
-              variant="outline"
-              size="icon"
-              className="border-border/50 h-8 w-8"
-              onClick={() => setCurrentFloor(prev => Math.min(15, prev + 1))}
-              disabled={currentFloor >= 15}
-            >
-              <ChevronDown className="w-4 h-4" />
-            </Button>
+          {/* Floor loading overlay */}
+          {!assetsLoading && floorLoading && (
+            <div className="absolute inset-0 z-[1001] flex items-center justify-center bg-background/80 backdrop-blur-sm">
+              <div className="flex flex-col items-center gap-3 w-64">
+                <Loader2 className="w-6 h-6 text-gold animate-spin" />
+                <p className="text-sm text-muted-foreground">
+                  Carregando andar... {loadingStatus}
+                </p>
+                <Progress value={undefined} className="w-full h-2" />
+              </div>
+            </div>
+          )}
 
-            <div className="border-t border-border/50 mt-1 pt-1 flex flex-col gap-1">
-              <button
-                onClick={() => setShowSpawns(v => !v)}
-                className={`flex items-center gap-1.5 text-xs px-1 py-0.5 rounded transition-colors ${showSpawns ? 'text-gold' : 'text-muted-foreground'}`}
-                title="Mostrar/ocultar spawns de criaturas"
+          {/* Floor controls overlay */}
+          {!isLoading && (
+            <div className="absolute top-4 right-4 z-[1000] flex flex-col items-center gap-2 bg-card/90 border border-border/50 rounded-sm p-2">
+              <Button
+                variant="outline"
+                size="icon"
+                className="border-border/50 h-8 w-8"
+                onClick={() => setCurrentFloor(prev => Math.max(0, prev - 1))}
+                disabled={currentFloor <= 0}
               >
-                <Bug className="w-3.5 h-3.5" />
-                Spawns
-              </button>
-              <button
-                onClick={() => setShowLooseItems(v => !v)}
-                className={`flex items-center gap-1.5 text-xs px-1 py-0.5 rounded transition-colors ${showLooseItems ? 'text-gold' : 'text-muted-foreground'}`}
-                title="Mostrar/ocultar itens soltos e corpos"
+                <ChevronUp className="w-4 h-4" />
+              </Button>
+              <Badge variant="outline" className="min-w-[60px] justify-center text-xs font-mono">
+                {floorDisplay > 0 ? `+${floorDisplay}` : floorDisplay}
+              </Badge>
+              <Button
+                variant="outline"
+                size="icon"
+                className="border-border/50 h-8 w-8"
+                onClick={() => setCurrentFloor(prev => Math.min(15, prev + 1))}
+                disabled={currentFloor >= 15}
               >
-                <Package className="w-3.5 h-3.5" />
-                Itens
-              </button>
-            </div>
-          </div>
-        )}
+                <ChevronDown className="w-4 h-4" />
+              </Button>
 
-        {/* Coordinates + Item IDs + Legend overlay */}
-        {!isLoading && mouseCoords && (
-          <div className="absolute bottom-4 left-4 z-[1000] bg-card/90 border border-border/50 rounded-sm px-3 py-1.5 max-w-sm">
-            <span className="text-xs font-mono text-muted-foreground">
-              X: {mouseCoords.x} | Y: {mouseCoords.y} | Z: {currentFloor}
-            </span>
-            {tileItemIds.length > 0 && (
-              <div className="text-xs font-mono text-muted-foreground mt-0.5">
-                IDs: {tileItemIds.join(', ')}
-              </div>
-            )}
-            <div className="flex items-center gap-3 mt-1 border-t border-border/30 pt-1">
-              <div className="flex items-center gap-1">
-                <span className="inline-block w-2.5 h-2.5 border-2 rounded-sm" style={{ borderColor: '#00ff88', background: 'rgba(0,255,136,0.15)' }} />
-                <span className="text-xs text-muted-foreground">Rope</span>
-              </div>
-              <div className="flex items-center gap-1">
-                <span className="inline-block w-2.5 h-2.5 border-2 rounded-sm" style={{ borderColor: '#ffcc00', background: 'rgba(255,204,0,0.15)' }} />
-                <span className="text-xs text-muted-foreground">Shovel</span>
-              </div>
-              <div className="flex items-center gap-1">
-                <span className="inline-block w-2.5 h-2.5 border-2 rounded-sm" style={{ borderColor: '#ff4444', background: 'rgba(255,68,68,0.2)' }} />
-                <span className="text-xs text-muted-foreground">Inexplorado</span>
+              <div className="border-t border-border/50 mt-1 pt-1 flex flex-col gap-1">
+                <button
+                  onClick={() => setShowSpawns(v => !v)}
+                  className={`flex items-center gap-1.5 text-xs px-1 py-0.5 rounded transition-colors ${showSpawns ? 'text-gold' : 'text-muted-foreground'}`}
+                  title="Mostrar/ocultar spawns de criaturas"
+                >
+                  <Bug className="w-3.5 h-3.5" />
+                  Spawns
+                </button>
+                <button
+                  onClick={() => setShowLooseItems(v => !v)}
+                  className={`flex items-center gap-1.5 text-xs px-1 py-0.5 rounded transition-colors ${showLooseItems ? 'text-gold' : 'text-muted-foreground'}`}
+                  title="Mostrar/ocultar itens soltos e corpos"
+                >
+                  <Package className="w-3.5 h-3.5" />
+                  Itens
+                </button>
+                <button
+                  onClick={() => { setEditMode(v => !v); setEditingTile(null); }}
+                  className={`flex items-center gap-1.5 text-xs px-1 py-0.5 rounded transition-colors ${editMode ? 'text-gold' : 'text-muted-foreground'}`}
+                  title="Ativar/desativar modo de edição"
+                >
+                  <Pencil className="w-3.5 h-3.5" />
+                  Editar
+                </button>
               </div>
             </div>
-          </div>
-        )}
+          )}
 
-        {/* Tile/creature count overlay */}
-        {!isLoading && (
-          <div className="absolute bottom-4 right-4 z-[1000] bg-card/90 border border-border/50 rounded-sm px-3 py-1.5">
-            <span className="text-xs text-muted-foreground">
-              {tileCount.toLocaleString()} tiles | {spawnCount.toLocaleString()} spawns
-            </span>
-          </div>
-        )}
+          {/* Tile edit panel (only in edit mode) */}
+          {editMode && editingTile && rendererRef.current && (
+            <TileEditPanel
+              tile={editingTile}
+              renderer={rendererRef.current}
+              selectedItemId={selectedItemId}
+              onClose={() => setEditingTile(null)}
+              onSaved={handleTileSaved}
+            />
+          )}
+
+          {/* Coordinates + Item IDs + Legend overlay */}
+          {!isLoading && mouseCoords && (
+            <div className="absolute bottom-4 left-4 z-[1000] bg-card/90 border border-border/50 rounded-sm px-3 py-1.5 max-w-sm">
+              <span className="text-xs font-mono text-muted-foreground">
+                X: {mouseCoords.x} | Y: {mouseCoords.y} | Z: {currentFloor}
+              </span>
+              {tileItemIds.length > 0 && (
+                <div className="text-xs font-mono text-muted-foreground mt-0.5">
+                  IDs: {tileItemIds.join(', ')}
+                </div>
+              )}
+              <div className="flex items-center gap-3 mt-1 border-t border-border/30 pt-1">
+                <div className="flex items-center gap-1">
+                  <span className="inline-block w-2.5 h-2.5 border-2 rounded-sm" style={{ borderColor: '#00ff88', background: 'rgba(0,255,136,0.15)' }} />
+                  <span className="text-xs text-muted-foreground">Rope</span>
+                </div>
+                <div className="flex items-center gap-1">
+                  <span className="inline-block w-2.5 h-2.5 border-2 rounded-sm" style={{ borderColor: '#ffcc00', background: 'rgba(255,204,0,0.15)' }} />
+                  <span className="text-xs text-muted-foreground">Shovel</span>
+                </div>
+                <div className="flex items-center gap-1">
+                  <span className="inline-block w-2.5 h-2.5 border-2 rounded-sm" style={{ borderColor: '#ff4444', background: 'rgba(255,68,68,0.2)' }} />
+                  <span className="text-xs text-muted-foreground">Inexplorado</span>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Tile/creature count overlay */}
+          {!isLoading && (
+            <div className="absolute bottom-4 right-4 z-[1000] bg-card/90 border border-border/50 rounded-sm px-3 py-1.5">
+              <span className="text-xs text-muted-foreground">
+                {tileCount.toLocaleString()} tiles | {spawnCount.toLocaleString()} spawns
+              </span>
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );
