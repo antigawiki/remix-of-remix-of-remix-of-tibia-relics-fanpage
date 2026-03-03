@@ -1,60 +1,75 @@
 
 
-## Diagnostico: Por que o WASM continua crashando e corrompendo
+## Fix: Cam Map Data Distortion and Missing Underground Tiles
 
-### Causa raiz
+### Root Causes Identified
 
-O problema NAO e falta de try-catch. O erro `RuntimeError: memory access out of bounds` e um **trap do WebAssembly** — ele acontece quando o parser C++ do tibiarc tenta ler memoria fora dos limites de um buffer. Traps WASM NAO podem ser capturados por try-catch C++, mesmo com `-fexceptions`. Eles sao convertidos em `RuntimeError` no JavaScript.
+**1. SURFACE_ONLY_ITEMS filter is removing legitimate underground tiles**
+The filter removes IDs 351-356 and 405-430 on floors Z >= 8. However, in Tibia 7.72, these IDs are earth/cliff borders and transition tiles that appear on BOTH surface AND underground. The underground data shows IDs 357-386 (stone/cave ground) but the adjacent border IDs 351-356 are being stripped, creating gaps in cave walls and borders. IDs 405-430 are border transition tiles also used underground.
 
-O parser C++ do tibiarc foi escrito para formatos `.cam` padrao (TibiaCast, etc) e nao entende as particularidades do protocolo TibiaRelic 7.72. O parser JS (`packetParser.ts`) foi extensivamente customizado para este protocolo (handlers especificos de opcodes, heuristicas de TCP vs opcode direto, tratamento de looktype u16, etc). O parser C++ nao tem nenhuma dessas customizacoes.
+Evidence: Underground chunks show sparse data (5-10 tiles per 64-slot chunk) with gaps where border/transition tiles should connect wall segments.
 
-Isso explica os dois sintomas:
-- **Crash no seek**: O parser C++ le bytes alem do buffer ao encontrar um pacote que nao reconhece
-- **Corrupcao visual**: O parser C++ interpreta pacotes errados (outfit trocado = leu bytes errados para outfit; criatura duplicada = criou nova criatura em vez de atualizar existente; camera em andar errado = leu floor change incorretamente)
+**2. Floor stability threshold too low (1 batch = 500 frames)**
+After a floor change, `gs.tiles` is cleared and snapshotting resumes after just 1 batch. During transitions (especially surface-to-underground), the first batch may still contain perspective-contaminated tiles from the multi-floor read that triggered the floor change.
 
-### Solucao: Melhorar a recuperacao de seek no JS
+**3. Multi-floor read desync causes cross-floor contamination**
+During `readMultiFloorArea`, the `skip` variable carries across floors. If reading floor 6 or 7 encounters a parsing error (outfit, creature data), the skip count gets corrupted, and floor 8 tiles end up with surface item IDs. These tiles have z=8 (correct) but wrong item data — passing the `tz === camZ` filter.
 
-Como nao podemos corrigir o parser C++ (ele e da biblioteca tibiarc), a melhor abordagem e tornar a recuperacao de seek mais inteligente no lado JavaScript:
+### Changes
 
-1. **Quando seek falha, pular a area problematica** — em vez de tentar o mesmo ponto (que vai crashar de novo), avanca 10 segundos alem do ponto solicitado
-2. **Se ainda falhar, tentar posicoes progressivamente mais distantes** — +20s, +30s
-3. **Se tudo falhar, voltar para a ultima posicao boa** (comportamento atual)
-4. **Adicionar `INITIAL_MEMORY=512MB`** no build para reduzir chance de out-of-bounds em gravacoes longas
+**A) `src/lib/tibiaRelic/mapExtractor.ts` — Fix SURFACE_ONLY_ITEMS filter:**
 
-### Mudancas
+Remove IDs 351-356 and 405-430 from the filter. Keep only true grass IDs (101-106) that never appear underground. Additionally, add IDs 107-114 (sand/beach) which are also surface-exclusive.
 
-**1. `src/components/TibiarcPlayer.tsx` — handleSeek melhorado:**
-
-```text
-handleSeek(ms):
-  1. Tenta seek(ms) 
-  2. Se falhar: reload + seek(ms + 10000)     // pula 10s
-  3. Se falhar: reload + seek(ms + 30000)     // pula 30s  
-  4. Se falhar: reload + seek(lastGoodProgress) // volta ao seguro
-  5. Mostra toast informando que pulou area problematica
+```
+const SURFACE_ONLY_ITEMS: Set<number> = new Set([
+  101, 102, 103, 104, 105, 106,  // Grass
+  107, 108, 109, 110, 111, 112, 113, 114, // Sand/beach
+]);
 ```
 
-**2. `.github/workflows/build-tibiarc.yml` — aumentar memoria inicial:**
+**B) `src/lib/tibiaRelic/mapExtractor.ts` — Increase floor stability threshold:**
 
-Mudar `TOTAL_MEMORY=268435456` (256MB) para `TOTAL_MEMORY=536870912` (512MB) para dar mais espaco ao parser e reduzir chance de out-of-bounds.
+Change `floorStableBatches >= 1` to `floorStableBatches >= 3`. This ensures 3 full batches (1500 frames) of stable data before snapshotting, giving enough time for clean tiles to accumulate.
 
-**3. `tibiarc-player/web_player.cpp` — proteger `RenderFrame` contra out-of-bounds:**
+```
+if (floorStableBatches >= 3) snapshotTiles(gs, dat, latestTiles);
+```
 
-Adicionar validacao antes do render para evitar que um gamestate corrompido cause crash na renderizacao tambem.
+(Both in the sync and async versions)
 
-### Limitacao conhecida
+**C) `src/lib/tibiaRelic/mapExtractor.ts` — Add ground validation:**
 
-A corrupcao visual (outfits trocados, criaturas duplicadas) durante reproducao normal em 8x e uma limitacao inerente do parser C++ tibiarc com arquivos TibiaRelic. Para resolver isso de verdade, seria necessario usar o parser JS para processar os pacotes e o WASM apenas para renderizar — uma mudanca arquitetural muito maior que pode ser feita no futuro.
+In `snapshotTiles`, validate that each underground tile has at least one ground item (stackPrio 0). Tiles without a ground item on Z >= 8 are almost certainly contaminated (partial desync data).
 
-### Resumo das mudancas
+```javascript
+// After collecting items, before storing:
+if (camZ >= 8) {
+  const hasGround = items.some(id => {
+    const d = dat.items.get(id);
+    return d && d.stackPrio === 0;
+  });
+  if (!hasGround) continue; // Skip tiles without ground on underground floors
+}
+```
 
-| Arquivo | Mudanca |
-|---|---|
-| `src/components/TibiarcPlayer.tsx` | Seek recovery com skip progressivo (+10s, +30s) em vez de retry no mesmo ponto |
-| `.github/workflows/build-tibiarc.yml` | TOTAL_MEMORY de 256MB para 512MB |
-| `tibiarc-player/web_player.cpp` | Guard no RenderFrame contra gamestate invalido |
+**D) Database cleanup — Re-generate chunks after re-extraction:**
 
-### Apos as edicoes
+After deploying these fixes, the user should re-extract the problematic .cam files and run "Generate Chunks" to rebuild `cam_map_chunks` from the corrected `cam_map_tiles` data.
 
-Sera necessario rodar o workflow **"Build tibiarc WASM Player"** no GitHub Actions para gerar novos .wasm e .js com a memoria aumentada, e depois subir os arquivos aqui.
+### Summary
+
+| Fix | What | Impact |
+|-----|------|--------|
+| A | Remove 351-356, 405-430 from filter | Restores missing cave borders and transitions |
+| B | Increase stability from 1 to 3 batches | Prevents capturing stale tiles after floor changes |
+| C | Require ground item on underground tiles | Rejects contaminated tiles from desync |
+| D | Re-extract + regenerate | Cleans existing bad data |
+
+### Technical Notes
+
+- Fixes A, B, C are all in `src/lib/tibiaRelic/mapExtractor.ts`
+- No database migration needed
+- After deploying, problematic .cam files need to be re-extracted via the batch extract page
+- The generate_map_chunks RPC rebuilds chunks from the corrected raw tiles
 
