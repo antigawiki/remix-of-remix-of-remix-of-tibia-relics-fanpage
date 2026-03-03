@@ -72,12 +72,18 @@ export class PacketParser {
   private unknownWarnCount = 0;
   private frameErrorCount = 0;
 
-  /** Get the floor range for multi-floor reading */
+  /** Get the floor range for multi-floor reading — TibiaRelic sends ±2 floors only */
   private getFloorRange(z: number): { startz: number; endz: number; zstep: number } {
     if (z > 7) {
+      // Underground: z-2 to z+2, capped at 15
       return { startz: z - 2, endz: Math.min(z + 2, 15), zstep: 1 };
     } else {
-      return { startz: 7, endz: 0, zstep: -1 };
+      // Surface: ±2 floors only (TibiaRelic), NOT full 7→0
+      // startz is the highest floor (closest to surface), endz is the lowest
+      // For z=7: reads 7→5 (3 floors)
+      // For z=6: reads 7→4 (4 floors)  
+      // For z=5: reads 7→3 (5 floors — max ±2)
+      return { startz: Math.min(z + 2, 7), endz: Math.max(z - 2, 0), zstep: -1 };
     }
   }
 
@@ -749,19 +755,22 @@ export class PacketParser {
 
     try {
       if (g.camZ === 7) {
-        let skip = 0;
-        for (let nz = 5; nz >= 0; nz--) {
-          const offset = 8 - nz;
-          skip = this.readFloorArea(r, g.camX - 8, g.camY - 6, nz, 18, 14, offset, skip);
-        }
+        // Exiting underground to surface — TibiaRelic ±2 floors
+        // Old visible (z=8): [6,7,8,9,10]. New visible (z=7): [5,6,7]
+        // Only NEW floor is z=5. Read it with perspective offset = 8 - 5 = 3
+        const newFloor = Math.max(g.camZ - 2, 0);
+        const offset = 8 - newFloor;
+        this.readFloorArea(r, g.camX - 8, g.camY - 6, newFloor, 18, 14, offset, 0);
       } else if (g.camZ > 7) {
+        // Underground going up — read the newly visible floor (camZ - 2)
         const nz = g.camZ - 2;
-        this.readFloorAreaWithOffset(r, g.camX - 8, g.camY - 6, nz, 18, 14, 3);
+        if (nz >= 0) {
+          this.readFloorAreaWithOffset(r, g.camX - 8, g.camY - 6, nz, 18, 14, 3);
+        }
       }
 
       g.camX++; g.camY++;
     } catch (e) {
-      // Revert camera on failure
       g.camZ = oldZ; g.camX = oldX; g.camY = oldY;
       throw e;
     }
