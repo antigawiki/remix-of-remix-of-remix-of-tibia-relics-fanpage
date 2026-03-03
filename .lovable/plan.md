@@ -1,66 +1,88 @@
 
 
-## Sistema de Confianca para Tiles do Cam Map
+## Editor de Tiles do Cam Map
 
-### Problema
-Tiles de andares errados aparecem no mapa porque uma unica cam com dados incorretos sobrescreve os dados corretos (last-write-wins).
+### Conceito
 
-### Solucao: Contagem de ocorrencias por tile
+Nova pagina `/f9a2c8d4e7b1/editor` com layout dividido: sidebar esquerda com catalogo de tiles (renderizados via SprLoader/DatLoader) e mapa Leaflet a direita. Workflow: selecionar tile no catalogo -> clicar no mapa -> tile e substituido na posicao clicada.
 
-Adicionar um campo `seen_count` na tabela `cam_map_tiles` que incrementa a cada vez que a mesma combinacao `(x, y, z, items)` e enviada. Quando uma cam envia items diferentes para a mesma posicao, o sistema compara: se os items novos sao diferentes dos atuais, so sobrescreve se o `seen_count` atual for 1 (ou seja, foi visto apenas uma vez). Caso contrario, incrementa o contador dos items existentes, validando que eles sao os corretos.
+### Arquitetura
+
+```text
+┌──────────────┬──────────────────────────────────┐
+│  Sidebar     │                                  │
+│  ┌────────┐  │         Mapa Leaflet             │
+│  │Search  │  │    (mesmo do CamMapPage)          │
+│  └────────┘  │                                  │
+│  ┌──┬──┬──┐  │   Click no tile = abre popup     │
+│  │  │  │  │  │   com items atuais + opcao de    │
+│  ├──┼──┼──┤  │   adicionar/remover/substituir   │
+│  │  │  │  │  │                                  │
+│  ├──┼──┼──┤  │                                  │
+│  │  │  │  │  │                                  │
+│  └──┴──┴──┘  │                                  │
+│  Grid de     │                                  │
+│  sprites     │                                  │
+│  (32x32 cada)│                                  │
+└──────────────┴──────────────────────────────────┘
+```
 
 ### Mudancas
 
-#### 1. Migration: adicionar `seen_count` a `cam_map_tiles`
+#### 1. Novo arquivo: `src/pages/CamMapEditorPage.tsx`
 
+- Reutiliza a logica de carregamento de assets (SprLoader, DatLoader) e floor data do CamMapPage
+- **Sidebar esquerda**:
+  - Input de busca por ID (filtra o grid)
+  - Grid virtual de todos os item IDs do DatLoader (100 ate itemMaxId)
+  - Cada celula mostra o sprite 32x32 renderizado + ID abaixo
+  - Ao clicar, seleciona o tile (borda dourada de highlight)
+  - Estado: `selectedItemId: number | null`
+- **Mapa (direita)**:
+  - Mesmo Leaflet tile layer do CamMapPage (reusa getChunkTiles, renderer, etc.)
+  - Ao clicar num tile do mapa:
+    - Popup/modal mostra os item IDs atuais nessa posicao (lista com sprites)
+    - Botoes: "Adicionar item selecionado", "Substituir todos por selecionado", "Remover item X"
+    - Ao confirmar, faz UPDATE diretamente no `cam_map_tiles` via supabase e atualiza o floorData local + re-renderiza o chunk afetado
+
+#### 2. Funcao de renderizacao de sprite individual
+
+Adicionar um metodo utilitario (ou reutilizar o que o MapTileRenderer ja faz internamente) para renderizar um unico item sprite num canvas 32x32, para usar no catalogo da sidebar. O `spriteCanvasCache` do MapTileRenderer ja faz isso - expor via metodo publico.
+
+#### 3. Persistencia das edicoes
+
+Ao editar um tile, chamar diretamente:
 ```sql
-ALTER TABLE cam_map_tiles ADD COLUMN seen_count integer NOT NULL DEFAULT 1;
+UPDATE cam_map_tiles SET items = '[novo_array]', seen_count = 999, updated_at = now()
+WHERE x = X AND y = Y AND z = Z
 ```
 
-#### 2. Migration: atualizar `merge_cam_tiles_batch`
+O `seen_count = 999` garante que nenhuma extracao futura sobrescreva a correcao manual (o sistema de confianca preserva tiles com seen_count > 1).
 
-Nova logica do upsert:
-- Se o tile NAO existe: insere com `seen_count = 1`
-- Se o tile JA existe e os `items` sao IGUAIS: incrementa `seen_count`
-- Se o tile JA existe e os `items` sao DIFERENTES:
-  - Se o `seen_count` atual for 1 (visto apenas 1 vez = pouca confianca): sobrescreve com os novos items e reseta `seen_count = 1`
-  - Se o `seen_count` atual for > 1 (multiplas confirmacoes = alta confianca): mantém os items atuais e apenas incrementa `seen_count` (os dados corretos vencem)
+Se o tile nao existe ainda, fazer INSERT.
 
-```sql
-INSERT INTO cam_map_tiles (x, y, z, items, seen_count, updated_at)
-SELECT x, y, z, items, 1, now()
-FROM jsonb_to_recordset(tiles) AS t(x int, y int, z int, items jsonb)
-ON CONFLICT (x, y, z) DO UPDATE SET
-  items = CASE
-    WHEN cam_map_tiles.items = EXCLUDED.items THEN cam_map_tiles.items
-    WHEN cam_map_tiles.seen_count <= 1 THEN EXCLUDED.items
-    ELSE cam_map_tiles.items
-  END,
-  seen_count = CASE
-    WHEN cam_map_tiles.items = EXCLUDED.items THEN cam_map_tiles.seen_count + 1
-    WHEN cam_map_tiles.seen_count <= 1 THEN 1
-    ELSE cam_map_tiles.seen_count + 1
-  END,
-  updated_at = now();
-```
+Tambem atualizar o chunk correspondente em `cam_map_chunks` para que a mudanca apareca no mapa viewer sem precisar recompactar.
 
-#### 3. Nenhuma mudanca no frontend
+#### 4. Rota no App.tsx
 
-O `CamBatchExtractPage.tsx` ja envia os tiles no formato correto. A logica de confianca e toda no banco.
+Adicionar: `<Route path="/f9a2c8d4e7b1/editor" element={<CamMapEditorPage />} />`
 
-### Como funciona na pratica
+E link no CamMapPage header.
 
-```text
-Cam 1 envia tile (32100, 31500, 8) = [450, 102]   → insere, seen_count = 1
-Cam 2 envia tile (32100, 31500, 8) = [450, 102]   → mesmo items, seen_count = 2
-Cam 3 envia tile (32100, 31500, 8) = [351, 103]   → items diferentes, seen_count=2 > 1, MANTÉM [450,102], seen_count = 3
-Cam 4 envia tile (32100, 31500, 8) = [450, 102]   → mesmo items, seen_count = 4
-```
+#### 5. Detalhes da sidebar
 
-O tile errado da Cam 3 (grama de superficie no andar 8) e ignorado porque o tile correto ja foi confirmado 2+ vezes.
+- Range de IDs: 100 ate ~ultimo ID do DatLoader (tipicamente ~3000+)
+- Grid com ~6 colunas de sprites 32x32
+- Scroll virtual (renderizar apenas ~100 itens visiveis) para nao sobrecarregar com milhares de sprites
+- Busca por ID: input numerico que filtra/scrolla ate o ID
+- Ao passar mouse sobre sprite, tooltip com ID
 
-### Limitacao e consideracao
+### Arquivos afetados
 
-- Tiles que foram inseridos apenas 1 vez (seen_count=1) ainda podem ser sobrescritos por dados errados. Isso e intencional: com apenas 1 observacao, nao temos confianca suficiente para preservar.
-- Apos processar multiplas cams, os dados se auto-corrigem naturalmente.
+| Arquivo | Acao |
+|---------|------|
+| `src/pages/CamMapEditorPage.tsx` | Criar - pagina principal do editor |
+| `src/lib/tibiaRelic/mapTileRenderer.ts` | Editar - expor metodo `renderSingleSprite(itemId)` |
+| `src/App.tsx` | Editar - adicionar rota |
+| `src/pages/CamMapPage.tsx` | Editar - adicionar link para editor no header |
 
