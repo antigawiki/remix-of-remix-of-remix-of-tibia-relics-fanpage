@@ -143,6 +143,7 @@ export type Database = {
       cam_map_tiles: {
         Row: {
           items: Json
+          seen_count: number
           updated_at: string
           x: number
           y: number
@@ -150,6 +151,7 @@ export type Database = {
         }
         Insert: {
           items?: Json
+          seen_count?: number
           updated_at?: string
           x: number
           y: number
@@ -157,6 +159,7 @@ export type Database = {
         }
         Update: {
           items?: Json
+          seen_count?: number
           updated_at?: string
           x?: number
           y?: number
