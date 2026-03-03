@@ -38,17 +38,6 @@ export interface MapExtractionResult {
 
 const DB_CHUNK = 32;
 
-/**
- * Surface-only item IDs that should NEVER appear on underground floors (Z >= 8).
- * These are grass tiles, surface borders, and ground variants that leak through
- * during multi-floor map reads due to perspective offset contamination.
- */
-const SURFACE_ONLY_ITEMS: Set<number> = new Set([
-  // Grass tiles
-  101, 102, 103, 104, 105, 106,
-  // Sand/beach tiles
-  107, 108, 109, 110, 111, 112, 113, 114,
-]);
 
 // Per-visit creature count for a chunk
 interface ChunkVisitData {
@@ -106,7 +95,7 @@ export function extractMapTilesSync(
       floorStableBatches++;
     }
 
-    if (floorStableBatches >= 3) snapshotTiles(gs, dat, latestTiles);
+    if (floorStableBatches >= 1) snapshotTiles(gs, dat, latestTiles);
 
     const playerChunkX = Math.floor(gs.camX / DB_CHUNK);
     const playerChunkY = Math.floor(gs.camY / DB_CHUNK);
@@ -196,7 +185,7 @@ export async function extractMapTiles(
         floorStableBatches++;
       }
 
-      if (floorStableBatches >= 3) {
+      if (floorStableBatches >= 1) {
         snapshotTiles(gs, dat, latestTiles);
       }
 
@@ -403,17 +392,6 @@ function snapshotTiles(
       items.push(id);
     }
 
-    // Filter out surface-only items on underground floors
-    if (camZ >= 8) {
-      items = items.filter(id => !SURFACE_ONLY_ITEMS.has(id));
-
-      // Reject tiles without a ground item on underground floors (desync contamination)
-      const hasGround = items.some(id => {
-        const d = dat.items.get(id);
-        return d && d.stackPrio === 0;
-      });
-      if (!hasGround) continue;
-    }
 
     if (items.length > 0) {
       const correctedKey = `${tx},${ty},${tz}`;
