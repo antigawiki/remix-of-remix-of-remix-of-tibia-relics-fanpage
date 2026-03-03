@@ -1,3 +1,4 @@
+import { useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { ArrowLeft, Film, Info } from 'lucide-react';
 import { useTranslation } from '@/i18n';
@@ -7,6 +8,14 @@ import { LanguageSelector } from '@/components/LanguageSelector';
 
 const CamPlayerPage = () => {
   const { t } = useTranslation();
+
+  // WASM module sets document.title to "tibiarc" — override it back
+  useEffect(() => {
+    const title = `${t('camPlayer.title')} — Tibia Relic Wiki`;
+    document.title = title;
+    const interval = setInterval(() => { document.title = title; }, 500);
+    return () => clearInterval(interval);
+  }, [t]);
 
   return (
     <div className="min-h-screen bg-background flex flex-col">
