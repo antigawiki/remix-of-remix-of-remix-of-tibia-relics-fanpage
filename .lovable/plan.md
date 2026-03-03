@@ -1,94 +1,60 @@
 
 
-## Fix: Seek Crash + Visual Corruption no WASM Player
+## Diagnostico: Por que o WASM continua crashando e corrompendo
 
-### Dois problemas identificados
+### Causa raiz
 
-**1. Crash no seek** — `g_gamestate->Reset()` (linha 333 do web_player.cpp) nao esta protegido por try-catch. Quando o Reset interno falha (ex: estado corrompido), o WASM inteiro morre.
+O problema NAO e falta de try-catch. O erro `RuntimeError: memory access out of bounds` e um **trap do WebAssembly** — ele acontece quando o parser C++ do tibiarc tenta ler memoria fora dos limites de um buffer. Traps WASM NAO podem ser capturados por try-catch C++, mesmo com `-fexceptions`. Eles sao convertidos em `RuntimeError` no JavaScript.
 
-**2. Corrupcao visual (players atravessando muros no 8x)** — O try-catch atual envolve TODOS os eventos de um frame. Se o evento 3 de 5 falha, os eventos 4 e 5 sao pulados. Isso deixa o gamestate inconsistente: por exemplo, uma criatura foi removida do tile antigo mas nao colocada no novo. A correcao e mover o try-catch para envolver cada evento individualmente.
+O parser C++ do tibiarc foi escrito para formatos `.cam` padrao (TibiaCast, etc) e nao entende as particularidades do protocolo TibiaRelic 7.72. O parser JS (`packetParser.ts`) foi extensivamente customizado para este protocolo (handlers especificos de opcodes, heuristicas de TCP vs opcode direto, tratamento de looktype u16, etc). O parser C++ nao tem nenhuma dessas customizacoes.
 
-### Mudancas no arquivo `tibiarc-player/web_player.cpp`
+Isso explica os dois sintomas:
+- **Crash no seek**: O parser C++ le bytes alem do buffer ao encontrar um pacote que nao reconhece
+- **Corrupcao visual**: O parser C++ interpreta pacotes errados (outfit trocado = leu bytes errados para outfit; criatura duplicada = criou nova criatura em vez de atualizar existente; camera em andar errado = leu floor change incorretamente)
 
-**A) Seek — proteger Reset + catch por evento:**
+### Solucao: Melhorar a recuperacao de seek no JS
 
-```cpp
-void seek(double ms) {
-    if (!g_recording || !g_gamestate) return;
-    auto target = std::chrono::milliseconds((int64_t)ms);
+Como nao podemos corrigir o parser C++ (ele e da biblioteca tibiarc), a melhor abordagem e tornar a recuperacao de seek mais inteligente no lado JavaScript:
 
-    if (target < g_currentTick) {
-        try {
-            g_gamestate->Reset();
-        } catch (...) {
-            // Reset failed — recreate gamestate from scratch
-            g_gamestate = std::make_unique<Gamestate>(*g_version);
-        }
-        g_needle = g_recording->Frames.cbegin();
-        g_currentTick = std::chrono::milliseconds::zero();
-        FastForwardToPlayer();
-    }
+1. **Quando seek falha, pular a area problematica** — em vez de tentar o mesmo ponto (que vai crashar de novo), avanca 10 segundos alem do ponto solicitado
+2. **Se ainda falhar, tentar posicoes progressivamente mais distantes** — +20s, +30s
+3. **Se tudo falhar, voltar para a ultima posicao boa** (comportamento atual)
+4. **Adicionar `INITIAL_MEMORY=512MB`** no build para reduzir chance de out-of-bounds em gravacoes longas
 
-    while (g_needle != g_recording->Frames.cend() &&
-           g_needle->Timestamp <= target) {
-        for (auto &event : g_needle->Events) {
-            try {
-                event->Update(*g_gamestate);
-            } catch (...) {
-                // Skip individual bad event, continue with next
-            }
-        }
-        g_needle = std::next(g_needle);
-    }
+### Mudancas
 
-    g_currentTick = target;
-    g_gamestate->CurrentTick = target.count();
-    RenderFrame();
-}
+**1. `src/components/TibiarcPlayer.tsx` — handleSeek melhorado:**
+
+```text
+handleSeek(ms):
+  1. Tenta seek(ms) 
+  2. Se falhar: reload + seek(ms + 10000)     // pula 10s
+  3. Se falhar: reload + seek(ms + 30000)     // pula 30s  
+  4. Se falhar: reload + seek(lastGoodProgress) // volta ao seguro
+  5. Mostra toast informando que pulou area problematica
 ```
 
-**B) MainLoop — catch por evento (nao por frame):**
+**2. `.github/workflows/build-tibiarc.yml` — aumentar memoria inicial:**
 
-```cpp
-while (g_needle != g_recording->Frames.cend() &&
-       g_needle->Timestamp <= g_currentTick) {
-    for (auto &event : g_needle->Events) {
-        try {
-            event->Update(*g_gamestate);
-        } catch (...) {
-            // Skip bad event
-        }
-    }
-    g_needle = std::next(g_needle);
-}
-```
+Mudar `TOTAL_MEMORY=268435456` (256MB) para `TOTAL_MEMORY=536870912` (512MB) para dar mais espaco ao parser e reduzir chance de out-of-bounds.
 
-**C) FastForwardToPlayer — catch por evento:**
+**3. `tibiarc-player/web_player.cpp` — proteger `RenderFrame` contra out-of-bounds:**
 
-```cpp
-while (!g_gamestate->Creatures.contains(g_gamestate->Player.Id) &&
-       g_needle != g_recording->Frames.cend()) {
-    for (auto &event : g_needle->Events) {
-        try {
-            event->Update(*g_gamestate);
-        } catch (...) {
-            // Skip bad event
-        }
-    }
-    g_needle = std::next(g_needle);
-}
-```
+Adicionar validacao antes do render para evitar que um gamestate corrompido cause crash na renderizacao tambem.
+
+### Limitacao conhecida
+
+A corrupcao visual (outfits trocados, criaturas duplicadas) durante reproducao normal em 8x e uma limitacao inerente do parser C++ tibiarc com arquivos TibiaRelic. Para resolver isso de verdade, seria necessario usar o parser JS para processar os pacotes e o WASM apenas para renderizar — uma mudanca arquitetural muito maior que pode ser feita no futuro.
 
 ### Resumo das mudancas
 
-| Local | Antes | Depois |
-|---|---|---|
-| `seek()` — Reset | Sem protecao | try-catch + fallback para recriar Gamestate |
-| `seek()` — loop de frames | try-catch por frame | try-catch por evento individual |
-| `MainLoop()` — loop de frames | try-catch por frame | try-catch por evento individual |
-| `FastForwardToPlayer()` | try-catch por frame | try-catch por evento individual |
+| Arquivo | Mudanca |
+|---|---|
+| `src/components/TibiarcPlayer.tsx` | Seek recovery com skip progressivo (+10s, +30s) em vez de retry no mesmo ponto |
+| `.github/workflows/build-tibiarc.yml` | TOTAL_MEMORY de 256MB para 512MB |
+| `tibiarc-player/web_player.cpp` | Guard no RenderFrame contra gamestate invalido |
 
-### Apos a edicao
+### Apos as edicoes
 
-Voce precisara rodar o workflow **"Build tibiarc WASM Player"** no GitHub Actions para gerar os novos arquivos .wasm e .js e depois subir eles aqui.
+Sera necessario rodar o workflow **"Build tibiarc WASM Player"** no GitHub Actions para gerar novos .wasm e .js com a memoria aumentada, e depois subir os arquivos aqui.
 
