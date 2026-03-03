@@ -1,58 +1,56 @@
 
 
-## Fix: Mapa nao carrega no Tile Editor
+## Integrar Editor diretamente no CamMapPage
 
-### Problema
+### Abordagem
 
-O container do mapa (`ref={mapContainerRef}`) e renderizado condicionalmente — so aparece quando `assetsLoading` e false. Isso causa um problema: quando o Leaflet tenta se inicializar, o container pode ainda nao ter dimensoes calculadas pelo layout flex. Alem disso, o container some e reaparece durante o carregamento, o que pode impedir o Leaflet de calcular o tamanho corretamente.
+Em vez de uma pagina separada (que tem problemas de inicializacao do Leaflet), adicionar um **modo de edicao** ao `CamMapPage.tsx` existente. Um botao "Editar" no overlay ativa o modo, que:
+- Abre uma sidebar esquerda com o catalogo de sprites (busca por ID + grid virtual)
+- Muda o comportamento do click no mapa: em vez de apenas mostrar coords, abre painel de edicao do tile clicado
+- Um botao "Sair" desativa o modo e esconde a sidebar
 
-### Solucao
+### Mudancas
 
-1. **Sempre renderizar o map container div** — em vez de trocar entre spinner e div do mapa, manter o div do mapa SEMPRE no DOM (com `visibility: hidden` enquanto carrega) e colocar o spinner POR CIMA. Assim o Leaflet sempre tem um container com dimensoes reais.
+#### 1. `src/pages/CamMapPage.tsx` - Adicionar modo de edicao
 
-2. **Adicionar `mapReady` state** — a inicializacao do Leaflet so deve acontecer apos confirmar que o container tem dimensoes > 0. Usar um `ResizeObserver` ou simplesmente um `requestAnimationFrame` para garantir.
+**Novos estados:**
+- `editMode: boolean` - controla se o editor esta ativo
+- `selectedItemId: number | null` - item selecionado na sidebar
+- `editingTile: { x, y, z, items } | null` - tile sendo editado
+- `searchId: string` - filtro de busca por ID na sidebar
+- `sidebarScrollTop: number` - para virtualizacao do grid
 
-### Mudancas no `CamMapEditorPage.tsx`
+**Sidebar (condicional, so aparece em editMode):**
+- Div fixa a esquerda (~280px), com input de busca e grid virtual de sprites
+- Usa `rendererRef.current.renderSingleSprite(itemId)` para renderizar cada sprite
+- Ao clicar num sprite, seta `selectedItemId`
+- O map container ajusta com `margin-left` ou flex
 
-- Linha ~583-594: Mudar a renderizacao condicional do map container para sempre renderizar o div, escondendo visualmente durante loading:
+**Click handler do mapa (editMode):**
+- Ao clicar, pega x/y/z e items atuais do `floorDataRef`
+- Mostra painel flutuante (overlay) com:
+  - Lista dos items atuais (sprites renderizados + botao remover cada)
+  - Botao "Adicionar" (usa selectedItemId)
+  - Botao "Substituir todos" (usa selectedItemId)
+  - Botao "Salvar" -> upsert no `cam_map_tiles` com `seen_count=999`, atualiza `cam_map_chunks`, re-renderiza chunk
 
-```tsx
-{/* Map area */}
-<div className="flex-1 relative">
-  {/* Map container - ALWAYS in DOM */}
-  <div 
-    ref={mapContainerRef} 
-    className="absolute inset-0" 
-    style={{ background: '#1a2420', visibility: assetsLoading ? 'hidden' : 'visible' }} 
-  />
-  
-  {assetsLoading && (
-    <div className="absolute inset-0 flex items-center justify-center bg-background z-10">
-      <Loader2 ... />
-    </div>
-  )}
-  ...
-```
+**Botao de ativar/desativar:**
+- No overlay de controles (top-right), adicionar botao "✏️ Editar" que toggle `editMode`
+- Ao ativar, `map.invalidateSize()` apos sidebar aparecer
 
-- Linha ~337-369: Ajustar o efeito de init do mapa para usar `requestAnimationFrame` + `invalidateSize` para garantir que o container tem dimensoes:
+#### 2. Ajuste de layout
 
-```tsx
-useEffect(() => {
-  if (assetsLoading || !mapContainerRef.current || mapRef.current) return;
-  
-  // Wait a frame for layout to settle
-  requestAnimationFrame(() => {
-    if (!mapContainerRef.current || mapRef.current) return;
-    const map = L.map(mapContainerRef.current, { ... });
-    map.setView([-DEFAULT_CENTER_Y, DEFAULT_CENTER_X], 3);
-    mapRef.current = map;
-    setTimeout(() => map.invalidateSize(), 200);
-    // ... click handler
-  });
-  
-  return () => { ... };
-}, [assetsLoading]);
-```
+Quando `editMode=true`:
+- Layout muda de `<div className="flex-1 relative">` para `<div className="flex-1 flex"><sidebar /><div className="flex-1 relative">map</div></div>`
+- Chamar `map.invalidateSize()` no useEffect que observa `editMode`
 
-Isso resolve o problema porque o container do mapa passa a existir desde o inicio com dimensoes reais do layout flex, permitindo ao Leaflet inicializar corretamente.
+#### 3. Remover `CamMapEditorPage.tsx` e rota
+
+- Deletar `src/pages/CamMapEditorPage.tsx`
+- Remover rota `/f9a2c8d4e7b1/editor` do `App.tsx`
+- Remover link "Editor" do header do CamMapPage (substituir pelo botao inline)
+
+### Vantagem
+
+O mapa ja esta inicializado e funcionando. A sidebar e apenas um overlay/panel que aparece ao lado — sem precisar reinicializar o Leaflet.
 
