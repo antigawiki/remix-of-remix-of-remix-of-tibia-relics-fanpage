@@ -328,36 +328,21 @@ const TibiarcPlayer = ({ className }: TibiarcPlayerProps) => {
       const wasPlaying = state === 'playing';
       if (wasPlaying) safeCall(mod, 'pause_playback', 'undefined', [], []);
 
-      const SEEK_FAIL = '__SEEK_FAIL__';
-      const skipOffsets = [0, 10000, 30000]; // try exact, +10s, +30s
-      let succeeded = false;
-
-      for (const offset of skipOffsets) {
-        const target = Math.min(ms + offset, duration);
-        const reloaded = offset === 0 ? true : reloadRecording(mod);
-        if (!reloaded) continue;
-
-        // For the first attempt (offset=0), just try seek directly
-        // For retries, we already reloaded above
-        if (offset > 0) {
-          console.warn(`[TibiarcPlayer] Seek failed at ${ms}ms, trying +${offset / 1000}s…`);
-        }
-
-        const result = safeCall(mod, 'seek', 'string', ['number'], [target], SEEK_FAIL);
-        if (result !== SEEK_FAIL) {
-          lastGoodProgressRef.current = target;
-          setProgress(target);
-          succeeded = true;
-          if (offset > 0) {
-            console.info(`[TibiarcPlayer] Skipped to ${target}ms (offset +${offset / 1000}s)`);
-          }
-          break;
-        }
+      // Always reload recording for a clean gamestate before seeking
+      const reloaded = reloadRecording(mod);
+      if (!reloaded) {
+        console.error('[TibiarcPlayer] Failed to reload recording for seek');
+        seekingRef.current = false;
+        return;
       }
 
-      if (!succeeded) {
-        // All attempts failed — return to last known good position
-        console.warn('[TibiarcPlayer] All seek attempts failed, restoring last good position');
+      try {
+        safeCall(mod, 'seek', 'undefined', ['number'], [ms]);
+        lastGoodProgressRef.current = ms;
+        setProgress(ms);
+      } catch (e) {
+        // Seek crashed — restore to last known good position
+        console.warn('[TibiarcPlayer] Seek exception, restoring last good position:', e);
         reloadRecording(mod);
         safeCall(mod, 'seek', 'undefined', ['number'], [lastGoodProgressRef.current]);
         setProgress(lastGoodProgressRef.current);
