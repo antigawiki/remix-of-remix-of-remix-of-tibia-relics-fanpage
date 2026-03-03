@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { Link } from 'react-router-dom';
-import { ArrowLeft, Map as MapIcon, ChevronUp, ChevronDown, Loader2, Bug, Package, Pencil } from 'lucide-react';
+import { ArrowLeft, Map as MapIcon, ChevronUp, ChevronDown, Loader2, Bug, Package, Pencil, Plus, Replace, Eraser, Save } from 'lucide-react';
 import { SpriteSidebar } from '@/components/cam-editor/SpriteSidebar';
 import { TileEditPanel } from '@/components/cam-editor/TileEditPanel';
 import { Button } from '@/components/ui/button';
@@ -195,6 +195,19 @@ const CamMapPage = () => {
   const [editMode, setEditMode] = useState(false);
   const [selectedItemId, setSelectedItemId] = useState<number | null>(null);
   const [editingTile, setEditingTile] = useState<{ x: number; y: number; z: number; items: number[] } | null>(null);
+  const [brushMode, setBrushMode] = useState<'add' | 'replace' | 'erase'>('add');
+  const [pendingCount, setPendingCount] = useState(0);
+  const pendingEditsRef = useRef<Map<string, { x: number; y: number; z: number; items: number[] }>>(new Map());
+  const flushTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const highlightRectRef = useRef<L.Rectangle | null>(null);
+  const editModeRef = useRef(false);
+  const brushModeRef = useRef<'add' | 'replace' | 'erase'>('add');
+  const selectedItemIdRef = useRef<number | null>(null);
+
+  // Keep refs in sync
+  useEffect(() => { editModeRef.current = editMode; }, [editMode]);
+  useEffect(() => { brushModeRef.current = brushMode; }, [brushMode]);
+  useEffect(() => { selectedItemIdRef.current = selectedItemId; }, [selectedItemId]);
 
   // Load sprite/dat data
   useEffect(() => {
@@ -285,21 +298,85 @@ const CamMapPage = () => {
       } else {
         setTileItemIds([]);
       }
+
+      // Highlight rectangle in edit mode
+      if (editModeRef.current) {
+        const bounds: L.LatLngBoundsExpression = [[-tileY - 1, tileX], [-tileY, tileX + 1]];
+        if (highlightRectRef.current) {
+          highlightRectRef.current.setBounds(bounds);
+        } else {
+          highlightRectRef.current = L.rectangle(bounds, {
+            color: '#ffcc00',
+            weight: 2,
+            fillColor: '#ffcc00',
+            fillOpacity: 0.15,
+            interactive: false,
+          }).addTo(map);
+        }
+      }
     });
 
     map.on('click', (e: L.LeafletMouseEvent) => {
+      if (!editModeRef.current) return;
       const tileX = Math.floor(e.latlng.lng);
       const tileY = Math.floor(-e.latlng.lat);
+
+      // Shift+click opens detailed edit panel
+      if ((e.originalEvent as MouseEvent).shiftKey) {
+        const cx = Math.floor(tileX / CHUNK_TILES);
+        const cy = Math.floor(tileY / CHUNK_TILES);
+        const chunkTiles = floorDataRef.current.get(`${cx},${cy}`);
+        const tile = chunkTiles?.find(t => t.x === tileX && t.y === tileY);
+        setEditingTile({
+          x: tileX, y: tileY, z: currentFloor,
+          items: tile ? [...tile.items] : [],
+        });
+        return;
+      }
+
+      // Paint mode: apply brush directly
       const cx = Math.floor(tileX / CHUNK_TILES);
       const cy = Math.floor(tileY / CHUNK_TILES);
-      const chunkTiles = floorDataRef.current.get(`${cx},${cy}`);
-      const tile = chunkTiles?.find(t => t.x === tileX && t.y === tileY);
-      setEditingTile({
-        x: tileX,
-        y: tileY,
-        z: currentFloor,
-        items: tile ? [...tile.items] : [],
-      });
+      const key = `${cx},${cy}`;
+      const chunkTiles = floorDataRef.current.get(key) || [];
+      const existing = chunkTiles.find(t => t.x === tileX && t.y === tileY);
+      let newItems: number[];
+
+      const mode = brushModeRef.current;
+      const selId = selectedItemIdRef.current;
+
+      if (mode === 'erase') {
+        if (!existing || existing.items.length === 0) return;
+        newItems = existing.items.slice(0, -1);
+      } else if (mode === 'replace') {
+        if (!selId) return;
+        newItems = [selId];
+      } else {
+        // add
+        if (!selId) return;
+        newItems = existing ? [...existing.items, selId] : [selId];
+      }
+
+      // Update local data
+      if (existing) {
+        existing.items = newItems;
+      } else {
+        chunkTiles.push({ x: tileX, y: tileY, z: currentFloor, items: newItems });
+        floorDataRef.current.set(key, chunkTiles);
+      }
+
+      // Queue for batch save
+      const tileKey = `${tileX},${tileY}`;
+      pendingEditsRef.current.set(tileKey, { x: tileX, y: tileY, z: currentFloor, items: newItems });
+      setPendingCount(pendingEditsRef.current.size);
+
+      // Redraw
+      rendererRef.current?.invalidateFloor(currentFloor);
+      tileLayerRef.current?.redraw();
+
+      // Debounced flush
+      if (flushTimerRef.current) clearTimeout(flushTimerRef.current);
+      flushTimerRef.current = setTimeout(() => flushPendingEdits(), 500);
     });
 
     return () => {
@@ -430,6 +507,71 @@ const CamMapPage = () => {
   const floorDisplay = 7 - currentFloor;
   const isLoading = assetsLoading || floorLoading;
 
+  // Flush pending edits to database
+  const flushPendingEdits = useCallback(async () => {
+    const edits = Array.from(pendingEditsRef.current.values());
+    if (edits.length === 0) return;
+    pendingEditsRef.current.clear();
+    setPendingCount(0);
+
+    try {
+      // Batch upsert tiles
+      for (const edit of edits) {
+        await supabase
+          .from('cam_map_tiles')
+          .upsert({
+            x: edit.x, y: edit.y, z: edit.z,
+            items: edit.items as any,
+            seen_count: 999,
+          } as any);
+
+        // Update chunk
+        const cx = Math.floor(edit.x / CHUNK_TILES);
+        const cy = Math.floor(edit.y / CHUNK_TILES);
+        const relX = edit.x - cx * CHUNK_TILES;
+        const relY = edit.y - cy * CHUNK_TILES;
+        const relKey = `${relX},${relY}`;
+
+        const { data: chunkData } = await supabase
+          .from('cam_map_chunks')
+          .select('tiles_data')
+          .eq('chunk_x', cx)
+          .eq('chunk_y', cy)
+          .eq('z', edit.z)
+          .maybeSingle();
+
+        const tilesData = (chunkData?.tiles_data || {}) as Record<string, number[]>;
+        tilesData[relKey] = edit.items;
+
+        await supabase
+          .from('cam_map_chunks')
+          .upsert({
+            chunk_x: cx, chunk_y: cy, z: edit.z,
+            tiles_data: tilesData as any,
+          } as any);
+      }
+    } catch (err: any) {
+      console.error('[CamMap] Flush error:', err);
+    }
+  }, []);
+
+  // Remove highlight when leaving edit mode
+  useEffect(() => {
+    if (!editMode && highlightRectRef.current) {
+      highlightRectRef.current.remove();
+      highlightRectRef.current = null;
+    }
+  }, [editMode]);
+
+  // Cursor override for edit mode
+  useEffect(() => {
+    const container = mapContainerRef.current;
+    if (!container) return;
+    const leafletEl = container.querySelector('.leaflet-container') as HTMLElement;
+    if (leafletEl) {
+      leafletEl.style.cursor = editMode ? 'crosshair' : '';
+    }
+  }, [editMode]);
 
   // Handle tile saved from editor
   const handleTileSaved = useCallback((x: number, y: number, z: number, newItems: number[]) => {
@@ -444,7 +586,6 @@ const CamMapPage = () => {
       chunkTiles.push({ x, y, z, items: newItems });
       floorDataRef.current.set(key, chunkTiles);
     }
-    // Invalidate renderer cache for this chunk and redraw
     rendererRef.current?.invalidateFloor(z);
     if (tileLayerRef.current) {
       tileLayerRef.current.redraw();
@@ -554,6 +695,37 @@ const CamMapPage = () => {
                   <Pencil className="w-3.5 h-3.5" />
                   Editar
                 </button>
+
+                {/* Brush mode selector */}
+                {editMode && (
+                  <div className="border-t border-border/50 mt-1 pt-1 flex flex-col gap-1">
+                    <span className="text-[10px] text-muted-foreground uppercase tracking-wider">Pincel</span>
+                    <button
+                      onClick={() => setBrushMode('add')}
+                      className={`flex items-center gap-1.5 text-xs px-1 py-0.5 rounded transition-colors ${brushMode === 'add' ? 'text-gold bg-muted/50' : 'text-muted-foreground'}`}
+                      title="Adicionar sprite ao tile"
+                    >
+                      <Plus className="w-3.5 h-3.5" />
+                      Add
+                    </button>
+                    <button
+                      onClick={() => setBrushMode('replace')}
+                      className={`flex items-center gap-1.5 text-xs px-1 py-0.5 rounded transition-colors ${brushMode === 'replace' ? 'text-gold bg-muted/50' : 'text-muted-foreground'}`}
+                      title="Substituir todos os itens do tile"
+                    >
+                      <Replace className="w-3.5 h-3.5" />
+                      Replace
+                    </button>
+                    <button
+                      onClick={() => setBrushMode('erase')}
+                      className={`flex items-center gap-1.5 text-xs px-1 py-0.5 rounded transition-colors ${brushMode === 'erase' ? 'text-gold bg-muted/50' : 'text-muted-foreground'}`}
+                      title="Apagar último item do tile"
+                    >
+                      <Eraser className="w-3.5 h-3.5" />
+                      Erase
+                    </button>
+                  </div>
+                )}
               </div>
             </div>
           )}
@@ -613,7 +785,13 @@ const CamMapPage = () => {
               <span className="text-xs text-muted-foreground">
                 {tileCount.toLocaleString()} tiles | {spawnCount.toLocaleString()} spawns
               </span>
-          </div>
+              {pendingCount > 0 && (
+                <div className="flex items-center gap-1.5 mt-1 border-t border-border/30 pt-1">
+                  <Save className="w-3 h-3 text-gold animate-pulse" />
+                  <span className="text-xs text-gold">{pendingCount} tiles não salvos</span>
+                </div>
+              )}
+            </div>
           )}
       </div>
     </div>
