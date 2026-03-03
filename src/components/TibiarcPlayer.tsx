@@ -39,6 +39,51 @@ function copyToWasm(mod: WasmModule, data: Uint8Array): number {
   return ptr;
 }
 
+/**
+ * Check if the canvas is mostly black (corrupted state).
+ * Samples pixels in a grid pattern for performance.
+ * Returns true if >90% of sampled pixels are near-black.
+ */
+function isCanvasBlack(canvas: HTMLCanvasElement): boolean {
+  try {
+    const ctx = canvas.getContext('2d', { willReadFrequently: true });
+    if (!ctx) return false;
+
+    const w = canvas.width;
+    const h = canvas.height;
+    if (w === 0 || h === 0) return false;
+
+    const imageData = ctx.getImageData(0, 0, w, h);
+    const data = imageData.data;
+
+    // Sample ~100 pixels in a grid
+    const stepX = Math.max(1, Math.floor(w / 10));
+    const stepY = Math.max(1, Math.floor(h / 10));
+    let totalSampled = 0;
+    let blackCount = 0;
+    const BLACK_THRESHOLD = 15; // RGB values below this are considered "black"
+
+    for (let y = stepY; y < h - stepY; y += stepY) {
+      for (let x = stepX; x < w - stepX; x += stepX) {
+        const idx = (y * w + x) * 4;
+        const r = data[idx];
+        const g = data[idx + 1];
+        const b = data[idx + 2];
+        totalSampled++;
+        if (r < BLACK_THRESHOLD && g < BLACK_THRESHOLD && b < BLACK_THRESHOLD) {
+          blackCount++;
+        }
+      }
+    }
+
+    if (totalSampled === 0) return false;
+    const blackRatio = blackCount / totalSampled;
+    return blackRatio > 0.9;
+  } catch {
+    return false;
+  }
+}
+
 const TibiarcPlayer = ({ className }: TibiarcPlayerProps) => {
   const { t } = useTranslation();
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -51,6 +96,8 @@ const TibiarcPlayer = ({ className }: TibiarcPlayerProps) => {
   const hideTimerRef = useRef<number | null>(null);
   const camBufferRef = useRef<Uint8Array | null>(null);
   const lastGoodProgressRef = useRef(0);
+  const blackCheckCountRef = useRef(0); // consecutive black checks during playback
+  const autoSkippingRef = useRef(false); // prevent re-entrant auto-skip
   const [state, setState] = useState<PlayerState>('idle');
   const [speed, setSpeed] = useState(1);
   const [fileName, setFileName] = useState('');
@@ -178,20 +225,53 @@ const TibiarcPlayer = ({ className }: TibiarcPlayerProps) => {
     return () => { cancelled = true; };
   }, []);
 
-  // Progress polling with try-catch
+  // Progress polling with black-screen detection for auto-skip
   useEffect(() => {
     if (state === 'playing') {
+      let tickCount = 0;
       pollingRef.current = window.setInterval(() => {
-        if (seekingRef.current) return;
+        if (seekingRef.current || autoSkippingRef.current) return;
         const mod = moduleRef.current;
         if (!mod) return;
+
         const p = safeCall(mod, 'get_progress', 'number', [], [], 0);
         const playing = safeCall(mod, 'is_playing', 'number', [], [], 1);
         setProgress(p);
         if (p > 0) lastGoodProgressRef.current = p;
+
         if (!playing) {
           setState('paused');
           setProgress(safeCall(mod, 'get_duration', 'number', [], [], 0));
+          blackCheckCountRef.current = 0;
+          return;
+        }
+
+        // Every ~2s (20 ticks * 100ms), check for black screen
+        tickCount++;
+        if (tickCount % 20 === 0) {
+          const canvas = canvasRef.current;
+          if (canvas && isCanvasBlack(canvas)) {
+            blackCheckCountRef.current++;
+            // Require 2 consecutive black checks to avoid false positives
+            if (blackCheckCountRef.current >= 2) {
+              console.warn(`[TibiarcPlayer] Black screen detected at ${p}ms during playback, auto-skipping +5s`);
+              autoSkippingRef.current = true;
+              blackCheckCountRef.current = 0;
+
+              safeCall(mod, 'pause_playback', 'undefined', [], []);
+              const skipTarget = Math.min(p + 5000, duration);
+              const reloaded = reloadRecording(mod);
+              if (reloaded) {
+                safeCall(mod, 'seek', 'undefined', ['number'], [skipTarget]);
+                setProgress(skipTarget);
+                lastGoodProgressRef.current = skipTarget;
+              }
+              safeCall(mod, 'play', 'undefined', [], []);
+              autoSkippingRef.current = false;
+            }
+          } else {
+            blackCheckCountRef.current = 0;
+          }
         }
       }, 100);
     }
@@ -201,9 +281,9 @@ const TibiarcPlayer = ({ className }: TibiarcPlayerProps) => {
         pollingRef.current = null;
       }
     };
-  }, [state]);
+  }, [state, duration]);
 
-  // Visibilitychange handler with try-catch
+  // Visibilitychange handler
   useEffect(() => {
     const handler = () => {
       if (document.visibilityState === 'visible' && state === 'playing') {
@@ -259,6 +339,7 @@ const TibiarcPlayer = ({ className }: TibiarcPlayerProps) => {
       setDuration(dur);
       setProgress(0);
       lastGoodProgressRef.current = 0;
+      blackCheckCountRef.current = 0;
 
       // Auto-play
       safeCall(mod, 'play', 'undefined', [], []);
@@ -314,6 +395,11 @@ const TibiarcPlayer = ({ className }: TibiarcPlayerProps) => {
     return dur > 0;
   }, []);
 
+  /**
+   * Seek with black-screen detection and auto-skip.
+   * After seeking, waits briefly for render then checks if canvas is black.
+   * If black, tries increasingly large forward offsets to skip corrupted frames.
+   */
   const handleSeek = (val: number[]) => {
     const ms = val[0];
     setProgress(ms);
@@ -336,22 +422,58 @@ const TibiarcPlayer = ({ className }: TibiarcPlayerProps) => {
         return;
       }
 
-      try {
-        safeCall(mod, 'seek', 'undefined', ['number'], [ms]);
-        lastGoodProgressRef.current = ms;
-        setProgress(ms);
-      } catch (e) {
-        // Seek crashed — restore to last known good position
-        console.warn('[TibiarcPlayer] Seek exception, restoring last good position:', e);
-        reloadRecording(mod);
-        safeCall(mod, 'seek', 'undefined', ['number'], [lastGoodProgressRef.current]);
-        setProgress(lastGoodProgressRef.current);
-      }
+      safeCall(mod, 'seek', 'undefined', ['number'], [ms]);
+      lastGoodProgressRef.current = ms;
+      setProgress(ms);
 
-      if (wasPlaying) {
-        safeCall(mod, 'play', 'undefined', [], []);
+      // After seek, wait for render then validate canvas
+      const canvas = canvasRef.current;
+      if (canvas) {
+        setTimeout(() => {
+          if (isCanvasBlack(canvas)) {
+            console.warn(`[TibiarcPlayer] Black screen after seek to ${ms}ms, trying skip offsets`);
+            const offsets = [5000, 15000, 30000];
+            let recovered = false;
+
+            for (const offset of offsets) {
+              const target = Math.min(ms + offset, duration);
+              if (target === ms) continue; // don't retry same position
+
+              const ok = reloadRecording(mod);
+              if (!ok) break;
+
+              safeCall(mod, 'seek', 'undefined', ['number'], [target]);
+
+              // Synchronous check — the WASM renders to the canvas during seek
+              if (!isCanvasBlack(canvas)) {
+                console.info(`[TibiarcPlayer] Recovered by skipping to ${target}ms (+${offset / 1000}s)`);
+                lastGoodProgressRef.current = target;
+                setProgress(target);
+                recovered = true;
+                break;
+              }
+            }
+
+            if (!recovered) {
+              // All offsets failed — restore to last known good position
+              console.warn('[TibiarcPlayer] All skip offsets failed, restoring last good position');
+              const ok = reloadRecording(mod);
+              if (ok) {
+                safeCall(mod, 'seek', 'undefined', ['number'], [lastGoodProgressRef.current]);
+                setProgress(lastGoodProgressRef.current);
+              }
+            }
+          }
+
+          if (wasPlaying) {
+            safeCall(mod, 'play', 'undefined', [], []);
+          }
+          seekingRef.current = false;
+        }, 80); // wait for WASM to render a frame
+      } else {
+        if (wasPlaying) safeCall(mod, 'play', 'undefined', [], []);
+        seekingRef.current = false;
       }
-      seekingRef.current = false;
     }, 150);
   };
 
