@@ -1,55 +1,65 @@
 
 
-## Analise Completa: O que esta quebrando o Cam Map
+## Capturar tiles de TODOS os andares visiveis, nao so o do player
 
-### O que ja temos de protecao (e funciona)
+### Problema
 
-1. **`tz !== camZ`** (linha 388) — So captura tiles do andar atual da camera. Tiles de outros andares no GameState tem Z diferente e sao ignorados.
-2. **`gs.tiles.clear()`** (linha 97) — Limpa todos os tiles quando muda de andar, evitando residuos.
-3. **Viewport radius 40** (linha 394) — So captura tiles perto da camera.
+Atualmente, `snapshotTiles` tem `if (tz !== camZ) continue;` — isso descarta tiles de todos os andares que nao sao o andar da camera. Porem, o protocolo Tibia envia dados de multiplos andares simultaneamente:
 
-Essas 3 protecoes sao suficientes para garantir integridade de dados. O parser armazena tiles com Z correto (o Z vem do parametro `nz` no `readFloorArea`, nao do payload).
+- **Superficie (camZ <= 7)**: le andares 0 a 7 (8 andares)
+- **Subsolo (camZ > 7)**: le andares camZ-2 a camZ+2 (5 andares)
 
-### O que esta causando os problemas
+O parser `readMultiFloorArea` ja armazena esses tiles com coordenadas mundo corretas (X e Y ja incluem o perspective offset `camZ - nz`). Entao tiles de outros andares tem coordenadas validas — estamos jogando dados fora sem necessidade.
 
-**Filtro `SURFACE_ONLY_ITEMS`** — Remove item IDs arbitrarios em andares subterraneos. Qualquer item que apareca tanto na superficie quanto no subsolo e removido, criando buracos no mapa.
+### Solucao
 
-**Filtro `hasGround` (stackPrio === 0)** — Rejeita tiles underground inteiros se nenhum item tiver stackPrio 0 no arquivo .dat. Tiles com ground items que o dat classifica com stackPrio diferente de 0 sao descartados, causando as areas vazias massivas que voce viu no screenshot.
+Substituir o filtro `tz !== camZ` por um filtro de **range de andares visiveis**, usando a mesma logica do `getFloorRange`:
 
-**`floorStableBatches >= 3`** — Apos cada mudanca de andar, o extractor ignora 1500 frames de dados (3 batches x 500 frames). Em gravacoes onde o jogador muda de andar frequentemente, isso descarta uma parcela significativa dos tiles validos.
+```text
+Se camZ <= 7:  aceitar andares 0 a 7
+Se camZ > 7:   aceitar andares camZ-2 a camZ+2
+```
 
-### Solucao: Remover filtros desnecessarios, confiar na logica base
+Isso captura dados de todos os andares que o protocolo realmente enviou, sem risco de contaminar com andares fora do range visivel.
 
-A abordagem correta e simples: confiar no `tz !== camZ` + `gs.tiles.clear()` e remover toda filtragem extra por item ID.
+### Mudancas em `src/lib/tibiaRelic/mapExtractor.ts`
 
-#### Mudancas em `src/lib/tibiaRelic/mapExtractor.ts`:
+**Unica mudanca**: No `snapshotTiles`, substituir:
 
-**1. Remover `SURFACE_ONLY_ITEMS` completamente**
+```javascript
+// Only capture tiles on the camera's current floor.
+if (tz !== camZ) continue;
+```
 
-Deletar a constante e todo o bloco `if (camZ >= 8)` dentro de `snapshotTiles`. Nenhum filtro por item ID. O `tz !== camZ` ja garante que so tiles do andar correto sao capturados.
+Por:
 
-**2. Reverter `floorStableBatches` de 3 para 1**
+```javascript
+// Only capture tiles within the visible floor range
+if (camZ <= 7) {
+  // Surface: protocol sends floors 0-7
+  if (tz < 0 || tz > 7) continue;
+} else {
+  // Underground: protocol sends camZ-2 to camZ+2
+  if (tz < camZ - 2 || tz > camZ + 2 || tz > 15) continue;
+}
+```
 
-Manter apenas 1 batch de cooldown apos mudanca de andar (suficiente para evitar dados da transicao). Isso evita perder 1000 frames de dados validos por transicao.
+Nenhuma outra mudanca necessaria. O `gs.tiles.clear()` no floor change continua funcionando — ao mudar de andar, os tiles antigos sao limpos e o proximo `readMultiFloorArea` popula com dados frescos de todos os andares visiveis do novo andar.
 
-Mudar `floorStableBatches >= 3` para `floorStableBatches >= 1` nas duas versoes (sync e async).
+### Por que isso e seguro
 
-**3. Manter todas as outras protecoes**
-- `tz !== camZ` — filtra tiles de outros andares
-- `gs.tiles.clear()` — limpa ao mudar de andar
-- Viewport radius 40 — filtra tiles distantes
-- `id < 100 || id > 9999` — filtra IDs invalidos
-- `stackPrio > 5` — filtra itens moveis (mochila, equipamento)
+1. **Coordenadas mundo corretas**: `readFloorArea` ja aplica o offset `camZ - nz` ao X/Y, entao tiles de outros andares tem posicao mundo correta
+2. **`gs.tiles.clear()` no floor change**: impede residuos do andar anterior
+3. **Viewport radius 40**: continua filtrando tiles distantes
+4. **Range limitado**: so aceita andares que o protocolo realmente enviou (nao inventa dados)
 
 ### Resultado esperado
 
-O `snapshotTiles` fica muito mais simples — sem nenhum tratamento especial para underground. A unica filtragem que resta e:
-- So andar da camera (`tz !== camZ`)
-- So itens estaticos (`stackPrio <= 5`)
-- So IDs validos (100-9999)
-- So viewport proximo (raio 40)
+- Andares visitados pelo player: dados completos (como antes)
+- Andares adjacentes nao visitados: dados parciais capturados automaticamente da perspectiva do protocolo
+- Sem risco de contaminar andar X com tiles do andar Y (range visivel garante isso)
 
 ### Apos aplicar
 
-Re-extrair os .cam problematicos e rodar "Generate Chunks" para reconstruir os dados limpos.
+Re-extrair os .cam problematicos e rodar "Generate Chunks" para popular os novos andares capturados.
 
