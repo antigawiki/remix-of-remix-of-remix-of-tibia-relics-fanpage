@@ -389,17 +389,22 @@ function snapshotTiles(
     if (Math.abs(tx - camX) > 40 || Math.abs(ty - camY) > 40) continue;
 
     let items: number[] = [];
+    let hasValidGround = false;
     for (const item of tileItems) {
       if (item[0] !== 'it') continue;
       const id = item[1];
       if (id < 100 || id > 9999) continue;
       const def = dat.items.get(id);
       if (!def || def.stackPrio > 5) continue;
+      // Validate that ground sprites are resolvable
+      if (def.isGround && def.spriteIds.length > 0 && def.spriteIds[0] > 0) {
+        hasValidGround = true;
+      }
       items.push(id);
     }
 
-
-    if (items.length > 0) {
+    // Discard tiles without a valid ground sprite — these produce white squares
+    if (items.length > 0 && hasValidGround) {
       const correctedKey = `${tx},${ty},${tz}`;
       latestTiles.set(correctedKey, items);
     }

@@ -14,7 +14,10 @@ export type DebugEventType =
   | 'TILE_UPDATE'
   | 'SCROLL'
   | 'MAP_DESC'
-  | 'MAP_DESC_MINI';
+  | 'MAP_DESC_MINI'
+  | 'MULTIFLOOR_EXHAUSTED'
+  | 'MULTIFLOOR_STEP'
+  | 'MULTIFLOOR_DONE';
 
 export interface DebugEvent {
   ts: number; // performance.now()

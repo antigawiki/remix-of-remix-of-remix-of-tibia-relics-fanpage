@@ -998,10 +998,42 @@ export class PacketParser {
 
   private readMultiFloorArea(r: Buf, ox: number, oy: number, W: number, H: number, camZ: number, startz: number, endz: number, zstep: number) {
     let skip = 0;
+    const startPos = r.pos;
+    const dl = this.debugLogger;
+    let floorCount = 0;
     for (let nz = startz; nz !== endz + zstep; nz += zstep) {
-      if (r.left() < 2) break;
+      if (r.left() < 2) {
+        if (dl && dl.enabled) {
+          dl.log('MULTIFLOOR_EXHAUSTED', {
+            floor: nz, floorIndex: floorCount, bytesLeft: r.left(),
+            totalConsumed: r.pos - startPos,
+            expectedFloors: Math.abs(endz - startz) / Math.abs(zstep) + 1,
+          });
+        }
+        break;
+      }
+      const floorStartPos = r.pos;
       const offset = camZ - nz;
       skip = this.readFloorArea(r, ox, oy, nz, W, H, offset, skip);
+      floorCount++;
+      if (dl && dl.enabled) {
+        dl.log('MULTIFLOOR_STEP', {
+          floor: nz, floorIndex: floorCount - 1, offset,
+          bytesConsumed: r.pos - floorStartPos,
+          totalConsumed: r.pos - startPos,
+          bytesLeft: r.left(),
+          skipCarry: skip,
+        });
+      }
+    }
+    if (dl && dl.enabled) {
+      dl.log('MULTIFLOOR_DONE', {
+        floorsRead: floorCount,
+        expectedFloors: Math.abs(endz - startz) / Math.abs(zstep) + 1,
+        totalBytesConsumed: r.pos - startPos,
+        bytesLeft: r.left(),
+        camZ, startz, endz,
+      });
     }
     // Safety net: re-insert creature references into their tiles after area read
     this.reinsertCreaturesOnTiles();

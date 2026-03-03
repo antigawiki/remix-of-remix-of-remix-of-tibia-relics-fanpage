@@ -380,11 +380,18 @@ static void RenderFrame() {
             .Width = RENDER_WIDTH,
             .Height = RENDER_HEIGHT,
             .SkipRenderingMessages = g_skip_messages,
-            .SkipRenderingPlayerNames = g_skip_messages,
+            .SkipRenderingPlayerNames = false,
             .SkipRenderingYellingMessages = g_skip_messages,
             .SkipRenderingCreatureHealthBars = false,
             .SkipRenderingStatusBars = g_skip_messages,
         };
+
+        // Force-clear all pending messages/speech bubbles before rendering
+        // This ensures DrawOverlay won't render any chat text even if
+        // the renderer has code paths not covered by the skip flags
+        if (g_skip_messages) {
+            g_gamestate->Messages.Prune(g_currentTick.count() + 999999);
+        }
 
         // Clear and reuse static canvas (no per-frame allocation)
         g_mapCanvas->DrawRectangle(Pixel(0, 0, 0), 0, 0,
