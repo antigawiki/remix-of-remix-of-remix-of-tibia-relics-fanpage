@@ -1,67 +1,71 @@
 
 
-## Diagnóstico Profundo: Desync, White Sprites e Mensagens
+## Diagnóstico: Causa Raiz dos Erros
 
-### 1. Mensagens ainda aparecendo na tela
+### O Problema Central: Floor Range Incorreto
 
-**Causa confirmada:** O `web_player.cpp` atual liga `SkipRenderingPlayerNames` ao mesmo flag `g_skip_messages`. O usuário confirmou que esconder mensagens **não deve** esconder nomes de criaturas.
+O parser JS usa a lógica padrão do OTClient para superfície (z ≤ 7):
+```text
+getFloorRange(z=7) → startz=7, endz=0 → 8 andares (7,6,5,4,3,2,1,0)
+```
 
-Mas o problema principal é outro: mesmo com todos os flags de skip ativados, as mensagens continuam. Isso indica que o tibiarc tem caminhos de renderização adicionais não cobertos pelos flags atuais. A função `DrawOverlay` provavelmente renderiza:
-- Speech bubbles (chat sobre a cabeça dos players)
-- Animated text (dano, healing, XP)
-- Status messages
+Mas o TibiaRelic envia **apenas ±2 andares** (confirmado pelo usuário). Isso significa que na superfície, o servidor envia no máximo 5 andares em vez de 8. O parser tenta ler 3 andares extras que **não existem no stream**, consumindo bytes dos próximos opcodes como se fossem tile data. Isso corrompe todo o resto da leitura.
 
-Esses podem ter flags adicionais no struct `Renderer::Options` que não estamos usando, ou podem ser renderizados incondicionalmente pelo tibiarc.
+**Efeito cascata:**
+1. `readMultiFloorArea` consome bytes demais → desync
+2. Próximos opcodes leem dados corrompidos → item IDs inválidos
+3. Item IDs inválidos → sprites não resolvíveis → quadrados brancos no mapa
+4. Bytes consumidos errados → crashes em sequência
 
-**Fix no `web_player.cpp`:**
-1. Separar `SkipRenderingPlayerNames = false` (sempre visível)
-2. Investigar o `renderer.hpp` do fork para campos adicionais do struct Options
-3. Se não houver flag para speech bubbles: patch no `DrawOverlay` para skip quando `g_skip_messages = true`, ou adicionar `g_gamestate->Messages.Prune(0)` forçado antes de cada `RenderFrame` quando skip está ativo (limpa todas as mensagens pendentes)
+### `floorUp` e `floorDown` também estão errados
 
-### 2. Desync e Multi-Floor Reading
+`floorUp` (linha 751-756): quando camZ chega a 7 (saindo do subsolo), lê andares 5→0 com offsets fixos (6 andares). Se o servidor só envia 2-3, desync.
 
-**Análise do sistema atual:**
-O `getFloorRange` no JS parser lê:
-- Superfície (z ≤ 7): floors 7→0 (8 andares), como o OTClient padrão
-- Subsolo (z > 7): z-2 até z+2 (5 andares)
+`floorDown` (linha 780-786): quando camZ chega a 8 (entrando no subsolo), lê z até z+2 (3 andares). Isso parece correto para ±2.
 
-O protocolo Tibia envia tiles com sentinelas `0xFF00+` que indicam "skip N tiles". O skip count é propagado entre andares (`readFloorArea` retorna skip). Isso é correto para o protocolo padrão.
+### Sobre iluminação
 
-**Possível causa de desync:** O TibiaRelic é um servidor customizado 7.72. Se ele enviar **menos andares** que o esperado (ex: só 3 andares em vez de 8 na superfície), o parser continuaria lendo bytes do próximo opcode como se fossem tiles, corrompendo todo o stream.
+Os bytes de iluminação **já são consumidos** corretamente:
+- World light (0x82): `r.u8(); r.u8()` ✓
+- Creature light em `updateCreatureCommon`: `r.u8(); r.u8()` ✓
+- Creature light update (0x8D): `r.u32(); r.u8(); r.u8()` ✓
 
-**Evidência:** Os problemas de desync acontecem especialmente durante:
-- `mapDesc` (0x64) que lê múltiplos andares
-- `scroll` (0x65-0x68) que também lê multi-floor
-- `floorUp`/`floorDown` (0xBE/0xBF)
+A iluminação não causa crashes — o rendering de escuridão funciona no WASM (imagem 206).
 
-**Fix proposto:** Adicionar instrumentação ao parser JS para contar quantos bytes cada `readMultiFloorArea` consome vs. quantos estavam disponíveis. Isso revelará se o parser está consumindo demais (desync) ou de menos (dados residuais). Essa informação permitirá ajustar `getFloorRange` para o formato real do TibiaRelic.
+### Sobre as mensagens
 
-Nota: Isso afeta apenas as ferramentas JS (cam-analyzer, cam-map). O player WASM usa o parser C++ do tibiarc que tem sua própria lógica de multi-floor.
+O WASM player **já funciona corretamente**: imagem 205 mostra nomes de criaturas visíveis (Kongra, Sibang) sem mensagens de chat. A correção anterior foi aplicada com sucesso.
 
-### 3. White Sprites no Cam Map
+---
 
-**Análise:** O `SprLoader` lê o count como `u16` (linha 19), correto para 7.72. Sprites com offset 0 retornam null, e `getSpriteCanvas` retorna null, fazendo `drawImage` não ser chamado. Portanto, tiles "brancos" não são sprites brancos — são tiles sem nenhum sprite válido, mostrando o fundo transparente do canvas (que o Leaflet renderiza como branco/cinza).
+### Plano de Correção
 
-**Causas possíveis:**
-- Item IDs corrompidos vindos do parser desync (cascata do problema #2)
-- Item IDs que existem no .dat mas cujos spriteIds apontam para sprites inexistentes no .spr
-- Tiles com dados de andares errados (perspectiva) gravados no banco
+**1. Corrigir `getFloorRange` para ±2 andares em TODAS as situações:**
 
-**Fix:** Antes de gravar tiles no banco durante a extração, validar que pelo menos o ground tile tem sprites resolvíveis. Tiles sem ground válido devem ser descartados.
+```typescript
+private getFloorRange(z: number): { startz: number; endz: number; zstep: number } {
+  if (z > 7) {
+    return { startz: z - 2, endz: Math.min(z + 2, 15), zstep: 1 };
+  } else {
+    // TibiaRelic: ±2 floors only, not full 7→0
+    return { startz: Math.min(z + 2, 7), endz: Math.max(z - 2, 0), zstep: -1 };
+  }
+}
+```
 
-### Plano de Mudanças
+Superfície z=7: lê 7→5 (3 andares em vez de 8)
+Superfície z=6: lê 7→4 (4 andares)
+Superfície z=5: lê 7→3 (5 andares — máximo ±2)
 
-**Fase 1 — `web_player.cpp` (recompilação necessária):**
-- `SkipRenderingPlayerNames = false` (sempre visível, separado de mensagens)
-- Antes de `DrawOverlay`, se `g_skip_messages`: chamar `g_gamestate->Messages.Prune(g_currentTick.count() + 999999)` para limpar todas as mensagens pendentes, garantindo que nenhuma speech bubble seja desenhada
-- Verificar no `renderer.hpp` se existem flags adicionais como `SkipRenderingAnimatedText`
+**2. Corrigir `floorUp` para ±2:**
 
-**Fase 2 — Diagnóstico de multi-floor (JS):**
-- Adicionar logging ao `readMultiFloorArea` para medir bytes consumidos por floor
-- Comparar com o comportamento esperado para identificar desalinhamento
-- Criar um modo "single-floor" no parser para testes comparativos
+Quando camZ atinge 7 (saindo do subsolo), em vez de ler 6 andares (5→0), ler apenas os andares visíveis (camZ-2 até 0 ou conforme ±2).
 
-**Fase 3 — Validação de sprites na extração:**
-- No pipeline de extração de tiles, filtrar tiles cujo ground sprite não é resolvível pelo SprLoader
-- Isso elimina os quadrados brancos sem afetar a cobertura de tiles válidos
+**3. Corrigir `floorDown` para ±2:**
+
+Verificar que a lógica está alinhada com ±2.
+
+**4. Adicionar safety guard no `readMultiFloorArea`:**
+
+Se durante a leitura de um floor o buffer tiver bytes insuficientes para um tile completo, parar imediatamente em vez de tentar ler mais andares.
 
