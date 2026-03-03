@@ -1,75 +1,55 @@
 
 
-## Fix: Cam Map Data Distortion and Missing Underground Tiles
+## Analise Completa: O que esta quebrando o Cam Map
 
-### Root Causes Identified
+### O que ja temos de protecao (e funciona)
 
-**1. SURFACE_ONLY_ITEMS filter is removing legitimate underground tiles**
-The filter removes IDs 351-356 and 405-430 on floors Z >= 8. However, in Tibia 7.72, these IDs are earth/cliff borders and transition tiles that appear on BOTH surface AND underground. The underground data shows IDs 357-386 (stone/cave ground) but the adjacent border IDs 351-356 are being stripped, creating gaps in cave walls and borders. IDs 405-430 are border transition tiles also used underground.
+1. **`tz !== camZ`** (linha 388) — So captura tiles do andar atual da camera. Tiles de outros andares no GameState tem Z diferente e sao ignorados.
+2. **`gs.tiles.clear()`** (linha 97) — Limpa todos os tiles quando muda de andar, evitando residuos.
+3. **Viewport radius 40** (linha 394) — So captura tiles perto da camera.
 
-Evidence: Underground chunks show sparse data (5-10 tiles per 64-slot chunk) with gaps where border/transition tiles should connect wall segments.
+Essas 3 protecoes sao suficientes para garantir integridade de dados. O parser armazena tiles com Z correto (o Z vem do parametro `nz` no `readFloorArea`, nao do payload).
 
-**2. Floor stability threshold too low (1 batch = 500 frames)**
-After a floor change, `gs.tiles` is cleared and snapshotting resumes after just 1 batch. During transitions (especially surface-to-underground), the first batch may still contain perspective-contaminated tiles from the multi-floor read that triggered the floor change.
+### O que esta causando os problemas
 
-**3. Multi-floor read desync causes cross-floor contamination**
-During `readMultiFloorArea`, the `skip` variable carries across floors. If reading floor 6 or 7 encounters a parsing error (outfit, creature data), the skip count gets corrupted, and floor 8 tiles end up with surface item IDs. These tiles have z=8 (correct) but wrong item data — passing the `tz === camZ` filter.
+**Filtro `SURFACE_ONLY_ITEMS`** — Remove item IDs arbitrarios em andares subterraneos. Qualquer item que apareca tanto na superficie quanto no subsolo e removido, criando buracos no mapa.
 
-### Changes
+**Filtro `hasGround` (stackPrio === 0)** — Rejeita tiles underground inteiros se nenhum item tiver stackPrio 0 no arquivo .dat. Tiles com ground items que o dat classifica com stackPrio diferente de 0 sao descartados, causando as areas vazias massivas que voce viu no screenshot.
 
-**A) `src/lib/tibiaRelic/mapExtractor.ts` — Fix SURFACE_ONLY_ITEMS filter:**
+**`floorStableBatches >= 3`** — Apos cada mudanca de andar, o extractor ignora 1500 frames de dados (3 batches x 500 frames). Em gravacoes onde o jogador muda de andar frequentemente, isso descarta uma parcela significativa dos tiles validos.
 
-Remove IDs 351-356 and 405-430 from the filter. Keep only true grass IDs (101-106) that never appear underground. Additionally, add IDs 107-114 (sand/beach) which are also surface-exclusive.
+### Solucao: Remover filtros desnecessarios, confiar na logica base
 
-```
-const SURFACE_ONLY_ITEMS: Set<number> = new Set([
-  101, 102, 103, 104, 105, 106,  // Grass
-  107, 108, 109, 110, 111, 112, 113, 114, // Sand/beach
-]);
-```
+A abordagem correta e simples: confiar no `tz !== camZ` + `gs.tiles.clear()` e remover toda filtragem extra por item ID.
 
-**B) `src/lib/tibiaRelic/mapExtractor.ts` — Increase floor stability threshold:**
+#### Mudancas em `src/lib/tibiaRelic/mapExtractor.ts`:
 
-Change `floorStableBatches >= 1` to `floorStableBatches >= 3`. This ensures 3 full batches (1500 frames) of stable data before snapshotting, giving enough time for clean tiles to accumulate.
+**1. Remover `SURFACE_ONLY_ITEMS` completamente**
 
-```
-if (floorStableBatches >= 3) snapshotTiles(gs, dat, latestTiles);
-```
+Deletar a constante e todo o bloco `if (camZ >= 8)` dentro de `snapshotTiles`. Nenhum filtro por item ID. O `tz !== camZ` ja garante que so tiles do andar correto sao capturados.
 
-(Both in the sync and async versions)
+**2. Reverter `floorStableBatches` de 3 para 1**
 
-**C) `src/lib/tibiaRelic/mapExtractor.ts` — Add ground validation:**
+Manter apenas 1 batch de cooldown apos mudanca de andar (suficiente para evitar dados da transicao). Isso evita perder 1000 frames de dados validos por transicao.
 
-In `snapshotTiles`, validate that each underground tile has at least one ground item (stackPrio 0). Tiles without a ground item on Z >= 8 are almost certainly contaminated (partial desync data).
+Mudar `floorStableBatches >= 3` para `floorStableBatches >= 1` nas duas versoes (sync e async).
 
-```javascript
-// After collecting items, before storing:
-if (camZ >= 8) {
-  const hasGround = items.some(id => {
-    const d = dat.items.get(id);
-    return d && d.stackPrio === 0;
-  });
-  if (!hasGround) continue; // Skip tiles without ground on underground floors
-}
-```
+**3. Manter todas as outras protecoes**
+- `tz !== camZ` — filtra tiles de outros andares
+- `gs.tiles.clear()` — limpa ao mudar de andar
+- Viewport radius 40 — filtra tiles distantes
+- `id < 100 || id > 9999` — filtra IDs invalidos
+- `stackPrio > 5` — filtra itens moveis (mochila, equipamento)
 
-**D) Database cleanup — Re-generate chunks after re-extraction:**
+### Resultado esperado
 
-After deploying these fixes, the user should re-extract the problematic .cam files and run "Generate Chunks" to rebuild `cam_map_chunks` from the corrected `cam_map_tiles` data.
+O `snapshotTiles` fica muito mais simples — sem nenhum tratamento especial para underground. A unica filtragem que resta e:
+- So andar da camera (`tz !== camZ`)
+- So itens estaticos (`stackPrio <= 5`)
+- So IDs validos (100-9999)
+- So viewport proximo (raio 40)
 
-### Summary
+### Apos aplicar
 
-| Fix | What | Impact |
-|-----|------|--------|
-| A | Remove 351-356, 405-430 from filter | Restores missing cave borders and transitions |
-| B | Increase stability from 1 to 3 batches | Prevents capturing stale tiles after floor changes |
-| C | Require ground item on underground tiles | Rejects contaminated tiles from desync |
-| D | Re-extract + regenerate | Cleans existing bad data |
-
-### Technical Notes
-
-- Fixes A, B, C are all in `src/lib/tibiaRelic/mapExtractor.ts`
-- No database migration needed
-- After deploying, problematic .cam files need to be re-extracted via the batch extract page
-- The generate_map_chunks RPC rebuilds chunks from the corrected raw tiles
+Re-extrair os .cam problematicos e rodar "Generate Chunks" para reconstruir os dados limpos.
 
