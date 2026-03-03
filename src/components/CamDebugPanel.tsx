@@ -21,11 +21,12 @@ const EVENT_COLORS: Record<DebugEventType, string> = {
   TILE_UPDATE: 'text-purple-400',
   SCROLL: 'text-orange-400',
   MAP_DESC: 'text-emerald-400',
+  MAP_DESC_MINI: 'text-lime-400',
 };
 
 const ALL_TYPES: DebugEventType[] = [
   'MOVE_CR', 'FLOOR_CHANGE', 'DESYNC', 'WALK_FAIL',
-  'SYNC_PLAYER', 'PLAYER_POS', 'SCROLL', 'MAP_DESC',
+  'SYNC_PLAYER', 'PLAYER_POS', 'SCROLL', 'MAP_DESC', 'MAP_DESC_MINI',
   'TILE_UPDATE', 'OPCODE',
 ];
 
