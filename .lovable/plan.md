@@ -1,60 +1,28 @@
 
 
-## Forking tibiarc para aplicar fixes no WASM player
+## Diagnóstico dos dois bugs
 
-### Situacao atual
+### Bug 1: "Mensagens aparecendo na tela" ao avançar
 
-O workflow `.github/workflows/build-tibiarc.yml` clona o tibiarc diretamente do repositorio upstream (`github.com/tibiacast/tibiarc`), compila `libtibiarc.a`, e linka com o nosso `web_player.cpp`. Os bugs estao **dentro do `parser.cpp` da libtibiarc** — codigo que nao controlamos.
+O problema está no `TibiarcPlayer`: a variável `overlayEnabled` começa como `true` (linha 108), mas a função `set_skip_messages` do WASM **nunca é chamada na carga inicial**. O WASM também começa com `g_skip_messages = false`, então as mensagens de chat do jogo são renderizadas por padrão.
 
-### O que precisamos fazer
+Além disso, cada `reloadRecording` (feito no seek) **reseta o estado interno do WASM**, incluindo `g_skip_messages`, mas o JS nunca re-aplica o valor atual de `overlayEnabled` após o reload.
 
-**1. Criar um fork do tibiarc**
+**Fix:** Após cada chamada a `load_recording_tibiarelic` (tanto no load inicial quanto no `reloadRecording`), chamar `set_skip_messages` com o valor atual de `overlayEnabled`. Também inverter o default para `false` (mensagens escondidas por padrão).
 
-Voce precisa fazer um fork de `github.com/tibiacast/tibiarc` para a sua conta/org do GitHub. Isso nos da controle total sobre o `parser.cpp`.
+### Bug 2: Título "tibiarc" aparecendo na janela
 
-**2. Aplicar patches no fork**
+O SDL_CreateWindow do C++ (`SDL_CreateWindow("tibiarc", ...)`) faz o Emscripten setar `document.title = "tibiarc"` durante a inicialização do módulo WASM. O `setInterval` de 500ms no CamPlayerPage tenta corrigir, mas há um flash visível.
 
-Dois fixes no `parser.cpp` do fork:
+**Fix:** Usar `MutationObserver` no elemento `<title>` para interceptar e reverter **instantaneamente** qualquer mudança para "tibiarc", eliminando o flash. Remover o `setInterval`.
 
-**Fix A — Mini MAP_DESC (0x64):** Na funcao `ParseFullMapDescription` (linha ~549):
-```cpp
-void Parser::ParseFullMapDescription(DataReader &reader, EventList &events) {
-    auto &event = AddEvent<PlayerMoved>(events);
-    event.Position = Position_ = ParsePosition(reader);
+### Mudanças
 
-    // Guard: if too few bytes remain, this is a position-only update
-    // (common in custom servers that send mini 0x64 packets)
-    if (reader.Remaining() < 100) {
-        return;
-    }
+1. **`src/components/TibiarcPlayer.tsx`**:
+   - Mudar `overlayEnabled` default para `false`
+   - Converter `overlayEnabled` em ref para acesso dentro de callbacks
+   - Após cada `load_recording_tibiarelic` (no `handleFileSelect` e no `reloadRecording`), chamar `set_skip_messages` com o valor atual
 
-    ParseMapDescription(reader, events, -8, -6,
-                        Map::TileBufferWidth, Map::TileBufferHeight);
-}
-```
-
-**Fix B — FloorChangeUp/Down sync:** Estes ja geram eventos `PlayerMoved` que o gamestate processa, entao o tibiarc C++ provavelmente ja trata isso corretamente (diferente do nosso parser JS). Precisamos confirmar olhando as funcoes `ParseFloorChangeUp/Down` no fork.
-
-**3. Atualizar o workflow**
-
-Mudar a linha do clone no `.github/workflows/build-tibiarc.yml`:
-```yaml
-- name: Clone tibiarc
-  run: |
-    git clone https://github.com/SEU-USUARIO/tibiarc.git /tmp/tibiarc
-```
-
-**4. Rodar o workflow**
-
-Disparar manualmente o workflow `Build tibiarc WASM Player` via GitHub Actions. Ele compila e commita os novos `tibiarc_player.js` e `tibiarc_player.wasm`.
-
-### Pre-requisitos
-
-- Voce precisa criar o fork manualmente no GitHub (eu nao consigo fazer isso)
-- Aplicar o patch no `parser.cpp` do fork (posso gerar o patch exato apos voce criar o fork)
-- Garantir que o GitHub Actions tem permissao de escrita no repositorio
-
-### Proximo passo
-
-Me diga o nome do seu fork (ex: `seu-usuario/tibiarc`) e eu atualizo o workflow + gero o patch completo para o `parser.cpp`.
+2. **`src/pages/CamPlayerPage.tsx`**:
+   - Substituir `setInterval` por `MutationObserver` no `<title>` para correção instantânea do título
 
