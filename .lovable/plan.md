@@ -1,28 +1,64 @@
 
 
-## Diagnóstico dos dois bugs
+## Problema
 
-### Bug 1: "Mensagens aparecendo na tela" ao avançar
+As mensagens continuam aparecendo porque o `Renderer::Options` do tibiarc tem **muitos** flags de skip, mas o `web_player.cpp` só usa dois:
 
-O problema está no `TibiarcPlayer`: a variável `overlayEnabled` começa como `true` (linha 108), mas a função `set_skip_messages` do WASM **nunca é chamada na carga inicial**. O WASM também começa com `g_skip_messages = false`, então as mensagens de chat do jogo são renderizadas por padrão.
+```cpp
+.SkipRenderingMessages = g_skip_messages,
+.SkipRenderingYellingMessages = g_skip_messages
+```
 
-Além disso, cada `reloadRecording` (feito no seek) **reseta o estado interno do WASM**, incluindo `g_skip_messages`, mas o JS nunca re-aplica o valor atual de `overlayEnabled` após o reload.
+O tibiarc tem flags adicionais (visíveis na documentação CLI do projeto):
+- `SkipRenderingPlayerNames`
+- `SkipRenderingCreatureNames`
+- `SkipRenderingCreatureHealthBars`
+- `SkipRenderingCreatureIcons`
+- `SkipRenderingStatusBars`
+- `SkipRenderingIconBar`
+- `SkipRenderingInventory`
 
-**Fix:** Após cada chamada a `load_recording_tibiarelic` (tanto no load inicial quanto no `reloadRecording`), chamar `set_skip_messages` com o valor atual de `overlayEnabled`. Também inverter o default para `false` (mensagens escondidas por padrão).
+Os textos no screenshot ("Resenha says:", "utevo lux", "You advanced to...", "Troooooot!") são renderizados por caminhos diferentes que não são cobertos só por `SkipRenderingMessages`.
 
-### Bug 2: Título "tibiarc" aparecendo na janela
+## Solução
 
-O SDL_CreateWindow do C++ (`SDL_CreateWindow("tibiarc", ...)`) faz o Emscripten setar `document.title = "tibiarc"` durante a inicialização do módulo WASM. O `setInterval` de 500ms no CamPlayerPage tenta corrigir, mas há um flash visível.
+### 1. `web_player.cpp` — Mudar default e adicionar todos os flags
 
-**Fix:** Usar `MutationObserver` no elemento `<title>` para interceptar e reverter **instantaneamente** qualquer mudança para "tibiarc", eliminando o flash. Remover o `setInterval`.
+- Mudar `g_skip_messages` para `true` por default (mensagens ocultas ao iniciar)
+- No `RenderFrame`, usar TODOS os flags de skip de texto/overlay quando `g_skip_messages = true`:
 
-### Mudanças
+```cpp
+static bool g_skip_messages = true;  // hidden by default
 
-1. **`src/components/TibiarcPlayer.tsx`**:
-   - Mudar `overlayEnabled` default para `false`
-   - Converter `overlayEnabled` em ref para acesso dentro de callbacks
-   - Após cada `load_recording_tibiarelic` (no `handleFileSelect` e no `reloadRecording`), chamar `set_skip_messages` com o valor atual
+// In RenderFrame:
+Renderer::Options options{
+    .Width = RENDER_WIDTH,
+    .Height = RENDER_HEIGHT,
+    .SkipRenderingMessages = g_skip_messages,
+    .SkipRenderingYellingMessages = g_skip_messages,
+    .SkipRenderingPlayerNames = g_skip_messages,
+    .SkipRenderingCreatureNames = false,      // keep creature names visible
+    .SkipRenderingCreatureHealthBars = false,  // keep health bars
+    .SkipRenderingCreatureIcons = false,       // keep icons
+    .SkipRenderingStatusBars = g_skip_messages,
+};
+```
 
-2. **`src/pages/CamPlayerPage.tsx`**:
-   - Substituir `setInterval` por `MutationObserver` no `<title>` para correção instantânea do título
+> **Nota:** Será necessário verificar quais campos exatamente existem no struct `Renderer::Options` do fork. Pode ser que nem todos existam na versão compilada. Compile apenas os que o compilador aceitar.
+
+### 2. `web_player.cpp` — Título da janela SDL
+
+Mudar o título do SDL_CreateWindow para evitar o flash "tibiarc":
+
+```cpp
+g_window = SDL_CreateWindow("Tibia Relic - Cam Player", ...);
+```
+
+### 3. Recompilar WASM
+
+Após as alterações, disparar o workflow no GitHub Actions e fazer upload dos novos `.js` e `.wasm`.
+
+### 4. `TibiarcPlayer.tsx` — Sync do default
+
+Como o C++ agora inicia com `g_skip_messages = true`, o JS deve manter `overlayEnabled = false` (já está correto). Nenhuma mudança necessária no JS.
 
