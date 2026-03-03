@@ -22,6 +22,9 @@ const EVENT_COLORS: Record<DebugEventType, string> = {
   SCROLL: 'text-orange-400',
   MAP_DESC: 'text-emerald-400',
   MAP_DESC_MINI: 'text-lime-400',
+  MULTIFLOOR_EXHAUSTED: 'text-red-300',
+  MULTIFLOOR_STEP: 'text-teal-400',
+  MULTIFLOOR_DONE: 'text-teal-300',
 };
 
 const ALL_TYPES: DebugEventType[] = [
