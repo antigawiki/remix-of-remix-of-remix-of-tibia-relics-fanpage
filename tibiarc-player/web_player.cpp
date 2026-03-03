@@ -380,11 +380,9 @@ static void RenderFrame() {
             .Width = RENDER_WIDTH,
             .Height = RENDER_HEIGHT,
             .SkipRenderingMessages = g_skip_messages,
-            .SkipRenderingYellingMessages = g_skip_messages,
             .SkipRenderingPlayerNames = g_skip_messages,
-            .SkipRenderingCreatureNames = false,
+            .SkipRenderingYellingMessages = g_skip_messages,
             .SkipRenderingCreatureHealthBars = false,
-            .SkipRenderingCreatureIcons = false,
             .SkipRenderingStatusBars = g_skip_messages,
         };
 
