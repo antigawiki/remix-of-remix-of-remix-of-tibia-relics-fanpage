@@ -69,7 +69,7 @@ export const SpriteSidebar = ({ renderer, selectedItemId, onSelect, onClose }: S
   }, []);
 
   return (
-    <div className="w-[280px] bg-card border-r border-border/50 flex flex-col h-full">
+    <div className="absolute left-0 top-0 z-[1001] w-[280px] h-full bg-card border-r border-border/50 flex flex-col">
       {/* Header */}
       <div className="p-2 border-b border-border/50 flex items-center gap-2">
         <span className="text-xs font-bold text-gold">SPRITES</span>
