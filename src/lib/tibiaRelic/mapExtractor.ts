@@ -373,8 +373,14 @@ function snapshotTiles(
 
     if (tx === 0 || ty === 0) continue;
 
-    // Only capture tiles on the camera's current floor.
-    if (tz !== camZ) continue;
+    // Only capture tiles within the visible floor range
+    if (camZ <= 7) {
+      // Surface: protocol sends floors 0-7
+      if (tz < 0 || tz > 7) continue;
+    } else {
+      // Underground: protocol sends camZ-2 to camZ+2
+      if (tz < camZ - 2 || tz > camZ + 2 || tz > 15) continue;
+    }
 
     if (tx < 30000 || tx > 35000 || ty < 30000 || ty > 35000) continue;
 
