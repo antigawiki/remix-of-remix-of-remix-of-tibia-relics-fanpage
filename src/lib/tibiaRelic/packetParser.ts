@@ -24,6 +24,8 @@ export class PacketParser {
   public seekMode = false;
 
   public debugLogger: DebugLogger | null = null;
+  /** Opcodes processed in the last process() call — used by CamAnalyzer */
+  public lastFrameOpcodes: number[] = [];
 
   constructor(public gs: GameState, public dat: DatLoader, opts: PacketParserOptions = {}) {
     this.looktypeU16 = !!opts.looktypeU16;
@@ -180,6 +182,7 @@ export class PacketParser {
   }
 
   process(payload: Uint8Array) {
+    this.lastFrameOpcodes = [];
     const r = new Buf(payload);
     if (payload.length === 0) return;
 
@@ -260,6 +263,7 @@ export class PacketParser {
   }
 
   private dispatch(t: number, r: Buf): boolean {
+    this.lastFrameOpcodes.push(t);
     const g = this.gs;
     // Log relevant opcodes
     const dl = this.debugLogger;
@@ -469,7 +473,7 @@ export class PacketParser {
     // After floor changes, cam has perspective offsets (camX++/camY++) that make it 2+ tiles
     // away from the player — syncing in that state would corrupt the player's correct position.
     const player = g.creatures.get(g.playerId);
-    if (player && Math.abs(player.x - g.camX) + Math.abs(player.y - g.camY) <= 1 && player.z === g.camZ) {
+    if (player && Math.abs(player.x - g.camX) + Math.abs(player.y - g.camY) <= 2 && player.z === g.camZ) {
       this.syncPlayerToCamera();
     }
   }
@@ -752,6 +756,7 @@ export class PacketParser {
       g.camZ = oldZ; g.camX = oldX; g.camY = oldY;
       throw e;
     }
+    this.syncPlayerToCamera(oldZ);
     this.cleanupDistantCreatures(g.camZ);
     this.reinsertCreaturesOnTiles();
   }
@@ -781,6 +786,7 @@ export class PacketParser {
       g.camZ = oldZ; g.camX = oldX; g.camY = oldY;
       throw e;
     }
+    this.syncPlayerToCamera(oldZ);
     this.cleanupDistantCreatures(g.camZ);
     this.reinsertCreaturesOnTiles();
   }

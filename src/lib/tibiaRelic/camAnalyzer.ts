@@ -53,33 +53,7 @@ function getSnapshot(gs: GameState): PositionSnapshot {
   };
 }
 
-/**
- * Extract opcodes from a frame payload (reads the opcode bytes without full parsing)
- */
-function extractOpcodes(payload: Uint8Array): number[] {
-  const opcodes: number[] = [];
-  // Simple extraction: just grab the first byte(s) that look like opcodes
-  // For a more detailed view, we track them during parsing
-  if (payload.length > 0) {
-    const firstByte = payload[0];
-    if (firstByte < 0x0A && payload.length >= 2) {
-      // TCP demux format - extract opcodes from sub-packets
-      let pos = 0;
-      while (pos + 2 < payload.length) {
-        const subLen = payload[pos] | (payload[pos + 1] << 8);
-        pos += 2;
-        if (subLen === 0 || pos + subLen > payload.length) break;
-        if (pos < payload.length) opcodes.push(payload[pos]);
-        pos += subLen;
-      }
-    } else {
-      // Direct opcodes
-      opcodes.push(firstByte);
-      // Try to get more opcodes (simplified — full parsing would be needed for accuracy)
-    }
-  }
-  return opcodes;
-}
+/** No longer needed — we use parser.lastFrameOpcodes instead */
 
 export async function analyzeCamFile(
   data: ArrayBuffer,
@@ -109,13 +83,14 @@ export async function analyzeCamFile(
     }
 
     const beforeSnap = getSnapshot(gs);
-    const opcodes = extractOpcodes(frame.payload);
 
     try {
       parser.process(frame.payload);
     } catch (e) {
       // Parser error — record but continue
     }
+
+    const opcodes = [...parser.lastFrameOpcodes];
 
     const afterSnap = getSnapshot(gs);
 
