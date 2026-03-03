@@ -434,7 +434,16 @@ export class PacketParser {
 
     const dl = this.debugLogger;
     if (dl && dl.enabled) {
-      dl.log('MAP_DESC', { x, y, z, prevZ, prevCam: `${this.gs.camX},${this.gs.camY}` });
+      dl.log('MAP_DESC', { x, y, z, prevZ, bytesLeft: r.left() });
+    }
+
+    // Mini MAP_DESC guard: a full 18×14 multi-floor area needs hundreds of bytes.
+    // Custom servers send position-only 0x64 (~5 bytes payload) every ~12s.
+    // Without this guard, readMultiFloorArea would consume subsequent opcodes as tile data.
+    if (r.left() < 100) {
+      if (dl && dl.enabled) dl.log('MAP_DESC_MINI', { x, y, z, bytesLeft: r.left() });
+      this.syncPlayerToCamera(prevZ);
+      return;
     }
 
     const { startz, endz, zstep } = this.getFloorRange(z);

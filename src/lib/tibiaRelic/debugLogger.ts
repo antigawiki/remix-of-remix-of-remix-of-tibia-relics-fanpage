@@ -13,7 +13,8 @@ export type DebugEventType =
   | 'WALK_FAIL'
   | 'TILE_UPDATE'
   | 'SCROLL'
-  | 'MAP_DESC';
+  | 'MAP_DESC'
+  | 'MAP_DESC_MINI';
 
 export interface DebugEvent {
   ts: number; // performance.now()
