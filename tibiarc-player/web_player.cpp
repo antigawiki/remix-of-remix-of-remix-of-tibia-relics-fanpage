@@ -370,7 +370,10 @@ void set_skip_messages(int skip) {
 } // extern "C"
 
 static void RenderFrame() {
-    if (!g_gamestate || !g_recording) return;
+    if (!g_gamestate || !g_recording || !g_version) return;
+
+    // Guard: skip render if player creature is not initialized
+    if (!g_gamestate->Creatures.contains(g_gamestate->Player.Id)) return;
 
     try {
         Renderer::Options options{
