@@ -45,7 +45,7 @@ static double g_lastFrameTime = 0;
 
 static const int RENDER_WIDTH = 480;
 static const int RENDER_HEIGHT = 352;
-static bool g_skip_messages = false;
+static bool g_skip_messages = true;
 
 // Static canvas buffers — allocated once to avoid WASM heap fragmentation
 static Canvas* g_mapCanvas = nullptr;
@@ -380,7 +380,12 @@ static void RenderFrame() {
             .Width = RENDER_WIDTH,
             .Height = RENDER_HEIGHT,
             .SkipRenderingMessages = g_skip_messages,
-            .SkipRenderingYellingMessages = g_skip_messages
+            .SkipRenderingYellingMessages = g_skip_messages,
+            .SkipRenderingPlayerNames = g_skip_messages,
+            .SkipRenderingCreatureNames = false,
+            .SkipRenderingCreatureHealthBars = false,
+            .SkipRenderingCreatureIcons = false,
+            .SkipRenderingStatusBars = g_skip_messages,
         };
 
         // Clear and reuse static canvas (no per-frame allocation)
@@ -445,7 +450,7 @@ static void MainLoop() {
 int main() {
     SDL_Init(SDL_INIT_VIDEO);
 
-    g_window = SDL_CreateWindow("tibiarc",
+    g_window = SDL_CreateWindow("Tibia Relic - Cam Player",
         SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
         RENDER_WIDTH, RENDER_HEIGHT, 0);
     g_renderer = SDL_CreateRenderer(g_window, -1, SDL_RENDERER_ACCELERATED);
