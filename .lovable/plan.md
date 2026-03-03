@@ -1,54 +1,85 @@
 
 
-## Melhorias no Editor de Tiles
+## Ferramenta de Diagnostico: Cam Packet Analyzer
 
-### 1. Seleção múltipla de tiles
+### Problema
 
-**Problema:** Hoje ao clicar num tile, ele abre o painel de edição para aquele tile apenas. Ao salvar, fecha o painel e precisa clicar novamente.
+O player WASM (tibiarc C++) tambem apresenta saltos de posicao/andar durante a reproducao. O debug panel atual so funciona com o parser JS e em tempo real (buffer circular de 2000 eventos). Nao ha como analisar o arquivo .cam inteiro offline para identificar exatamente quais pacotes causam os saltos.
 
-**Solução:** Mudar o fluxo para um **modo de pintura**:
-- Em edit mode, clicar num tile **aplica o sprite selecionado** diretamente (adiciona ao tile), sem abrir painel
-- Botão direito ou Shift+click abre o painel de edição detalhada do tile (para remover items, substituir, etc.)
-- Adicionar um seletor de "modo de pincel": **Adicionar** (append sprite), **Substituir** (replace all items), **Apagar** (remove top item)
-- Cada click salva automaticamente no banco (batch upsert via debounce de ~500ms para múltiplos tiles editados rapidamente)
-- Manter um `pendingEdits: Map<string, number[]>` que acumula edições e faz flush periódico
+### Solucao
 
-### 2. Cursor e highlight do tile
+Criar uma pagina **Cam Analyzer** que faz parsing **offline completo** de um arquivo .cam usando o parser JS, processando TODOS os frames de uma vez e gerando um relatorio completo com:
 
-**Mudanças no `CamMapPage.tsx`:**
+1. **Tabela de anomalias**: Lista todos os momentos onde ocorre salto de posicao (player ou camera move > 1 tile em um unico frame), troca de andar inesperada, ou WALK_FAIL
+2. **Timeline visual**: Grafico simples mostrando X, Y, Z do player ao longo do tempo — saltos aparecem como picos visuais obvios
+3. **Detalhes por frame**: Ao clicar numa anomalia, mostra os opcodes exatos daquele frame e os adjacentes, com before/after do estado completo
+4. **Exportacao**: Dump completo em JSON para analise externa
 
-- **Cursor:** Quando `editMode=true`, adicionar classe CSS `cursor-crosshair` no map container div (linha 479-483). Leaflet usa `cursor: grab` via `.leaflet-container`, então precisamos de um override CSS: `.edit-mode .leaflet-container { cursor: crosshair !important; }` ou inline style.
+### Abordagem tecnica
 
-- **Tile highlight:** Usar um `L.Rectangle` overlay que segue o mouse:
-  - No `mousemove` handler (linha 274-288), quando em editMode, atualizar um `highlightRectRef` (L.Rectangle) para mostrar um quadrado de 1x1 tile na posição do mouse
-  - Estilo: borda amarela/dourada semitransparente, fill quase transparente
-  - Criar o rectangle uma vez e mover com `setBounds()` a cada mousemove
+A ferramenta reutiliza o `PacketParser` e `GameState` existentes, mas em modo batch (nao real-time). Processa todos os frames do .cam em sequencia, capturando um snapshot do estado apos cada frame e comparando com o anterior para detectar anomalias.
 
-### 3. Click handler condicional
+### Mudancas por arquivo
 
-- Linha 290-303: O click handler atual sempre abre `editingTile`. Mudar para:
-  - Se `editMode=false`: não fazer nada (ou manter o comportamento atual de mostrar info)
-  - Se `editMode=true` e tem `selectedItemId`: aplicar o sprite ao tile e salvar
-  - Se `editMode=true` e Shift pressionado: abrir painel de edição detalhada
+#### 1. Nova pagina: `src/pages/CamAnalyzerPage.tsx`
 
-### 4. Batch save com debounce
+- Upload de .cam (mesmo mecanismo do player)
+- Botao "Analisar" que processa todos os frames offline
+- Mostra progresso (X de Y frames)
+- Apos analise, renderiza:
+  - **Resumo**: total frames, total anomalias, tipos de anomalia
+  - **Grafico de posicao**: recharts LineChart com camX, camY, camZ ao longo do tempo (ms), anomalias marcadas como pontos vermelhos
+  - **Tabela de anomalias**: timestamp, tipo (JUMP/FLOOR_CHANGE/WALK_FAIL), detalhes (from->to), opcode que causou
+  - **Painel de detalhes**: ao clicar uma anomalia, mostra os opcodes desse frame e +-2 frames adjacentes com estado completo
 
-- Acumular tiles editados em um `pendingEditsRef`
-- `setTimeout` de 500ms após última edição para fazer flush (upsert batch para `cam_map_tiles` + atualizar `cam_map_chunks`)
-- Mostrar indicador "X tiles não salvos" no overlay inferior
+#### 2. Logica de analise: `src/lib/tibiaRelic/camAnalyzer.ts`
 
-### Mudanças por arquivo:
+```text
+interface AnalysisResult {
+  totalFrames: number;
+  totalMs: number;
+  anomalies: Anomaly[];
+  positionTimeline: { ms: number; camX: number; camY: number; camZ: number; playerX: number; playerY: number; playerZ: number }[];
+  frameDetails: FrameDetail[]; // opcodes por frame
+}
 
-**`src/pages/CamMapPage.tsx`:**
-- Novos estados: `brushMode` ('add' | 'replace' | 'erase'), `pendingEdits` ref
-- Cursor: style condicional no map container `cursor: editMode ? 'crosshair' : undefined`
-- CSS override para `.leaflet-container` dentro do map div quando editMode
-- Highlight rectangle: criar `L.Rectangle` ref, atualizar bounds no mousemove
-- Click handler: pintura direta quando editMode + selectedItemId, Shift+click para painel
-- Batch save: debounced flush function
-- Seletor de brush mode nos controles do edit mode (3 botõezinhos: Add/Replace/Erase)
-- Indicador de pending saves no bottom overlay
+interface Anomaly {
+  frameIndex: number;
+  timestamp: number;
+  type: 'POSITION_JUMP' | 'FLOOR_JUMP' | 'WALK_FAIL' | 'DESYNC';
+  description: string;
+  before: { camX, camY, camZ, playerX, playerY, playerZ };
+  after: { camX, camY, camZ, playerX, playerY, playerZ };
+  opcodes: number[]; // opcodes do frame
+}
+```
 
-**`src/components/cam-editor/TileEditPanel.tsx`:**
-- Sem mudanças estruturais, mas agora só aparece com Shift+click
+Logica:
+- Para cada frame do .cam, salva o estado (cam/player pos) ANTES
+- Processa o frame com PacketParser (modo seekMode=true para pular animacoes)
+- Salva estado APOS
+- Compara: se |deltaX| > 2 ou |deltaY| > 2 ou deltaZ != 0 (sem ser floorUp/Down), marca como anomalia
+- Captura os opcodes brutos de cada frame para referencia
+
+#### 3. Instrumentacao do PacketParser
+
+Adicionar um modo `analyzerMode` opcional que, quando ativo:
+- Registra cada opcode processado num array temporario por frame (sem o overhead do DebugLogger circular)
+- Expoe `getLastFrameOpcodes(): number[]`
+
+#### 4. Rota no `App.tsx`
+
+Adicionar rota `/cam-analyzer` (ou na URL secreta admin existente)
+
+### Resultado esperado
+
+Ao carregar um .cam problematico, o usuario vera imediatamente:
+- Quantas anomalias existem e em quais timestamps
+- No grafico, os picos de posicao sao visiveis
+- Ao clicar num pico, ve exatamente qual opcode causou o salto
+- Com essa informacao, podemos corrigir o handler especifico no parser
+
+### Alternativa considerada
+
+Interceptar o WASM player com logging: impossivel sem recompilar o C++. A vantagem da abordagem JS offline e que temos controle total e podemos comparar frame a frame com o que o WASM produz visualmente.
 
