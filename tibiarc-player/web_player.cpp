@@ -65,12 +65,12 @@ static void FastForwardToPlayer();
 static void FastForwardToPlayer() {
     while (!g_gamestate->Creatures.contains(g_gamestate->Player.Id) &&
            g_needle != g_recording->Frames.cend()) {
-        try {
-            for (auto &event : g_needle->Events) {
+        for (auto &event : g_needle->Events) {
+            try {
                 event->Update(*g_gamestate);
+            } catch (...) {
+                // Skip bad event
             }
-        } catch (...) {
-            // Skip corrupted frame
         }
         g_needle = std::next(g_needle);
     }
@@ -329,23 +329,25 @@ void seek(double ms) {
     auto target = std::chrono::milliseconds((int64_t)ms);
 
     if (target < g_currentTick) {
-        // Need to replay from start
-        g_gamestate->Reset();
+        try {
+            g_gamestate->Reset();
+        } catch (...) {
+            // Reset failed — recreate gamestate from scratch
+            g_gamestate = std::make_unique<Gamestate>(*g_version);
+        }
         g_needle = g_recording->Frames.cbegin();
         g_currentTick = std::chrono::milliseconds::zero();
-
         FastForwardToPlayer();
     }
 
-    // Fast-forward to target, skipping corrupted frames
     while (g_needle != g_recording->Frames.cend() &&
            g_needle->Timestamp <= target) {
-        try {
-            for (auto &event : g_needle->Events) {
+        for (auto &event : g_needle->Events) {
+            try {
                 event->Update(*g_gamestate);
+            } catch (...) {
+                // Skip individual bad event
             }
-        } catch (...) {
-            // Skip corrupted frame during seek
         }
         g_needle = std::next(g_needle);
     }
@@ -420,12 +422,12 @@ static void MainLoop() {
 
         while (g_needle != g_recording->Frames.cend() &&
                g_needle->Timestamp <= g_currentTick) {
-            try {
-                for (auto &event : g_needle->Events) {
+            for (auto &event : g_needle->Events) {
+                try {
                     event->Update(*g_gamestate);
+                } catch (...) {
+                    // Skip bad event
                 }
-            } catch (...) {
-                // Skip corrupted frame, continue playback
             }
             g_needle = std::next(g_needle);
         }
