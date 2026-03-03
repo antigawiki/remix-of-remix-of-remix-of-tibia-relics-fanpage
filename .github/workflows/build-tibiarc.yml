@@ -24,9 +24,9 @@ jobs:
           emcmake cmake .. -DFMT_DOC=OFF -DFMT_TEST=OFF -DFMT_INSTALL=ON -DCMAKE_INSTALL_PREFIX=/tmp/fmt-install
           emmake make -j$(nproc) && emmake make install
 
-      - name: Clone tibiarc
+      - name: Clone tibiarc (fork with fixes)
         run: |
-          git clone https://github.com/tibiacast/tibiarc.git /tmp/tibiarc
+          git clone https://github.com/antigawiki/tibiarc.git /tmp/tibiarc
 
       - name: Copy web player source
         run: |
