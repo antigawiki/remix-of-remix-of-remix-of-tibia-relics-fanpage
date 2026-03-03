@@ -426,6 +426,9 @@ const CamMapPage = () => {
           <Link to="/f9a2c8d4e7b1/extract" className="text-xs text-muted-foreground hover:text-gold transition-colors ml-4">
             📦 Batch Extract
           </Link>
+          <Link to="/f9a2c8d4e7b1/editor" className="text-xs text-muted-foreground hover:text-gold transition-colors">
+            ✏️ Editor
+          </Link>
         </div>
         <div className="flex items-center gap-2">
           <LanguageSelector />

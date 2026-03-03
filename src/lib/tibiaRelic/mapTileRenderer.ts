@@ -316,6 +316,30 @@ export class MapTileRenderer {
     return result;
   }
 
+  /**
+   * Render a single item sprite into a 32x32 canvas for external use (e.g. editor sidebar).
+   */
+  renderSingleSprite(itemId: number): HTMLCanvasElement | null {
+    const def = this.dat.items.get(itemId);
+    if (!def) return null;
+    const canvas = document.createElement('canvas');
+    canvas.width = 32;
+    canvas.height = 32;
+    const ctx = canvas.getContext('2d')!;
+    ctx.imageSmoothingEnabled = false;
+    this.drawItem(ctx, def, 0, 0, 0, 0);
+    return canvas;
+  }
+
+  /** Get the max item ID from the DatLoader. */
+  getMaxItemId(): number {
+    let max = 0;
+    for (const id of this.dat.items.keys()) {
+      if (id > max) max = id;
+    }
+    return max;
+  }
+
   private getSpriteCanvas(sid: number): HTMLCanvasElement | null {
     if (this.spriteCanvasCache.has(sid)) return this.spriteCanvasCache.get(sid)!;
     const imgData = this.spr.getSprite(sid);
