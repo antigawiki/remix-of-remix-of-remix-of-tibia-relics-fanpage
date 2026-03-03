@@ -47,7 +47,8 @@ jobs:
             -DTIBIARC_NO_QT=ON \
             -DTIBIARC_NO_SDL2=ON \
             -DCMAKE_BUILD_TYPE=Release \
-            -DCMAKE_PREFIX_PATH=/tmp/fmt-install
+            -DCMAKE_PREFIX_PATH=/tmp/fmt-install \
+            -DCMAKE_CXX_FLAGS="-fexceptions"
           
           emmake make -j$(nproc) tibiarc
           
