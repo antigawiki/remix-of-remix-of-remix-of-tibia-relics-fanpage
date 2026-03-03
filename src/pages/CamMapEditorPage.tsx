@@ -336,36 +336,41 @@ const CamMapEditorPage = () => {
   // Init Leaflet
   useEffect(() => {
     if (assetsLoading || !mapContainerRef.current || mapRef.current) return;
-    const map = L.map(mapContainerRef.current, {
-      crs: L.CRS.Simple,
-      minZoom: 0,
-      maxZoom: 5,
-      zoomControl: true,
-      attributionControl: false,
-    });
-    map.setView([-DEFAULT_CENTER_Y, DEFAULT_CENTER_X], 3);
-    mapRef.current = map;
 
-    // Leaflet needs a size recalc after flex layout settles
-    setTimeout(() => map.invalidateSize(), 100);
+    // Wait a frame for flex layout to settle and container to have dimensions
+    requestAnimationFrame(() => {
+      if (!mapContainerRef.current || mapRef.current) return;
+      const map = L.map(mapContainerRef.current, {
+        crs: L.CRS.Simple,
+        minZoom: 0,
+        maxZoom: 5,
+        zoomControl: true,
+        attributionControl: false,
+      });
+      map.setView([-DEFAULT_CENTER_Y, DEFAULT_CENTER_X], 3);
+      mapRef.current = map;
 
-    // Click to edit tile
-    map.on('click', (e: L.LeafletMouseEvent) => {
-      const tileX = Math.floor(e.latlng.lng);
-      const tileY = Math.floor(-e.latlng.lat);
-      const cx = Math.floor(tileX / CHUNK_TILES);
-      const cy = Math.floor(tileY / CHUNK_TILES);
-      const chunkTiles = floorDataRef.current.get(`${cx},${cy}`);
-      const tile = chunkTiles?.find(t => t.x === tileX && t.y === tileY);
-      setEditingTile({
-        x: tileX,
-        y: tileY,
-        z: currentFloor,
-        items: tile ? [...tile.items] : [],
+      // Leaflet needs a size recalc after flex layout settles
+      setTimeout(() => map.invalidateSize(), 200);
+
+      // Click to edit tile
+      map.on('click', (e: L.LeafletMouseEvent) => {
+        const tileX = Math.floor(e.latlng.lng);
+        const tileY = Math.floor(-e.latlng.lat);
+        const cx = Math.floor(tileX / CHUNK_TILES);
+        const cy = Math.floor(tileY / CHUNK_TILES);
+        const chunkTiles = floorDataRef.current.get(`${cx},${cy}`);
+        const tile = chunkTiles?.find(t => t.x === tileX && t.y === tileY);
+        setEditingTile({
+          x: tileX,
+          y: tileY,
+          z: currentFloor,
+          items: tile ? [...tile.items] : [],
+        });
       });
     });
 
-    return () => { map.remove(); mapRef.current = null; tileLayerRef.current = null; };
+    return () => { if (mapRef.current) { mapRef.current.remove(); mapRef.current = null; tileLayerRef.current = null; } };
   }, [assetsLoading]);
 
   // Update currentFloor ref for click handler
@@ -582,15 +587,19 @@ const CamMapEditorPage = () => {
 
         {/* Map area */}
         <div className="flex-1 relative">
-          {assetsLoading ? (
-            <div className="absolute inset-0 flex items-center justify-center bg-background">
+          {/* Map container - ALWAYS in DOM so Leaflet gets real dimensions */}
+          <div
+            ref={mapContainerRef}
+            className="absolute inset-0"
+            style={{ background: '#1a2420', visibility: assetsLoading ? 'hidden' : 'visible' }}
+          />
+          {assetsLoading && (
+            <div className="absolute inset-0 flex items-center justify-center bg-background z-10">
               <div className="flex flex-col items-center gap-3">
                 <Loader2 className="w-8 h-8 text-gold animate-spin" />
                 <p className="text-sm text-muted-foreground">Carregando sprites...</p>
               </div>
             </div>
-          ) : (
-            <div ref={mapContainerRef} className="absolute inset-0" style={{ background: '#1a2420' }} />
           )}
 
           {!assetsLoading && floorLoading && (
