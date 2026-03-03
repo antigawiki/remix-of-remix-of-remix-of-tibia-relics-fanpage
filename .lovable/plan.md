@@ -1,68 +1,94 @@
 
 
-## Fix: WASM Seek Crashes — Recompilacao Necessaria
+## Fix: Seek Crash + Visual Corruption no WASM Player
 
-### Problema raiz
+### Dois problemas identificados
 
-O crash acontece porque a funcao `seek()` no C++ processa frames SEM try-catch individual. Quando um frame contem tiles/itens nao reconhecidos, o parser do tibiarc lanca uma excecao. No `MainLoop`, cada frame tem try-catch e frames corrompidos sao pulados. No `seek`, nao — uma excecao mata todo o seek.
+**1. Crash no seek** — `g_gamestate->Reset()` (linha 333 do web_player.cpp) nao esta protegido por try-catch. Quando o Reset interno falha (ex: estado corrompido), o WASM inteiro morre.
 
-Alem disso, a biblioteca `libtibiarc.a` e compilada via CMake SEM `-fexceptions`, entao as excecoes lancadas dentro do parser nao sao catchable pelo `web_player.cpp`. Elas viram traps do WASM (os numeros tipo "2409064").
+**2. Corrupcao visual (players atravessando muros no 8x)** — O try-catch atual envolve TODOS os eventos de um frame. Se o evento 3 de 5 falha, os eventos 4 e 5 sao pulados. Isso deixa o gamestate inconsistente: por exemplo, uma criatura foi removida do tile antigo mas nao colocada no novo. A correcao e mover o try-catch para envolver cada evento individualmente.
 
-### Solucao: Duas mudancas
+### Mudancas no arquivo `tibiarc-player/web_player.cpp`
 
-**1. Arquivo: `tibiarc-player/web_player.cpp`** — Adicionar try-catch por frame no `seek()` e `FastForwardToPlayer()`, identico ao que ja existe no `MainLoop`:
+**A) Seek — proteger Reset + catch por evento:**
 
 ```cpp
-// seek() — linha 337-343, mudar para:
-while (g_needle != g_recording->Frames.cend() &&
-       g_needle->Timestamp <= target) {
-    try {
-        for (auto &event : g_needle->Events) {
-            event->Update(*g_gamestate);
+void seek(double ms) {
+    if (!g_recording || !g_gamestate) return;
+    auto target = std::chrono::milliseconds((int64_t)ms);
+
+    if (target < g_currentTick) {
+        try {
+            g_gamestate->Reset();
+        } catch (...) {
+            // Reset failed — recreate gamestate from scratch
+            g_gamestate = std::make_unique<Gamestate>(*g_version);
         }
-    } catch (...) {
-        // Skip corrupted frame during seek
+        g_needle = g_recording->Frames.cbegin();
+        g_currentTick = std::chrono::milliseconds::zero();
+        FastForwardToPlayer();
+    }
+
+    while (g_needle != g_recording->Frames.cend() &&
+           g_needle->Timestamp <= target) {
+        for (auto &event : g_needle->Events) {
+            try {
+                event->Update(*g_gamestate);
+            } catch (...) {
+                // Skip individual bad event, continue with next
+            }
+        }
+        g_needle = std::next(g_needle);
+    }
+
+    g_currentTick = target;
+    g_gamestate->CurrentTick = target.count();
+    RenderFrame();
+}
+```
+
+**B) MainLoop — catch por evento (nao por frame):**
+
+```cpp
+while (g_needle != g_recording->Frames.cend() &&
+       g_needle->Timestamp <= g_currentTick) {
+    for (auto &event : g_needle->Events) {
+        try {
+            event->Update(*g_gamestate);
+        } catch (...) {
+            // Skip bad event
+        }
     }
     g_needle = std::next(g_needle);
 }
+```
 
-// FastForwardToPlayer() — linha 65-73, mudar para:
+**C) FastForwardToPlayer — catch por evento:**
+
+```cpp
 while (!g_gamestate->Creatures.contains(g_gamestate->Player.Id) &&
        g_needle != g_recording->Frames.cend()) {
-    try {
-        for (auto &event : g_needle->Events) {
+    for (auto &event : g_needle->Events) {
+        try {
             event->Update(*g_gamestate);
+        } catch (...) {
+            // Skip bad event
         }
-    } catch (...) {
-        // Skip corrupted frame
     }
     g_needle = std::next(g_needle);
 }
 ```
 
-**2. Arquivo: `.github/workflows/build-tibiarc.yml`** — Adicionar `-fexceptions` e `-DCMAKE_CXX_FLAGS=-fexceptions` na compilacao da biblioteca tibiarc para que as excecoes lancadas dentro do parser sejam catchable:
+### Resumo das mudancas
 
-```yaml
-emcmake cmake .. \
-  -DTIBIARC_NO_LIBAV=ON \
-  ...
-  -DCMAKE_CXX_FLAGS="-fexceptions"
-```
+| Local | Antes | Depois |
+|---|---|---|
+| `seek()` — Reset | Sem protecao | try-catch + fallback para recriar Gamestate |
+| `seek()` — loop de frames | try-catch por frame | try-catch por evento individual |
+| `MainLoop()` — loop de frames | try-catch por frame | try-catch por evento individual |
+| `FastForwardToPlayer()` | try-catch por frame | try-catch por evento individual |
 
-### Por que isso resolve
+### Apos a edicao
 
-- Com `-fexceptions` na libtibiarc, as excecoes do parser (itens/tiles desconhecidos) propagam corretamente ate o try-catch no web_player.cpp
-- Com try-catch por frame no `seek()`, frames problematicos sao pulados (identico ao comportamento do `MainLoop` e do parser JS antigo)
-- O seek nao crasheia mais — apenas pula os frames com dados nao reconhecidos
-
-### Sequencia
-
-1. Editar `tibiarc-player/web_player.cpp` — adicionar try-catch no seek e FastForwardToPlayer
-2. Editar `.github/workflows/build-tibiarc.yml` — adicionar -fexceptions na compilacao da lib
-3. Rodar o workflow no GitHub Actions para recompilar
-4. Commit automatico dos arquivos .wasm/.js atualizados
-
-### Nota
-
-Apos aprovar, farei as edicoes nos dois arquivos. Depois sera necessario rodar o workflow `Build tibiarc WASM Player` no GitHub Actions para gerar o novo `tibiarc_player.wasm` e `tibiarc_player.js`.
+Voce precisara rodar o workflow **"Build tibiarc WASM Player"** no GitHub Actions para gerar os novos arquivos .wasm e .js e depois subir eles aqui.
 
