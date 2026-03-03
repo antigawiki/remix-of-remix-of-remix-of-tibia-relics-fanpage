@@ -41,6 +41,7 @@ import HousesPage from "./pages/HousesPage";
 import CamPlayerPage from "./pages/CamPlayerPage";
 import CamMapPage from "./pages/CamMapPage";
 import CamBatchExtractPage from "./pages/CamBatchExtractPage";
+import CamMapEditorPage from "./pages/CamMapEditorPage";
 import PollsPage from "./pages/PollsPage";
 import NotFound from "./pages/NotFound";
 
@@ -94,6 +95,7 @@ const App = () => (
               <Route path="/a3e7c9b1f2d8e4a6" element={<CamPlayerPage />} />
               <Route path="/f9a2c8d4e7b1" element={<CamMapPage />} />
               <Route path="/f9a2c8d4e7b1/extract" element={<CamBatchExtractPage />} />
+              <Route path="/f9a2c8d4e7b1/editor" element={<CamMapEditorPage />} />
               {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
               <Route path="*" element={<NotFound />} />
             </Routes>
