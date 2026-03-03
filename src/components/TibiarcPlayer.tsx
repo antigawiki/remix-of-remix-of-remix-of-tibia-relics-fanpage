@@ -105,7 +105,8 @@ const TibiarcPlayer = ({ className }: TibiarcPlayerProps) => {
   const [progress, setProgress] = useState(0);
   const [duration, setDuration] = useState(0);
   const [dataLoaded, setDataLoaded] = useState(false);
-  const [overlayEnabled, setOverlayEnabled] = useState(true);
+  const [overlayEnabled, setOverlayEnabled] = useState(false);
+  const overlayEnabledRef = useRef(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [controlsVisible, setControlsVisible] = useState(true);
 
@@ -341,6 +342,9 @@ const TibiarcPlayer = ({ className }: TibiarcPlayerProps) => {
       lastGoodProgressRef.current = 0;
       blackCheckCountRef.current = 0;
 
+      // Apply current overlay state after loading
+      safeCall(mod, 'set_skip_messages', 'undefined', ['number'], [overlayEnabledRef.current ? 0 : 1]);
+
       // Auto-play
       safeCall(mod, 'play', 'undefined', [], []);
       setState('playing');
@@ -392,7 +396,12 @@ const TibiarcPlayer = ({ className }: TibiarcPlayerProps) => {
       ['number', 'number', 'number', 'number', 'number'],
       [bufPtr, data.length, 7, 72, 0], -1);
     mod._free(bufPtr);
-    return dur > 0;
+    if (dur > 0) {
+      // Re-apply overlay state after reload (WASM resets g_skip_messages)
+      safeCall(mod, 'set_skip_messages', 'undefined', ['number'], [overlayEnabledRef.current ? 0 : 1]);
+      return true;
+    }
+    return false;
   }, []);
 
   /**
@@ -534,6 +543,7 @@ const TibiarcPlayer = ({ className }: TibiarcPlayerProps) => {
             onClick={() => {
               const next = !overlayEnabled;
               setOverlayEnabled(next);
+              overlayEnabledRef.current = next;
               const mod = moduleRef.current;
               if (mod) safeCall(mod, 'set_skip_messages', 'undefined', ['number'], [next ? 0 : 1]);
             }}

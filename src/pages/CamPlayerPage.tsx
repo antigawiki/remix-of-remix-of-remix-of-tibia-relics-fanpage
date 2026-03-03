@@ -9,12 +9,21 @@ import { LanguageSelector } from '@/components/LanguageSelector';
 const CamPlayerPage = () => {
   const { t } = useTranslation();
 
-  // WASM module sets document.title to "tibiarc" — override it back
+  // WASM module sets document.title to "tibiarc" — use MutationObserver to revert instantly
   useEffect(() => {
     const title = `${t('camPlayer.title')} — Tibia Relic Wiki`;
     document.title = title;
-    const interval = setInterval(() => { document.title = title; }, 500);
-    return () => clearInterval(interval);
+
+    const titleEl = document.querySelector('title');
+    if (!titleEl) return;
+
+    const observer = new MutationObserver(() => {
+      if (document.title !== title) {
+        document.title = title;
+      }
+    });
+    observer.observe(titleEl, { childList: true, characterData: true, subtree: true });
+    return () => observer.disconnect();
   }, [t]);
 
   return (
