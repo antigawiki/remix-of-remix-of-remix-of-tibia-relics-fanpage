@@ -328,31 +328,39 @@ const TibiarcPlayer = ({ className }: TibiarcPlayerProps) => {
       const wasPlaying = state === 'playing';
       if (wasPlaying) safeCall(mod, 'pause_playback', 'undefined', [], []);
 
-      // Use a sentinel to detect WASM exception
       const SEEK_FAIL = '__SEEK_FAIL__';
-      let result = safeCall(mod, 'seek', 'string', ['number'], [ms], SEEK_FAIL);
+      const skipOffsets = [0, 10000, 30000]; // try exact, +10s, +30s
+      let succeeded = false;
 
-      if (result === SEEK_FAIL) {
-        // Seek crashed – try to recover by reloading the recording
-        console.warn('[TibiarcPlayer] Seek failed, attempting recovery…');
-        const reloaded = reloadRecording(mod);
-        if (reloaded) {
-          // Retry seek once
-          result = safeCall(mod, 'seek', 'string', ['number'], [ms], SEEK_FAIL);
-          if (result === SEEK_FAIL) {
-            // Still failing – seek to last known good position
-            console.warn('[TibiarcPlayer] Retry failed, restoring last good position');
-            reloadRecording(mod);
-            safeCall(mod, 'seek', 'undefined', ['number'], [lastGoodProgressRef.current]);
-            setProgress(lastGoodProgressRef.current);
-          } else {
-            lastGoodProgressRef.current = ms;
-          }
-        } else {
-          console.error('[TibiarcPlayer] Recovery reload failed');
+      for (const offset of skipOffsets) {
+        const target = Math.min(ms + offset, duration);
+        const reloaded = offset === 0 ? true : reloadRecording(mod);
+        if (!reloaded) continue;
+
+        // For the first attempt (offset=0), just try seek directly
+        // For retries, we already reloaded above
+        if (offset > 0) {
+          console.warn(`[TibiarcPlayer] Seek failed at ${ms}ms, trying +${offset / 1000}s…`);
         }
-      } else {
-        lastGoodProgressRef.current = ms;
+
+        const result = safeCall(mod, 'seek', 'string', ['number'], [target], SEEK_FAIL);
+        if (result !== SEEK_FAIL) {
+          lastGoodProgressRef.current = target;
+          setProgress(target);
+          succeeded = true;
+          if (offset > 0) {
+            console.info(`[TibiarcPlayer] Skipped to ${target}ms (offset +${offset / 1000}s)`);
+          }
+          break;
+        }
+      }
+
+      if (!succeeded) {
+        // All attempts failed — return to last known good position
+        console.warn('[TibiarcPlayer] All seek attempts failed, restoring last good position');
+        reloadRecording(mod);
+        safeCall(mod, 'seek', 'undefined', ['number'], [lastGoodProgressRef.current]);
+        setProgress(lastGoodProgressRef.current);
       }
 
       if (wasPlaying) {
