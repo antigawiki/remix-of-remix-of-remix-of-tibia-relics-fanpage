@@ -65,8 +65,12 @@ static void FastForwardToPlayer();
 static void FastForwardToPlayer() {
     while (!g_gamestate->Creatures.contains(g_gamestate->Player.Id) &&
            g_needle != g_recording->Frames.cend()) {
-        for (auto &event : g_needle->Events) {
-            event->Update(*g_gamestate);
+        try {
+            for (auto &event : g_needle->Events) {
+                event->Update(*g_gamestate);
+            }
+        } catch (...) {
+            // Skip corrupted frame
         }
         g_needle = std::next(g_needle);
     }
@@ -333,11 +337,15 @@ void seek(double ms) {
         FastForwardToPlayer();
     }
 
-    // Fast-forward to target
+    // Fast-forward to target, skipping corrupted frames
     while (g_needle != g_recording->Frames.cend() &&
            g_needle->Timestamp <= target) {
-        for (auto &event : g_needle->Events) {
-            event->Update(*g_gamestate);
+        try {
+            for (auto &event : g_needle->Events) {
+                event->Update(*g_gamestate);
+            }
+        } catch (...) {
+            // Skip corrupted frame during seek
         }
         g_needle = std::next(g_needle);
     }
