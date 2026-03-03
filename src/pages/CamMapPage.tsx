@@ -430,12 +430,6 @@ const CamMapPage = () => {
   const floorDisplay = 7 - currentFloor;
   const isLoading = assetsLoading || floorLoading;
 
-  // Invalidate map size when edit mode toggles (sidebar appears/disappears)
-  useEffect(() => {
-    if (mapRef.current) {
-      setTimeout(() => mapRef.current?.invalidateSize(), 150);
-    }
-  }, [editMode]);
 
   // Handle tile saved from editor
   const handleTileSaved = useCallback((x: number, y: number, z: number, newItems: number[]) => {
@@ -480,20 +474,8 @@ const CamMapPage = () => {
         </div>
       </div>
 
-      {/* Main content: sidebar + map */}
-      <div className="flex-1 flex">
-        {/* Edit mode sidebar */}
-        {editMode && !assetsLoading && rendererRef.current && (
-          <SpriteSidebar
-            renderer={rendererRef.current}
-            selectedItemId={selectedItemId}
-            onSelect={setSelectedItemId}
-            onClose={() => setEditMode(false)}
-          />
-        )}
-
-        {/* Map container */}
-        <div className="flex-1 relative">
+      {/* Main content */}
+      <div className="flex-1 relative">
           <div
             ref={mapContainerRef}
             className="absolute inset-0"
@@ -576,6 +558,16 @@ const CamMapPage = () => {
             </div>
           )}
 
+          {/* Edit mode sidebar (absolute overlay) */}
+          {editMode && !assetsLoading && rendererRef.current && (
+            <SpriteSidebar
+              renderer={rendererRef.current}
+              selectedItemId={selectedItemId}
+              onSelect={setSelectedItemId}
+              onClose={() => setEditMode(false)}
+            />
+          )}
+
           {/* Tile edit panel (only in edit mode) */}
           {editMode && editingTile && rendererRef.current && (
             <TileEditPanel
@@ -621,9 +613,8 @@ const CamMapPage = () => {
               <span className="text-xs text-muted-foreground">
                 {tileCount.toLocaleString()} tiles | {spawnCount.toLocaleString()} spawns
               </span>
-            </div>
+          </div>
           )}
-        </div>
       </div>
     </div>
   );
