@@ -1,88 +1,58 @@
 
 
-## Editor de Tiles do Cam Map
+## Fix: Mapa nao carrega no Tile Editor
 
-### Conceito
+### Problema
 
-Nova pagina `/f9a2c8d4e7b1/editor` com layout dividido: sidebar esquerda com catalogo de tiles (renderizados via SprLoader/DatLoader) e mapa Leaflet a direita. Workflow: selecionar tile no catalogo -> clicar no mapa -> tile e substituido na posicao clicada.
+O container do mapa (`ref={mapContainerRef}`) e renderizado condicionalmente — so aparece quando `assetsLoading` e false. Isso causa um problema: quando o Leaflet tenta se inicializar, o container pode ainda nao ter dimensoes calculadas pelo layout flex. Alem disso, o container some e reaparece durante o carregamento, o que pode impedir o Leaflet de calcular o tamanho corretamente.
 
-### Arquitetura
+### Solucao
 
-```text
-┌──────────────┬──────────────────────────────────┐
-│  Sidebar     │                                  │
-│  ┌────────┐  │         Mapa Leaflet             │
-│  │Search  │  │    (mesmo do CamMapPage)          │
-│  └────────┘  │                                  │
-│  ┌──┬──┬──┐  │   Click no tile = abre popup     │
-│  │  │  │  │  │   com items atuais + opcao de    │
-│  ├──┼──┼──┤  │   adicionar/remover/substituir   │
-│  │  │  │  │  │                                  │
-│  ├──┼──┼──┤  │                                  │
-│  │  │  │  │  │                                  │
-│  └──┴──┴──┘  │                                  │
-│  Grid de     │                                  │
-│  sprites     │                                  │
-│  (32x32 cada)│                                  │
-└──────────────┴──────────────────────────────────┘
+1. **Sempre renderizar o map container div** — em vez de trocar entre spinner e div do mapa, manter o div do mapa SEMPRE no DOM (com `visibility: hidden` enquanto carrega) e colocar o spinner POR CIMA. Assim o Leaflet sempre tem um container com dimensoes reais.
+
+2. **Adicionar `mapReady` state** — a inicializacao do Leaflet so deve acontecer apos confirmar que o container tem dimensoes > 0. Usar um `ResizeObserver` ou simplesmente um `requestAnimationFrame` para garantir.
+
+### Mudancas no `CamMapEditorPage.tsx`
+
+- Linha ~583-594: Mudar a renderizacao condicional do map container para sempre renderizar o div, escondendo visualmente durante loading:
+
+```tsx
+{/* Map area */}
+<div className="flex-1 relative">
+  {/* Map container - ALWAYS in DOM */}
+  <div 
+    ref={mapContainerRef} 
+    className="absolute inset-0" 
+    style={{ background: '#1a2420', visibility: assetsLoading ? 'hidden' : 'visible' }} 
+  />
+  
+  {assetsLoading && (
+    <div className="absolute inset-0 flex items-center justify-center bg-background z-10">
+      <Loader2 ... />
+    </div>
+  )}
+  ...
 ```
 
-### Mudancas
+- Linha ~337-369: Ajustar o efeito de init do mapa para usar `requestAnimationFrame` + `invalidateSize` para garantir que o container tem dimensoes:
 
-#### 1. Novo arquivo: `src/pages/CamMapEditorPage.tsx`
-
-- Reutiliza a logica de carregamento de assets (SprLoader, DatLoader) e floor data do CamMapPage
-- **Sidebar esquerda**:
-  - Input de busca por ID (filtra o grid)
-  - Grid virtual de todos os item IDs do DatLoader (100 ate itemMaxId)
-  - Cada celula mostra o sprite 32x32 renderizado + ID abaixo
-  - Ao clicar, seleciona o tile (borda dourada de highlight)
-  - Estado: `selectedItemId: number | null`
-- **Mapa (direita)**:
-  - Mesmo Leaflet tile layer do CamMapPage (reusa getChunkTiles, renderer, etc.)
-  - Ao clicar num tile do mapa:
-    - Popup/modal mostra os item IDs atuais nessa posicao (lista com sprites)
-    - Botoes: "Adicionar item selecionado", "Substituir todos por selecionado", "Remover item X"
-    - Ao confirmar, faz UPDATE diretamente no `cam_map_tiles` via supabase e atualiza o floorData local + re-renderiza o chunk afetado
-
-#### 2. Funcao de renderizacao de sprite individual
-
-Adicionar um metodo utilitario (ou reutilizar o que o MapTileRenderer ja faz internamente) para renderizar um unico item sprite num canvas 32x32, para usar no catalogo da sidebar. O `spriteCanvasCache` do MapTileRenderer ja faz isso - expor via metodo publico.
-
-#### 3. Persistencia das edicoes
-
-Ao editar um tile, chamar diretamente:
-```sql
-UPDATE cam_map_tiles SET items = '[novo_array]', seen_count = 999, updated_at = now()
-WHERE x = X AND y = Y AND z = Z
+```tsx
+useEffect(() => {
+  if (assetsLoading || !mapContainerRef.current || mapRef.current) return;
+  
+  // Wait a frame for layout to settle
+  requestAnimationFrame(() => {
+    if (!mapContainerRef.current || mapRef.current) return;
+    const map = L.map(mapContainerRef.current, { ... });
+    map.setView([-DEFAULT_CENTER_Y, DEFAULT_CENTER_X], 3);
+    mapRef.current = map;
+    setTimeout(() => map.invalidateSize(), 200);
+    // ... click handler
+  });
+  
+  return () => { ... };
+}, [assetsLoading]);
 ```
 
-O `seen_count = 999` garante que nenhuma extracao futura sobrescreva a correcao manual (o sistema de confianca preserva tiles com seen_count > 1).
-
-Se o tile nao existe ainda, fazer INSERT.
-
-Tambem atualizar o chunk correspondente em `cam_map_chunks` para que a mudanca apareca no mapa viewer sem precisar recompactar.
-
-#### 4. Rota no App.tsx
-
-Adicionar: `<Route path="/f9a2c8d4e7b1/editor" element={<CamMapEditorPage />} />`
-
-E link no CamMapPage header.
-
-#### 5. Detalhes da sidebar
-
-- Range de IDs: 100 ate ~ultimo ID do DatLoader (tipicamente ~3000+)
-- Grid com ~6 colunas de sprites 32x32
-- Scroll virtual (renderizar apenas ~100 itens visiveis) para nao sobrecarregar com milhares de sprites
-- Busca por ID: input numerico que filtra/scrolla ate o ID
-- Ao passar mouse sobre sprite, tooltip com ID
-
-### Arquivos afetados
-
-| Arquivo | Acao |
-|---------|------|
-| `src/pages/CamMapEditorPage.tsx` | Criar - pagina principal do editor |
-| `src/lib/tibiaRelic/mapTileRenderer.ts` | Editar - expor metodo `renderSingleSprite(itemId)` |
-| `src/App.tsx` | Editar - adicionar rota |
-| `src/pages/CamMapPage.tsx` | Editar - adicionar link para editor no header |
+Isso resolve o problema porque o container do mapa passa a existir desde o inicio com dimensoes reais do layout flex, permitindo ao Leaflet inicializar corretamente.
 
