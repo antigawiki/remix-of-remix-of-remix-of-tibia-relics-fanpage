@@ -663,8 +663,21 @@ export class PacketParser {
         }
       }
 
-      // 3. Last resort for player: tile lost creature ref (e.g. after scroll/floor area read)
-      // but the creature still exists in g.creatures — find it by proximity to source position
+      // 3. Search creatures map for any creature at source position
+      // Tile was cleared/rebuilt by scroll but creature still exists in the map
+      if (cid === null) {
+        for (const [id, cr] of this.gs.creatures) {
+          if (cr.x === fx && cr.y === fy && cr.z === fz) {
+            this.removeCreatureFromTile(id, cr.x, cr.y, cr.z);
+            cid = id;
+            fromX = cr.x; fromY = cr.y; fromZ = cr.z;
+            fallback = 'creatures_map';
+            break;
+          }
+        }
+      }
+
+      // 4. Last resort for player: proximity-based lookup
       if (cid === null) {
         const player = this.gs.creatures.get(this.gs.playerId);
         if (player && Math.abs(player.x - fx) <= 2 && Math.abs(player.y - fy) <= 2 && player.z === fz) {

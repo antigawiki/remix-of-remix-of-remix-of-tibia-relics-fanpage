@@ -85,7 +85,7 @@ const CamFrameDebugger = ({ camBuffer, progress, isPlaying }: CamFrameDebuggerPr
   const [autoScroll, setAutoScroll] = useState(true);
   const [filters, setFilters] = useState<Set<DebugEventType>>(new Set(DEFAULT_FILTERS));
   const [displayEvents, setDisplayEvents] = useState<DebugEvent[]>([]);
-  const [stats, setStats] = useState({ frames: 0, errors: 0, creatures: 0, cam: '', player: '' });
+  const [stats, setStats] = useState({ frames: 0, errors: 0, walkFails: 0, creatures: 0, cam: '', player: '' });
   const scrollRef = useRef<HTMLDivElement>(null);
 
   // Parser state refs
