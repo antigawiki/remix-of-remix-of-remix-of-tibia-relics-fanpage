@@ -151,6 +151,21 @@ const TibiarcPlayer = ({ className }: TibiarcPlayerProps) => {
     }
   }, []);
 
+  /** Update the CSS light overlay opacity based on current playback time */
+  const updateLightOverlay = useCallback((timeMs: number) => {
+    const el = lightOverlayRef.current;
+    if (!el) return;
+    if (!lightingEnabledRef.current) {
+      el.style.opacity = '0';
+      return;
+    }
+    const level = getLightAtTime(lightTimelineRef.current, timeMs);
+    // Tibia max world light = 215; normalize to 0-1
+    const brightness = Math.min(level / 215, 1);
+    const darkness = 1 - brightness;
+    el.style.opacity = String(darkness * 0.85); // cap at 85% darkness for visibility
+  }, []);
+
   // Load WASM module + data files on mount
   useEffect(() => {
     let cancelled = false;
