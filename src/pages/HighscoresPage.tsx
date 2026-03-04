@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { Trophy, RefreshCw } from 'lucide-react';
+import { useState, useMemo } from 'react';
+import { Trophy, RefreshCw, ArrowUpDown } from 'lucide-react';
 import { format } from 'date-fns';
 import { ptBR, enUS, es, pl } from 'date-fns/locale';
 import PlayerLink from '@/components/PlayerLink';
@@ -51,12 +51,42 @@ const vocations: HighscoreVocation[] = [
   'Druids',
 ];
 
+type HsSortKey = 'name' | 'vocation' | 'level' | 'score';
+type SortDir = 'asc' | 'desc';
+
 const HighscoresPage = () => {
   const { t, language } = useTranslation();
   const [category, setCategory] = useState<HighscoreCategory>('Experience');
   const [vocation, setVocation] = useState<HighscoreVocation>('All');
+  const [sortKey, setSortKey] = useState<HsSortKey>('score');
+  const [sortDir, setSortDir] = useState<SortDir>('desc');
   
   const { data, isLoading, isError, isFetching } = useHighscores(category, vocation);
+
+  const handleSort = (key: HsSortKey) => {
+    if (sortKey === key) setSortDir(d => d === 'asc' ? 'desc' : 'asc');
+    else { setSortKey(key); setSortDir('desc'); }
+  };
+
+  const sortedHighscores = useMemo(() => {
+    if (!data?.highscores) return [];
+    return [...data.highscores].sort((a, b) => {
+      let cmp = 0;
+      switch (sortKey) {
+        case 'name': cmp = a.name.localeCompare(b.name); break;
+        case 'vocation': cmp = (a.profession || '').localeCompare(b.profession || ''); break;
+        case 'level': cmp = a.level - b.level; break;
+        case 'score': cmp = a.skillLevel - b.skillLevel; break;
+      }
+      return sortDir === 'asc' ? cmp : -cmp;
+    });
+  }, [data?.highscores, sortKey, sortDir]);
+
+  const HsSortHeader = ({ label, sk, className }: { label: string; sk: HsSortKey; className?: string }) => (
+    <TableHead className={`cursor-pointer hover:text-foreground ${className || ''}`} onClick={() => handleSort(sk)}>
+      <div className="flex items-center gap-1">{label}<ArrowUpDown className="h-3 w-3" /></div>
+    </TableHead>
+  );
 
   const getDateLocale = () => {
     switch (language) {
@@ -144,14 +174,14 @@ const HighscoresPage = () => {
                 <TableHeader>
                   <TableRow>
                     <TableHead className="w-12">#</TableHead>
-                    <TableHead>{t('pages.highscores.columns.name')}</TableHead>
-                    <TableHead>{t('pages.highscores.columns.vocation')}</TableHead>
-                    <TableHead className="text-right">{t('pages.highscores.columns.level')}</TableHead>
-                    <TableHead className="text-right">{getScoreLabel()}</TableHead>
+                     <HsSortHeader label={t('pages.highscores.columns.name')} sk="name" />
+                     <HsSortHeader label={t('pages.highscores.columns.vocation')} sk="vocation" />
+                     <HsSortHeader label={t('pages.highscores.columns.level')} sk="level" className="text-right" />
+                     <HsSortHeader label={getScoreLabel()} sk="score" className="text-right" />
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {data?.highscores.map((player, index) => (
+                  {sortedHighscores.map((player, index) => (
                     <TableRow key={`${player.name}-${index}`}>
                       <TableCell className={getRankColor(index + 1)}>
                         #{index + 1}
@@ -171,7 +201,7 @@ const HighscoresPage = () => {
                 </TableBody>
               </Table>
 
-              {data?.highscores.length === 0 && (
+              {sortedHighscores.length === 0 && (
                 <div className="text-center py-8 text-muted-foreground">
                   {t('pages.highscores.noPlayers')}
                 </div>

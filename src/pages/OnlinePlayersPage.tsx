@@ -1,4 +1,5 @@
-import { Users, RefreshCw } from 'lucide-react';
+import { useState, useMemo } from 'react';
+import { Users, RefreshCw, ArrowUpDown } from 'lucide-react';
 import MainLayout from '@/layouts/MainLayout';
 import { useOnlinePlayers } from '@/hooks/useOnlinePlayers';
 import { getVocationDisplayName } from '@/hooks/useHighscores';
@@ -14,9 +15,38 @@ import {
 import { Skeleton } from '@/components/ui/skeleton';
 import { useTranslation } from '@/i18n';
 
+type SortKey = 'name' | 'vocation' | 'level';
+type SortDir = 'asc' | 'desc';
+
 const OnlinePlayersPage = () => {
   const { data: players, isLoading, isError, isFetching } = useOnlinePlayers();
   const { t } = useTranslation();
+  const [sortKey, setSortKey] = useState<SortKey>('level');
+  const [sortDir, setSortDir] = useState<SortDir>('desc');
+
+  const handleSort = (key: SortKey) => {
+    if (sortKey === key) setSortDir(d => d === 'asc' ? 'desc' : 'asc');
+    else { setSortKey(key); setSortDir('desc'); }
+  };
+
+  const sortedPlayers = useMemo(() => {
+    if (!players) return [];
+    return [...players].sort((a, b) => {
+      let cmp = 0;
+      switch (sortKey) {
+        case 'name': cmp = a.name.localeCompare(b.name); break;
+        case 'vocation': cmp = (a.profession || '').localeCompare(b.profession || ''); break;
+        case 'level': cmp = a.level - b.level; break;
+      }
+      return sortDir === 'asc' ? cmp : -cmp;
+    });
+  }, [players, sortKey, sortDir]);
+
+  const SortHeader = ({ label, sk, className }: { label: string; sk: SortKey; className?: string }) => (
+    <TableHead className={`cursor-pointer hover:text-foreground ${className || ''}`} onClick={() => handleSort(sk)}>
+      <div className="flex items-center gap-1">{label}<ArrowUpDown className="h-3 w-3" /></div>
+    </TableHead>
+  );
 
   return (
     <MainLayout>
@@ -53,14 +83,14 @@ const OnlinePlayersPage = () => {
           ) : players && players.length > 0 ? (
             <Table>
               <TableHeader>
-                <TableRow>
-                  <TableHead>{t('common.name')}</TableHead>
-                  <TableHead>{t('common.vocation')}</TableHead>
-                  <TableHead className="text-right">{t('common.level')}</TableHead>
-                </TableRow>
+                 <TableRow>
+                   <SortHeader label={t('common.name')} sk="name" />
+                   <SortHeader label={t('common.vocation')} sk="vocation" />
+                   <SortHeader label={t('common.level')} sk="level" className="text-right" />
+                 </TableRow>
               </TableHeader>
               <TableBody>
-                {players.map((player, index) => (
+                {sortedPlayers.map((player, index) => (
                   <TableRow key={`${player.name}-${index}`}>
                     <TableCell className="font-medium">
                       <PlayerLink name={player.name} />

@@ -1,13 +1,38 @@
-import { Trophy, TrendingUp, Calendar, AlertCircle } from 'lucide-react';
+import { useState, useMemo } from 'react';
+import { Trophy, TrendingUp, Calendar, AlertCircle, ArrowUpDown } from 'lucide-react';
 import MainLayout from '@/layouts/MainLayout';
 import { useTopGainers, formatExperience } from '@/hooks/useTopGainers';
 import { Skeleton } from '@/components/ui/skeleton';
 import PlayerLink from '@/components/PlayerLink';
 import { useTranslation } from '@/i18n';
 
+type TgSortKey = 'name' | 'level' | 'xpGained' | 'xpTotal';
+type SortDir = 'asc' | 'desc';
+
 const TopGainersPage = () => {
   const { t } = useTranslation();
   const { data, isLoading, isError } = useTopGainers(50);
+  const [sortKey, setSortKey] = useState<TgSortKey>('xpGained');
+  const [sortDir, setSortDir] = useState<SortDir>('desc');
+
+  const handleSort = (key: TgSortKey) => {
+    if (sortKey === key) setSortDir(d => d === 'asc' ? 'desc' : 'asc');
+    else { setSortKey(key); setSortDir('desc'); }
+  };
+
+  const sortedGainers = useMemo(() => {
+    if (!data?.gainers) return [];
+    return [...data.gainers].sort((a, b) => {
+      let cmp = 0;
+      switch (sortKey) {
+        case 'name': cmp = a.name.localeCompare(b.name); break;
+        case 'level': cmp = a.level - b.level; break;
+        case 'xpGained': cmp = a.experienceGained - b.experienceGained; break;
+        case 'xpTotal': cmp = a.currentExperience - b.currentExperience; break;
+      }
+      return sortDir === 'asc' ? cmp : -cmp;
+    });
+  }, [data?.gainers, sortKey, sortDir]);
 
   const getRankIcon = (rank: number) => {
     if (rank === 1) return <Trophy className="w-5 h-5 text-gold" />;
@@ -81,15 +106,23 @@ const TopGainersPage = () => {
                 <thead>
                   <tr className="border-b border-border/50 bg-muted/30">
                     <th className="text-left px-4 py-2 text-xs font-semibold text-muted-foreground w-12">#</th>
-                    <th className="text-left px-4 py-2 text-xs font-semibold text-muted-foreground">{t('pages.topGainers.columns.name')}</th>
-                    <th className="text-left px-4 py-2 text-xs font-semibold text-muted-foreground">{t('pages.topGainers.columns.vocation')}</th>
-                    <th className="text-right px-4 py-2 text-xs font-semibold text-muted-foreground">{t('pages.topGainers.columns.level')}</th>
-                    <th className="text-right px-4 py-2 text-xs font-semibold text-muted-foreground">{t('pages.topGainers.columns.xpGained')}</th>
-                    <th className="text-right px-4 py-2 text-xs font-semibold text-muted-foreground">{t('pages.topGainers.columns.xpTotal')}</th>
+                     <th className="text-left px-4 py-2 text-xs font-semibold text-muted-foreground cursor-pointer hover:text-foreground" onClick={() => handleSort('name')}>
+                       <div className="flex items-center gap-1">{t('pages.topGainers.columns.name')}<ArrowUpDown className="h-3 w-3" /></div>
+                     </th>
+                     <th className="text-left px-4 py-2 text-xs font-semibold text-muted-foreground">{t('pages.topGainers.columns.vocation')}</th>
+                     <th className="text-right px-4 py-2 text-xs font-semibold text-muted-foreground cursor-pointer hover:text-foreground" onClick={() => handleSort('level')}>
+                       <div className="flex items-center justify-end gap-1">{t('pages.topGainers.columns.level')}<ArrowUpDown className="h-3 w-3" /></div>
+                     </th>
+                     <th className="text-right px-4 py-2 text-xs font-semibold text-muted-foreground cursor-pointer hover:text-foreground" onClick={() => handleSort('xpGained')}>
+                       <div className="flex items-center justify-end gap-1">{t('pages.topGainers.columns.xpGained')}<ArrowUpDown className="h-3 w-3" /></div>
+                     </th>
+                     <th className="text-right px-4 py-2 text-xs font-semibold text-muted-foreground cursor-pointer hover:text-foreground" onClick={() => handleSort('xpTotal')}>
+                       <div className="flex items-center justify-end gap-1">{t('pages.topGainers.columns.xpTotal')}<ArrowUpDown className="h-3 w-3" /></div>
+                     </th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-border/30">
-                  {data?.gainers.map((gainer) => (
+                  {sortedGainers.map((gainer) => (
                     <tr key={gainer.name} className="hover:bg-muted/20 transition-colors">
                       <td className="px-4 py-3">
                         <div className="flex items-center justify-center w-6">

@@ -1,45 +1,26 @@
+## Auditoria Completa — Status: PATCHES APLICADOS ✅
 
+Todos os patches identificados na auditoria foram adicionados ao workflow `.github/workflows/build-tibiarc.yml`.
 
-## Plano: Ordenação padrão e controles de ordenação em todas as tabelas
+### Patches aplicados (total: 20)
 
-### Estado atual
+| # | Opcode | Descrição | Status |
+|---|--------|-----------|--------|
+| 1 | `0xA4` | SpellCooldown 5B→2B | ✅ já existia |
+| 2 | `0xA7` | PlayerTactics 4B→3B | ✅ já existia |
+| 3 | `0xA8` | CreatureSquare (novo case) | ✅ já existia |
+| 4 | `0xB6` | WalkCancel 2B→0B | ✅ já existia |
+| 5 | `0x92` | CreatureImpassable assert removido | ✅ já existia |
+| 6-9 | `0x65-0x68` | Scrolls revertidos para padrão | ✅ já existia |
+| 10 | `0xBE` | FloorUp z=7 revertido (6 floors) | ✅ já existia |
+| **11** | **`0xAA`** | **Talk +u32 statementGuid** | ✅ **NOVO** |
+| **12** | **`0x64`** | **Mini MapDesc guard (<100B)** | ✅ **NOVO** |
+| **13** | **`0xA0`** | **PlayerStats sem stamina** | ✅ **NOVO** |
+| **14** | **`0xA5`** | **SpellGroupCooldown 5B** | ✅ **NOVO** |
+| **15** | **`0xA6`** | **MultiUseDelay 4B** | ✅ **NOVO** |
+| **16** | **`0x63`** | **CreatureTurn 5B** | ✅ **NOVO** |
+| **17** | **`0xC8`** | **OutfitWindow u16→u8 range** | ✅ **NOVO** |
 
-| Página | Tem ordenação? | Ordenação padrão |
-|--------|---------------|-----------------|
-| EquipmentTable | Sim | `name` asc (errado) |
-| DeathRowPage | **Nao** | nenhuma |
-| HighscoresPage | **Nao** | dados da API |
-| OnlinePlayersPage | **Nao** | nenhuma |
-| LatestDeathsPage | **Nao** | nenhuma |
-| TopGainersPage | **Nao** | nenhuma |
-| CreaturesTable | Sim | `name` asc (ok) |
-| SpellsTable | Sim | `mlvl` asc (ok) |
-| ItemsTable | Sim | `name` asc (ok) |
-| RunesTable | Sim | `mlvlCast` asc (ok) |
-| KillStatisticsPage | Sim | `overallKilledByPlayers` desc (ok) |
+### Próximo passo
 
-### Mudancas
-
-**1. `EquipmentTable.tsx`** — Mudar ordenacao padrao baseada na categoria:
-- `shields` → `defense` desc
-- Categorias com `attack` (swords, axes, clubs, distance, ammo) → `attack` desc
-- Categorias com `armor` (helmets, armors, legs, boots) → `armor` desc
-
-**2. `DeathRowPage.tsx`** — Adicionar estado de sort e headers clicaveis para date, character, level, reason. Default: sem mudanca (ordem da API = mais recente primeiro).
-
-**3. `OnlinePlayersPage.tsx`** — Adicionar sort por name, vocation, level. Default: `level` desc.
-
-**4. `LatestDeathsPage.tsx`** — Adicionar sort por date, character, level. Default: ordem da API.
-
-**5. `HighscoresPage.tsx`** — Adicionar sort por name, vocation, level, score. Default: rank da API (score desc).
-
-**6. `TopGainersPage.tsx`** — Adicionar sort por name, level, xpGained. Default: rank da API.
-
-### Abordagem tecnica
-
-Cada pagina segue o mesmo padrao ja usado em KillStatisticsPage/CreaturesTable:
-- Estado `sortKey` + `sortDirection`
-- Header com `ArrowUpDown` icon e `cursor-pointer`
-- `useMemo` ou sort inline no render
-- Sem dependencias novas
-
+Executar o workflow `Build tibiarc WASM Player` no GitHub Actions para rebuildar o WASM com todos os patches e testar a reprodução de .cam files.
