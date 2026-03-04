@@ -314,7 +314,6 @@ export class PacketParser {
           }
           if (!recovered) break;
         }
-        }
       } catch (e) {
         if (this.strictMode) throw e;
         // Try to recover: scan forward for next valid opcode
