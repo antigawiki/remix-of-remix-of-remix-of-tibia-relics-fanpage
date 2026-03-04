@@ -1,54 +1,67 @@
 
 
-## Diagnóstico: Não é luz — é o floor range dos scrolls
+## Real-Time Frame Debugger for .cam Player
 
-Sua hipótese sobre luminância é criativa, mas **não é isso**. No protocolo Tibia 7.72, a luz não é enviada como dados extras por tile na rede. A luz funciona assim:
+### Idea
 
-- **Luz ambiente (0x82)**: 2 bytes (intensidade + cor) — já lido pelo parser
-- **Luz de criatura (0x8D)**: 6 bytes (creatureId + intensidade + cor) — já lido
-- **Luz de item**: vem do arquivo `.dat` (flag 0x15, 4 bytes), não do protocolo de rede
+The WASM player is a black box (C++ binary), but we already have the full JS packet parser (`PacketParser`) and the .cam frame parser (`camParser`). The plan is to run the JS parser **in parallel** with the WASM player, feeding it the same frames at the same timestamps, and showing a rich real-time log of every opcode, action, and state change.
 
-O parser lê todos esses corretamente. Os bytes sobrando não são dados de luz.
+### How it works
 
-### A causa real (confirmada pelo JSON que você enviou)
+1. **When a .cam file is loaded**, also parse it with `parseCamFile()` to get all frames with timestamps
+2. **During playback**, the existing 100ms polling loop already reads `get_progress()` from WASM -- use that timestamp to find which frames the JS parser should process next
+3. **Feed frames** to a `PacketParser` instance in sync with playback progress, logging every opcode via the existing `DebugLogger`
+4. **Display** a new `CamFrameDebugger` panel below the player with:
+   - Current game state snapshot (camX/Y/Z, playerX/Y/Z, creature count, floor sync status)
+   - Scrolling event log with color-coded entries per opcode type
+   - Human-readable descriptions: "Player moved to (x,y,z)", "Floor change UP 7→6", "New creature: Rat at (x,y)", "Scroll EAST", "mapDesc at (x,y,z) - 252 tiles"
+   - Filters by event type
+   - Export to text file
+   - Pause-on-error toggle (freezes the log when a parse error occurs)
 
-O JSON mostra claramente:
+### Technical approach
+
+**New file: `src/components/CamFrameDebugger.tsx`**
+- Accepts `camBuffer: Uint8Array | null`, `progress: number`, `isPlaying: boolean`
+- On mount with buffer: parses .cam with `parseCamFile()`, creates `GameState` + `DatLoader` + `PacketParser` + `DebugLogger`
+- Tracks `lastProcessedFrame` index; on each tick, processes all frames between last position and current `progress`
+- Enhanced logging: wraps `PacketParser.dispatch` calls to produce human-readable descriptions for key opcodes (0x64 mapDesc, 0x65-0x68 scroll, 0x6d moveCr, 0xbe/0xbf floorUp/Down, 0x9a playerPos)
+- Shows parse errors inline with hex dump of the problematic frame
+
+**Enhanced `DebugLogger`**
+- Add new event types: `FRAME_START`, `FRAME_END`, `PARSE_ERROR`, `CREATURE_ADD`, `CREATURE_REMOVE`
+- Add `description` field to `DebugEvent` for human-readable text
+
+**Modifications to `TibiarcPlayer.tsx`**
+- Pass `camBufferRef.current`, `progress`, and `state` down to the debugger component
+- Toggle button to show/hide the debugger (off by default)
+
+**Modifications to `CamPlayerPage.tsx`**
+- Render the debugger panel below the player
+
+### What you'll see in the log
 
 ```text
-150 anomalias — 100% são BYTES_LEFTOVER
-147 de 150 (98%) resolvidas pela estratégia A (7→0)
-0 DESYNCs, 0 PARSE_ERRORs
+[0.00s] FRAME #0 (127 bytes)
+[0.00s] LOGIN playerId=123456
+[0.00s] MAP_DESC pos=(32000,32000,7) floors=7→0 bytesLeft=0
+[0.12s] FRAME #1 (14 bytes)
+[0.12s] MOVE_CR cid=123456 (32000,32000,7)→(32001,32000,7) dir=EAST
+[0.24s] FRAME #2 (490 bytes)
+[0.24s] SCROLL dx=1 dy=0 cam=(32002,32000,7)
+[0.24s]   readMultiFloorArea 18×14 floors=7→0 bytesConsumed=485
+[5.10s] FRAME #42 (312 bytes)
+[5.10s] FLOOR_UP camZ: 7→6
+[5.10s]   ⚠ PARSE_ERROR: BufOverflow at pos=287 (25 bytes remaining)
+[5.10s]   HEX: 6a 00 7d 12 00 7d 07 00 61 ...
 ```
 
-O problema é **exatamente o mesmo** que diagnosticamos antes: os **scrolls** (0x65-0x68) na superfície enviam dados para todos os floors visíveis (7→0), mas o parser usa `getFloorRange` que retorna apenas ±2 (3 floors). Os floors extras ficam não-lidos e são reportados como "leftover".
+### Files to create/modify
 
-### Por que a última correção piorou
-
-Na primeira tentativa, mudamos `getFloorRange` para 7→0 **E** mudamos `floorUp` para ler floors 5→0. Mas `floorUp`/`floorDown` só enviam dados do **único** novo floor visível, não todos os floors. Ler 6 floors quando só 1 foi enviado causou byte drift → DESYNCs.
-
-Na correção seguinte, revertemos `getFloorRange` para ±2 (conservador demais) e criamos `getMapDescFloorRange` (7→0 só para mapDesc). Isso resolveu o mapDesc mas os scrolls continuam com ±2 → voltamos aos mesmos leftover.
-
-### Correção cirúrgica
-
-A solução é simples — dois pontos:
-
-1. **`getFloorRange`**: mudar para 7→0 na superfície (afeta scrolls)
-2. **`floorUp`/`floorDown`**: manter como está (lê apenas 1 floor novo)
-3. **Remover `getMapDescFloorRange`**: não precisa mais, pois `getFloorRange` já retorna 7→0
-
-Isso funciona porque:
-- `scroll()` usa `getFloorRange` → agora lê 7→0 → consome todos os bytes ✓
-- `mapDesc()` pode usar `getFloorRange` também → mesmo resultado ✓
-- `floorUp`/`floorDown` chamam `readFloorArea` diretamente, **não usam** `getFloorRange` → não são afetados ✓
-- `readMultiFloorArea` já tem um guard `if (r.left() < 2) break` que para automaticamente quando não há mais dados para floors distantes → seguro ✓
-
-O `readMultiFloorArea` já lida com floors vazios (skip markers de 2 bytes) e com exhaustion (para quando o buffer acaba). Não há risco de ler dados demais.
-
-### Mudanças
-
-**`packetParser.ts`:**
-- `getFloorRange`: surface → `{ startz: 7, endz: 0, zstep: -1 }`
-- Remover `getMapDescFloorRange` (redundante)
-- `mapDesc`: usar `getFloorRange` em vez de `getMapDescFloorRange`
-- `floorUp`/`floorDown`: sem mudanças (já estão corretos)
+| File | Action |
+|------|--------|
+| `src/components/CamFrameDebugger.tsx` | **Create** — main debugger component |
+| `src/lib/tibiaRelic/debugLogger.ts` | **Modify** — add new event types and description field |
+| `src/components/TibiarcPlayer.tsx` | **Modify** — expose camBuffer/progress/state, add toggle |
+| `src/pages/CamPlayerPage.tsx` | **Modify** — render debugger |
 
