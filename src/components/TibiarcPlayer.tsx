@@ -322,8 +322,6 @@ const TibiarcPlayer = ({ className }: TibiarcPlayerProps) => {
 
       const bufPtr = copyToWasm(mod, data);
 
-      const bufPtr = copyToWasm(mod, data);
-
       const dur = safeCall(mod, 'load_recording_tibiarelic', 'number',
         ['number', 'number', 'number', 'number', 'number'],
         [bufPtr, data.length, 7, 72, 0], -1);
