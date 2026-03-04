@@ -16,11 +16,10 @@ export interface FloorStrategy {
 }
 
 export const STRATEGIES: FloorStrategy[] = [
-  { name: 'A', label: '±2 (atual)', plus: 2, minus: 2 },
+  { name: 'A', label: '7→0 (atual)', plus: 7, minus: 7 },
   { name: 'B', label: '±1', plus: 1, minus: 1 },
   { name: 'C', label: '±3', plus: 3, minus: 3 },
   { name: 'D', label: 'Single floor (±0)', plus: 0, minus: 0 },
-  { name: 'E', label: 'Surface full (7→0)', plus: 7, minus: 7 },
 ];
 
 export type AnomalyType = 'POSITION_JUMP' | 'FLOOR_JUMP' | 'DESYNC' | 'PARSE_ERROR' | 'BYTES_LEFTOVER';
