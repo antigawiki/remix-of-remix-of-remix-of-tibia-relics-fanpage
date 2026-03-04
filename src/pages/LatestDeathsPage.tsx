@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { Skull, RefreshCw, Search, Swords, Bug } from 'lucide-react';
+import React, { useState, useMemo } from 'react';
+import { Skull, RefreshCw, Search, Swords, Bug, ArrowUpDown } from 'lucide-react';
 import { format } from 'date-fns';
 import { ptBR, enUS, es, pl } from 'date-fns/locale';
 import MainLayout from '@/layouts/MainLayout';
@@ -16,10 +16,14 @@ import { useTranslation } from '@/i18n';
 const localeMap: Record<string, typeof ptBR> = { pt: ptBR, en: enUS, es, pl };
 
 type FilterType = 'all' | 'pvp' | 'pve';
+type DeathSortKey = 'date' | 'character' | 'level';
+type SortDir = 'asc' | 'desc';
 
 const LatestDeathsPage = () => {
   const [filter, setFilter] = useState<FilterType>('all');
   const [search, setSearch] = useState('');
+  const [sortKey, setSortKey] = useState<DeathSortKey>('date');
+  const [sortDir, setSortDir] = useState<SortDir>('desc');
   const [debouncedSearch, setDebouncedSearch] = useState('');
   const { data, isLoading, isFetching } = useLatestDeaths(100, debouncedSearch);
   const deaths = data?.deaths ?? [];
@@ -45,11 +49,33 @@ const LatestDeathsPage = () => {
     return mainKiller.name;
   };
 
-  const filtered = deaths.filter((d) => {
-    if (filter === 'pvp' && !isPvpDeath(d.killers)) return false;
-    if (filter === 'pve' && isPvpDeath(d.killers)) return false;
-    return true;
-  });
+  const handleSort = (key: DeathSortKey) => {
+    if (sortKey === key) setSortDir(d => d === 'asc' ? 'desc' : 'asc');
+    else { setSortKey(key); setSortDir('desc'); }
+  };
+
+  const filtered = useMemo(() => {
+    const f = deaths.filter((d) => {
+      if (filter === 'pvp' && !isPvpDeath(d.killers)) return false;
+      if (filter === 'pve' && isPvpDeath(d.killers)) return false;
+      return true;
+    });
+    return [...f].sort((a, b) => {
+      let cmp = 0;
+      switch (sortKey) {
+        case 'date': cmp = new Date(a.death_timestamp).getTime() - new Date(b.death_timestamp).getTime(); break;
+        case 'character': cmp = a.player_name.localeCompare(b.player_name); break;
+        case 'level': cmp = a.level - b.level; break;
+      }
+      return sortDir === 'asc' ? cmp : -cmp;
+    });
+  }, [deaths, filter, sortKey, sortDir]);
+
+  const DeathSortHeader = ({ label, sk, className }: { label: string; sk: DeathSortKey; className?: string }) => (
+    <TableHead className={`cursor-pointer hover:text-foreground ${className || ''}`} onClick={() => handleSort(sk)}>
+      <div className="flex items-center gap-1">{label}<ArrowUpDown className="h-3 w-3" /></div>
+    </TableHead>
+  );
 
   const filterLabels: Record<FilterType, string> = {
     all: t('pages.latestDeaths.all'),
@@ -118,10 +144,10 @@ const LatestDeathsPage = () => {
               <TableHeader>
                 <TableRow>
                   <TableHead className="w-10">{t('pages.latestDeaths.type')}</TableHead>
-                  <TableHead>{t('pages.latestDeaths.dateTime')}</TableHead>
-                  <TableHead>{t('pages.latestDeaths.character')}</TableHead>
-                  <TableHead className="text-right">{t('pages.latestDeaths.level')}</TableHead>
-                  <TableHead>{t('pages.latestDeaths.deathCause')}</TableHead>
+                   <DeathSortHeader label={t('pages.latestDeaths.dateTime')} sk="date" />
+                   <DeathSortHeader label={t('pages.latestDeaths.character')} sk="character" />
+                   <DeathSortHeader label={t('pages.latestDeaths.level')} sk="level" className="text-right" />
+                   <TableHead>{t('pages.latestDeaths.deathCause')}</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>

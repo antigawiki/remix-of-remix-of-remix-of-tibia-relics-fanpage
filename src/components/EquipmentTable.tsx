@@ -14,11 +14,20 @@ interface EquipmentTableProps {
 type SortKey = 'name' | 'armor' | 'attack' | 'defense' | 'weight';
 type SortDirection = 'asc' | 'desc';
 
+const getDefaultSort = (category: string): { key: SortKey; dir: SortDirection } => {
+  const cat = category.toLowerCase();
+  if (cat === 'shields') return { key: 'defense', dir: 'desc' };
+  if (['swords', 'axes', 'clubs', 'distance', 'ammo'].includes(cat)) return { key: 'attack', dir: 'desc' };
+  if (['helmets', 'armors', 'legs', 'boots'].includes(cat)) return { key: 'armor', dir: 'desc' };
+  return { key: 'name', dir: 'asc' };
+};
+
 const EquipmentTable = ({ items, category }: EquipmentTableProps) => {
   const { t } = useTranslation();
   const [search, setSearch] = useState('');
-  const [sortKey, setSortKey] = useState<SortKey>('name');
-  const [sortDirection, setSortDirection] = useState<SortDirection>('asc');
+  const defaultSort = getDefaultSort(category);
+  const [sortKey, setSortKey] = useState<SortKey>(defaultSort.key);
+  const [sortDirection, setSortDirection] = useState<SortDirection>(defaultSort.dir);
   const [selectedItem, setSelectedItem] = useState<Equipment | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
 
