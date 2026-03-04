@@ -1,49 +1,54 @@
 
 
-## Diagnóstico: Scroll lê 18x14 (viewport inteiro) quando deveria ler 1 row/column
+## Diagnóstico: Não é luz — é o floor range dos scrolls
 
-Encontrei o bug principal que ainda causa problemas. Está no `scroll()` handler (linhas 509-538).
+Sua hipótese sobre luminância é criativa, mas **não é isso**. No protocolo Tibia 7.72, a luz não é enviada como dados extras por tile na rede. A luz funciona assim:
 
-### O problema
+- **Luz ambiente (0x82)**: 2 bytes (intensidade + cor) — já lido pelo parser
+- **Luz de criatura (0x8D)**: 6 bytes (creatureId + intensidade + cor) — já lido
+- **Luz de item**: vem do arquivo `.dat` (flag 0x15, 4 bytes), não do protocolo de rede
 
-O handler de scroll lê **18x14 tiles (252 tiles)** para TODAS as 4 direções. Mas o protocolo Tibia 7.72 envia apenas:
-- Norte/Sul: **18x1** (1 nova linha de tiles)
-- Leste/Oeste: **1x14** (1 nova coluna de tiles)
+O parser lê todos esses corretamente. Os bytes sobrando não são dados de luz.
 
-Isso significa que a cada passo do jogador, o parser tenta ler ~252 tiles quando só existem 18 ou 14 no buffer. Os ~234 tiles restantes são lidos dos **bytes dos próximos opcodes**, corrompendo tudo.
+### A causa real (confirmada pelo JSON que você enviou)
 
-Além disso, a **origem** está errada para 3 das 4 direções — todas usam `(camX-8, camY-6)` quando cada direção tem uma origem diferente (a borda recém-revelada do viewport).
-
-### Por que "melhorou um pouco"
-
-A validação que adicionamos no `readTileItems` agora detecta o byte drift e lança erro. O `catch` no `scroll()` reverte a câmera, evitando corrupção permanente. Mas o resto do frame é perdido, causando desync intermitente.
-
-### Por que "funciona em alguns cams e não em outros"
-
-Cams com poucos scrolls (jogador parado/teleportando) usam `mapDesc` (18x14 correto) → funciona. Cams com muito movimento → muitos scrolls → corrupção a cada passo.
-
-### Correção
-
-Usar as dimensões e origens corretas per OTClient 7.72:
+O JSON mostra claramente:
 
 ```text
-Direção   | Opcode | Dimensões | Origem (após cam update)
-----------|--------|-----------|------------------------
-Norte     | 0x65   | 18 × 1    | (camX-8, camY-6)
-Leste     | 0x66   | 1 × 14    | (camX+9, camY-6)
-Sul       | 0x67   | 18 × 1    | (camX-8, camY+7)
-Oeste     | 0x68   | 1 × 14    | (camX-8, camY-6)
+150 anomalias — 100% são BYTES_LEFTOVER
+147 de 150 (98%) resolvidas pela estratégia A (7→0)
+0 DESYNCs, 0 PARSE_ERRORs
 ```
 
-### Mudança técnica
+O problema é **exatamente o mesmo** que diagnosticamos antes: os **scrolls** (0x65-0x68) na superfície enviam dados para todos os floors visíveis (7→0), mas o parser usa `getFloorRange` que retorna apenas ±2 (3 floors). Os floors extras ficam não-lidos e são reportados como "leftover".
 
-**`packetParser.ts` — método `scroll()`** (linhas 509-538):
+### Por que a última correção piorou
 
-Substituir os 4 `readMultiFloorArea` idênticos por chamadas com dimensões e origens corretas por direção. Cada direção lê apenas a faixa de tiles que o servidor realmente envia.
+Na primeira tentativa, mudamos `getFloorRange` para 7→0 **E** mudamos `floorUp` para ler floors 5→0. Mas `floorUp`/`floorDown` só enviam dados do **único** novo floor visível, não todos os floors. Ler 6 floors quando só 1 foi enviado causou byte drift → DESYNCs.
 
-### Arquivo alterado
+Na correção seguinte, revertemos `getFloorRange` para ±2 (conservador demais) e criamos `getMapDescFloorRange` (7→0 só para mapDesc). Isso resolveu o mapDesc mas os scrolls continuam com ±2 → voltamos aos mesmos leftover.
 
-| Arquivo | Mudança |
-|---------|---------|
-| `packetParser.ts` | `scroll()`: dimensões corretas por direção (18x1 ou 1x14) e origens corretas |
+### Correção cirúrgica
+
+A solução é simples — dois pontos:
+
+1. **`getFloorRange`**: mudar para 7→0 na superfície (afeta scrolls)
+2. **`floorUp`/`floorDown`**: manter como está (lê apenas 1 floor novo)
+3. **Remover `getMapDescFloorRange`**: não precisa mais, pois `getFloorRange` já retorna 7→0
+
+Isso funciona porque:
+- `scroll()` usa `getFloorRange` → agora lê 7→0 → consome todos os bytes ✓
+- `mapDesc()` pode usar `getFloorRange` também → mesmo resultado ✓
+- `floorUp`/`floorDown` chamam `readFloorArea` diretamente, **não usam** `getFloorRange` → não são afetados ✓
+- `readMultiFloorArea` já tem um guard `if (r.left() < 2) break` que para automaticamente quando não há mais dados para floors distantes → seguro ✓
+
+O `readMultiFloorArea` já lida com floors vazios (skip markers de 2 bytes) e com exhaustion (para quando o buffer acaba). Não há risco de ler dados demais.
+
+### Mudanças
+
+**`packetParser.ts`:**
+- `getFloorRange`: surface → `{ startz: 7, endz: 0, zstep: -1 }`
+- Remover `getMapDescFloorRange` (redundante)
+- `mapDesc`: usar `getFloorRange` em vez de `getMapDescFloorRange`
+- `floorUp`/`floorDown`: sem mudanças (já estão corretos)
 

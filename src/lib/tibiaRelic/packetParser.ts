@@ -519,10 +519,11 @@ export class PacketParser {
     const { startz, endz, zstep } = this.getFloorRange(g.camZ);
 
     try {
-      if (dx === 1) this.readMultiFloorArea(r, g.camX - 8, g.camY - 6, 18, 14, g.camZ, startz, endz, zstep);
-      else if (dx === -1) this.readMultiFloorArea(r, g.camX - 8, g.camY - 6, 18, 14, g.camZ, startz, endz, zstep);
-      else if (dy === 1) this.readMultiFloorArea(r, g.camX - 8, g.camY - 6, 18, 14, g.camZ, startz, endz, zstep);
-      else if (dy === -1) this.readMultiFloorArea(r, g.camX - 8, g.camY - 6, 18, 14, g.camZ, startz, endz, zstep);
+      // Each scroll sends only the NEW row/column revealed by movement
+      if (dx === 1)       this.readMultiFloorArea(r, g.camX + 9, g.camY - 6, 1, 14, g.camZ, startz, endz, zstep);  // East
+      else if (dx === -1) this.readMultiFloorArea(r, g.camX - 8, g.camY - 6, 1, 14, g.camZ, startz, endz, zstep);  // West
+      else if (dy === 1)  this.readMultiFloorArea(r, g.camX - 8, g.camY + 7, 18, 1, g.camZ, startz, endz, zstep);  // South
+      else if (dy === -1) this.readMultiFloorArea(r, g.camX - 8, g.camY - 6, 18, 1, g.camZ, startz, endz, zstep);  // North
     } catch (e) {
       // Revert camera on parse failure
       g.camX = oldX; g.camY = oldY;
