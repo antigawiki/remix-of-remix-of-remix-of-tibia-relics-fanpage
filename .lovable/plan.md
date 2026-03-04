@@ -1,73 +1,68 @@
 
 
-## Diagnóstico: Por que o Protocol Lab diz "0 erros"
+## Diagnóstico: A Causa Real dos "BYTES_LEFTOVER"
 
-### Causa Raiz
+Analisei o JSON do Protocol Lab e a causa raiz é definitiva:
 
-O Protocol Lab depende de **exceções** para detectar erros. Mas o `PacketParser` tem **3 camadas de try/catch** que engolem erros silenciosamente:
+**O TibiaRelic envia TODOS os andares da superfície (7→0), não apenas ±2.**
+
+### Prova nos Dados
+
+Frame 0 (z=7, payload=3362 bytes):
 
 ```text
-process()           → try/catch (re-throws)
-  └─ processOpcodes()   → try/catch { break; }     ← ENGOLE o erro
-  └─ processTcpDemux()  → try/catch { break; }     ← ENGOLE o erro  
-  └─ processDirectOpcodes() → try/catch { break; }  ← ENGOLE o erro
+Estratégia A (±2, lê floors 7,6,5):    2602 bytes consumidos → 759 bytes sobrando
+Estratégia C (±3, lê floors 7,6,5,4):  2696 bytes consumidos → 651 bytes sobrando  
+Estratégia E (7→0, lê floors 7→0):     2716 bytes consumidos → 0 bytes sobrando, 46 opcodes parseados!
 ```
 
-Resultado: os erros internos nunca chegam ao `process()`, nunca chegam ao Lab. O Lab vê 0 exceções → "0 erros".
+Os andares distantes custam apenas 2 bytes cada (marcador de skip 0xFFFF):
+- Floor 7: 1296 bytes (andar principal)
+- Floor 6: 816 bytes
+- Floor 5: 476 bytes
+- Floor 4: 108 bytes
+- Floor 3: 0 bytes (exhausted)
+- Floor 2: 2 bytes (skip marker)
+- Floor 1: 2 bytes (skip marker)
+- Floor 0: 2 bytes (skip marker)
 
-Enquanto isso, o Analyzer detecta problemas por **comparação de estado** (posição antes/depois), não por exceções. Por isso ele encontra anomalias que o Lab não vê.
+Com ±2, paramos no floor 5. Os bytes dos floors 4-0 (114 bytes) ficam no buffer + 645 bytes de opcodes válidos (talk, effects, etc) = 759 bytes "leftover". Esses opcodes NUNCA são processados.
 
-### Padrões nas Anomalias (do JSON enviado)
+Frame 24 (z=7): estratégia A deixa 17 bytes, estratégia C (±3) deixa 0. O floor 4 tinha 36 bytes de dados.
 
-Analisando os 26.216 frames da cam:
+**150 de 150 anomalias são BYTES_LEFTOVER. Zero desyncs reais. O parser funciona corretamente — só não lê andares suficientes.**
 
-1. **Player desync após floorDown (0xBF)**: Frames 6571, 6625, 20233, 20243 — o player fica em posição errada (ex: cam=32879,32643 mas player=32883,32637). Isso indica que o `moveCr` perde a referência do player no tile após um floor change.
+### Plano de Correção
 
-2. **Player desync prolongado na superfície (z=7)**: Frames 23729-24316 — dezenas de frames onde o player está 3-7 tiles distante da câmera (cam=32940,32645 mas player=32936,32643). Esses são `moveCr` (opcode 109=0x6D) onde o player não está no tile esperado, então o fallback `player_lookup` dá posição errada.
+A correção é simples e cirúrgica: mudar `getFloorRange` para ler todos os andares que o TibiaRelic envia.
 
-3. **Teleports legítimos via mapDesc (0x64)**: Frames 1339, 2321, 2497, 20905 — estes são esperados (mudança de local).
+**`packetParser.ts` — `getFloorRange`:**
 
-### Plano de Correção Completo
+Atual:
+```typescript
+// Surface: ±2 floors only
+return { startz: Math.min(z + 2, 7), endz: Math.max(z - 2, 0), zstep: -1 };
+// Underground: z-2 to z+2
+return { startz: z - 2, endz: Math.min(z + 2, 15), zstep: 1 };
+```
 
-#### 1. Redesenhar o Protocol Lab para detectar por estado (não por exceção)
+Novo:
+```typescript
+// Surface: FULL range 7→0 (TibiaRelic sends all surface floors)
+return { startz: 7, endz: 0, zstep: -1 };
+// Underground: FULL range z-2 → z+2 (manter ±2 por enquanto)
+return { startz: z - 2, endz: Math.min(z + 2, 15), zstep: 1 };
+```
 
-O Lab deve funcionar como o Analyzer: comparar snapshots antes/depois de cada frame. Um frame é "problemático" se:
-- Player diverge da câmera por mais de 2 tiles
-- Player muda de floor sem opcode de floor change
-- Posição do player salta mais de 2 tiles em um único `moveCr`
+**`packetParser.ts` — `floorUp` e `floorDown`:**
 
-Para cada frame problemático, testar as 5 estratégias e verificar qual produz o menor delta player-câmera.
+Os handlers de mudança de andar também precisam ser ajustados para ler a quantidade correta de novos floors quando o jogador sobe/desce. Atualmente leem apenas 1 novo floor (o ±2 mais distante). Com range completo na superfície, quando sobe de z=8→z=7, precisa ler todos os floors de superfície que ficaram visíveis (5 a 0), não apenas o floor 5.
 
-#### 2. Adicionar modo "strict" ao PacketParser
+**`camProtocolLab.ts`:**
 
-Novo flag `strictMode` que, em vez de engolir erros nos try/catch internos, os re-lança. Isso permite ao Lab capturar erros de parsing reais que hoje são silenciados. Ambos os modos coexistem: o player usa o modo leniente (para não crashar), o Lab usa o modo estrito (para diagnosticar).
+Atualizar a estratégia "A" para refletir o novo range (7→0) e remover a estratégia E (que se torna idêntica à A). Adicionar uma nota no resumo indicando que o range correto foi identificado.
 
-#### 3. Corrigir o moveCr player fallback
+### Resultado Esperado
 
-O problema real: após `readMultiFloorArea` (scroll/floorUp/floorDown), a referência do player no tile é perdida. O fallback `player_lookup` (proximity search) encontra o player mas com posição desatualizada, causando jumps de 3-7 tiles. A correção é:
-- Após cada `readMultiFloorArea`, chamar `reinsertCreaturesOnTiles` (já existe mas pode não cobrir todos os casos)
-- No `moveCr`, quando o player não é encontrado no tile esperado, usar a posição registrada no objeto `Creature` em vez de a posição do tile
-
-#### 4. Registrar bytes restantes no buffer após cada frame
-
-Adicionar ao Lab e ao Analyzer: se após processar um frame sobram bytes que deveriam ter sido consumidos (leftover > 0), isso indica que algum opcode consumiu bytes demais ou de menos. Registrar isso como métrica de "drift" de bytes.
-
-### Mudanças Técnicas
-
-**`camProtocolLab.ts`** — Reescrever completamente:
-- Fase 1: Processar todos frames, salvar snapshot antes de cada um, detectar anomalias por estado (como o Analyzer)
-- Fase 2: Para cada frame anômalo, testar as 5 estratégias, comparar qual produz menor desync
-- Adicionar detecção de bytes leftover por frame
-- Usar `strictMode` para capturar erros que hoje são engolidos
-
-**`packetParser.ts`** — Adicionar `strictMode`:
-- Novo flag no constructor options
-- Quando ativo, `processOpcodes`/`processTcpDemux`/`processDirectOpcodes` re-lançam exceções em vez de `break`
-- Registrar `bytesLeftAfterProcess` — quantos bytes sobraram no buffer após `process()`
-
-**`ProtocolLabTab.tsx`** — Atualizar UI:
-- Mostrar anomalias por estado (player-cam delta) em vez de apenas exceções
-- Coluna de "bytes restantes" para detectar drift
-- Comparação visual das 5 estratégias mostrando delta de posição para cada uma
-- Filtros por tipo de anomalia (desync, position jump, floor jump)
+Com essa mudança, todos os bytes de cada frame serão consumidos corretamente. Os 759 bytes de opcodes que hoje são "perdidos" (talks, effects, creature updates) passarão a ser processados, corrigindo problemas visuais no player como chat messages faltando, efeitos não aparecendo, e estados de criaturas desatualizados.
 
