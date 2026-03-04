@@ -1,54 +1,62 @@
 
 
-## Diagnóstico: Não é luz — é o floor range dos scrolls
+## Aplicar fix de moveCr no player WASM C++
 
-Sua hipótese sobre luminância é criativa, mas **não é isso**. No protocolo Tibia 7.72, a luz não é enviada como dados extras por tile na rede. A luz funciona assim:
+### Contexto
 
-- **Luz ambiente (0x82)**: 2 bytes (intensidade + cor) — já lido pelo parser
-- **Luz de criatura (0x8D)**: 6 bytes (creatureId + intensidade + cor) — já lido
-- **Luz de item**: vem do arquivo `.dat` (flag 0x15, 4 bytes), não do protocolo de rede
+O fix de `creatures_map` fallback já funciona no JS parser. O player WASM (C++) sofre do mesmo problema: quando `moveCr` (0x6d) não encontra a criatura na tile de origem (tile foi reconstruída por scroll), a criatura fica "fantasma". O C++ do tibiarc usa `Gamestate::Creatures` (um map de `creatureId → Creature`) — exatamente o mesmo padrão que o JS.
 
-O parser lê todos esses corretamente. Os bytes sobrando não são dados de luz.
+### O que fazer
 
-### A causa real (confirmada pelo JSON que você enviou)
+**1. Criar patch file `tibiarc-player/fix-movecr-fallback.patch`**
 
-O JSON mostra claramente:
+Patch para `lib/parser.cpp` na função que processa o opcode 0x6d (`ParseCreatureMove` ou equivalente). O tibiarc original faz lookup por stackpos na tile. O patch adiciona um fallback: se a criatura não for encontrada na tile, busca no `Gamestate::Creatures` por posição (x, y, z) igual à posição de origem. Se encontrada, remove da tile antiga e processa o move normalmente.
+
+O patch precisa ser escrito contra o código-fonte do fork `antigawiki/tibiarc`. Como não temos acesso direto ao `lib/parser.cpp` do fork aqui, o approach mais seguro é adicionar a lógica via `sed` no workflow (mesmo padrão dos patches existentes), ou aplicar o `.patch` file.
+
+**2. Atualizar `build-player.yml`** 
+
+Adicionar step para aplicar o patch `fix-movecr-fallback.patch` (e o já existente `fix-scroll-floor-range.patch`) via `git apply` antes da compilação.
+
+**3. Migrar patches sed para .patch files**
+
+Converter os 4 fixes de protocolo (0xA4, 0xA7, 0xA8, 0xB6) que hoje são `sed` em arquivos `.patch` para maior robustez. Porém, como o moveCr fallback requer entender a estrutura exata do `ParseCreatureMove` no fork C++, a abordagem mais prática é:
+
+- Manter os sed patches existentes (já funcionam)
+- Aplicar `fix-scroll-floor-range.patch` via `git apply`
+- Para o moveCr fallback, injetar via sed no `Gamestate` ou no event handler que processa o move
+
+### Problema: não temos o código-fonte C++ aqui
+
+O fork `antigawiki/tibiarc` é clonado durante o CI. Sem ver o código real de `ParseCreatureMove` e a struct `Gamestate::Creatures`, o patch pode não compilar.
+
+### Alternativa mais segura
+
+Em vez de patchar o parser C++, injetar a lógica de dedup **no `web_player.cpp`** (que nós controlamos):
+
+Antes de cada `RenderFrame()`, varrer `g_gamestate->Creatures` e remover entradas duplicadas (mesma posição, mesmo nome) ou criaturas cujas posições estão fora do viewport. Isso é um band-aid no renderer, não no parser, mas:
+- Não requer patchar código que não temos
+- Resolve o sintoma visual (ghosting)
+- É fácil de implementar e testar
+
+### Plano de implementação
+
+| File | Action |
+|------|--------|
+| `tibiarc-player/web_player.cpp` | Adicionar função `DeduplicateCreatures()` que varre `g_gamestate->Creatures`, detecta criaturas com mesma posição e remove duplicatas. Chamar antes de `RenderFrame()` no `MainLoop()` e no `seek()` |
+| `.github/workflows/build-player.yml` | Adicionar step para aplicar `fix-scroll-floor-range.patch` via `git apply` (já existe o arquivo) |
+
+### DeduplicateCreatures — lógica
 
 ```text
-150 anomalias — 100% são BYTES_LEFTOVER
-147 de 150 (98%) resolvidas pela estratégia A (7→0)
-0 DESYNCs, 0 PARSE_ERRORs
+for each creature in Creatures:
+  key = (x, y, z)
+  if key already seen:
+    mark duplicate for removal (keep the one with player ID priority)
+  else:
+    add key to seen set
+remove all marked duplicates
 ```
 
-O problema é **exatamente o mesmo** que diagnosticamos antes: os **scrolls** (0x65-0x68) na superfície enviam dados para todos os floors visíveis (7→0), mas o parser usa `getFloorRange` que retorna apenas ±2 (3 floors). Os floors extras ficam não-lidos e são reportados como "leftover".
-
-### Por que a última correção piorou
-
-Na primeira tentativa, mudamos `getFloorRange` para 7→0 **E** mudamos `floorUp` para ler floors 5→0. Mas `floorUp`/`floorDown` só enviam dados do **único** novo floor visível, não todos os floors. Ler 6 floors quando só 1 foi enviado causou byte drift → DESYNCs.
-
-Na correção seguinte, revertemos `getFloorRange` para ±2 (conservador demais) e criamos `getMapDescFloorRange` (7→0 só para mapDesc). Isso resolveu o mapDesc mas os scrolls continuam com ±2 → voltamos aos mesmos leftover.
-
-### Correção cirúrgica
-
-A solução é simples — dois pontos:
-
-1. **`getFloorRange`**: mudar para 7→0 na superfície (afeta scrolls)
-2. **`floorUp`/`floorDown`**: manter como está (lê apenas 1 floor novo)
-3. **Remover `getMapDescFloorRange`**: não precisa mais, pois `getFloorRange` já retorna 7→0
-
-Isso funciona porque:
-- `scroll()` usa `getFloorRange` → agora lê 7→0 → consome todos os bytes ✓
-- `mapDesc()` pode usar `getFloorRange` também → mesmo resultado ✓
-- `floorUp`/`floorDown` chamam `readFloorArea` diretamente, **não usam** `getFloorRange` → não são afetados ✓
-- `readMultiFloorArea` já tem um guard `if (r.left() < 2) break` que para automaticamente quando não há mais dados para floors distantes → seguro ✓
-
-O `readMultiFloorArea` já lida com floors vazios (skip markers de 2 bytes) e com exhaustion (para quando o buffer acaba). Não há risco de ler dados demais.
-
-### Mudanças
-
-**`packetParser.ts`:**
-- `getFloorRange`: surface → `{ startz: 7, endz: 0, zstep: -1 }`
-- Remover `getMapDescFloorRange` (redundante)
-- `mapDesc`: usar `getFloorRange` em vez de `getMapDescFloorRange`
-- `floorUp`/`floorDown`: sem mudanças (já estão corretos)
+Isso elimina o ghosting visual sem tocar no parser C++ que não controlamos.
 
