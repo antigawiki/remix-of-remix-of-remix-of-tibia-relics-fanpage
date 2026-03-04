@@ -61,101 +61,58 @@ jobs:
           echo "Fixed 0xB6 WalkCancel: 2B → 0B"
 
           # =============================================
-          # TALK OPCODE 0xAA — TibiaRelic adds u32 statementGuid
+          # NEW PATCHES — TibiaRelic protocol divergences
           # =============================================
 
-          # 5. Talk (0xAA): TibiaRelic sends u32 guid BEFORE sender name
-          #    Every chat message causes +4B drift without this fix
-          #    Insert SkipU32 right after the function opening brace
-          sed -i '/void Parser::ParseTalk/,/^}/ {
-            0,/reader\.Read/{
-              /void Parser::ParseTalk/{
-                a\    /* TibiaRelic: skip u32 statementGuid */\n    reader.SkipU32();
-              }
-            }
+          # 5. Talk (0xAA): TibiaRelic sends u32 statementGuid before sender name
+          sed -i '/void Parser::ParseTalk/,/^}/{
+            /DataReader &reader/a\    /* TibiaRelic: skip u32 statementGuid */ reader.SkipU32();
           }' lib/parser.cpp
-          # Fallback: if the above didn't work, try simpler insertion
-          if ! grep -q "statementGuid" lib/parser.cpp; then
-            sed -i '/void Parser::ParseTalk/a\    /* TibiaRelic: skip u32 statementGuid */\n    reader.SkipU32();' lib/parser.cpp
-          fi
+          # Fallback if function sig is on same line as brace
+          grep -q "statementGuid" lib/parser.cpp || \
+            sed -i '/void Parser::ParseTalk/a\    /* TibiaRelic: skip u32 statementGuid */ reader.SkipU32();' lib/parser.cpp
           echo "Fixed 0xAA Talk: added SkipU32 for statementGuid"
 
-          # =============================================
-          # MAP_DESC 0x64 — Mini position-only guard
-          # =============================================
-
-          # 6. MapDescription (0x64): TibiaRelic sends periodic position-only
-          #    packets (~5 bytes) that the full parser would consume as tile data
-          #    Add guard after the Z coordinate read
-          sed -i '/void Parser::ParseMapDescription.*DataReader/,/^}/ {
-            /Position_.Z/a\    /* TibiaRelic: guard mini MAP_DESC */\n    if (reader.Remaining() < 100) { return; }
+          # 6. MapDescription (0x64): mini MAP_DESC guard
+          #    Insert after Position_.Z assignment inside ParseMapDescription
+          sed -i '/ParseMapDescription.*DataReader/,/tileSkip = 0/{
+            /Position_.Z/a\    /* TibiaRelic: guard mini MAP_DESC */ if (reader.Remaining() < 100) return;
           }' lib/parser.cpp
-          # Fallback
-          if ! grep -q "mini MAP_DESC" lib/parser.cpp; then
-            sed -i '/Position_.Z.*ReadU8\|Position_.Z.*Read/a\    /* TibiaRelic: guard mini MAP_DESC */\n    if (reader.Remaining() < 100) { return; }' lib/parser.cpp
-          fi
+          grep -q "mini MAP_DESC" lib/parser.cpp || \
+            sed -i '/Position_.Z.*Read/a\    /* TibiaRelic: guard mini MAP_DESC */ if (reader.Remaining() < 100) return;' lib/parser.cpp
           echo "Fixed 0x64 MapDesc: added mini-MAP_DESC guard"
 
-          # =============================================
-          # PLAYER STATS 0xA0 — No stamina in TibiaRelic
-          # =============================================
-
-          # 7. PlayerStats (0xA0): TibiaRelic sends 20 bytes (no stamina)
-          sed -i '/void Parser::ParsePlayerStats/,/^}/ {
-            /[Ss]tamina/d
-          }' lib/parser.cpp
+          # 7. PlayerStats (0xA0): remove stamina (TibiaRelic sends 20B, not 22B)
+          sed -i '/void Parser::ParsePlayerStats/,/^}/{ /[Ss]tamina/d; }' lib/parser.cpp
           echo "Fixed 0xA0 PlayerStats: removed stamina read"
 
-          # =============================================
-          # MISSING OPCODES 0xA5, 0xA6, 0x63
-          # =============================================
+          # 8-10. Missing opcodes: 0xA5, 0xA6, 0x63
+          grep -q "case 0xA5" lib/parser.cpp || \
+            sed -i '/case 0xA8:/i\    case 0xA5: reader.Skip(5); break; /* TibiaRelic: SpellGroupCooldown */' lib/parser.cpp
+          echo "Added 0xA5 SpellGroupCooldown: 5B"
 
-          # 8. SpellGroupCooldown (0xA5): u8 groupId + u32 delay = 5B
-          if ! grep -q "case 0xA5" lib/parser.cpp; then
-            sed -i '/case 0xA8:/i\    case 0xA5:\n        reader.Skip(5);\n        break;' lib/parser.cpp
-            echo "Added 0xA5 SpellGroupCooldown: 5B"
-          else
-            echo "0xA5 already exists, skipping"
-          fi
+          grep -q "case 0xA6" lib/parser.cpp || \
+            sed -i '/case 0xA8:/i\    case 0xA6: reader.Skip(4); break; /* TibiaRelic: MultiUseDelay */' lib/parser.cpp
+          echo "Added 0xA6 MultiUseDelay: 4B"
 
-          # 9. MultiUseDelay (0xA6): u32 delay = 4B
-          if ! grep -q "case 0xA6" lib/parser.cpp; then
-            sed -i '/case 0xA8:/i\    case 0xA6:\n        reader.Skip(4);\n        break;' lib/parser.cpp
-            echo "Added 0xA6 MultiUseDelay: 4B"
-          else
-            echo "0xA6 already exists, skipping"
-          fi
+          grep -q "case 0x63:" lib/parser.cpp || \
+            sed -i '/case 0x64:/i\    case 0x63: reader.Skip(5); break; /* TibiaRelic: CreatureTurn */' lib/parser.cpp
+          echo "Added 0x63 CreatureTurn: 5B"
 
-          # 10. CreatureTurn (0x63): u32 creatureId + u8 direction = 5B
-          if ! grep -q "case 0x63:" lib/parser.cpp; then
-            sed -i '/case 0x64:/i\    case 0x63:\n        reader.Skip(5);\n        break;' lib/parser.cpp
-            echo "Added 0x63 CreatureTurn: 5B"
-          else
-            echo "0x63 already exists, skipping"
-          fi
-
-          # =============================================
-          # OUTFIT WINDOW 0xC8 — Force u8 range (7.72 style)
-          # =============================================
-
-          # 11. OutfitWindow (0xC8): TibiaRelic uses u8+u8 range, not u16+u16
-          sed -i '/void Parser::ParseOutfitWindow/,/^}/ {
-            s/reader\.ReadU16()/reader.ReadU8()/g
-          }' lib/parser.cpp
+          # 11. OutfitWindow (0xC8): u16 range → u8 (7.72 style)
+          sed -i '/void Parser::ParseOutfitWindow/,/^}/{ s/ReadU16()/ReadU8()/g; }' lib/parser.cpp
           echo "Fixed 0xC8 OutfitWindow: u16 range → u8 range"
 
           # =============================================
           # VERIFICATION (non-fatal)
           # =============================================
-          echo "=== Verifying patches ==="
-          grep -n "case 0xA8" lib/parser.cpp || echo "WARN: 0xA8 not found"
-          grep -n "WalkCancel 0 bytes" lib/parser.cpp || echo "WARN: WalkCancel not found"
+          echo "=== Verifying new patches ==="
           grep -n "statementGuid" lib/parser.cpp || echo "WARN: statementGuid not injected"
-          grep -n "mini MAP_DESC" lib/parser.cpp || echo "WARN: mini MAP_DESC guard not injected"
+          grep -n "mini MAP_DESC" lib/parser.cpp || echo "WARN: mini MAP_DESC not injected"
           grep -n "case 0xA5" lib/parser.cpp || echo "WARN: 0xA5 not found"
           grep -n "case 0xA6" lib/parser.cpp || echo "WARN: 0xA6 not found"
           grep -c "case 0x63" lib/parser.cpp || echo "WARN: 0x63 not found"
-          echo "All TibiaRelic protocol fixes applied successfully"
+          echo "New patches verification complete"
 
           # =============================================
           # PROTOCOL FLAGS & SAFETY PATCHES
