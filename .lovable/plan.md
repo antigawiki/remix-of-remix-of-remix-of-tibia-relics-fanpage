@@ -1,74 +1,73 @@
 
 
-## Protocol Reverse-Engineering Lab
+## Diagnóstico: Por que o Protocol Lab diz "0 erros"
 
-A ideia é criar uma ferramenta de diagnóstico avançada que, ao processar uma .cam, faça testes automáticos com diferentes estratégias de parsing para cada frame que dá erro, mapeando exatamente quais bytes o TibiaRelic envia e como devemos lê-los.
+### Causa Raiz
 
-### Conceito
+O Protocol Lab depende de **exceções** para detectar erros. Mas o `PacketParser` tem **3 camadas de try/catch** que engolem erros silenciosamente:
 
-Em vez de apenas detectar anomalias, a nova ferramenta vai:
+```text
+process()           → try/catch (re-throws)
+  └─ processOpcodes()   → try/catch { break; }     ← ENGOLE o erro
+  └─ processTcpDemux()  → try/catch { break; }     ← ENGOLE o erro  
+  └─ processDirectOpcodes() → try/catch { break; }  ← ENGOLE o erro
+```
 
-1. **Processar a .cam normalmente** e registrar cada erro (BufOverflow, opcode desconhecido, desync)
-2. **Para cada frame com erro**, fazer um "replay isolado" desse frame com múltiplas estratégias alternativas e comparar os resultados
-3. **Gerar um relatório detalhado** mostrando byte-a-byte o que cada opcode consumiu, onde o parsing divergiu, e qual estratégia funcionou
+Resultado: os erros internos nunca chegam ao `process()`, nunca chegam ao Lab. O Lab vê 0 exceções → "0 erros".
 
-### Estratégias de Teste por Frame
+Enquanto isso, o Analyzer detecta problemas por **comparação de estado** (posição antes/depois), não por exceções. Por isso ele encontra anomalias que o Lab não vê.
 
-Para cada frame que falha, o lab tentará:
+### Padrões nas Anomalias (do JSON enviado)
 
-- **Estratégia A (atual)**: ±2 floors, u16 looktype, TCP demux
-- **Estratégia B**: ±1 floor (talvez o relic mande menos em certos casos)
-- **Estratégia C**: ±3 floors (testar se algum cenário manda mais)
-- **Estratégia D**: Single floor only (floor da câmera apenas)
-- **Estratégia E**: Skip multi-floor data entirely (consumir 0 floors, só position)
+Analisando os 26.216 frames da cam:
 
-Cada estratégia registra: bytes consumidos, bytes restantes, opcodes parseados com sucesso, primeiro erro.
+1. **Player desync após floorDown (0xBF)**: Frames 6571, 6625, 20233, 20243 — o player fica em posição errada (ex: cam=32879,32643 mas player=32883,32637). Isso indica que o `moveCr` perde a referência do player no tile após um floor change.
 
-### Componentes
+2. **Player desync prolongado na superfície (z=7)**: Frames 23729-24316 — dezenas de frames onde o player está 3-7 tiles distante da câmera (cam=32940,32645 mas player=32936,32643). Esses são `moveCr` (opcode 109=0x6D) onde o player não está no tile esperado, então o fallback `player_lookup` dá posição errada.
 
-**1. `src/lib/tibiaRelic/camProtocolLab.ts`** — Engine de testes:
-- Recebe um ArrayBuffer da .cam e o DatLoader
-- Processa todos os frames, registrando para cada um: opcodes, bytes consumidos, erros
-- Quando um frame falha, clona o GameState antes do frame e re-executa com cada estratégia
-- Para cada opcode multi-floor (0x64, 0x65-0x68, 0xBE, 0xBF), registra byte-level trace
-- Gera um `LabResult` com: frames totais, frames com erro, mapa de erros por opcode, resultados de cada estratégia por frame
+3. **Teleports legítimos via mapDesc (0x64)**: Frames 1339, 2321, 2497, 20905 — estes são esperados (mudança de local).
 
-**2. `src/lib/tibiaRelic/packetParser.ts`** — Instrumentação adicional:
-- Adicionar um modo `traceMode` que registra, para cada `readTileItems`, `readFloorArea`, `readMultiFloorArea`: posição inicial/final no buffer, tiles lidos, skip count
-- Expor o `getFloorRange` como configurável (aceitar override de floor range)
-- Adicionar setter para floor range strategy para que o lab possa testar diferentes ranges
+### Plano de Correção Completo
 
-**3. Nova aba no CamAnalyzerPage** — UI do Protocol Lab:
-- Tab "Analyzer" (existente) + Tab "Protocol Lab" (novo)
-- Botão "Run Protocol Lab" que executa a análise profunda
-- Tabela de resultados mostrando cada frame com erro e qual estratégia teve sucesso
-- Para cada frame, expandir para ver o byte-level trace
-- Hex dump do payload do frame com highlights coloridos por opcode
-- Resumo estatístico: "de 50 frames com erro, 45 funcionaram com ±1 floor, 3 com single floor, 2 irrecuperáveis"
-- Recomendação automática: baseado nos resultados, sugere qual floor range usar
+#### 1. Redesenhar o Protocol Lab para detectar por estado (não por exceção)
+
+O Lab deve funcionar como o Analyzer: comparar snapshots antes/depois de cada frame. Um frame é "problemático" se:
+- Player diverge da câmera por mais de 2 tiles
+- Player muda de floor sem opcode de floor change
+- Posição do player salta mais de 2 tiles em um único `moveCr`
+
+Para cada frame problemático, testar as 5 estratégias e verificar qual produz o menor delta player-câmera.
+
+#### 2. Adicionar modo "strict" ao PacketParser
+
+Novo flag `strictMode` que, em vez de engolir erros nos try/catch internos, os re-lança. Isso permite ao Lab capturar erros de parsing reais que hoje são silenciados. Ambos os modos coexistem: o player usa o modo leniente (para não crashar), o Lab usa o modo estrito (para diagnosticar).
+
+#### 3. Corrigir o moveCr player fallback
+
+O problema real: após `readMultiFloorArea` (scroll/floorUp/floorDown), a referência do player no tile é perdida. O fallback `player_lookup` (proximity search) encontra o player mas com posição desatualizada, causando jumps de 3-7 tiles. A correção é:
+- Após cada `readMultiFloorArea`, chamar `reinsertCreaturesOnTiles` (já existe mas pode não cobrir todos os casos)
+- No `moveCr`, quando o player não é encontrado no tile esperado, usar a posição registrada no objeto `Creature` em vez de a posição do tile
+
+#### 4. Registrar bytes restantes no buffer após cada frame
+
+Adicionar ao Lab e ao Analyzer: se após processar um frame sobram bytes que deveriam ter sido consumidos (leftover > 0), isso indica que algum opcode consumiu bytes demais ou de menos. Registrar isso como métrica de "drift" de bytes.
 
 ### Mudanças Técnicas
 
-**packetParser.ts:**
-- Adicionar `floorRangeOverride?: { plus: number, minus: number }` nas options
-- Quando presente, `getFloorRange` usa o override em vez do ±2 hardcoded
-- Adicionar `traceLog: TraceEntry[]` que registra posição do buffer antes/depois de cada operação multi-floor
-- Novo tipo `TraceEntry = { op: string, posBefore: number, posAfter: number, bytesConsumed: number, floor?: number, error?: string }`
+**`camProtocolLab.ts`** — Reescrever completamente:
+- Fase 1: Processar todos frames, salvar snapshot antes de cada um, detectar anomalias por estado (como o Analyzer)
+- Fase 2: Para cada frame anômalo, testar as 5 estratégias, comparar qual produz menor desync
+- Adicionar detecção de bytes leftover por frame
+- Usar `strictMode` para capturar erros que hoje são engolidos
 
-**camProtocolLab.ts:**
-- `runProtocolLab(data: ArrayBuffer, datLoader: DatLoader, onProgress)` → `LabResult`
-- Para cada frame: processa normalmente, se der erro → snapshot do GameState → re-tenta com cada estratégia
-- `LabResult` contém: `errorFrames: ErrorFrame[]`, `strategySummary: Record<string, number>`, `opcodeErrorMap: Record<string, number>`, `recommendation: string`
+**`packetParser.ts`** — Adicionar `strictMode`:
+- Novo flag no constructor options
+- Quando ativo, `processOpcodes`/`processTcpDemux`/`processDirectOpcodes` re-lançam exceções em vez de `break`
+- Registrar `bytesLeftAfterProcess` — quantos bytes sobraram no buffer após `process()`
 
-**CamAnalyzerPage.tsx:**
-- Adicionar Tabs component com "Análise" e "Protocol Lab"
-- Protocol Lab tab com sua própria UI de resultados
-- Hex viewer inline para payloads de frames com erro
-
-### Resultado Esperado
-
-Após rodar o Protocol Lab com uma .cam real, teremos dados concretos como:
-- "O opcode 0x64 (mapDesc) falha em 30 frames. Em 28 deles, a estratégia ±2 funciona mas a superfície z=7 precisa de exatamente 3 floors, não 5"
-- "O opcode 0xBE (floorUp) falha em 5 frames. Em 4 deles, o servidor envia apenas 1 floor novo, não os 2 esperados"
-- Isso nos dá a informação exata para corrigir o parser de forma definitiva.
+**`ProtocolLabTab.tsx`** — Atualizar UI:
+- Mostrar anomalias por estado (player-cam delta) em vez de apenas exceções
+- Coluna de "bytes restantes" para detectar drift
+- Comparação visual das 5 estratégias mostrando delta de posição para cada uma
+- Filtros por tipo de anomalia (desync, position jump, floor jump)
 
