@@ -118,12 +118,31 @@ export class PacketParser {
       // Underground: z-2 to z+2, capped at 15
       return { startz: z - 2, endz: Math.min(z + 2, 15), zstep: 1 };
     } else {
-      // Surface: FULL range 7→0 (TibiaRelic sends all surface floors)
+      // Surface: ±2 floors (used by scroll, floorUp, floorDown)
+      // mapDesc uses its own full 7→0 range via getMapDescFloorRange()
+      return { startz: Math.min(z + 2, 7), endz: Math.max(z - 2, 0), zstep: -1 };
+    }
+  }
+
+  /** Get floor range specifically for mapDesc (0x64) — full surface range 7→0 */
+  private getMapDescFloorRange(z: number): { startz: number; endz: number; zstep: number } {
+    const ovr = this.floorRangeOverride;
+    if (ovr) {
+      if (z > 7) {
+        return { startz: Math.max(z - ovr.minus, 0), endz: Math.min(z + ovr.plus, 15), zstep: 1 };
+      } else {
+        return { startz: Math.min(z + ovr.plus, 7), endz: Math.max(z - ovr.minus, 0), zstep: -1 };
+      }
+    }
+    if (z > 7) {
+      return { startz: z - 2, endz: Math.min(z + 2, 15), zstep: 1 };
+    } else {
+      // Surface mapDesc: TibiaRelic sends ALL surface floors 7→0
       return { startz: 7, endz: 0, zstep: -1 };
     }
   }
 
-  /** Clamp camZ to valid range [0..15] */
+
   private clampCamZ() {
     if (this.gs.camZ < 0) {
       if (this.unknownWarnCount < 20) {
@@ -501,7 +520,7 @@ export class PacketParser {
       return;
     }
 
-    const { startz, endz, zstep } = this.getFloorRange(z);
+    const { startz, endz, zstep } = this.getMapDescFloorRange(z);
     this.readMultiFloorArea(r, x - 8, y - 6, 18, 14, z, startz, endz, zstep);
     this.syncPlayerToCamera(prevZ);
 
@@ -804,14 +823,12 @@ export class PacketParser {
 
     try {
       if (g.camZ === 7) {
-        // Exiting underground to surface — TibiaRelic sends ALL surface floors (7→0)
-        // Old visible (z=8): [6,7,8,9,10]. New visible (z=7): [7,6,5,4,3,2,1,0]
-        // New floors are 5,4,3,2,1,0. Read each with appropriate perspective offset.
-        let skip = 0;
-        for (let nz = 5; nz >= 0; nz--) {
-          const offset = 8 - nz;
-          skip = this.readFloorArea(r, g.camX - 8, g.camY - 6, nz, 18, 14, offset, skip);
-        }
+        // Exiting underground to surface — read the newly visible floor (z=5)
+        // Old visible (z=8): [6,7,8,9,10]. New visible (z=7): [5,6,7]
+        // Only NEW floor is z=5. Read it with perspective offset = 8 - 5 = 3
+        const newFloor = Math.max(g.camZ - 2, 0);
+        const offset = 8 - newFloor;
+        this.readFloorArea(r, g.camX - 8, g.camY - 6, newFloor, 18, 14, offset, 0);
       } else if (g.camZ > 7) {
         // Underground going up — read the newly visible floor (camZ - 2)
         const nz = g.camZ - 2;
