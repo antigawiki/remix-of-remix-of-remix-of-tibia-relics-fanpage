@@ -61,11 +61,78 @@ jobs:
           echo "Fixed 0xB6 WalkCancel: 2B → 0B"
 
           # =============================================
+          # TALK OPCODE 0xAA — TibiaRelic adds u32 statementGuid
+          # =============================================
+
+          # 5. Talk (0xAA): TibiaRelic sends u32 guid BEFORE sender name
+          #    Every chat message causes +4B drift without this fix
+          sed -i '/void Parser::ParseTalk/,/^}/ {
+            /auto senderName/{
+              i\    /* TibiaRelic: skip u32 statementGuid before sender name */\n    reader.SkipU32();
+            }
+          }' lib/parser.cpp
+          echo "Fixed 0xAA Talk: added SkipU32 for statementGuid"
+
+          # =============================================
+          # MAP_DESC 0x64 — Mini position-only guard
+          # =============================================
+
+          # 6. MapDescription (0x64): TibiaRelic sends periodic position-only
+          #    packets (~5 bytes) that the full parser would consume as tile data
+          sed -i '/void Parser::ParseMapDescription.*DataReader/,/^}/ {
+            /Position_.X = reader.ReadU16/a\    /* TibiaRelic: guard against mini MAP_DESC (position-only, ~5B) */\n    if (reader.Remaining() < 100) {\n        return;\n    }
+          }' lib/parser.cpp
+          echo "Fixed 0x64 MapDesc: added mini-MAP_DESC guard"
+
+          # =============================================
+          # PLAYER STATS 0xA0 — No stamina in TibiaRelic
+          # =============================================
+
+          # 7. PlayerStats (0xA0): TibiaRelic sends 20 bytes (no stamina)
+          #    tibiarc reads stamina as u16 extra → +2B drift per stats update
+          sed -i '/void Parser::ParsePlayerStats/,/^}/ {
+            /Stamina/d
+          }' lib/parser.cpp
+          echo "Fixed 0xA0 PlayerStats: removed stamina read"
+
+          # =============================================
+          # MISSING OPCODES 0xA5, 0xA6, 0x63
+          # =============================================
+
+          # 8. SpellGroupCooldown (0xA5): u8 groupId + u32 delay = 5B
+          sed -i '/case 0xA8:/i\    case 0xA5:\n        reader.Skip(5);\n        break;' lib/parser.cpp
+          echo "Added 0xA5 SpellGroupCooldown: 5B"
+
+          # 9. MultiUseDelay (0xA6): u32 delay = 4B
+          sed -i '/case 0xA8:/i\    case 0xA6:\n        reader.SkipU32();\n        break;' lib/parser.cpp
+          echo "Added 0xA6 MultiUseDelay: 4B"
+
+          # 10. CreatureTurn (0x63): u32 creatureId + u8 direction = 5B
+          #     Standalone opcode that tibiarc may not handle at top level
+          sed -i '/case 0x64:/i\    case 0x63:\n        reader.Skip(5);\n        break;' lib/parser.cpp
+          echo "Added 0x63 CreatureTurn: 5B"
+
+          # =============================================
+          # OUTFIT WINDOW 0xC8 — Force u8 range (7.72 style)
+          # =============================================
+
+          # 11. OutfitWindow (0xC8): TibiaRelic uses u8+u8 range, not u16+u16
+          sed -i '/void Parser::ParseOutfitWindow/,/^}/ {
+            s/reader\.ReadU16()/reader.ReadU8()/g
+          }' lib/parser.cpp
+          echo "Fixed 0xC8 OutfitWindow: u16 range → u8 range"
+
+          # =============================================
           # VERIFICATION
           # =============================================
           echo "=== Verifying patches ==="
           grep -n "case 0xA8" lib/parser.cpp
           grep -n "WalkCancel 0 bytes" lib/parser.cpp
+          grep -n "statementGuid" lib/parser.cpp
+          grep -n "mini MAP_DESC" lib/parser.cpp
+          grep -n "case 0xA5" lib/parser.cpp
+          grep -n "case 0xA6" lib/parser.cpp
+          grep -n "case 0x63" lib/parser.cpp
           echo "All TibiaRelic protocol fixes applied successfully"
 
           # =============================================
