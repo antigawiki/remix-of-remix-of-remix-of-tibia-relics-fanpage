@@ -104,13 +104,10 @@ jobs:
           echo "Reverted 0x68 ScrollWest: 18x14 → 1×14"
 
           # 10. FloorUp (0xBE z==7): fork reads only 1 floor, standard reads 6 (5→0)
-          #     Replace the single-floor TibiaRelic block with the original 6-floor loop
-          python3 -c "
+          python3 << 'PYEOF'
 import re
 with open('lib/parser.cpp', 'r') as f:
     code = f.read()
-
-# Find the TibiaRelic single-floor block and replace with original loop
 old = re.search(
     r'/\* TibiaRelic: only the newly visible floor.*?\*/\s*'
     r'tileSkip = ParseFloorDescription\(reader,\s*'
@@ -123,7 +120,6 @@ old = re.search(
     r'3,\s*'
     r'tileSkip\);',
     code, re.DOTALL)
-
 if old:
     replacement = '''for (int zIdx = 5; zIdx >= 0; zIdx--) {
             tileSkip = ParseFloorDescription(reader,
@@ -139,10 +135,10 @@ if old:
     code = code[:old.start()] + replacement + code[old.end():]
     with open('lib/parser.cpp', 'w') as f:
         f.write(code)
-    print('Reverted FloorUp z==7: 1 floor → 6 floors (5→0)')
+    print('Reverted FloorUp z==7: 1 floor -> 6 floors (5->0)')
 else:
-    print('WARNING: FloorUp pattern not found — may already be standard')
-"
+    print('WARNING: FloorUp pattern not found -- may already be standard')
+PYEOF
 
           # =============================================
           # DIAGNOSTIC LOGGING (remove after debugging)
