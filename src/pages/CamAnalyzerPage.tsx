@@ -16,7 +16,6 @@ import { LineChart, Line, XAxis, YAxis, ReferenceDot } from 'recharts';
 import { DatLoader } from '@/lib/tibiaRelic/datLoader';
 import { analyzeCamFile, type AnalysisResult, type Anomaly, type FrameDetail } from '@/lib/tibiaRelic/camAnalyzer';
 import ProtocolLabTab from '@/components/cam-analyzer/ProtocolLabTab';
-import ProtocolDiagnosticTab from '@/components/cam-analyzer/ProtocolDiagnosticTab';
 
 function formatMs(ms: number): string {
   const s = Math.floor(ms / 1000);
@@ -132,7 +131,6 @@ export default function CamAnalyzerPage() {
         <Tabs defaultValue="analyzer" className="space-y-4">
           <TabsList>
             <TabsTrigger value="analyzer">Análise</TabsTrigger>
-            <TabsTrigger value="protocol-diag">Protocol Diagnostic</TabsTrigger>
             <TabsTrigger value="protocol-lab">Protocol Lab</TabsTrigger>
           </TabsList>
 
@@ -334,10 +332,6 @@ export default function CamAnalyzerPage() {
                 )}
               </>
             )}
-          </TabsContent>
-
-          <TabsContent value="protocol-diag">
-            <ProtocolDiagnosticTab fileBuffer={fileBuffer} fileName={fileName} loadDat={loadDat} />
           </TabsContent>
 
           <TabsContent value="protocol-lab">
