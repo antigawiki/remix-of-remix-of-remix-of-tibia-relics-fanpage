@@ -340,6 +340,60 @@ export class MapTileRenderer {
     return max;
   }
 
+  /**
+   * Diagnose cross-reference issues between DAT sprite IDs and SPR loader.
+   * Call after both SPR and DAT are loaded.
+   */
+  diagnose() {
+    const maxSprId = this.spr.count;
+    let totalItems = 0;
+    let validItems = 0;
+    let brokenItems = 0;
+    let noSpriteItems = 0;
+    const brokenList: Array<{ id: number; badSprites: number[]; total: number }> = [];
+    let firstBrokenId = Infinity;
+
+    for (const [id, it] of this.dat.items) {
+      totalItems++;
+      if (it.spriteIds.length === 0) {
+        noSpriteItems++;
+        continue;
+      }
+
+      const badSprites = it.spriteIds.filter(sid => sid > 0 && !this.spr.hasSprite(sid));
+      if (badSprites.length > 0) {
+        brokenItems++;
+        if (id < firstBrokenId) firstBrokenId = id;
+        if (brokenList.length < 20) {
+          brokenList.push({ id, badSprites: badSprites.slice(0, 5), total: it.spriteIds.length });
+        }
+      } else {
+        validItems++;
+      }
+    }
+
+    console.log(`[Diagnose] SPR count=${maxSprId}`);
+    console.log(`[Diagnose] DAT items: ${totalItems} total, ${validItems} valid, ${brokenItems} broken, ${noSpriteItems} no-sprites`);
+    if (firstBrokenId < Infinity) {
+      console.log(`[Diagnose] First broken item ID: ${firstBrokenId}`);
+    }
+    if (brokenList.length > 0) {
+      console.log(`[Diagnose] Broken items (first ${brokenList.length}):`);
+      for (const b of brokenList) {
+        console.log(`  item ${b.id}: ${b.badSprites.length}/${b.total} bad sprites, examples: [${b.badSprites.join(',')}]`);
+      }
+    }
+
+    // Check outfit sprites too
+    let brokenOutfits = 0;
+    for (const [, ot] of this.dat.outfits) {
+      if (ot.spriteIds.some(sid => sid > 0 && !this.spr.hasSprite(sid))) brokenOutfits++;
+    }
+    if (brokenOutfits > 0) {
+      console.log(`[Diagnose] ⚠ ${brokenOutfits} outfits have invalid sprite IDs`);
+    }
+  }
+
   private getSpriteCanvas(sid: number): HTMLCanvasElement | null {
     if (this.spriteCanvasCache.has(sid)) return this.spriteCanvasCache.get(sid)!;
     const imgData = this.spr.getSprite(sid);

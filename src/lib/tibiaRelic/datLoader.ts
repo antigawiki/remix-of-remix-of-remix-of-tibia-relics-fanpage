@@ -1,6 +1,7 @@
 /**
  * Loader do Tibia.dat - definições de items/outfits
  * Formato TibiaRelic 7.72 customizado com pat_z extra
+ * Inclui diagnóstico de parsing para identificar problemas
  */
 
 export interface ItemType {
@@ -48,27 +49,45 @@ export class DatLoader {
   outfits: Map<number, ItemType> = new Map();
   effects: Map<number, ItemType> = new Map();
   missiles: Map<number, ItemType> = new Map();
+  private signature = 0;
 
   load(data: ArrayBuffer) {
     const bytes = new Uint8Array(data);
     const view = new DataView(data);
     let p = 0;
 
-    /* const sig = */ view.getUint32(p, true); p += 4;
+    this.signature = view.getUint32(p, true); p += 4;
+    const sigHex = '0x' + this.signature.toString(16).toUpperCase().padStart(8, '0');
     const itemMaxId = view.getUint16(p, true); p += 2;
     const outfitMaxId = view.getUint16(p, true); p += 2;
     const effectMaxId = view.getUint16(p, true); p += 2;
     const missileMaxId = view.getUint16(p, true); p += 2;
+
+    console.log(`[DatLoader] signature=${sigHex}, fileSize=${data.byteLength}`);
+    console.log(`[DatLoader] maxIds: items=${itemMaxId}, outfits=${outfitMaxId}, effects=${effectMaxId}, missiles=${missileMaxId}`);
 
     const itemCount = itemMaxId - 100 + 1;
     const outfitCount = outfitMaxId;
     const effectCount = effectMaxId;
     const missileCount = missileMaxId;
 
+    let parseErrors = 0;
+    const flagStats = new Map<number, number>();
+
     for (let i = 0; i < itemCount; i++) {
-      const [it, np] = this.readEntry(bytes, view, p, true);
+      const startP = p;
+      const [it, np, flags] = this.readEntry(bytes, view, p, true);
       it.id = 100 + i;
       this.items.set(it.id, it);
+      for (const f of flags) flagStats.set(f, (flagStats.get(f) || 0) + 1);
+      
+      // Check for suspicious dimensions
+      if (it.width > 4 || it.height > 4 || it.anim > 16 || it.spriteIds.length > 256) {
+        if (parseErrors < 10) {
+          console.warn(`[DatLoader] ⚠ item ${it.id}: suspicious dims w=${it.width} h=${it.height} layers=${it.layers} patX=${it.patX} patY=${it.patY} patZ=${it.patZ} anim=${it.anim} sprites=${it.spriteIds.length} (parsed ${np - startP} bytes)`);
+        }
+        parseErrors++;
+      }
       p = np;
     }
     for (let i = 0; i < outfitCount; i++) {
@@ -90,35 +109,60 @@ export class DatLoader {
       p = np;
     }
 
-    // Verification checks
+    // Log flag usage stats
+    const sortedFlags = [...flagStats.entries()].sort((a, b) => a[0] - b[0]);
+    console.log(`[DatLoader] Flag usage:`, sortedFlags.map(([f, c]) => `0x${f.toString(16).padStart(2, '0')}:${c}`).join(' '));
+    
+    if (parseErrors > 0) {
+      console.warn(`[DatLoader] ⚠ ${parseErrors} items with suspicious dimensions (possible parse drift)`);
+    }
+
+    // Stats
+    let totalSprites = 0;
+    let zeroSpriteItems = 0;
+    let maxSpriteId = 0;
+    for (const [, it] of this.items) {
+      if (it.spriteIds.length === 0) zeroSpriteItems++;
+      for (const sid of it.spriteIds) {
+        totalSprites++;
+        if (sid > maxSpriteId) maxSpriteId = sid;
+      }
+    }
+    console.log(`[DatLoader] Items: ${this.items.size} loaded, ${zeroSpriteItems} with no sprites, maxSpriteId=${maxSpriteId}`);
+    console.log(`[DatLoader] Outfits: ${this.outfits.size}, Effects: ${this.effects.size}, Missiles: ${this.missiles.size}`);
+    console.log(`[DatLoader] Remaining bytes after parse: ${bytes.length - p}`);
+
     this.verify();
   }
 
   private verify() {
-    // Silent verification — only warn on mismatches
     const itemChecks: [number, number | null][] = [[102, 42], [408, 39], [870, 559]];
     for (const [id, expectedSpr] of itemChecks) {
       const it = this.items.get(id);
       if (!it) continue;
       const spr0 = it.spriteIds[0] ?? -1;
       if (expectedSpr !== null && spr0 !== expectedSpr) {
-        console.warn(`[DatLoader] item ${id}: sprite[0]=${spr0}, expected=${expectedSpr}`);
+        console.warn(`[DatLoader] ⚠ verify item ${id}: sprite[0]=${spr0}, expected=${expectedSpr}`);
+      } else {
+        console.log(`[DatLoader] ✓ verify item ${id}: sprite[0]=${spr0} OK`);
       }
     }
   }
 
   /**
-   * Read a single DAT entry (item, outfit, effect, or distance).
-   * @param hasPatZ - true for all types in version >= 7.55 (items, outfits, effects, missiles)
+   * Read a single DAT entry. Returns [ItemType, newPosition, flagsRead].
    */
-  private readEntry(bytes: Uint8Array, view: DataView, p: number, hasPatZ: boolean): [ItemType, number] {
+  private readEntry(bytes: Uint8Array, view: DataView, p: number, hasPatZ: boolean): [ItemType, number, number[]] {
     const it = createItemType();
+    const flagsRead: number[] = [];
 
     // Parse flags
     for (let iter = 0; iter < 100; iter++) {
       if (p >= bytes.length) break;
       const flag = bytes[p]; p++;
       if (flag === 0xFF) break;
+
+      flagsRead.push(flag);
 
       if (flag === 0x00) {
         it.isGround = true; it.stackPrio = 0;
@@ -161,9 +205,9 @@ export class DatLoader {
       else { p--; break; /* unknown flag */ }
     }
 
-    // Read dimensions — need at least 6 bytes (w,h,layers,patX,patY,anim) or 7 with patZ
+    // Read dimensions
     const minBytes = hasPatZ ? 8 : 7;
-    if (p + minBytes > bytes.length) return [it, p];
+    if (p + minBytes > bytes.length) return [it, p, flagsRead];
 
     it.width = Math.max(1, Math.min(bytes[p], 8)); p++;
     it.height = Math.max(1, Math.min(bytes[p], 8)); p++;
@@ -187,6 +231,6 @@ export class DatLoader {
       it.spriteIds.push(view.getUint16(p, true)); p += 2;
     }
 
-    return [it, p];
+    return [it, p, flagsRead];
   }
 }
