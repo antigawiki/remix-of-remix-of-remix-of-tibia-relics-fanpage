@@ -439,6 +439,7 @@ const TibiarcPlayer = ({ className }: TibiarcPlayerProps) => {
   const handleSeek = (val: number[]) => {
     const ms = val[0];
     setProgress(ms);
+    updateLightOverlay(ms);
 
     if (seekDebounceRef.current) clearTimeout(seekDebounceRef.current);
     seekingRef.current = true;
