@@ -576,6 +576,23 @@ export class PacketParser {
       r.skip(2);
       const c = this.readCreatureKnown(r);
       this.placeCreatureOnTile(c, x, y, z);
+    } else if (word === CR_OLD) {
+      // CR_OLD in AddThing: creature already known, just update direction
+      r.skip(2); // consume the CR_OLD marker
+      const cid = r.u32();
+      const dir = r.u8();
+      const c = this.gs.creatures.get(cid);
+      if (c) {
+        this.removeCreatureFromTile(cid, c.x, c.y, c.z);
+        if (c.x !== x || c.y !== y || c.z !== z) {
+          this.removeCreatureFromTile(cid, x, y, z);
+        }
+        c.direction = dir;
+        c.x = x; c.y = y; c.z = z;
+      }
+      const tile = this.gs.getTile(x, y, z);
+      tile.push(['cr', cid]);
+      this.gs.setTile(x, y, z, tile);
     } else if (word >= 100 && word <= 9999) {
       const iid = this.skipItem(r);
       const tile = this.gs.getTile(x, y, z);
