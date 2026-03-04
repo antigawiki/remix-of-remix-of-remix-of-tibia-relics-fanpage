@@ -1,105 +1,54 @@
 
 
-# Research: TTM and Game::Tibia::Cam repositories
+## Diagnóstico: Não é luz — é o floor range dos scrolls
 
-## Game::Tibia::Cam (athreef)
+Sua hipótese sobre luminância é criativa, mas **não é isso**. No protocolo Tibia 7.72, a luz não é enviada como dados extras por tile na rede. A luz funciona assim:
 
-**Verdict: Not useful.**
+- **Luz ambiente (0x82)**: 2 bytes (intensidade + cor) — já lido pelo parser
+- **Luz de criatura (0x8D)**: 6 bytes (creatureId + intensidade + cor) — já lido
+- **Luz de item**: vem do arquivo `.dat` (flag 0x15, 4 bytes), não do protocolo de rede
 
-This is a Perl library that converts TibiCam `.rec` files to `.pcap` (Wireshark captures). It handles only the old TibiCam format (XOR encrypted, Adler32 checksums). It has no protocol parsing logic and no rendering. The only output is pcap files for Wireshark analysis. Irrelevant to our TibiaRelic 7.72 WASM player.
+O parser lê todos esses corretamente. Os bytes sobrando não são dados de luz.
 
----
+### A causa real (confirmada pelo JSON que você enviou)
 
-## Tibia Time Machine (TTM) by tulio150
+O JSON mostra claramente:
 
-**Verdict: Highly valuable reference for protocol correctness.**
-
-TTM is a complete Tibia recording proxy/player supporting protocols 7.0 to 10.20, written in C++. It acts as a local proxy that intercepts game packets, saves them as `.ttm` files, and replays them through the real Tibia client. Key findings:
-
-### 1. File Formats Documentation (`File Formats.txt`)
-
-TTM documents **every** recording format precisely:
-- `.ttm` format: `u16 version + u8 hostLen + [host] + u32 totalTime + loop(u16 packetSize + payload + u8 nextType + delay)`
-- `.rec` (TibiCAM) v1-v6 with encryption details
-- `.tmv` (TibiaMovie) with gzip compression
-- `.cam` (TibiaCam TV) with LZMA compression
-- `.tcam`, `.byn`, `.recording` (TibiaCast) formats
-
-This means TTM could **convert** any of these formats into `.ttm` which tibiarc already supports. If we ever want to support other recording formats, TTM's format spec is the definitive reference.
-
-### 2. Video Light Control (`video.cpp` + `parser.cpp`)
-
-TTM has a `SetLight` command and `ConstructPlayerLight` function:
-
-```cpp
-// video.cpp line ~2018
-VOID SetLight(CONST BYTE Light) {
-    Parser->ConstructPlayerLight(Current->Login->PlayerID, Light);
-    if (!Proxy::SendConstructed()) return Logout();
-}
-
-// parser.cpp line ~2110
-VOID Parser700::ConstructPlayerLight(CONST DWORD PlayerID, CONST BYTE Level) CONST {
-    if (AllocPacket(Proxy::Extra, 7)) {
-        GetByte() = 0x8D;        // creature light opcode
-        GetDword() = PlayerID;
-        GetByte() = Level;       // 0-255
-        GetByte() = 0xD7;        // light color (white)
-        FinishPacket(Proxy::Extra);
-    }
-}
+```text
+150 anomalias — 100% são BYTES_LEFTOVER
+147 de 150 (98%) resolvidas pela estratégia A (7→0)
+0 DESYNCs, 0 PARSE_ERRORs
 ```
 
-TTM approaches lighting by **injecting a fake 0x8D (creature light) packet** into the stream, overriding the player's light radius. It doesn't modify the renderer; it modifies the protocol data. This is relevant because it confirms that tibiarc's C++ parser **already handles opcode 0x8D** — it reads `u32 creatureId + u8 level + u8 color`. The data just needs to flow through to the renderer (which currently ignores it).
+O problema é **exatamente o mesmo** que diagnosticamos antes: os **scrolls** (0x65-0x68) na superfície enviam dados para todos os floors visíveis (7→0), mas o parser usa `getFloorRange` que retorna apenas ±2 (3 floors). Os floors extras ficam não-lidos e são reportados como "leftover".
 
-### 3. Protocol Parser Structure (Parser Classes)
+### Por que a última correção piorou
 
-TTM uses an inheritance-based parser with versioned classes: `Parser700 → Parser710 → Parser713 → Parser720 → Parser722 → Parser735 → Parser761 → Parser771 → Parser820 → Parser830...`
+Na primeira tentativa, mudamos `getFloorRange` para 7→0 **E** mudamos `floorUp` para ler floors 5→0. Mas `floorUp`/`floorDown` só enviam dados do **único** novo floor visível, não todos os floors. Ler 6 floors quando só 1 foi enviado causou byte drift → DESYNCs.
 
-For our version (7.72), the relevant class is **`Parser771`**. Key details from Parser771:
-- Game login packet size is exactly **133 bytes** (`Misflow(133)`)
-- Packet format: `u8(0x0A) + u16(2) + u16(version) + RSA(128 bytes containing XTEA key + GM flag + u32 account + string name + string password)`
-- Outgoing game uses `ParseRSA()` + `ReadEncryptionKey()` for XTEA
+Na correção seguinte, revertemos `getFloorRange` para ±2 (conservador demais) e criamos `getMapDescFloorRange` (7→0 só para mapDesc). Isso resolveu o mapDesc mas os scrolls continuam com ±2 → voltamos aos mesmos leftover.
 
-### 4. GetPacketType — Opcodes the Proxy Needs to Parse
+### Correção cirúrgica
 
-TTM's `GetPacketType()` only parses specific opcodes it needs for proxy functionality (0x0A login, 0x15 info, 0x6F close container, 0x7C/7D/7F trade, 0x9F basic data, 0xA3 cancel target). For all other opcodes, it returns `TRUE` (pass-through). This confirms that **TTM does NOT parse most game opcodes** — it relies on the Tibia client for rendering.
+A solução é simples — dois pontos:
 
-### 5. Key Protocol Insight: Player Data (0x0A)
+1. **`getFloorRange`**: mudar para 7→0 na superfície (afeta scrolls)
+2. **`floorUp`/`floorDown`**: manter como está (lê apenas 1 floor novo)
+3. **Remover `getMapDescFloorRange`**: não precisa mais, pois `getFloorRange` já retorna 7→0
 
-For version 7.13+ (which includes 7.72):
-```cpp
-BOOL Parser713::ParsePlayerData() {
-    if (Overflow(7)) return FALSE;
-    PlayerID = GetDword();
-    if (GetWord() != 0x32) return FALSE;  // beat duration = 50ms
-    ReportBugs = GetByte();               // 1 byte for reportBugs
-    return TRUE;
-}
-```
+Isso funciona porque:
+- `scroll()` usa `getFloorRange` → agora lê 7→0 → consome todos os bytes ✓
+- `mapDesc()` pode usar `getFloorRange` também → mesmo resultado ✓
+- `floorUp`/`floorDown` chamam `readFloorArea` diretamente, **não usam** `getFloorRange` → não são afetados ✓
+- `readMultiFloorArea` já tem um guard `if (r.left() < 2) break` que para automaticamente quando não há mais dados para floors distantes → seguro ✓
 
-This is 7 bytes total: `u32 playerId + u16 beatDuration(0x32) + u8 reportBugs`. This matches our parser.
+O `readMultiFloorArea` já lida com floors vazios (skip markers de 2 bytes) e com exhaustion (para quando o buffer acaba). Não há risco de ler dados demais.
 
----
+### Mudanças
 
-## Actionable Findings
-
-### What can help our WASM player RIGHT NOW:
-
-1. **Light injection approach**: Instead of modifying the tibiarc renderer, we could inject modified opcode 0x8D packets into the recording data before feeding it to the WASM player — the same approach TTM uses. However, this was already rejected as "feio" (ugly) by the user.
-
-2. **TTM format conversion**: The `.ttm` format documentation is the most complete reference for Tibia recording formats ever published. If users have old TibiCAM or TibiaMovie recordings, we now know the exact binary format to convert them.
-
-3. **Protocol confidence**: TTM confirms that for 7.72 (Parser771), the protocol structure is identical to standard 7.7x Tibia, not custom. This means our byte drift issues in the WASM player are specifically caused by **TibiaRelic's custom opcodes** (0xA4, 0xA7, 0xA8, 0xB6) that diverge from standard Tibia 7.72, not from a fundamental protocol misunderstanding.
-
-### What CANNOT help:
-
-- TTM has no rendering engine — it forwards packets to the real Tibia client
-- TTM's parser is designed for proxy interception, not for visual playback
-- The opcode parsing in TTM is minimal (only what's needed for proxy operations)
-- Game::Tibia::Cam is completely irrelevant
-
-### Bottom Line:
-
-Neither repository provides a direct fix for the WASM player's current issues. The bugs stem from **TibiaRelic's custom protocol extensions** (non-standard opcodes with different payload sizes), which are unique to this server and not documented anywhere. The fix path remains: improve the `fix-scroll-floor-range.patch` and add additional `sed` patches to the build workflow for the divergent opcodes (0xA4, 0xA7, 0xA8, 0xB6).
+**`packetParser.ts`:**
+- `getFloorRange`: surface → `{ startz: 7, endz: 0, zstep: -1 }`
+- Remover `getMapDescFloorRange` (redundante)
+- `mapDesc`: usar `getFloorRange` em vez de `getMapDescFloorRange`
+- `floorUp`/`floorDown`: sem mudanças (já estão corretos)
 

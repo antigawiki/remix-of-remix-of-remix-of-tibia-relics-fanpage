@@ -35,6 +35,37 @@ jobs:
           git apply $GITHUB_WORKSPACE/tibiarc-player/fix-scroll-floor-range.patch
           echo "Patch applied successfully"
 
+      - name: Apply TibiaRelic protocol fixes (sed)
+        run: |
+          cd /tmp/tibiarc
+
+          # 1. SpellCooldown (0xA4): tibiarc reads 5B (u8 spellId + u32 cooldown)
+          #    TibiaRelic sends 2B (u8 spellId + u8 cooldown)
+          sed -i '/void Parser::ParseSpellCooldown/,/^}/ s/reader\.SkipU32()/reader.SkipU8()/' lib/parser.cpp
+          echo "Fixed 0xA4 SpellCooldown: 5B → 2B"
+
+          # 2. PlayerTactics (0xA7): tibiarc reads 4B (attack+chase+secure+pvp)
+          #    TibiaRelic sends 3B (no PvPMode field)
+          sed -i '/void Parser::ParsePlayerTactics/,/^}/ { /PvPMode/d }' lib/parser.cpp
+          echo "Fixed 0xA7 PlayerTactics: 4B → 3B"
+
+          # 3. CreatureSquare (0xA8): not handled in tibiarc → crash
+          #    TibiaRelic sends 5B (u32 creatureId + u8 color)
+          sed -i '/case 0xAA:/i\    case 0xA8:\n        reader.Skip(5);\n        break;' lib/parser.cpp
+          echo "Added 0xA8 CreatureSquare handler: 5B"
+
+          # 4. WalkCancel (0xB6): tibiarc reads 2B (u16 delay via ParseMoveDelay)
+          #    TibiaRelic sends 0B (no payload)
+          sed -i '/case 0xB6:/{n;s/.*ParseMoveDelay.*/        \/* TibiaRelic: WalkCancel 0 bytes *\//}' lib/parser.cpp
+          echo "Fixed 0xB6 WalkCancel: 2B → 0B"
+
+          # Verify all patches applied
+          echo "=== Verifying patches ==="
+          grep -n "SkipU8.*cooldown\|ParseSpellCooldown" lib/parser.cpp | head -5
+          grep -n "case 0xA8" lib/parser.cpp
+          grep -n "WalkCancel 0 bytes" lib/parser.cpp
+          echo "All TibiaRelic protocol fixes applied"
+
       - name: Build tibiarc library + web player
         run: |
           cd /tmp/tibiarc
