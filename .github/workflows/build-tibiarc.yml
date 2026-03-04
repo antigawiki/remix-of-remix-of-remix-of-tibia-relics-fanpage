@@ -73,16 +73,15 @@ jobs:
           # =============================================
 
           # 5. CreatureImpassable (0x92): remove assert that crashes on 7.72
+          #    Only remove the assert — do NOT force PassableCreatures=true globally
+          #    because TibiaRelic only sends 0x92 as a standalone opcode,
+          #    it does NOT include passable bytes in creature known/unknown packets.
           sed -i 's/ParseAssert(Version_.Protocol.PassableCreatures);//' lib/parser.cpp
           echo "Fixed 0x92 CreatureImpassable: removed assert"
 
-          # 6. OutfitAddons: force true for 7.72 (TibiaRelic sends addons)
-          sed -i '/Protocol.OutfitsU16 = true;/a\        Protocol.OutfitAddons = true;' lib/versions.cpp
-          echo "Forced OutfitAddons = true for 7.72"
-
-          # 7. PassableCreatures: force true for 7.72 (TibiaRelic sends passable flag)
-          sed -i '/Protocol.OutfitsU16 = true;/a\        Protocol.PassableCreatures = true;' lib/versions.cpp
-          echo "Forced PassableCreatures = true for 7.72"
+          # NOTE: OutfitAddons and PassableCreatures are intentionally LEFT as false
+          # for 7.72. Forcing them true adds extra bytes to EVERY creature read,
+          # causing immediate byte drift and black screen.
 
           # =============================================
           # DIAGNOSTIC LOGGING (remove after debugging)
