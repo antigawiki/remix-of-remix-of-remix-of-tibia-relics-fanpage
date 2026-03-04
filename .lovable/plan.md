@@ -1,68 +1,54 @@
 
 
-## Diagnóstico: A Causa Real dos "BYTES_LEFTOVER"
+## Diagnóstico: Não é luz — é o floor range dos scrolls
 
-Analisei o JSON do Protocol Lab e a causa raiz é definitiva:
+Sua hipótese sobre luminância é criativa, mas **não é isso**. No protocolo Tibia 7.72, a luz não é enviada como dados extras por tile na rede. A luz funciona assim:
 
-**O TibiaRelic envia TODOS os andares da superfície (7→0), não apenas ±2.**
+- **Luz ambiente (0x82)**: 2 bytes (intensidade + cor) — já lido pelo parser
+- **Luz de criatura (0x8D)**: 6 bytes (creatureId + intensidade + cor) — já lido
+- **Luz de item**: vem do arquivo `.dat` (flag 0x15, 4 bytes), não do protocolo de rede
 
-### Prova nos Dados
+O parser lê todos esses corretamente. Os bytes sobrando não são dados de luz.
 
-Frame 0 (z=7, payload=3362 bytes):
+### A causa real (confirmada pelo JSON que você enviou)
+
+O JSON mostra claramente:
 
 ```text
-Estratégia A (±2, lê floors 7,6,5):    2602 bytes consumidos → 759 bytes sobrando
-Estratégia C (±3, lê floors 7,6,5,4):  2696 bytes consumidos → 651 bytes sobrando  
-Estratégia E (7→0, lê floors 7→0):     2716 bytes consumidos → 0 bytes sobrando, 46 opcodes parseados!
+150 anomalias — 100% são BYTES_LEFTOVER
+147 de 150 (98%) resolvidas pela estratégia A (7→0)
+0 DESYNCs, 0 PARSE_ERRORs
 ```
 
-Os andares distantes custam apenas 2 bytes cada (marcador de skip 0xFFFF):
-- Floor 7: 1296 bytes (andar principal)
-- Floor 6: 816 bytes
-- Floor 5: 476 bytes
-- Floor 4: 108 bytes
-- Floor 3: 0 bytes (exhausted)
-- Floor 2: 2 bytes (skip marker)
-- Floor 1: 2 bytes (skip marker)
-- Floor 0: 2 bytes (skip marker)
+O problema é **exatamente o mesmo** que diagnosticamos antes: os **scrolls** (0x65-0x68) na superfície enviam dados para todos os floors visíveis (7→0), mas o parser usa `getFloorRange` que retorna apenas ±2 (3 floors). Os floors extras ficam não-lidos e são reportados como "leftover".
 
-Com ±2, paramos no floor 5. Os bytes dos floors 4-0 (114 bytes) ficam no buffer + 645 bytes de opcodes válidos (talk, effects, etc) = 759 bytes "leftover". Esses opcodes NUNCA são processados.
+### Por que a última correção piorou
 
-Frame 24 (z=7): estratégia A deixa 17 bytes, estratégia C (±3) deixa 0. O floor 4 tinha 36 bytes de dados.
+Na primeira tentativa, mudamos `getFloorRange` para 7→0 **E** mudamos `floorUp` para ler floors 5→0. Mas `floorUp`/`floorDown` só enviam dados do **único** novo floor visível, não todos os floors. Ler 6 floors quando só 1 foi enviado causou byte drift → DESYNCs.
 
-**150 de 150 anomalias são BYTES_LEFTOVER. Zero desyncs reais. O parser funciona corretamente — só não lê andares suficientes.**
+Na correção seguinte, revertemos `getFloorRange` para ±2 (conservador demais) e criamos `getMapDescFloorRange` (7→0 só para mapDesc). Isso resolveu o mapDesc mas os scrolls continuam com ±2 → voltamos aos mesmos leftover.
 
-### Plano de Correção
+### Correção cirúrgica
 
-A correção é simples e cirúrgica: mudar `getFloorRange` para ler todos os andares que o TibiaRelic envia.
+A solução é simples — dois pontos:
 
-**`packetParser.ts` — `getFloorRange`:**
+1. **`getFloorRange`**: mudar para 7→0 na superfície (afeta scrolls)
+2. **`floorUp`/`floorDown`**: manter como está (lê apenas 1 floor novo)
+3. **Remover `getMapDescFloorRange`**: não precisa mais, pois `getFloorRange` já retorna 7→0
 
-Atual:
-```typescript
-// Surface: ±2 floors only
-return { startz: Math.min(z + 2, 7), endz: Math.max(z - 2, 0), zstep: -1 };
-// Underground: z-2 to z+2
-return { startz: z - 2, endz: Math.min(z + 2, 15), zstep: 1 };
-```
+Isso funciona porque:
+- `scroll()` usa `getFloorRange` → agora lê 7→0 → consome todos os bytes ✓
+- `mapDesc()` pode usar `getFloorRange` também → mesmo resultado ✓
+- `floorUp`/`floorDown` chamam `readFloorArea` diretamente, **não usam** `getFloorRange` → não são afetados ✓
+- `readMultiFloorArea` já tem um guard `if (r.left() < 2) break` que para automaticamente quando não há mais dados para floors distantes → seguro ✓
 
-Novo:
-```typescript
-// Surface: FULL range 7→0 (TibiaRelic sends all surface floors)
-return { startz: 7, endz: 0, zstep: -1 };
-// Underground: FULL range z-2 → z+2 (manter ±2 por enquanto)
-return { startz: z - 2, endz: Math.min(z + 2, 15), zstep: 1 };
-```
+O `readMultiFloorArea` já lida com floors vazios (skip markers de 2 bytes) e com exhaustion (para quando o buffer acaba). Não há risco de ler dados demais.
 
-**`packetParser.ts` — `floorUp` e `floorDown`:**
+### Mudanças
 
-Os handlers de mudança de andar também precisam ser ajustados para ler a quantidade correta de novos floors quando o jogador sobe/desce. Atualmente leem apenas 1 novo floor (o ±2 mais distante). Com range completo na superfície, quando sobe de z=8→z=7, precisa ler todos os floors de superfície que ficaram visíveis (5 a 0), não apenas o floor 5.
-
-**`camProtocolLab.ts`:**
-
-Atualizar a estratégia "A" para refletir o novo range (7→0) e remover a estratégia E (que se torna idêntica à A). Adicionar uma nota no resumo indicando que o range correto foi identificado.
-
-### Resultado Esperado
-
-Com essa mudança, todos os bytes de cada frame serão consumidos corretamente. Os 759 bytes de opcodes que hoje são "perdidos" (talks, effects, creature updates) passarão a ser processados, corrigindo problemas visuais no player como chat messages faltando, efeitos não aparecendo, e estados de criaturas desatualizados.
+**`packetParser.ts`:**
+- `getFloorRange`: surface → `{ startz: 7, endz: 0, zstep: -1 }`
+- Remover `getMapDescFloorRange` (redundante)
+- `mapDesc`: usar `getFloorRange` em vez de `getMapDescFloorRange`
+- `floorUp`/`floorDown`: sem mudanças (já estão corretos)
 
