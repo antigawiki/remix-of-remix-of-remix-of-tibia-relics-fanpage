@@ -26,6 +26,8 @@ export interface PacketParserOptions {
   outfitWindowRangeU16?: boolean;
   floorRangeOverride?: { plus: number; minus: number };
   traceMode?: boolean;
+  /** When true, parsing errors are re-thrown instead of silently swallowed */
+  strictMode?: boolean;
 }
 
 export class PacketParser {
@@ -40,6 +42,10 @@ export class PacketParser {
   public traceLog: TraceEntry[] = [];
   /** Last parse error message — used by protocol lab */
   public lastError: string | null = null;
+  /** When true, parsing errors are re-thrown instead of silently swallowed */
+  public strictMode = false;
+  /** Bytes remaining in the buffer after last process() call */
+  public bytesLeftAfterProcess = 0;
 
   public debugLogger: DebugLogger | null = null;
   /** Opcodes processed in the last process() call — used by CamAnalyzer */
@@ -50,6 +56,7 @@ export class PacketParser {
     this.outfitWindowRangeU16 = opts.outfitWindowRangeU16 ?? this.looktypeU16;
     this.floorRangeOverride = opts.floorRangeOverride;
     this.traceMode = !!opts.traceMode;
+    this.strictMode = !!opts.strictMode;
   }
 
   /** Update the floor range override at runtime */
@@ -219,6 +226,7 @@ export class PacketParser {
   process(payload: Uint8Array) {
     this.lastFrameOpcodes = [];
     this.lastError = null;
+    this.bytesLeftAfterProcess = 0;
     if (this.traceMode) this.traceLog = [];
     const r = new Buf(payload);
     if (payload.length === 0) return;
@@ -235,8 +243,10 @@ export class PacketParser {
       }
     } catch (e: any) {
       this.lastError = e?.message || String(e);
+      this.bytesLeftAfterProcess = r.left();
       throw e;
     }
+    this.bytesLeftAfterProcess = r.left();
   }
 
   /** Demux TCP sub-packets: read u16 length prefix, then opcodes within each sub-packet */
@@ -255,6 +265,7 @@ export class PacketParser {
         this.processDirectOpcodes(r, subEnd);
         r.pos = subEnd; // ensure alignment even if opcode parse stopped early
       } catch (e) {
+        if (this.strictMode) throw e;
         if (this.frameErrorCount < 30) {
           this.frameErrorCount++;
           console.warn(`[PacketParser] Error in TCP demux:`, e);
@@ -276,6 +287,7 @@ export class PacketParser {
         this.processTcpDemux(r, endPos);
         return;
       } catch (e) {
+        if (this.strictMode) throw e;
         if (this.frameErrorCount < 30) {
           this.frameErrorCount++;
           if (e instanceof BufOverflowError) {
@@ -299,6 +311,7 @@ export class PacketParser {
           break;
         }
       } catch (e) {
+        if (this.strictMode) throw e;
         break;
       }
     }
