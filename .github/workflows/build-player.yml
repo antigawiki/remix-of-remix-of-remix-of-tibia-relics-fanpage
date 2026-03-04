@@ -28,6 +28,12 @@ jobs:
         run: |
           git clone https://github.com/antigawiki/tibiarc.git /tmp/tibiarc
 
+      - name: Apply scroll floor range patch
+        run: |
+          cd /tmp/tibiarc
+          git apply $GITHUB_WORKSPACE/tibiarc-player/fix-scroll-floor-range.patch
+          echo "Applied fix-scroll-floor-range.patch"
+
       - name: Copy web player source
         run: |
           cp tibiarc-player/web_player.cpp /tmp/tibiarc/web_player.cpp
