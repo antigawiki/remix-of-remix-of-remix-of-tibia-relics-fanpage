@@ -240,6 +240,7 @@ const TibiarcPlayer = ({ className, onStateChange }: TibiarcPlayerProps) => {
         const playing = safeCall(mod, 'is_playing', 'number', [], [], 1);
         setProgress(p);
         if (p > 0) lastGoodProgressRef.current = p;
+        onStateChange?.({ camBuffer: camBufferRef.current, progress: p, isPlaying: !!playing });
         
 
         if (!playing) {
