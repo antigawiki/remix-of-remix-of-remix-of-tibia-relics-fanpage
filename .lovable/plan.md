@@ -1,54 +1,57 @@
 
 
-## Diagnóstico: Não é luz — é o floor range dos scrolls
+# Root Cause Analysis: TibiaRelic Protocol vs tibiarc C++ Parser
 
-Sua hipótese sobre luminância é criativa, mas **não é isso**. No protocolo Tibia 7.72, a luz não é enviada como dados extras por tile na rede. A luz funciona assim:
+## The Real Problem
 
-- **Luz ambiente (0x82)**: 2 bytes (intensidade + cor) — já lido pelo parser
-- **Luz de criatura (0x8D)**: 6 bytes (creatureId + intensidade + cor) — já lido
-- **Luz de item**: vem do arquivo `.dat` (flag 0x15, 4 bytes), não do protocolo de rede
+After comparing the **tibiarc C++ parser** (used by the WASM player) against the **JS PacketParser** (hand-tuned for TibiaRelic), I found **multiple critical protocol mismatches**. The C++ parser expects vanilla Tibia 7.72, but TibiaRelic uses a custom protocol with different payload sizes for several opcodes. Each mismatch causes **byte drift** — the parser reads too many or too few bytes, causing all subsequent data to be misinterpreted (wrong creature IDs, ghost sprites, frozen animations).
 
-O parser lê todos esses corretamente. Os bytes sobrando não são dados de luz.
-
-### A causa real (confirmada pelo JSON que você enviou)
-
-O JSON mostra claramente:
+## Confirmed Protocol Mismatches (C++ vs TibiaRelic)
 
 ```text
-150 anomalias — 100% são BYTES_LEFTOVER
-147 de 150 (98%) resolvidas pela estratégia A (7→0)
-0 DESYNCs, 0 PARSE_ERRORs
+Opcode  | Name              | C++ reads     | TibiaRelic sends | Drift
+--------|-------------------|---------------|------------------|------
+0x9A    | PlayerPos         | NOT HANDLED   | pos3 (5 bytes)   | CRASH
+0xA4    | SpellCooldown     | u8+u32 (5B)   | u16 (2B)         | +3B
+0xA7    | PlayerTactics     | 4× u8 (4B)    | 3× u8 (3B)      | +1B
+0xA8    | CreatureSquare    | NOT HANDLED   | u32+u8 (5B)      | CRASH
+0xB6    | WalkCancel        | u16 (2B)      | no payload (0B)  | +2B
+0xB7    | UnjustifiedPts    | 7 bytes       | not used (0B)    | +7B
+0xB8    | PvPSituations     | u8 (1B)       | not used (0B)    | +1B
+0x92    | CreatureImpass.   | ASSERT FAIL   | u32+u8 (5B)      | CRASH
+0x96    | OpenEditText      | +author str   | 1 string only    | +N B
+0x14    | Error/MOTD        | NOT HANDLED   | u16+string       | CRASH
 ```
 
-O problema é **exatamente o mesmo** que diagnosticamos antes: os **scrolls** (0x65-0x68) na superfície enviam dados para todos os floors visíveis (7→0), mas o parser usa `getFloorRange` que retorna apenas ±2 (3 floors). Os floors extras ficam não-lidos e são reportados como "leftover".
+**Any single "CRASH" opcode or drift >= 1 byte corrupts ALL subsequent parsing for the entire frame**, causing the wrong IDs, ghost creatures, and frozen animations you're seeing.
 
-### Por que a última correção piorou
+## Why Previous Patches Failed
 
-Na primeira tentativa, mudamos `getFloorRange` para 7→0 **E** mudamos `floorUp` para ler floors 5→0. Mas `floorUp`/`floorDown` só enviam dados do **único** novo floor visível, não todos os floors. Ler 6 floors quando só 1 foi enviado causou byte drift → DESYNCs.
+The `sed` / `.patch` approaches only tried to fix the **floor range** in `ParseMapDescription`. But the floor range was never the root cause — it's the **opcode payload size mismatches** above. Even with the correct floor range, if `0x9A` or `0xA4` appears in any frame before a map read, the parser drifts and reads garbage data as tile/creature information.
 
-Na correção seguinte, revertemos `getFloorRange` para ±2 (conservador demais) e criamos `getMapDescFloorRange` (7→0 só para mapDesc). Isso resolveu o mapDesc mas os scrolls continuam com ±2 → voltamos aos mesmos leftover.
+## Proposed Fix: Two-Phase Approach
 
-### Correção cirúrgica
+### Phase 1: Build a Binary Diagnostic Tool
+Create a page that loads the uploaded `.cam` file and processes it frame-by-frame with the JS parser (which works correctly), logging:
+- Every opcode encountered, its position, and bytes consumed
+- Compare against what the C++ parser *would* read for each opcode
+- Flag every frame where drift would occur
+- Output a complete "protocol specification" for TibiaRelic
 
-A solução é simples — dois pontos:
+This will give us a definitive list of every protocol difference.
 
-1. **`getFloorRange`**: mudar para 7→0 na superfície (afeta scrolls)
-2. **`floorUp`/`floorDown`**: manter como está (lê apenas 1 floor novo)
-3. **Remover `getMapDescFloorRange`**: não precisa mais, pois `getFloorRange` já retorna 7→0
+### Phase 2: Fork-Level C++ Fix
+With the complete protocol spec, apply targeted fixes to the `antigawiki/tibiarc` fork:
+- Add missing opcode handlers (0x9A, 0xA8, 0x14)
+- Fix payload sizes for existing handlers (0xA4, 0xA7, 0xB6)
+- Disable opcodes not used by TibiaRelic (0xB7, 0xB8, 0x92 assertion)
+- These changes go directly into the fork source code (not patches)
 
-Isso funciona porque:
-- `scroll()` usa `getFloorRange` → agora lê 7→0 → consome todos os bytes ✓
-- `mapDesc()` pode usar `getFloorRange` também → mesmo resultado ✓
-- `floorUp`/`floorDown` chamam `readFloorArea` diretamente, **não usam** `getFloorRange` → não são afetados ✓
-- `readMultiFloorArea` já tem um guard `if (r.left() < 2) break` que para automaticamente quando não há mais dados para floors distantes → seguro ✓
+### Data Files (.dat, .spr, .pic)
+The DatLoader flag parsing in JS matches the tibiarc C++ `InitTypeProperties` for 7.55+ correctly — flag order, payload sizes, and sprite index reading all align. The `.spr` loader (RLE decode with u16 sprite count) and `.pic` usage are also standard. **The data files are NOT the problem** — the protocol parsing is.
 
-O `readMultiFloorArea` já lida com floors vazios (skip markers de 2 bytes) e com exhaustion (para quando o buffer acaba). Não há risco de ler dados demais.
-
-### Mudanças
-
-**`packetParser.ts`:**
-- `getFloorRange`: surface → `{ startz: 7, endz: 0, zstep: -1 }`
-- Remover `getMapDescFloorRange` (redundante)
-- `mapDesc`: usar `getFloorRange` em vez de `getMapDescFloorRange`
-- `floorUp`/`floorDown`: sem mudanças (já estão corretos)
+## Implementation Priority
+1. Build the diagnostic tool against the uploaded `.cam` to catalog every opcode occurrence
+2. Generate a complete TibiaRelic protocol specification
+3. Apply fixes to the C++ fork and rebuild the WASM
 
