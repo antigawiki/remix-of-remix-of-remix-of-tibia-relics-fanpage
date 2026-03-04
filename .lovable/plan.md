@@ -1,54 +1,40 @@
 
 
-## Diagnóstico: Não é luz — é o floor range dos scrolls
+## Diagnóstico: Mensagens acumulando durante seek/playback
 
-Sua hipótese sobre luminância é criativa, mas **não é isso**. No protocolo Tibia 7.72, a luz não é enviada como dados extras por tile na rede. A luz funciona assim:
+### O problema
 
-- **Luz ambiente (0x82)**: 2 bytes (intensidade + cor) — já lido pelo parser
-- **Luz de criatura (0x8D)**: 6 bytes (creatureId + intensidade + cor) — já lido
-- **Luz de item**: vem do arquivo `.dat` (flag 0x15, 4 bytes), não do protocolo de rede
-
-O parser lê todos esses corretamente. Os bytes sobrando não são dados de luz.
-
-### A causa real (confirmada pelo JSON que você enviou)
-
-O JSON mostra claramente:
+Olhando o `web_player.cpp`, a função `seek()` reproduz todos os frames do início até o ponto desejado, mas **nunca limpa as mensagens acumuladas**. Cada frame processado adiciona mensagens (chat, sistema, loot) ao `g_gamestate->Messages`, e no final do seek, centenas de mensagens de diferentes momentos da gravação ficam empilhadas na tela.
 
 ```text
-150 anomalias — 100% são BYTES_LEFTOVER
-147 de 150 (98%) resolvidas pela estratégia A (7→0)
-0 DESYNCs, 0 PARSE_ERRORs
+seek(60000ms)
+  → replay frame 0..600 (cada um adiciona mensagens)
+  → DeduplicateCreatures() ✓
+  → Messages.Prune() ✗  ← FALTANDO
+  → RenderFrame() → desenha TODAS as mensagens acumuladas
 ```
 
-O problema é **exatamente o mesmo** que diagnosticamos antes: os **scrolls** (0x65-0x68) na superfície enviam dados para todos os floors visíveis (7→0), mas o parser usa `getFloorRange` que retorna apenas ±2 (3 floors). Os floors extras ficam não-lidos e são reportados como "leftover".
+O `MainLoop()` faz `Messages.Prune(currentTick)` a cada tick, mas o `seek()` não faz. E mesmo durante playback normal em velocidade alta (2x, 4x, 8x), as mensagens se acumulam mais rápido do que são removidas.
 
-### Por que a última correção piorou
+### Solução
 
-Na primeira tentativa, mudamos `getFloorRange` para 7→0 **E** mudamos `floorUp` para ler floors 5→0. Mas `floorUp`/`floorDown` só enviam dados do **único** novo floor visível, não todos os floors. Ler 6 floors quando só 1 foi enviado causou byte drift → DESYNCs.
-
-Na correção seguinte, revertemos `getFloorRange` para ±2 (conservador demais) e criamos `getMapDescFloorRange` (7→0 só para mapDesc). Isso resolveu o mapDesc mas os scrolls continuam com ±2 → voltamos aos mesmos leftover.
-
-### Correção cirúrgica
-
-A solução é simples — dois pontos:
-
-1. **`getFloorRange`**: mudar para 7→0 na superfície (afeta scrolls)
-2. **`floorUp`/`floorDown`**: manter como está (lê apenas 1 floor novo)
-3. **Remover `getMapDescFloorRange`**: não precisa mais, pois `getFloorRange` já retorna 7→0
-
-Isso funciona porque:
-- `scroll()` usa `getFloorRange` → agora lê 7→0 → consome todos os bytes ✓
-- `mapDesc()` pode usar `getFloorRange` também → mesmo resultado ✓
-- `floorUp`/`floorDown` chamam `readFloorArea` diretamente, **não usam** `getFloorRange` → não são afetados ✓
-- `readMultiFloorArea` já tem um guard `if (r.left() < 2) break` que para automaticamente quando não há mais dados para floors distantes → seguro ✓
-
-O `readMultiFloorArea` já lida com floors vazios (skip markers de 2 bytes) e com exhaustion (para quando o buffer acaba). Não há risco de ler dados demais.
+Adicionar `g_gamestate->Messages.Prune(g_currentTick.count())` na função `seek()` do `web_player.cpp`, logo após processar todos os frames e antes de renderizar. Isso garante que apenas mensagens relevantes ao momento atual sejam exibidas.
 
 ### Mudanças
 
-**`packetParser.ts`:**
-- `getFloorRange`: surface → `{ startz: 7, endz: 0, zstep: -1 }`
-- Remover `getMapDescFloorRange` (redundante)
-- `mapDesc`: usar `getFloorRange` em vez de `getMapDescFloorRange`
-- `floorUp`/`floorDown`: sem mudanças (já estão corretos)
+| Arquivo | O que fazer |
+|---------|------------|
+| `tibiarc-player/web_player.cpp` | Adicionar `Messages.Prune()` na função `seek()` antes de `RenderFrame()` |
+| `.github/workflows/build-tibiarc.yml` | Nenhuma mudança necessária — o fix é no source |
+
+### Detalhe da mudança
+
+Na função `seek()`, após o loop de replay e antes de `DeduplicateCreatures()`:
+
+```cpp
+// Prune all messages older than current tick to prevent accumulation
+g_gamestate->Messages.Prune(g_currentTick.count());
+```
+
+Após o rebuild do WASM, as mensagens serão limpas corretamente ao dar seek, e apenas mensagens do momento atual aparecerão.
 
