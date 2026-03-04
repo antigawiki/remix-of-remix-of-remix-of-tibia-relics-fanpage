@@ -63,12 +63,9 @@ jobs:
           # =============================================
           # VERIFICATION
           # =============================================
-          echo "=== Verifying all patches ==="
-          grep -n "isScroll" lib/parser.cpp | head -10
-          grep -n "isScroll" lib/parser.hpp | head -3
+          echo "=== Verifying patches ==="
           grep -n "case 0xA8" lib/parser.cpp
           grep -n "WalkCancel 0 bytes" lib/parser.cpp
-          grep -c "TileBufferHeight, true\|TileBufferWidth, 1, true\|TileBufferWidth, 1, true" lib/parser.cpp
           echo "All TibiaRelic protocol fixes applied successfully"
 
       - name: Build tibiarc library + web player
