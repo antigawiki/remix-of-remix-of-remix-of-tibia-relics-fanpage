@@ -74,6 +74,37 @@ jobs:
           grep -n "WalkCancel 0 bytes" lib/parser.cpp
           echo "All TibiaRelic protocol fixes applied successfully"
 
+          # =============================================
+          # PROTOCOL FLAGS & SAFETY PATCHES
+          # =============================================
+
+          # 5. CreatureImpassable (0x92): remove assert that crashes on 7.72
+          sed -i 's/ParseAssert(Version_.Protocol.PassableCreatures);//' lib/parser.cpp
+          echo "Fixed 0x92 CreatureImpassable: removed assert"
+
+          # 6. OutfitAddons: force true for 7.72 (TibiaRelic sends addons)
+          sed -i '/Protocol.OutfitsU16 = true;/a\        Protocol.OutfitAddons = true;' lib/versions.cpp
+          echo "Forced OutfitAddons = true for 7.72"
+
+          # 7. PassableCreatures: force true for 7.72 (TibiaRelic sends passable flag)
+          sed -i '/Protocol.OutfitsU16 = true;/a\        Protocol.PassableCreatures = true;' lib/versions.cpp
+          echo "Forced PassableCreatures = true for 7.72"
+
+          # =============================================
+          # DIAGNOSTIC LOGGING (remove after debugging)
+          # =============================================
+          sed -i 's/switch (reader.ReadU8()) {/auto _op = reader.ReadU8(); printf("[DIAG] opcode=0x%02X rem=%zu\\n", _op, reader.Remaining()); switch (_op) {/' lib/parser.cpp
+          echo "Added diagnostic opcode logging"
+
+          # =============================================
+          # VERIFICATION
+          # =============================================
+          echo "=== Verifying new patches ==="
+          grep -n "OutfitAddons" lib/versions.cpp
+          grep -n "PassableCreatures" lib/versions.cpp
+          grep -n "DIAG" lib/parser.cpp | head -3
+          echo "All patches verified"
+
       - name: Build tibiarc library + web player
         run: |
           cd /tmp/tibiarc

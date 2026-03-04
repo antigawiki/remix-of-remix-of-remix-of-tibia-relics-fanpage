@@ -1,70 +1,54 @@
 
 
-## Diagnóstico: O crash no cave provavelmente é causado por protocol flags erradas no C++ 7.72
+## Diagnóstico: Não é luz — é o floor range dos scrolls
 
-Analisei o código-fonte completo do tibiarc (`parser.cpp`, `versions.cpp`) para entender exatamente quais flags de protocolo estão ativas na versão 7.72 e onde há risco de byte drift.
+Sua hipótese sobre luminância é criativa, mas **não é isso**. No protocolo Tibia 7.72, a luz não é enviada como dados extras por tile na rede. A luz funciona assim:
 
-### Flags de protocolo para 7.72
+- **Luz ambiente (0x82)**: 2 bytes (intensidade + cor) — já lido pelo parser
+- **Luz de criatura (0x8D)**: 6 bytes (creatureId + intensidade + cor) — já lido
+- **Luz de item**: vem do arquivo `.dat` (flag 0x15, 4 bytes), não do protocolo de rede
 
-O tibiarc configura as seguintes flags como **TRUE** para 7.72:
-- SkullIcon (7.20+), ShieldIcon (7.24+), OutfitsU16 (7.70+), ReportMessages (7.70+)
+O parser lê todos esses corretamente. Os bytes sobrando não são dados de luz.
 
-E **FALSE** (o que pode ser o problema):
-- **OutfitAddons** (7.80+) — se TibiaRelic envia addons, falta 1 byte por creature
-- **SpeakerLevel** (7.80+) — se TibiaRelic envia speaker level, faltam 2 bytes por talk
-- **Stamina** (7.80+) — se TibiaRelic envia stamina, faltam 2 bytes no player data
-- **PassableCreatures** (8.53+) — se TibiaRelic envia passable flag, falta 1 byte por creature
+### A causa real (confirmada pelo JSON que você enviou)
 
-### Bug crítico encontrado: Opcode 0x92 (CreatureImpassable)
+O JSON mostra claramente:
 
-O `ParseCreatureImpassable` tem um `ParseAssert(Version_.Protocol.PassableCreatures)` que é **FALSE para 7.72**. Se TibiaRelic envia o opcode 0x92, o parser **LANÇA EXCEÇÃO e perde o frame inteiro**. Este opcode é typicamente enviado quando criaturas se movem em áreas densas — exatamente caves!
-
-Da mesma forma, outros opcodes podem causar problemas se TibiaRelic os enviar com dados diferentes do esperado pelo 7.72 padrão.
-
-### Plano: Patches no C++ + diagnóstico + rebuild
-
-**Passo 1: Adicionar patches preventivos ao workflow de build**
-
-Editar `.github/workflows/build-player.yml` para adicionar novos sed commands:
-
-```bash
-# 5. CreatureImpassable (0x92): remove assert que crasha em 7.72
-sed -i 's/ParseAssert(Version_.Protocol.PassableCreatures);//' lib/parser.cpp
-
-# 6. OutfitAddons: forçar true para 7.72 (TibiaRelic pode enviar addons)
-sed -i '/Protocol.OutfitAddons = true;/d' lib/versions.cpp
-sed -i '/Protocol.OutfitsU16 = true;/a\        Protocol.OutfitAddons = true;' lib/versions.cpp
-
-# 7. Passable creature in CR_OLD (0x63): remove assert se existir
-sed -i '/PassableCreatureUpdate/d' lib/parser.cpp
+```text
+150 anomalias — 100% são BYTES_LEFTOVER
+147 de 150 (98%) resolvidas pela estratégia A (7→0)
+0 DESYNCs, 0 PARSE_ERRORs
 ```
 
-**Passo 2: Adicionar printf diagnóstico para validar**
+O problema é **exatamente o mesmo** que diagnosticamos antes: os **scrolls** (0x65-0x68) na superfície enviam dados para todos os floors visíveis (7→0), mas o parser usa `getFloorRange` que retorna apenas ±2 (3 floors). Os floors extras ficam não-lidos e são reportados como "leftover".
 
-Adicionar printf ao redor do dispatch de opcodes no `ParseNext` para logar cada opcode processado e bytes restantes. Isso permitirá ver no console do browser exatamente onde o parsing falha:
+### Por que a última correção piorou
 
-```bash
-# Diagnóstico: logar cada opcode
-sed -i 's/switch (reader.ReadU8()) {/auto _op = reader.ReadU8(); printf("[DIAG] opcode=0x%02X rem=%zu\\n", _op, reader.Remaining()); switch (_op) {/' lib/parser.cpp
-```
+Na primeira tentativa, mudamos `getFloorRange` para 7→0 **E** mudamos `floorUp` para ler floors 5→0. Mas `floorUp`/`floorDown` só enviam dados do **único** novo floor visível, não todos os floors. Ler 6 floors quando só 1 foi enviado causou byte drift → DESYNCs.
 
-**Passo 3: Rebuild via GitHub Actions**
+Na correção seguinte, revertemos `getFloorRange` para ±2 (conservador demais) e criamos `getMapDescFloorRange` (7→0 só para mapDesc). Isso resolveu o mapDesc mas os scrolls continuam com ±2 → voltamos aos mesmos leftover.
 
-Disparar o workflow `build-player.yml` para recompilar o WASM com os patches.
+### Correção cirúrgica
 
-**Passo 4: Testar e iterar**
+A solução é simples — dois pontos:
 
-Com os logs de diagnóstico, o user carrega o arquivo da cave problemática e verifica o console. Os printf mostrarão exatamente qual opcode falha e quantos bytes sobram.
+1. **`getFloorRange`**: mudar para 7→0 na superfície (afeta scrolls)
+2. **`floorUp`/`floorDown`**: manter como está (lê apenas 1 floor novo)
+3. **Remover `getMapDescFloorRange`**: não precisa mais, pois `getFloorRange` já retorna 7→0
+
+Isso funciona porque:
+- `scroll()` usa `getFloorRange` → agora lê 7→0 → consome todos os bytes ✓
+- `mapDesc()` pode usar `getFloorRange` também → mesmo resultado ✓
+- `floorUp`/`floorDown` chamam `readFloorArea` diretamente, **não usam** `getFloorRange` → não são afetados ✓
+- `readMultiFloorArea` já tem um guard `if (r.left() < 2) break` que para automaticamente quando não há mais dados para floors distantes → seguro ✓
+
+O `readMultiFloorArea` já lida com floors vazios (skip markers de 2 bytes) e com exhaustion (para quando o buffer acaba). Não há risco de ler dados demais.
 
 ### Mudanças
 
-| Arquivo | Mudança |
-|---------|---------|
-| `.github/workflows/build-player.yml` | Adicionar sed patches para 0x92, OutfitAddons, e printf diagnóstico |
-
-### Nota importante
-
-Se OutfitAddons for a causa, cada creature seen (0x61), creature updated (0x62), creature outfit (0x8E), e outfit dialog (0xC8) passarão a ler o byte extra de addons. Em caves com muitas criaturas, isto resolve dezenas de bytes de drift por frame.
-
-Após confirmar quais patches funcionam via diagnóstico, removeremos os printf e faremos um build final limpo.
+**`packetParser.ts`:**
+- `getFloorRange`: surface → `{ startz: 7, endz: 0, zstep: -1 }`
+- Remover `getMapDescFloorRange` (redundante)
+- `mapDesc`: usar `getFloorRange` em vez de `getMapDescFloorRange`
+- `floorUp`/`floorDown`: sem mudanças (já estão corretos)
 
