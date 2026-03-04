@@ -13,7 +13,7 @@
      void ParseAmbientLight(DataReader &reader, EventList &events);
 --- a/lib/parser.cpp
 +++ b/lib/parser.cpp
-@@ -417,7 +417,8 @@ void Parser::ParseMapDescription(DataReader &reader,
+@@ -417,18 +417,26 @@ void Parser::ParseMapDescription(DataReader &reader,
                                   EventList &events,
                                   int xOffset,
                                   int yOffset,
@@ -24,7 +24,7 @@
      int zIdx, endZ, zStep;
      uint16_t tileSkip;
  
-@@ -426,7 +427,14 @@ void Parser::ParseMapDescription(DataReader &reader,
+     if (Position_.Z > 7) {
          zIdx = Position_.Z - 2;
          endZ = std::min<int>(15, Position_.Z + 2);
          zStep = 1;
