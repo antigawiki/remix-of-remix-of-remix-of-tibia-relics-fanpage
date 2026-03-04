@@ -1,5 +1,27 @@
 --- a/lib/parser.cpp
 +++ b/lib/parser.cpp
+@@ -436,12 +436,12 @@ void Parser::ParseMapDescription(DataReader &reader,
+ 
+     tileSkip = 0;
+ 
+     for (; zIdx != (endZ + zStep); zIdx += zStep) {
++        if (reader.Remaining() < 2) break;
+         tileSkip = ParseFloorDescription(reader,
+                                          events,
+                                          Position_.X + xOffset,
+                                          Position_.Y + yOffset,
+                                          zIdx,
+                                          width,
+                                          height,
+                                          Position_.Z - zIdx,
+                                          tileSkip);
+     }
+ 
+-    ParseAssert(tileSkip == 0);
++    /* TibiaRelic: relaxed — server may send fewer floors than expected */
+ }
+ 
+ void Parser::ParseTileUpdate(DataReader &reader, EventList &events) {
 @@ -1580,17 +1580,15 @@ void Parser::ParseFloorChangeUp(DataReader &reader, EventList &events) {
      Position_.Z--;
      tileSkip = 0;
