@@ -367,8 +367,8 @@ function snapshotTiles(
   for (const [key, tileItems] of gs.tiles.entries()) {
     const parts = key.split(',');
     if (parts.length !== 3) continue;
-    const tx = parseInt(parts[0], 10);
-    const ty = parseInt(parts[1], 10);
+    let tx = parseInt(parts[0], 10);
+    let ty = parseInt(parts[1], 10);
     const tz = parseInt(parts[2], 10);
 
     if (tx === 0 || ty === 0) continue;
@@ -384,9 +384,15 @@ function snapshotTiles(
 
     if (tx < 30000 || tx > 35000 || ty < 30000 || ty > 35000) continue;
 
-    // Viewport radius filter: only capture tiles near the camera
-    // to prevent stale/displaced tiles from entering the output
-    if (Math.abs(tx - camX) > 40 || Math.abs(ty - camY) > 40) continue;
+    // Reverse the perspective offset applied by readMultiFloorArea.
+    // The parser stores tiles at (ox + tx + offset, oy + ty + offset) where offset = camZ - nz.
+    // To get absolute world coordinates, we subtract the offset.
+    const perspectiveOffset = camZ - tz;
+    const absX = tx - perspectiveOffset;
+    const absY = ty - perspectiveOffset;
+
+    // Viewport radius filter using absolute coordinates
+    if (Math.abs(absX - camX) > 40 || Math.abs(absY - camY) > 40) continue;
 
     let items: number[] = [];
     let hasValidGround = false;
@@ -405,7 +411,7 @@ function snapshotTiles(
 
     // Discard tiles without a valid ground sprite — these produce white squares
     if (items.length > 0 && hasValidGround) {
-      const correctedKey = `${tx},${ty},${tz}`;
+      const correctedKey = `${absX},${absY},${tz}`;
       latestTiles.set(correctedKey, items);
     }
   }
