@@ -405,8 +405,8 @@ void seek(double ms) {
 
     g_currentTick = target;
     g_gamestate->CurrentTick = target.count();
-        DeduplicateCreatures();
-        RenderFrame();
+    DeduplicateCreatures();
+    RenderFrame();
 }
 
 EMSCRIPTEN_KEEPALIVE
@@ -498,6 +498,7 @@ static void MainLoop() {
         }
 
         g_gamestate->Messages.Prune(g_currentTick.count());
+        DeduplicateCreatures();
         RenderFrame();
     } catch (...) {
         // Prevent any exception from killing the main loop
