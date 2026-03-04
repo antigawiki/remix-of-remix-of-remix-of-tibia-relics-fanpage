@@ -5,15 +5,17 @@ import { Card } from '@/components/ui/card';
 import { Progress } from '@/components/ui/progress';
 import { Badge } from '@/components/ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { Upload, Play, Download, ChevronLeft, ChevronRight } from 'lucide-react';
 import {
   ChartContainer,
   ChartTooltip,
   ChartTooltipContent,
 } from '@/components/ui/chart';
-import { LineChart, Line, XAxis, YAxis, ReferenceDot, ResponsiveContainer } from 'recharts';
+import { LineChart, Line, XAxis, YAxis, ReferenceDot } from 'recharts';
 import { DatLoader } from '@/lib/tibiaRelic/datLoader';
 import { analyzeCamFile, type AnalysisResult, type Anomaly, type FrameDetail } from '@/lib/tibiaRelic/camAnalyzer';
+import ProtocolLabTab from '@/components/cam-analyzer/ProtocolLabTab';
 
 function formatMs(ms: number): string {
   const s = Math.floor(ms / 1000);
@@ -42,6 +44,17 @@ export default function CamAnalyzerPage() {
     file.arrayBuffer().then(buf => setFileBuffer(buf));
   }, []);
 
+  const loadDat = useCallback(async () => {
+    if (!datRef.current) {
+      const datResp = await fetch('/tibiarc/data/Tibia.dat');
+      const datBuf = await datResp.arrayBuffer();
+      const dat = new DatLoader();
+      dat.load(datBuf);
+      datRef.current = dat;
+    }
+    return datRef.current;
+  }, []);
+
   const runAnalysis = useCallback(async () => {
     if (!fileBuffer) return;
     setAnalyzing(true);
@@ -49,26 +62,17 @@ export default function CamAnalyzerPage() {
     setSelectedAnomaly(null);
 
     try {
-      // Load .dat if needed
-      if (!datRef.current) {
-        const datResp = await fetch('/tibiarc/data/Tibia.dat');
-        const datBuf = await datResp.arrayBuffer();
-        const dat = new DatLoader();
-        dat.load(datBuf);
-        datRef.current = dat;
-      }
-
-      const res = await analyzeCamFile(fileBuffer, datRef.current, (cur, total) => {
+      const dat = await loadDat();
+      const res = await analyzeCamFile(fileBuffer, dat, (cur, total) => {
         setProgress({ current: cur, total });
       });
-
       setResult(res);
     } catch (err) {
       console.error('Analysis failed:', err);
     } finally {
       setAnalyzing(false);
     }
-  }, [fileBuffer]);
+  }, [fileBuffer, loadDat]);
 
   const exportJSON = useCallback(() => {
     if (!result) return;
@@ -83,7 +87,6 @@ export default function CamAnalyzerPage() {
 
   const filteredAnomalies = result?.anomalies.filter(a => filterType === 'all' || a.type === filterType) ?? [];
 
-  // Get adjacent frames for detail view
   const getAdjacentFrames = (frameIndex: number): FrameDetail[] => {
     if (!result) return [];
     const start = Math.max(0, frameIndex - 2);
@@ -91,7 +94,6 @@ export default function CamAnalyzerPage() {
     return result.frameDetails.slice(start, end + 1);
   };
 
-  // Downsample timeline for chart performance
   const chartData = result ? (() => {
     const tl = result.positionTimeline;
     if (tl.length <= 2000) return tl;
@@ -112,8 +114,8 @@ export default function CamAnalyzerPage() {
           Análise offline completa de arquivos .cam — detecta saltos de posição, trocas de andar e desyncs.
         </p>
 
-        {/* Upload & Controls */}
-        <Card className="p-4 space-y-4">
+        {/* Upload */}
+        <Card className="p-4">
           <div className="flex flex-wrap items-center gap-3">
             <label className="cursor-pointer">
               <input type="file" accept=".cam" onChange={handleFileUpload} className="hidden" />
@@ -122,224 +124,220 @@ export default function CamAnalyzerPage() {
               </Button>
             </label>
             {fileName && <span className="text-sm text-muted-foreground">{fileName}</span>}
-            <Button onClick={runAnalysis} disabled={!fileBuffer || analyzing}>
-              <Play className="w-4 h-4 mr-2" />{analyzing ? 'Analisando...' : 'Analisar'}
-            </Button>
-            {result && (
-              <Button variant="outline" onClick={exportJSON}>
-                <Download className="w-4 h-4 mr-2" />Exportar JSON
-              </Button>
-            )}
           </div>
-          {analyzing && (
-            <div className="space-y-1">
-              <Progress value={progress.total ? (progress.current / progress.total) * 100 : 0} />
-              <p className="text-xs text-muted-foreground">
-                Frame {progress.current.toLocaleString()} / {progress.total.toLocaleString()}
-              </p>
-            </div>
-          )}
         </Card>
 
-        {result && (
-          <>
-            {/* Summary */}
-            <Card className="p-4">
-              <div className="flex flex-wrap gap-4">
-                <div>
-                  <p className="text-xs text-muted-foreground">Total Frames</p>
-                  <p className="text-lg font-bold text-foreground">{result.totalFrames.toLocaleString()}</p>
-                </div>
-                <div>
-                  <p className="text-xs text-muted-foreground">Duração</p>
-                  <p className="text-lg font-bold text-foreground">{formatMs(result.totalMs)}</p>
-                </div>
-                <div>
-                  <p className="text-xs text-muted-foreground">Anomalias</p>
-                  <p className="text-lg font-bold text-destructive">{result.anomalies.length}</p>
-                </div>
-                <div className="flex flex-wrap gap-1 items-center">
-                  {['POSITION_JUMP', 'FLOOR_JUMP', 'DESYNC'].map(t => {
-                    const count = result.anomalies.filter(a => a.type === t).length;
-                    if (!count) return null;
-                    return (
-                      <Badge key={t} variant={t === 'DESYNC' ? 'destructive' : 'secondary'} className="text-xs">
-                        {t}: {count}
-                      </Badge>
-                    );
-                  })}
-                </div>
-              </div>
-            </Card>
+        {/* Tabs */}
+        <Tabs defaultValue="analyzer" className="space-y-4">
+          <TabsList>
+            <TabsTrigger value="analyzer">Análise</TabsTrigger>
+            <TabsTrigger value="protocol-lab">Protocol Lab</TabsTrigger>
+          </TabsList>
 
-            {/* Position Timeline Chart */}
-            <Card className="p-4">
-              <h2 className="text-sm font-semibold text-foreground mb-2">Position Timeline (Camera X, Y)</h2>
-              <div className="h-[250px] w-full">
-                <ChartContainer config={{
-                  camX: { label: 'Cam X', color: 'hsl(var(--primary))' },
-                  camY: { label: 'Cam Y', color: 'hsl(var(--accent))' },
-                }}>
-                  <LineChart data={chartData}>
-                    <XAxis dataKey="ms" tickFormatter={formatMs} tick={{ fontSize: 10 }} />
-                    <YAxis tick={{ fontSize: 10 }} />
-                    <ChartTooltip content={<ChartTooltipContent />} />
-                    <Line type="monotone" dataKey="camX" stroke="var(--color-camX)" dot={false} strokeWidth={1} />
-                    <Line type="monotone" dataKey="camY" stroke="var(--color-camY)" dot={false} strokeWidth={1} />
-                    {anomalyDots.map((d: any, i: number) => (
-                      <ReferenceDot key={i} x={d.ms} y={d.camX} r={3} fill="hsl(var(--destructive))" stroke="none" />
-                    ))}
-                  </LineChart>
-                </ChartContainer>
-              </div>
-            </Card>
-
-            {/* Floor Timeline */}
-            <Card className="p-4">
-              <h2 className="text-sm font-semibold text-foreground mb-2">Floor (Z) Timeline</h2>
-              <div className="h-[120px] w-full">
-                <ChartContainer config={{
-                  camZ: { label: 'Floor Z', color: 'hsl(var(--primary))' },
-                }}>
-                  <LineChart data={chartData}>
-                    <XAxis dataKey="ms" tickFormatter={formatMs} tick={{ fontSize: 10 }} />
-                    <YAxis domain={[0, 15]} tick={{ fontSize: 10 }} />
-                    <ChartTooltip content={<ChartTooltipContent />} />
-                    <Line type="stepAfter" dataKey="camZ" stroke="var(--color-camZ)" dot={false} strokeWidth={1.5} />
-                  </LineChart>
-                </ChartContainer>
-              </div>
-            </Card>
-
-            {/* Anomaly Table */}
-            <Card className="p-4">
-              <div className="flex items-center gap-2 mb-3">
-                <h2 className="text-sm font-semibold text-foreground">Anomalias</h2>
-                <div className="flex gap-1">
-                  {['all', 'POSITION_JUMP', 'FLOOR_JUMP', 'DESYNC'].map(t => (
-                    <Button
-                      key={t}
-                      size="sm"
-                      variant={filterType === t ? 'default' : 'outline'}
-                      onClick={() => setFilterType(t)}
-                      className="text-xs h-6 px-2"
-                    >
-                      {t === 'all' ? 'Todos' : t}
-                    </Button>
-                  ))}
-                </div>
-              </div>
-              <div className="max-h-[400px] overflow-auto">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead className="w-16">Frame</TableHead>
-                      <TableHead className="w-20">Tempo</TableHead>
-                      <TableHead className="w-28">Tipo</TableHead>
-                      <TableHead>Descrição</TableHead>
-                      <TableHead className="w-24">Opcodes</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {filteredAnomalies.slice(0, 500).map((a, i) => (
-                      <TableRow
-                        key={i}
-                        className="cursor-pointer hover:bg-accent/50"
-                        onClick={() => { setSelectedAnomaly(a); setSelectedFrameIdx(a.frameIndex); }}
-                      >
-                        <TableCell className="text-xs font-mono">{a.frameIndex}</TableCell>
-                        <TableCell className="text-xs">{formatMs(a.timestamp)}</TableCell>
-                        <TableCell>
-                          <Badge variant={a.type === 'DESYNC' ? 'destructive' : a.type === 'FLOOR_JUMP' ? 'default' : 'secondary'} className="text-xs">
-                            {a.type}
-                          </Badge>
-                        </TableCell>
-                        <TableCell className="text-xs max-w-[400px] truncate">{a.description}</TableCell>
-                        <TableCell className="text-xs font-mono">
-                          {a.opcodes.map(o => '0x' + o.toString(16).toUpperCase()).join(', ')}
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-                {filteredAnomalies.length > 500 && (
-                  <p className="text-xs text-muted-foreground mt-2">
-                    Mostrando 500 de {filteredAnomalies.length} anomalias
-                  </p>
+          <TabsContent value="analyzer" className="space-y-4">
+            {/* Analyzer controls */}
+            <Card className="p-4 space-y-4">
+              <div className="flex items-center gap-3">
+                <Button onClick={runAnalysis} disabled={!fileBuffer || analyzing}>
+                  <Play className="w-4 h-4 mr-2" />{analyzing ? 'Analisando...' : 'Analisar'}
+                </Button>
+                {result && (
+                  <Button variant="outline" onClick={exportJSON}>
+                    <Download className="w-4 h-4 mr-2" />Exportar JSON
+                  </Button>
                 )}
               </div>
+              {analyzing && (
+                <div className="space-y-1">
+                  <Progress value={progress.total ? (progress.current / progress.total) * 100 : 0} />
+                  <p className="text-xs text-muted-foreground">
+                    Frame {progress.current.toLocaleString()} / {progress.total.toLocaleString()}
+                  </p>
+                </div>
+              )}
             </Card>
 
-            {/* Frame Detail Panel */}
-            {selectedAnomaly && selectedFrameIdx !== null && (
-              <Card className="p-4">
-                <div className="flex items-center justify-between mb-3">
-                  <h2 className="text-sm font-semibold text-foreground">
-                    Detalhes — Frame {selectedFrameIdx} ({formatMs(selectedAnomaly.timestamp)})
-                  </h2>
-                  <div className="flex gap-1">
-                    <Button size="sm" variant="outline" onClick={() => {
-                      const idx = filteredAnomalies.findIndex(a => a.frameIndex === selectedAnomaly.frameIndex);
-                      if (idx > 0) { setSelectedAnomaly(filteredAnomalies[idx - 1]); setSelectedFrameIdx(filteredAnomalies[idx - 1].frameIndex); }
-                    }}>
-                      <ChevronLeft className="w-4 h-4" />
-                    </Button>
-                    <Button size="sm" variant="outline" onClick={() => {
-                      const idx = filteredAnomalies.findIndex(a => a.frameIndex === selectedAnomaly.frameIndex);
-                      if (idx < filteredAnomalies.length - 1) { setSelectedAnomaly(filteredAnomalies[idx + 1]); setSelectedFrameIdx(filteredAnomalies[idx + 1].frameIndex); }
-                    }}>
-                      <ChevronRight className="w-4 h-4" />
-                    </Button>
+            {result && (
+              <>
+                {/* Summary */}
+                <Card className="p-4">
+                  <div className="flex flex-wrap gap-4">
+                    <div>
+                      <p className="text-xs text-muted-foreground">Total Frames</p>
+                      <p className="text-lg font-bold text-foreground">{result.totalFrames.toLocaleString()}</p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-muted-foreground">Duração</p>
+                      <p className="text-lg font-bold text-foreground">{formatMs(result.totalMs)}</p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-muted-foreground">Anomalias</p>
+                      <p className="text-lg font-bold text-destructive">{result.anomalies.length}</p>
+                    </div>
+                    <div className="flex flex-wrap gap-1 items-center">
+                      {['POSITION_JUMP', 'FLOOR_JUMP', 'DESYNC'].map(t => {
+                        const count = result.anomalies.filter(a => a.type === t).length;
+                        if (!count) return null;
+                        return (
+                          <Badge key={t} variant={t === 'DESYNC' ? 'destructive' : 'secondary'} className="text-xs">
+                            {t}: {count}
+                          </Badge>
+                        );
+                      })}
+                    </div>
                   </div>
-                </div>
+                </Card>
 
-                {/* Before/After comparison */}
-                <div className="grid grid-cols-2 gap-4 mb-4">
-                  <div className="bg-muted rounded p-3">
-                    <p className="text-xs font-semibold text-muted-foreground mb-1">ANTES</p>
-                    <p className="text-xs font-mono">Cam: ({selectedAnomaly.before.camX}, {selectedAnomaly.before.camY}, {selectedAnomaly.before.camZ})</p>
-                    <p className="text-xs font-mono">Player: ({selectedAnomaly.before.playerX}, {selectedAnomaly.before.playerY}, {selectedAnomaly.before.playerZ})</p>
+                {/* Charts */}
+                <Card className="p-4">
+                  <h2 className="text-sm font-semibold text-foreground mb-2">Position Timeline (Camera X, Y)</h2>
+                  <div className="h-[250px] w-full">
+                    <ChartContainer config={{
+                      camX: { label: 'Cam X', color: 'hsl(var(--primary))' },
+                      camY: { label: 'Cam Y', color: 'hsl(var(--accent))' },
+                    }}>
+                      <LineChart data={chartData}>
+                        <XAxis dataKey="ms" tickFormatter={formatMs} tick={{ fontSize: 10 }} />
+                        <YAxis tick={{ fontSize: 10 }} />
+                        <ChartTooltip content={<ChartTooltipContent />} />
+                        <Line type="monotone" dataKey="camX" stroke="var(--color-camX)" dot={false} strokeWidth={1} />
+                        <Line type="monotone" dataKey="camY" stroke="var(--color-camY)" dot={false} strokeWidth={1} />
+                        {anomalyDots.map((d: any, i: number) => (
+                          <ReferenceDot key={i} x={d.ms} y={d.camX} r={3} fill="hsl(var(--destructive))" stroke="none" />
+                        ))}
+                      </LineChart>
+                    </ChartContainer>
                   </div>
-                  <div className="bg-muted rounded p-3">
-                    <p className="text-xs font-semibold text-muted-foreground mb-1">DEPOIS</p>
-                    <p className="text-xs font-mono">Cam: ({selectedAnomaly.after.camX}, {selectedAnomaly.after.camY}, {selectedAnomaly.after.camZ})</p>
-                    <p className="text-xs font-mono">Player: ({selectedAnomaly.after.playerX}, {selectedAnomaly.after.playerY}, {selectedAnomaly.after.playerZ})</p>
-                  </div>
-                </div>
+                </Card>
 
-                {/* Adjacent frames */}
-                <h3 className="text-xs font-semibold text-muted-foreground mb-2">Frames adjacentes (±2)</h3>
-                <div className="overflow-auto">
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead className="w-16">Frame</TableHead>
-                        <TableHead className="w-20">Tempo</TableHead>
-                        <TableHead className="w-32">Opcodes</TableHead>
-                        <TableHead>Posição após</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {getAdjacentFrames(selectedFrameIdx).map(fd => (
-                        <TableRow key={fd.frameIndex} className={fd.frameIndex === selectedFrameIdx ? 'bg-destructive/10' : ''}>
-                          <TableCell className="text-xs font-mono">{fd.frameIndex}</TableCell>
-                          <TableCell className="text-xs">{formatMs(fd.timestamp)}</TableCell>
-                          <TableCell className="text-xs font-mono">
-                            {fd.opcodes.map(o => '0x' + o.toString(16).toUpperCase()).join(', ')}
-                          </TableCell>
-                          <TableCell className="text-xs font-mono">
-                            cam({fd.posAfter.camX},{fd.posAfter.camY},{fd.posAfter.camZ}) 
-                            player({fd.posAfter.playerX},{fd.posAfter.playerY},{fd.posAfter.playerZ})
-                          </TableCell>
-                        </TableRow>
+                <Card className="p-4">
+                  <h2 className="text-sm font-semibold text-foreground mb-2">Floor (Z) Timeline</h2>
+                  <div className="h-[120px] w-full">
+                    <ChartContainer config={{
+                      camZ: { label: 'Floor Z', color: 'hsl(var(--primary))' },
+                    }}>
+                      <LineChart data={chartData}>
+                        <XAxis dataKey="ms" tickFormatter={formatMs} tick={{ fontSize: 10 }} />
+                        <YAxis domain={[0, 15]} tick={{ fontSize: 10 }} />
+                        <ChartTooltip content={<ChartTooltipContent />} />
+                        <Line type="stepAfter" dataKey="camZ" stroke="var(--color-camZ)" dot={false} strokeWidth={1.5} />
+                      </LineChart>
+                    </ChartContainer>
+                  </div>
+                </Card>
+
+                {/* Anomaly Table */}
+                <Card className="p-4">
+                  <div className="flex items-center gap-2 mb-3">
+                    <h2 className="text-sm font-semibold text-foreground">Anomalias</h2>
+                    <div className="flex gap-1">
+                      {['all', 'POSITION_JUMP', 'FLOOR_JUMP', 'DESYNC'].map(t => (
+                        <Button key={t} size="sm" variant={filterType === t ? 'default' : 'outline'} onClick={() => setFilterType(t)} className="text-xs h-6 px-2">
+                          {t === 'all' ? 'Todos' : t}
+                        </Button>
                       ))}
-                    </TableBody>
-                  </Table>
-                </div>
-              </Card>
+                    </div>
+                  </div>
+                  <div className="max-h-[400px] overflow-auto">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead className="w-16">Frame</TableHead>
+                          <TableHead className="w-20">Tempo</TableHead>
+                          <TableHead className="w-28">Tipo</TableHead>
+                          <TableHead>Descrição</TableHead>
+                          <TableHead className="w-24">Opcodes</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {filteredAnomalies.slice(0, 500).map((a, i) => (
+                          <TableRow key={i} className="cursor-pointer hover:bg-accent/50" onClick={() => { setSelectedAnomaly(a); setSelectedFrameIdx(a.frameIndex); }}>
+                            <TableCell className="text-xs font-mono">{a.frameIndex}</TableCell>
+                            <TableCell className="text-xs">{formatMs(a.timestamp)}</TableCell>
+                            <TableCell>
+                              <Badge variant={a.type === 'DESYNC' ? 'destructive' : a.type === 'FLOOR_JUMP' ? 'default' : 'secondary'} className="text-xs">{a.type}</Badge>
+                            </TableCell>
+                            <TableCell className="text-xs max-w-[400px] truncate">{a.description}</TableCell>
+                            <TableCell className="text-xs font-mono">{a.opcodes.map(o => '0x' + o.toString(16).toUpperCase()).join(', ')}</TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                    {filteredAnomalies.length > 500 && (
+                      <p className="text-xs text-muted-foreground mt-2">Mostrando 500 de {filteredAnomalies.length} anomalias</p>
+                    )}
+                  </div>
+                </Card>
+
+                {/* Frame Detail Panel */}
+                {selectedAnomaly && selectedFrameIdx !== null && (
+                  <Card className="p-4">
+                    <div className="flex items-center justify-between mb-3">
+                      <h2 className="text-sm font-semibold text-foreground">
+                        Detalhes — Frame {selectedFrameIdx} ({formatMs(selectedAnomaly.timestamp)})
+                      </h2>
+                      <div className="flex gap-1">
+                        <Button size="sm" variant="outline" onClick={() => {
+                          const idx = filteredAnomalies.findIndex(a => a.frameIndex === selectedAnomaly.frameIndex);
+                          if (idx > 0) { setSelectedAnomaly(filteredAnomalies[idx - 1]); setSelectedFrameIdx(filteredAnomalies[idx - 1].frameIndex); }
+                        }}>
+                          <ChevronLeft className="w-4 h-4" />
+                        </Button>
+                        <Button size="sm" variant="outline" onClick={() => {
+                          const idx = filteredAnomalies.findIndex(a => a.frameIndex === selectedAnomaly.frameIndex);
+                          if (idx < filteredAnomalies.length - 1) { setSelectedAnomaly(filteredAnomalies[idx + 1]); setSelectedFrameIdx(filteredAnomalies[idx + 1].frameIndex); }
+                        }}>
+                          <ChevronRight className="w-4 h-4" />
+                        </Button>
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-2 gap-4 mb-4">
+                      <div className="bg-muted rounded p-3">
+                        <p className="text-xs font-semibold text-muted-foreground mb-1">ANTES</p>
+                        <p className="text-xs font-mono">Cam: ({selectedAnomaly.before.camX}, {selectedAnomaly.before.camY}, {selectedAnomaly.before.camZ})</p>
+                        <p className="text-xs font-mono">Player: ({selectedAnomaly.before.playerX}, {selectedAnomaly.before.playerY}, {selectedAnomaly.before.playerZ})</p>
+                      </div>
+                      <div className="bg-muted rounded p-3">
+                        <p className="text-xs font-semibold text-muted-foreground mb-1">DEPOIS</p>
+                        <p className="text-xs font-mono">Cam: ({selectedAnomaly.after.camX}, {selectedAnomaly.after.camY}, {selectedAnomaly.after.camZ})</p>
+                        <p className="text-xs font-mono">Player: ({selectedAnomaly.after.playerX}, {selectedAnomaly.after.playerY}, {selectedAnomaly.after.playerZ})</p>
+                      </div>
+                    </div>
+                    <h3 className="text-xs font-semibold text-muted-foreground mb-2">Frames adjacentes (±2)</h3>
+                    <div className="overflow-auto">
+                      <Table>
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead className="w-16">Frame</TableHead>
+                            <TableHead className="w-20">Tempo</TableHead>
+                            <TableHead className="w-32">Opcodes</TableHead>
+                            <TableHead>Posição após</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {getAdjacentFrames(selectedFrameIdx).map(fd => (
+                            <TableRow key={fd.frameIndex} className={fd.frameIndex === selectedFrameIdx ? 'bg-destructive/10' : ''}>
+                              <TableCell className="text-xs font-mono">{fd.frameIndex}</TableCell>
+                              <TableCell className="text-xs">{formatMs(fd.timestamp)}</TableCell>
+                              <TableCell className="text-xs font-mono">{fd.opcodes.map(o => '0x' + o.toString(16).toUpperCase()).join(', ')}</TableCell>
+                              <TableCell className="text-xs font-mono">
+                                cam({fd.posAfter.camX},{fd.posAfter.camY},{fd.posAfter.camZ}) player({fd.posAfter.playerX},{fd.posAfter.playerY},{fd.posAfter.playerZ})
+                              </TableCell>
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                    </div>
+                  </Card>
+                )}
+              </>
             )}
-          </>
-        )}
+          </TabsContent>
+
+          <TabsContent value="protocol-lab">
+            <ProtocolLabTab fileBuffer={fileBuffer} fileName={fileName} loadDat={loadDat} />
+          </TabsContent>
+        </Tabs>
       </div>
     </MainLayout>
   );

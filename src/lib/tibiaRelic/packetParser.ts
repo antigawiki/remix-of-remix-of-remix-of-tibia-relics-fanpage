@@ -12,16 +12,34 @@ import { DebugLogger } from './debugLogger';
 
 const CR_FULL = 0x61, CR_KNOWN = 0x62, CR_OLD = 0x63;
 
+export interface TraceEntry {
+  op: string;
+  posBefore: number;
+  posAfter: number;
+  bytesConsumed: number;
+  floor?: number;
+  error?: string;
+}
+
 export interface PacketParserOptions {
   looktypeU16?: boolean;
   outfitWindowRangeU16?: boolean;
+  floorRangeOverride?: { plus: number; minus: number };
+  traceMode?: boolean;
 }
 
 export class PacketParser {
   private looktypeU16: boolean;
   private outfitWindowRangeU16: boolean;
+  private floorRangeOverride?: { plus: number; minus: number };
   /** When true, walk animations are suppressed (used during seek/fast-replay) */
   public seekMode = false;
+  /** When true, trace entries are recorded for multi-floor operations */
+  public traceMode = false;
+  /** Trace log entries — populated when traceMode is true */
+  public traceLog: TraceEntry[] = [];
+  /** Last parse error message — used by protocol lab */
+  public lastError: string | null = null;
 
   public debugLogger: DebugLogger | null = null;
   /** Opcodes processed in the last process() call — used by CamAnalyzer */
@@ -30,6 +48,13 @@ export class PacketParser {
   constructor(public gs: GameState, public dat: DatLoader, opts: PacketParserOptions = {}) {
     this.looktypeU16 = !!opts.looktypeU16;
     this.outfitWindowRangeU16 = opts.outfitWindowRangeU16 ?? this.looktypeU16;
+    this.floorRangeOverride = opts.floorRangeOverride;
+    this.traceMode = !!opts.traceMode;
+  }
+
+  /** Update the floor range override at runtime */
+  setFloorRangeOverride(override?: { plus: number; minus: number }) {
+    this.floorRangeOverride = override;
   }
 
   private readLooktype(r: Buf): number {
@@ -72,17 +97,21 @@ export class PacketParser {
   private unknownWarnCount = 0;
   private frameErrorCount = 0;
 
-  /** Get the floor range for multi-floor reading — TibiaRelic sends ±2 floors only */
+  /** Get the floor range for multi-floor reading — configurable via floorRangeOverride */
   private getFloorRange(z: number): { startz: number; endz: number; zstep: number } {
+    const ovr = this.floorRangeOverride;
+    if (ovr) {
+      if (z > 7) {
+        return { startz: Math.max(z - ovr.minus, 0), endz: Math.min(z + ovr.plus, 15), zstep: 1 };
+      } else {
+        return { startz: Math.min(z + ovr.plus, 7), endz: Math.max(z - ovr.minus, 0), zstep: -1 };
+      }
+    }
     if (z > 7) {
       // Underground: z-2 to z+2, capped at 15
       return { startz: z - 2, endz: Math.min(z + 2, 15), zstep: 1 };
     } else {
       // Surface: ±2 floors only (TibiaRelic), NOT full 7→0
-      // startz is the highest floor (closest to surface), endz is the lowest
-      // For z=7: reads 7→5 (3 floors)
-      // For z=6: reads 7→4 (4 floors)  
-      // For z=5: reads 7→3 (5 floors — max ±2)
       return { startz: Math.min(z + 2, 7), endz: Math.max(z - 2, 0), zstep: -1 };
     }
   }
@@ -189,6 +218,8 @@ export class PacketParser {
 
   process(payload: Uint8Array) {
     this.lastFrameOpcodes = [];
+    this.lastError = null;
+    if (this.traceMode) this.traceLog = [];
     const r = new Buf(payload);
     if (payload.length === 0) return;
 
@@ -196,10 +227,15 @@ export class PacketParser {
     // If first byte < 0x0A, it's almost certainly a TCP u16 length prefix.
     const firstByte = payload[0];
 
-    if (firstByte < 0x0A && payload.length >= 2) {
-      this.processTcpDemux(r, payload.length);
-    } else {
-      this.processOpcodes(r, payload.length);
+    try {
+      if (firstByte < 0x0A && payload.length >= 2) {
+        this.processTcpDemux(r, payload.length);
+      } else {
+        this.processOpcodes(r, payload.length);
+      }
+    } catch (e: any) {
+      this.lastError = e?.message || String(e);
+      throw e;
     }
   }
 
@@ -1012,6 +1048,9 @@ export class PacketParser {
     let floorCount = 0;
     for (let nz = startz; nz !== endz + zstep; nz += zstep) {
       if (r.left() < 2) {
+        if (this.traceMode) {
+          this.traceLog.push({ op: 'MULTIFLOOR_EXHAUSTED', posBefore: r.pos, posAfter: r.pos, bytesConsumed: 0, floor: nz, error: `Buffer exhausted at floor ${nz}` });
+        }
         if (dl && dl.enabled) {
           dl.log('MULTIFLOOR_EXHAUSTED', {
             floor: nz, floorIndex: floorCount, bytesLeft: r.left(),
@@ -1023,8 +1062,18 @@ export class PacketParser {
       }
       const floorStartPos = r.pos;
       const offset = camZ - nz;
-      skip = this.readFloorArea(r, ox, oy, nz, W, H, offset, skip);
+      try {
+        skip = this.readFloorArea(r, ox, oy, nz, W, H, offset, skip);
+      } catch (e: any) {
+        if (this.traceMode) {
+          this.traceLog.push({ op: 'readFloorArea', posBefore: floorStartPos, posAfter: r.pos, bytesConsumed: r.pos - floorStartPos, floor: nz, error: e?.message || String(e) });
+        }
+        throw e;
+      }
       floorCount++;
+      if (this.traceMode) {
+        this.traceLog.push({ op: 'readFloorArea', posBefore: floorStartPos, posAfter: r.pos, bytesConsumed: r.pos - floorStartPos, floor: nz });
+      }
       if (dl && dl.enabled) {
         dl.log('MULTIFLOOR_STEP', {
           floor: nz, floorIndex: floorCount - 1, offset,
@@ -1034,6 +1083,9 @@ export class PacketParser {
           skipCarry: skip,
         });
       }
+    }
+    if (this.traceMode) {
+      this.traceLog.push({ op: 'readMultiFloorArea_DONE', posBefore: startPos, posAfter: r.pos, bytesConsumed: r.pos - startPos });
     }
     if (dl && dl.enabled) {
       dl.log('MULTIFLOOR_DONE', {
