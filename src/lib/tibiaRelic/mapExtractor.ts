@@ -252,17 +252,22 @@ function snapshotCreaturesForVisit(
     if (c.outfit === 0 && c.outfitItem === 0) continue;
     if (c.health <= 0) continue; // Only living creatures
     if (c.x < 30000 || c.x > 35000 || c.y < 30000 || c.y > 35000 || c.z < 0 || c.z > 15) continue;
-    if (Math.abs(c.x - camX) > 20 || Math.abs(c.y - camY) > 16) continue;
-    // Accept creatures from all visible floors (no Z filter)
+
+    // Reverse perspective offset to get absolute world coordinates
+    const perspectiveOffset = camZ <= 7 ? (camZ - c.z) : 0;
+    const absX = c.x - perspectiveOffset;
+    const absY = c.y - perspectiveOffset;
+
+    if (Math.abs(absX - camX) > 20 || Math.abs(absY - camY) > 16) continue;
     if (c.id === gs.playerId) continue;
     if (c.head !== 0 || c.body !== 0 || c.legs !== 0 || c.feet !== 0) continue;
     if (c.outfit >= 128 && c.outfit <= 143) continue;
 
-    const cx = Math.floor(c.x / DB_CHUNK);
-    const cy = Math.floor(c.y / DB_CHUNK);
+    const cx = Math.floor(absX / DB_CHUNK);
+    const cy = Math.floor(absY / DB_CHUNK);
     const chunkKey = `${cx},${cy},${c.z}`;
-    const relX = c.x - cx * DB_CHUNK;
-    const relY = c.y - cy * DB_CHUNK;
+    const relX = absX - cx * DB_CHUNK;
+    const relY = absY - cy * DB_CHUNK;
 
     let chunkSnap = snapshotCounts.get(chunkKey);
     if (!chunkSnap) { chunkSnap = new Map(); snapshotCounts.set(chunkKey, chunkSnap); }
