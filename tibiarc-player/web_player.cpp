@@ -385,6 +385,7 @@ void seek(double ms) {
 
     g_currentTick = target;
     g_gamestate->CurrentTick = target.count();
+    g_gamestate->Messages.Prune(g_currentTick.count());
     DeduplicateCreatures();
     RenderFrame();
 }
