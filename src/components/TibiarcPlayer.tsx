@@ -110,6 +110,10 @@ const TibiarcPlayer = ({ className }: TibiarcPlayerProps) => {
   const overlayEnabledRef = useRef(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [controlsVisible, setControlsVisible] = useState(true);
+  const [lightingEnabled, setLightingEnabled] = useState(true);
+  const lightTimelineRef = useRef<LightEvent[]>([]);
+  const lightOverlayRef = useRef<HTMLDivElement>(null);
+  const lightingEnabledRef = useRef(true);
 
   // Sync fullscreen state when user exits via ESC
   useEffect(() => {
@@ -319,6 +323,12 @@ const TibiarcPlayer = ({ className }: TibiarcPlayerProps) => {
       const buffer = await file.arrayBuffer();
       const data = new Uint8Array(buffer);
       camBufferRef.current = data;
+
+      // Extract light timeline for overlay
+      const timeline = extractLightTimeline(data);
+      lightTimelineRef.current = timeline;
+      console.log(`[TibiarcPlayer] Light timeline: ${timeline.length} events`);
+
       const bufPtr = copyToWasm(mod, data);
 
       const dur = safeCall(mod, 'load_recording_tibiarelic', 'number',
