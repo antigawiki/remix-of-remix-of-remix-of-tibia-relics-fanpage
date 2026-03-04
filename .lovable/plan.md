@@ -1,54 +1,37 @@
 
 
-## Diagnóstico: Não é luz — é o floor range dos scrolls
+## Fix: Camera Offset and Floor Transition Bugs (3 Critical Fixes)
 
-Sua hipótese sobre luminância é criativa, mas **não é isso**. No protocolo Tibia 7.72, a luz não é enviada como dados extras por tile na rede. A luz funciona assim:
+The previous fixes were not applied — the bugs are still in the current code. Here are the 3 exact changes needed:
 
-- **Luz ambiente (0x82)**: 2 bytes (intensidade + cor) — já lido pelo parser
-- **Luz de criatura (0x8D)**: 6 bytes (creatureId + intensidade + cor) — já lido
-- **Luz de item**: vem do arquivo `.dat` (flag 0x15, 4 bytes), não do protocolo de rede
+### Fix 1: Surface floors get wrong tile offset (`readMultiFloorArea`, line 1083)
 
-O parser lê todos esses corretamente. Os bytes sobrando não são dados de luz.
+**Current**: `const offset = camZ - nz;`
+**Fix**: `const offset = camZ > 7 ? (camZ - nz) : 0;`
 
-### A causa real (confirmada pelo JSON que você enviou)
+When camZ=4 (surface), the current code calculates offset=-3 for floor 7, placing every tile 3 positions northwest of where it belongs. On surface, all floors should have offset=0 — the underground perspective system only applies when camZ > 7.
 
-O JSON mostra claramente:
+### Fix 2: `floorUp` drifts camera on surface transitions (line 846)
 
-```text
-150 anomalias — 100% são BYTES_LEFTOVER
-147 de 150 (98%) resolvidas pela estratégia A (7→0)
-0 DESYNCs, 0 PARSE_ERRORs
-```
+**Current**: `g.camX++; g.camY++;` (unconditional)
+**Fix**: Only apply when `g.camZ >= 7` (underground or transitioning to surface)
 
-O problema é **exatamente o mesmo** que diagnosticamos antes: os **scrolls** (0x65-0x68) na superfície enviam dados para todos os floors visíveis (7→0), mas o parser usa `getFloorRange` que retorna apenas ±2 (3 floors). Os floors extras ficam não-lidos e são reportados como "leftover".
+Surface-to-surface floor changes (e.g., z=4→z=3) should NOT adjust camX/Y. The perspective offset only exists underground.
 
-### Por que a última correção piorou
+### Fix 3: `floorDown` drifts camera on surface transitions (line 875)
 
-Na primeira tentativa, mudamos `getFloorRange` para 7→0 **E** mudamos `floorUp` para ler floors 5→0. Mas `floorUp`/`floorDown` só enviam dados do **único** novo floor visível, não todos os floors. Ler 6 floors quando só 1 foi enviado causou byte drift → DESYNCs.
+**Current**: `g.camX--; g.camY--;` (unconditional)
+**Fix**: Only apply when `g.camZ > 7` (underground)
 
-Na correção seguinte, revertemos `getFloorRange` para ±2 (conservador demais) e criamos `getMapDescFloorRange` (7→0 só para mapDesc). Isso resolveu o mapDesc mas os scrolls continuam com ±2 → voltamos aos mesmos leftover.
+Same issue as Fix 2 in reverse.
 
-### Correção cirúrgica
+### Files Changed
 
-A solução é simples — dois pontos:
+| File | Line | Change |
+|------|------|--------|
+| `src/lib/tibiaRelic/packetParser.ts` | 1083 | offset = 0 for surface floors |
+| `src/lib/tibiaRelic/packetParser.ts` | 846 | conditional camX++/camY++ |
+| `src/lib/tibiaRelic/packetParser.ts` | 875 | conditional camX--/camY-- |
 
-1. **`getFloorRange`**: mudar para 7→0 na superfície (afeta scrolls)
-2. **`floorUp`/`floorDown`**: manter como está (lê apenas 1 floor novo)
-3. **Remover `getMapDescFloorRange`**: não precisa mais, pois `getFloorRange` já retorna 7→0
-
-Isso funciona porque:
-- `scroll()` usa `getFloorRange` → agora lê 7→0 → consome todos os bytes ✓
-- `mapDesc()` pode usar `getFloorRange` também → mesmo resultado ✓
-- `floorUp`/`floorDown` chamam `readFloorArea` diretamente, **não usam** `getFloorRange` → não são afetados ✓
-- `readMultiFloorArea` já tem um guard `if (r.left() < 2) break` que para automaticamente quando não há mais dados para floors distantes → seguro ✓
-
-O `readMultiFloorArea` já lida com floors vazios (skip markers de 2 bytes) e com exhaustion (para quando o buffer acaba). Não há risco de ler dados demais.
-
-### Mudanças
-
-**`packetParser.ts`:**
-- `getFloorRange`: surface → `{ startz: 7, endz: 0, zstep: -1 }`
-- Remover `getMapDescFloorRange` (redundante)
-- `mapDesc`: usar `getFloorRange` em vez de `getMapDescFloorRange`
-- `floorUp`/`floorDown`: sem mudanças (já estão corretos)
+These are JS-only changes — no WASM rebuild needed. The C++ player uses tibiarc's own parser which handles this correctly.
 
