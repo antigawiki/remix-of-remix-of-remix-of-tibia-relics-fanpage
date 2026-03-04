@@ -228,6 +228,7 @@ const CamMapPage = () => {
         dat.load(datBuf);
 
         rendererRef.current = new MapTileRenderer(spr, dat);
+        rendererRef.current.diagnose();
         setAssetsLoading(false);
       } catch (err) {
         console.error('[CamMap] Failed to load data:', err);
