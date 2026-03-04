@@ -132,6 +132,8 @@ export interface FrameDiag {
   opcodes: number[];
   bytesLeft: number;
   error?: string;
+  /** First 128 bytes of the frame payload as hex string (for debugging opcode payloads) */
+  hexDump?: string;
 }
 
 export interface ProtocolDiagnosticResult {
