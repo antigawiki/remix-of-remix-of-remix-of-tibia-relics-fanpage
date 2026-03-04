@@ -285,7 +285,7 @@ const TibiarcPlayer = ({ className, onStateChange }: TibiarcPlayerProps) => {
         pollingRef.current = null;
       }
     };
-  }, [state, duration]);
+  }, [state, duration, onStateChange]);
 
   // Visibilitychange handler
   useEffect(() => {
