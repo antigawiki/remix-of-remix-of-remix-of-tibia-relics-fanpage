@@ -8,6 +8,7 @@ type PlayerState = 'idle' | 'loading-data' | 'ready' | 'loading-cam' | 'playing'
 
 interface TibiarcPlayerProps {
   className?: string;
+  onStateChange?: (info: { camBuffer: Uint8Array | null; progress: number; isPlaying: boolean }) => void;
 }
 
 interface WasmModule {
@@ -84,7 +85,7 @@ function isCanvasBlack(canvas: HTMLCanvasElement): boolean {
   }
 }
 
-const TibiarcPlayer = ({ className }: TibiarcPlayerProps) => {
+const TibiarcPlayer = ({ className, onStateChange }: TibiarcPlayerProps) => {
   const { t } = useTranslation();
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -239,6 +240,7 @@ const TibiarcPlayer = ({ className }: TibiarcPlayerProps) => {
         const playing = safeCall(mod, 'is_playing', 'number', [], [], 1);
         setProgress(p);
         if (p > 0) lastGoodProgressRef.current = p;
+        onStateChange?.({ camBuffer: camBufferRef.current, progress: p, isPlaying: !!playing });
         
 
         if (!playing) {
@@ -283,7 +285,7 @@ const TibiarcPlayer = ({ className }: TibiarcPlayerProps) => {
         pollingRef.current = null;
       }
     };
-  }, [state, duration]);
+  }, [state, duration, onStateChange]);
 
   // Visibilitychange handler
   useEffect(() => {

@@ -17,13 +17,19 @@ export type DebugEventType =
   | 'MAP_DESC_MINI'
   | 'MULTIFLOOR_EXHAUSTED'
   | 'MULTIFLOOR_STEP'
-  | 'MULTIFLOOR_DONE';
+  | 'MULTIFLOOR_DONE'
+  | 'FRAME_START'
+  | 'FRAME_END'
+  | 'PARSE_ERROR'
+  | 'CREATURE_ADD'
+  | 'CREATURE_REMOVE';
 
 export interface DebugEvent {
   ts: number; // performance.now()
   camMs: number; // playback ms
   type: DebugEventType;
   data: Record<string, unknown>;
+  description?: string; // human-readable description
 }
 
 export interface DebugSnapshot {
@@ -54,7 +60,7 @@ export class DebugLogger {
     return this._lastMoveCr;
   }
 
-  log(type: DebugEventType, data: Record<string, unknown>) {
+  log(type: DebugEventType, data: Record<string, unknown>, description?: string) {
     if (!this.enabled) return;
     if (type === 'MOVE_CR') this._lastMoveCr = data;
     this.events.push({
@@ -62,6 +68,7 @@ export class DebugLogger {
       camMs: this._camMs,
       type,
       data,
+      description,
     });
     // Circular buffer — trim oldest when over limit
     if (this.events.length > MAX_EVENTS) {

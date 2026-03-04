@@ -1,13 +1,21 @@
-import { useEffect } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { Link } from 'react-router-dom';
 import { ArrowLeft, Film, Info } from 'lucide-react';
 import { useTranslation } from '@/i18n';
 import TibiarcPlayer from '@/components/TibiarcPlayer';
+import CamFrameDebugger from '@/components/CamFrameDebugger';
 import { ThemeToggle } from '@/components/ThemeToggle';
 import { LanguageSelector } from '@/components/LanguageSelector';
 
 const CamPlayerPage = () => {
   const { t } = useTranslation();
+  const [debugState, setDebugState] = useState<{ camBuffer: Uint8Array | null; progress: number; isPlaying: boolean }>({
+    camBuffer: null, progress: 0, isPlaying: false,
+  });
+
+  const handleStateChange = useCallback((info: { camBuffer: Uint8Array | null; progress: number; isPlaying: boolean }) => {
+    setDebugState(info);
+  }, []);
 
   // WASM module sets document.title to "tibiarc" — use MutationObserver to revert instantly
   useEffect(() => {
@@ -54,7 +62,14 @@ const CamPlayerPage = () => {
 
       {/* Player */}
       <div className="flex-1 flex flex-col items-center p-4 pt-6 gap-6">
-        <TibiarcPlayer className="w-full max-w-[960px]" />
+        <TibiarcPlayer className="w-full max-w-[960px]" onStateChange={handleStateChange} />
+
+        {/* Frame Debugger */}
+        <CamFrameDebugger
+          camBuffer={debugState.camBuffer}
+          progress={debugState.progress}
+          isPlaying={debugState.isPlaying}
+        />
 
         {/* Info box */}
         <div className="w-full max-w-[960px] bg-card border border-border/50 rounded-sm p-4 space-y-2">
