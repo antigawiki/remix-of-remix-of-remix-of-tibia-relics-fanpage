@@ -843,7 +843,7 @@ export class PacketParser {
     }
     this.syncPlayerToCamera(oldZ);
     this.cleanupDistantCreatures(g.camZ);
-    this.reinsertCreaturesOnTiles();
+    this.dedupCreaturesOnTiles();
   }
 
   private floorDown(r: Buf) {
@@ -873,7 +873,7 @@ export class PacketParser {
     }
     this.syncPlayerToCamera(oldZ);
     this.cleanupDistantCreatures(g.camZ);
-    this.reinsertCreaturesOnTiles();
+    this.dedupCreaturesOnTiles();
   }
 
   private talk(r: Buf) {
@@ -954,73 +954,54 @@ export class PacketParser {
   // --- Tile/block readers ---
 
   private readTileItems(r: Buf, x: number, y: number, z: number): number {
-    // Preserve existing creature references that protocol data won't re-send
-    const existingTile = this.gs.getTile(x, y, z);
-    const preservedCreatures: TileItem[] = existingTile.filter(i => i[0] === 'cr');
-
+    // IMPORTANT: Do NOT preserve old creatures. The server sends the COMPLETE tile data.
+    // Any creature not re-sent by the server is NOT on this tile anymore.
+    // Preserving old creatures was the root cause of duplication bugs (ghosts).
     const items: TileItem[] = [];
-    const newCreatureIds = new Set<number>();
 
     while (r.left() >= 2) {
       const word = r.peek16();
       if (word >= 0xFF00) {
         r.skip(2);
-        // Re-add preserved creatures that weren't re-sent by the protocol
-        for (const pc of preservedCreatures) {
-          if (!newCreatureIds.has(pc[1])) {
-            const c = this.gs.creatures.get(pc[1]);
-            if (c && c.x === x && c.y === y && c.z === z) {
-              items.push(pc);
-            }
-          }
-        }
         this.gs.setTile(x, y, z, items);
         return word & 0xFF;
       }
       r.skip(2);
       if (word === CR_FULL) {
         const c = this.readCreatureFull(r);
+        // Remove from old tile if creature moved
+        this.removeCreatureFromTile(c.id, c.x, c.y, c.z);
         if (c.x !== x || c.y !== y || c.z !== z) {
-          this.removeCreatureFromTile(c.id, c.x, c.y, c.z);
+          this.removeCreatureFromTile(c.id, x, y, z);
         }
         c.x = x; c.y = y; c.z = z;
         items.push(['cr', c.id]);
-        newCreatureIds.add(c.id);
       } else if (word === CR_KNOWN) {
         const c = this.readCreatureKnown(r);
+        this.removeCreatureFromTile(c.id, c.x, c.y, c.z);
         if (c.x !== x || c.y !== y || c.z !== z) {
-          this.removeCreatureFromTile(c.id, c.x, c.y, c.z);
+          this.removeCreatureFromTile(c.id, x, y, z);
         }
         c.x = x; c.y = y; c.z = z;
         items.push(['cr', c.id]);
-        newCreatureIds.add(c.id);
       } else if (word === CR_OLD) {
         const cid = r.u32();
         const dir = r.u8();
         const c = this.gs.creatures.get(cid);
         if (c) {
+          this.removeCreatureFromTile(cid, c.x, c.y, c.z);
           if (c.x !== x || c.y !== y || c.z !== z) {
-            this.removeCreatureFromTile(cid, c.x, c.y, c.z);
+            this.removeCreatureFromTile(cid, x, y, z);
           }
           c.direction = dir; c.x = x; c.y = y; c.z = z;
         }
         items.push(['cr', cid]);
-        newCreatureIds.add(cid);
       } else if (word >= 100 && word <= 9999) {
         const it = this.dat.items.get(word);
         if (it && (it.isStackable || it.isFluid || it.isSplash)) {
           r.u8();
         }
         items.push(['it', word]);
-      }
-    }
-    // Re-add preserved creatures at end-of-buffer too
-    for (const pc of preservedCreatures) {
-      if (!newCreatureIds.has(pc[1])) {
-        const c = this.gs.creatures.get(pc[1]);
-        if (c && c.x === x && c.y === y && c.z === z) {
-          items.push(pc);
-        }
       }
     }
     this.gs.setTile(x, y, z, items);
@@ -1127,19 +1108,51 @@ export class PacketParser {
         camZ, startz, endz,
       });
     }
-    // Safety net: re-insert creature references into their tiles after area read
-    this.reinsertCreaturesOnTiles();
+    // Dedup: remove any ghost creature refs from tiles after area read
+    this.dedupCreaturesOnTiles();
   }
 
-  /** Ensure every known creature has a ['cr', cid] entry on its current tile */
-  private reinsertCreaturesOnTiles() {
+  /**
+   * Remove duplicate/ghost creature references from tiles.
+   * A creature ref ['cr', cid] is valid ONLY if the creature's stored position matches the tile.
+   * This prevents ghosts from tiles that were re-read but the creature moved away.
+   */
+  private dedupCreaturesOnTiles() {
     const g = this.gs;
-    for (const [cid, c] of g.creatures) {
-      const tile = g.getTile(c.x, c.y, c.z);
-      const hasCr = tile.some(i => i[0] === 'cr' && i[1] === cid);
-      if (!hasCr) {
-        tile.push(['cr', cid]);
-        g.setTile(c.x, c.y, c.z, tile);
+    // Track which tiles each creature is on
+    const seen = new Map<number, string>(); // cid → canonical tile key
+    
+    for (const [key, tile] of g.tiles) {
+      let changed = false;
+      let i = tile.length;
+      while (i-- > 0) {
+        if (tile[i][0] !== 'cr') continue;
+        const cid = tile[i][1];
+        const c = g.creatures.get(cid);
+        
+        // Remove if creature doesn't exist anymore
+        if (!c) {
+          tile.splice(i, 1);
+          changed = true;
+          continue;
+        }
+        
+        // Remove if creature's stored position doesn't match this tile
+        const correctKey = g.tileKey(c.x, c.y, c.z);
+        if (key !== correctKey) {
+          tile.splice(i, 1);
+          changed = true;
+          continue;
+        }
+        
+        // Remove if we already saw this creature on another tile (dedup)
+        if (seen.has(cid)) {
+          tile.splice(i, 1);
+          changed = true;
+          continue;
+        }
+        
+        seen.set(cid, key);
       }
     }
   }
