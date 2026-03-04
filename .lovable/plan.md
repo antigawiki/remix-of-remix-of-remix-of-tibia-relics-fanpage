@@ -1,71 +1,74 @@
 
 
-## Diagnóstico: Causa Raiz dos Erros
+## Protocol Reverse-Engineering Lab
 
-### O Problema Central: Floor Range Incorreto
+A ideia é criar uma ferramenta de diagnóstico avançada que, ao processar uma .cam, faça testes automáticos com diferentes estratégias de parsing para cada frame que dá erro, mapeando exatamente quais bytes o TibiaRelic envia e como devemos lê-los.
 
-O parser JS usa a lógica padrão do OTClient para superfície (z ≤ 7):
-```text
-getFloorRange(z=7) → startz=7, endz=0 → 8 andares (7,6,5,4,3,2,1,0)
-```
+### Conceito
 
-Mas o TibiaRelic envia **apenas ±2 andares** (confirmado pelo usuário). Isso significa que na superfície, o servidor envia no máximo 5 andares em vez de 8. O parser tenta ler 3 andares extras que **não existem no stream**, consumindo bytes dos próximos opcodes como se fossem tile data. Isso corrompe todo o resto da leitura.
+Em vez de apenas detectar anomalias, a nova ferramenta vai:
 
-**Efeito cascata:**
-1. `readMultiFloorArea` consome bytes demais → desync
-2. Próximos opcodes leem dados corrompidos → item IDs inválidos
-3. Item IDs inválidos → sprites não resolvíveis → quadrados brancos no mapa
-4. Bytes consumidos errados → crashes em sequência
+1. **Processar a .cam normalmente** e registrar cada erro (BufOverflow, opcode desconhecido, desync)
+2. **Para cada frame com erro**, fazer um "replay isolado" desse frame com múltiplas estratégias alternativas e comparar os resultados
+3. **Gerar um relatório detalhado** mostrando byte-a-byte o que cada opcode consumiu, onde o parsing divergiu, e qual estratégia funcionou
 
-### `floorUp` e `floorDown` também estão errados
+### Estratégias de Teste por Frame
 
-`floorUp` (linha 751-756): quando camZ chega a 7 (saindo do subsolo), lê andares 5→0 com offsets fixos (6 andares). Se o servidor só envia 2-3, desync.
+Para cada frame que falha, o lab tentará:
 
-`floorDown` (linha 780-786): quando camZ chega a 8 (entrando no subsolo), lê z até z+2 (3 andares). Isso parece correto para ±2.
+- **Estratégia A (atual)**: ±2 floors, u16 looktype, TCP demux
+- **Estratégia B**: ±1 floor (talvez o relic mande menos em certos casos)
+- **Estratégia C**: ±3 floors (testar se algum cenário manda mais)
+- **Estratégia D**: Single floor only (floor da câmera apenas)
+- **Estratégia E**: Skip multi-floor data entirely (consumir 0 floors, só position)
 
-### Sobre iluminação
+Cada estratégia registra: bytes consumidos, bytes restantes, opcodes parseados com sucesso, primeiro erro.
 
-Os bytes de iluminação **já são consumidos** corretamente:
-- World light (0x82): `r.u8(); r.u8()` ✓
-- Creature light em `updateCreatureCommon`: `r.u8(); r.u8()` ✓
-- Creature light update (0x8D): `r.u32(); r.u8(); r.u8()` ✓
+### Componentes
 
-A iluminação não causa crashes — o rendering de escuridão funciona no WASM (imagem 206).
+**1. `src/lib/tibiaRelic/camProtocolLab.ts`** — Engine de testes:
+- Recebe um ArrayBuffer da .cam e o DatLoader
+- Processa todos os frames, registrando para cada um: opcodes, bytes consumidos, erros
+- Quando um frame falha, clona o GameState antes do frame e re-executa com cada estratégia
+- Para cada opcode multi-floor (0x64, 0x65-0x68, 0xBE, 0xBF), registra byte-level trace
+- Gera um `LabResult` com: frames totais, frames com erro, mapa de erros por opcode, resultados de cada estratégia por frame
 
-### Sobre as mensagens
+**2. `src/lib/tibiaRelic/packetParser.ts`** — Instrumentação adicional:
+- Adicionar um modo `traceMode` que registra, para cada `readTileItems`, `readFloorArea`, `readMultiFloorArea`: posição inicial/final no buffer, tiles lidos, skip count
+- Expor o `getFloorRange` como configurável (aceitar override de floor range)
+- Adicionar setter para floor range strategy para que o lab possa testar diferentes ranges
 
-O WASM player **já funciona corretamente**: imagem 205 mostra nomes de criaturas visíveis (Kongra, Sibang) sem mensagens de chat. A correção anterior foi aplicada com sucesso.
+**3. Nova aba no CamAnalyzerPage** — UI do Protocol Lab:
+- Tab "Analyzer" (existente) + Tab "Protocol Lab" (novo)
+- Botão "Run Protocol Lab" que executa a análise profunda
+- Tabela de resultados mostrando cada frame com erro e qual estratégia teve sucesso
+- Para cada frame, expandir para ver o byte-level trace
+- Hex dump do payload do frame com highlights coloridos por opcode
+- Resumo estatístico: "de 50 frames com erro, 45 funcionaram com ±1 floor, 3 com single floor, 2 irrecuperáveis"
+- Recomendação automática: baseado nos resultados, sugere qual floor range usar
 
----
+### Mudanças Técnicas
 
-### Plano de Correção
+**packetParser.ts:**
+- Adicionar `floorRangeOverride?: { plus: number, minus: number }` nas options
+- Quando presente, `getFloorRange` usa o override em vez do ±2 hardcoded
+- Adicionar `traceLog: TraceEntry[]` que registra posição do buffer antes/depois de cada operação multi-floor
+- Novo tipo `TraceEntry = { op: string, posBefore: number, posAfter: number, bytesConsumed: number, floor?: number, error?: string }`
 
-**1. Corrigir `getFloorRange` para ±2 andares em TODAS as situações:**
+**camProtocolLab.ts:**
+- `runProtocolLab(data: ArrayBuffer, datLoader: DatLoader, onProgress)` → `LabResult`
+- Para cada frame: processa normalmente, se der erro → snapshot do GameState → re-tenta com cada estratégia
+- `LabResult` contém: `errorFrames: ErrorFrame[]`, `strategySummary: Record<string, number>`, `opcodeErrorMap: Record<string, number>`, `recommendation: string`
 
-```typescript
-private getFloorRange(z: number): { startz: number; endz: number; zstep: number } {
-  if (z > 7) {
-    return { startz: z - 2, endz: Math.min(z + 2, 15), zstep: 1 };
-  } else {
-    // TibiaRelic: ±2 floors only, not full 7→0
-    return { startz: Math.min(z + 2, 7), endz: Math.max(z - 2, 0), zstep: -1 };
-  }
-}
-```
+**CamAnalyzerPage.tsx:**
+- Adicionar Tabs component com "Análise" e "Protocol Lab"
+- Protocol Lab tab com sua própria UI de resultados
+- Hex viewer inline para payloads de frames com erro
 
-Superfície z=7: lê 7→5 (3 andares em vez de 8)
-Superfície z=6: lê 7→4 (4 andares)
-Superfície z=5: lê 7→3 (5 andares — máximo ±2)
+### Resultado Esperado
 
-**2. Corrigir `floorUp` para ±2:**
-
-Quando camZ atinge 7 (saindo do subsolo), em vez de ler 6 andares (5→0), ler apenas os andares visíveis (camZ-2 até 0 ou conforme ±2).
-
-**3. Corrigir `floorDown` para ±2:**
-
-Verificar que a lógica está alinhada com ±2.
-
-**4. Adicionar safety guard no `readMultiFloorArea`:**
-
-Se durante a leitura de um floor o buffer tiver bytes insuficientes para um tile completo, parar imediatamente em vez de tentar ler mais andares.
+Após rodar o Protocol Lab com uma .cam real, teremos dados concretos como:
+- "O opcode 0x64 (mapDesc) falha em 30 frames. Em 28 deles, a estratégia ±2 funciona mas a superfície z=7 precisa de exatamente 3 floors, não 5"
+- "O opcode 0xBE (floorUp) falha em 5 frames. Em 4 deles, o servidor envia apenas 1 floor novo, não os 2 esperados"
+- Isso nos dá a informação exata para corrigir o parser de forma definitiva.
 
