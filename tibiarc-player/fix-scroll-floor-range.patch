@@ -1,79 +1,70 @@
---- a/lib/parser.hpp
-+++ b/lib/parser.hpp
-@@ -90,7 +90,8 @@ private:
-     void ParseMapDescription(DataReader &reader,
-                              EventList &events,
-                              int xOffset,
-                              int yOffset,
-                              int width,
--                             int height);
-+                             int height,
-+                             bool isScroll = false);
- 
-     void ParseAmbientLight(DataReader &reader, EventList &events);
 --- a/lib/parser.cpp
 +++ b/lib/parser.cpp
-@@ -418,7 +418,8 @@ void Parser::ParseMapDescription(DataReader &reader,
-                                  EventList &events,
-                                  int xOffset,
-                                  int yOffset,
-                                  int width,
--                                 int height) {
-+                                 int height,
-+                                 bool isScroll) {
-     int zIdx, endZ, zStep;
-     uint16_t tileSkip;
+@@ -1580,17 +1580,15 @@ void Parser::ParseFloorChangeUp(DataReader &reader, EventList &events) {
+     Position_.Z--;
+     tileSkip = 0;
  
-@@ -427,8 +428,15 @@ void Parser::ParseMapDescription(DataReader &reader,
-         zIdx = Position_.Z - 2;
-         endZ = std::min<int>(15, Position_.Z + 2);
-         zStep = 1;
--    } else {
-+    } else if (isScroll) {
-+        /* TibiaRelic recordings only send ±2 floors for scroll updates
-+         * on the surface, not the full 7→0 range. Using the full range
-+         * causes byte over-read, corrupting subsequent packets and
-+         * producing ghost creatures / wrong floor rendering. */
-+        zIdx = std::min<int>(Position_.Z + 2, 7);
-+        endZ = std::max<int>(Position_.Z - 2, 0);
-+        zStep = -1;
-+    } else {
-         zIdx = 7;
-         endZ = 0;
-         zStep = -1;
-@@ -940,7 +948,7 @@ void Parser::ParseMoveEast(DataReader &reader, EventList &events) {
+     if (Position_.Z == 7) {
+-        for (int zIdx = 5; zIdx >= 0; zIdx--) {
+-            tileSkip = ParseFloorDescription(reader,
+-                                             events,
+-                                             Position_.X - 8,
+-                                             Position_.Y - 6,
+-                                             zIdx,
+-                                             Map::TileBufferWidth,
+-                                             Map::TileBufferHeight,
+-                                             Map::TileBufferDepth - zIdx,
+-                                             tileSkip);
+-        }
++        /* TibiaRelic: only the newly visible floor (z=5) is sent when
++         * transitioning from underground to surface, not all 6 floors. */
++        tileSkip = ParseFloorDescription(reader,
++                                         events,
++                                         Position_.X - 8,
++                                         Position_.Y - 6,
++                                         5,
++                                         Map::TileBufferWidth,
++                                         Map::TileBufferHeight,
++                                         3,
++                                         tileSkip);
+     } else if (Position_.Z > 7) {
+         tileSkip = ParseFloorDescription(reader,
+                                          events,
+@@ -1940,7 +1938,8 @@ void Parser::ParseMoveEast(DataReader &reader, EventList &events) {
      auto &event = AddEvent<PlayerMoved>(events);
      event.Position = Position_;
  
 -    ParseMapDescription(reader, events, +9, -6, 1, Map::TileBufferHeight);
-+    ParseMapDescription(reader, events, +9, -6, 1, Map::TileBufferHeight, true);
++    /* TibiaRelic: full 18x14 viewport sent on scroll, not just new column */
++    ParseMapDescription(reader, events, -8, -6, Map::TileBufferWidth, Map::TileBufferHeight);
  }
  
  void Parser::ParseMoveNorth(DataReader &reader, EventList &events) {
-@@ -950,7 +958,7 @@ void Parser::ParseMoveNorth(DataReader &reader, EventList &events) {
+@@ -1951,7 +1950,8 @@ void Parser::ParseMoveNorth(DataReader &reader, EventList &events) {
      auto &event = AddEvent<PlayerMoved>(events);
      event.Position = Position_;
  
 -    ParseMapDescription(reader, events, -8, -6, Map::TileBufferWidth, 1);
-+    ParseMapDescription(reader, events, -8, -6, Map::TileBufferWidth, 1, true);
++    /* TibiaRelic: full 18x14 viewport sent on scroll, not just new row */
++    ParseMapDescription(reader, events, -8, -6, Map::TileBufferWidth, Map::TileBufferHeight);
  }
  
  void Parser::ParseMoveSouth(DataReader &reader, EventList &events) {
-@@ -961,7 +969,7 @@ void Parser::ParseMoveSouth(DataReader &reader, EventList &events) {
+@@ -1963,7 +1963,8 @@ void Parser::ParseMoveSouth(DataReader &reader, EventList &events) {
      auto &event = AddEvent<PlayerMoved>(events);
      event.Position = Position_;
  
 -    ParseMapDescription(reader, events, -8, +7, Map::TileBufferWidth, 1);
-+    ParseMapDescription(reader, events, -8, +7, Map::TileBufferWidth, 1, true);
++    /* TibiaRelic: full 18x14 viewport sent on scroll, not just new row */
++    ParseMapDescription(reader, events, -8, -6, Map::TileBufferWidth, Map::TileBufferHeight);
  }
  
  void Parser::ParseMoveWest(DataReader &reader, EventList &events) {
-@@ -972,7 +980,7 @@ void Parser::ParseMoveWest(DataReader &reader, EventList &events) {
+@@ -1975,5 +1976,6 @@ void Parser::ParseMoveWest(DataReader &reader, EventList &events) {
      auto &event = AddEvent<PlayerMoved>(events);
      event.Position = Position_;
  
 -    ParseMapDescription(reader, events, -8, -6, 1, Map::TileBufferHeight);
-+    ParseMapDescription(reader, events, -8, -6, 1, Map::TileBufferHeight, true);
++    /* TibiaRelic: full 18x14 viewport sent on scroll, not just new column */
++    ParseMapDescription(reader, events, -8, -6, Map::TileBufferWidth, Map::TileBufferHeight);
  }
- 
- Parser::EventList Parser::Parse(DataReader &reader) {
