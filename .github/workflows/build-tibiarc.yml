@@ -40,30 +40,28 @@ jobs:
           # SCROLL FLOOR RANGE FIX (replaces .patch file)
           # =============================================
           
-          # Add isScroll parameter to ParseMapDescription declaration in parser.hpp
-          sed -i 's/int height);/int height,\n                             bool isScroll = false);/' lib/parser.hpp
-          
-          # Add isScroll parameter to ParseMapDescription definition in parser.cpp
-          sed -i '/void Parser::ParseMapDescription.*int height) {/s/int height) {/int height,\n                                 bool isScroll) {/' lib/parser.cpp
-          
-          # Replace the surface floor range logic to use ±2 when isScroll=true
-          # Original: } else { zIdx = 7; endZ = 0; zStep = -1; }
-          # New: } else if (isScroll) { zIdx = min(Z+2,7); endZ = max(Z-2,0); } else { zIdx=7; endZ=0; }
-          sed -i '/zIdx = Position_\.Z - 2;/{
-            # We are inside the underground branch, find the "} else {" for surface
-          }' lib/parser.cpp
-          
-          # More targeted: replace the else branch for surface floors
+          # Add isScroll parameter to ParseMapDescription (header + definition)
           python3 -c "
-          import re
+          # Patch header declaration
+          with open('lib/parser.hpp', 'r') as f:
+              h = f.read()
+          h = h.replace('int height);', 'int height,\n                             bool isScroll = false);', 1)
+          with open('lib/parser.hpp', 'w') as f:
+              f.write(h)
+          print('Patched parser.hpp')
+
+          # Patch cpp definition
           with open('lib/parser.cpp', 'r') as f:
               code = f.read()
+          code = code.replace('int height) {', 'int height,\n                                 bool isScroll) {', 1)
+
+          # Replace surface floor range logic
           old = '    } else {\n        zIdx = 7;\n        endZ = 0;\n        zStep = -1;\n    }'
-          new = '    } else if (isScroll) {\n        /* TibiaRelic recordings send +-2 floors for scroll updates\n         * on the surface, not the full 7->0 range. */\n        zIdx = std::min<int>(Position_.Z + 2, 7);\n        endZ = std::max<int>(Position_.Z - 2, 0);\n        zStep = -1;\n    } else {\n        zIdx = 7;\n        endZ = 0;\n        zStep = -1;\n    }'
+          new = '    } else if (isScroll) {\n        /* TibiaRelic: scroll uses +-2 floors on surface */\n        zIdx = std::min<int>(Position_.Z + 2, 7);\n        endZ = std::max<int>(Position_.Z - 2, 0);\n        zStep = -1;\n    } else {\n        zIdx = 7;\n        endZ = 0;\n        zStep = -1;\n    }'
           code = code.replace(old, new, 1)
           with open('lib/parser.cpp', 'w') as f:
               f.write(code)
-          print('Fixed surface floor range logic')
+          print('Patched parser.cpp: isScroll + surface floor range')
           "
 
           # Pass isScroll=true for scroll operations (MoveN/E/S/W)
