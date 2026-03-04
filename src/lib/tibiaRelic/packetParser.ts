@@ -305,10 +305,7 @@ export class PacketParser {
           // Unknown opcode — scan forward up to 4 bytes looking for a known opcode
           let recovered = false;
           for (let skip = 0; skip < 4 && r.pos < endPos; skip++) {
-            const peek = r.pos < endPos ? r.d ? undefined : undefined : undefined;
-            // Peek at next byte without consuming
-            if (r.pos >= endPos) break;
-            const next = (r as any).d[r.pos];
+            const next = r.peekU8();
             if (this.isKnownOpcode(next)) {
               recovered = true;
               break;
@@ -317,13 +314,13 @@ export class PacketParser {
           }
           if (!recovered) break;
         }
+        }
       } catch (e) {
         if (this.strictMode) throw e;
         // Try to recover: scan forward for next valid opcode
         let recovered = false;
         for (let skip = 0; skip < 4 && r.pos < endPos; skip++) {
-          if (r.pos >= endPos) break;
-          const next = (r as any).d[r.pos];
+          const next = r.peekU8();
           if (this.isKnownOpcode(next)) {
             recovered = true;
             break;
