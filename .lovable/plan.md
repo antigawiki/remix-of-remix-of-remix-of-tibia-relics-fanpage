@@ -1,79 +1,54 @@
 
 
-## Diagnosis
+## Diagnóstico: Não é luz — é o floor range dos scrolls
 
-The visual cam player uses a **precompiled C++ WASM binary** (`tibiarc_player.wasm`) with its own protocol parser that has hardcoded bugs for TibiaRelic's custom protocol. All your TypeScript fixes in `packetParser.ts` only affect the Protocol Lab and Cam Analyzer -- they never reach the visual player.
+Sua hipótese sobre luminância é criativa, mas **não é isso**. No protocolo Tibia 7.72, a luz não é enviada como dados extras por tile na rede. A luz funciona assim:
 
-The patch approach (modifying C++ source via `.patch` files in CI) is fragile and hasn't successfully produced a corrected WASM binary yet.
+- **Luz ambiente (0x82)**: 2 bytes (intensidade + cor) — já lido pelo parser
+- **Luz de criatura (0x8D)**: 6 bytes (creatureId + intensidade + cor) — já lido
+- **Luz de item**: vem do arquivo `.dat` (flag 0x15, 4 bytes), não do protocolo de rede
 
-## Solution: Pure JS Cam Player
+O parser lê todos esses corretamente. Os bytes sobrando não são dados de luz.
 
-You already have **100% of the infrastructure** needed to render .cam files without WASM:
+### A causa real (confirmada pelo JSON que você enviou)
 
-- `camParser.ts` -- parses .cam file format (header + frames)
-- `packetParser.ts` -- decodes Tibia protocol packets (with all TibiaRelic fixes)
-- `gameState.ts` -- tracks tiles, creatures, camera, effects
-- `renderer.ts` -- full Canvas2D renderer (847 lines: multi-floor, outfits, effects, projectiles, animated text, HUD)
-- `sprLoader.ts` + `datLoader.ts` -- sprite/data file loaders
-
-The WASM binary duplicates all of this in C++ but without the protocol fixes. **Replace the WASM player with a pure JS player** that chains: `camParser` → `packetParser` → `gameState` → `renderer`.
-
-## Implementation Plan
-
-### 1. Create `JsCamPlayer` component (~250 lines)
-
-New component `src/components/JsCamPlayer.tsx` that:
-
-- On mount: loads `Tibia.dat`, `Tibia.spr`, `Tibia.pic` (pic not needed for JS renderer -- only dat + spr)
-- On file upload: calls `parseCamFile(data)` to get frames
-- Playback loop via `requestAnimationFrame`:
-  - Advances `currentTick` based on elapsed time and speed
-  - Feeds frames whose `timestamp <= currentTick` into `packetParser.process(frame.payload)`
-  - Calls `renderer.draw(canvasWidth, canvasHeight)` to render the current game state
-- Controls: play/pause, speed cycle (1x/2x/4x/8x), seek slider, overlay toggle
-- Seek: resets `GameState`, replays all frames up to target timestamp with `parser.seekMode = true` (suppresses walk animations during fast-forward)
-
-### 2. Wire into existing page
-
-Replace the `<TibiarcPlayer>` import in `CamPlayerPage.tsx` (or wherever it's used) with `<JsCamPlayer>`.
-
-### 3. Keep WASM as fallback (optional)
-
-The old `TibiarcPlayer.tsx` can remain in the codebase but won't be the default. This gives a fallback if needed.
-
-## Key Architecture
+O JSON mostra claramente:
 
 ```text
-User uploads .cam
-       │
-       ▼
-  camParser.ts        → CamFrame[] (timestamp + payload)
-       │
-       ▼
-  packetParser.ts     → Updates GameState (tiles, creatures, camera)
-       │                 (all TibiaRelic protocol fixes applied here)
-       ▼
-  renderer.ts         → Draws to Canvas2D (480x352 native, upscaled)
-       │
-       ▼
-  <canvas> element    → User sees the game
+150 anomalias — 100% são BYTES_LEFTOVER
+147 de 150 (98%) resolvidas pela estratégia A (7→0)
+0 DESYNCs, 0 PARSE_ERRORs
 ```
 
-### Seek Implementation
+O problema é **exatamente o mesmo** que diagnosticamos antes: os **scrolls** (0x65-0x68) na superfície enviam dados para todos os floors visíveis (7→0), mas o parser usa `getFloorRange` que retorna apenas ±2 (3 floors). Os floors extras ficam não-lidos e são reportados como "leftover".
 
-Seeking backwards requires replaying from frame 0. To make this fast:
-- Store periodic **snapshots** every ~500 frames using `gameState.snapshot()`
-- On seek, find nearest snapshot before target, restore it, then replay remaining frames
-- During replay, set `parser.seekMode = true` to skip walk animations and effects
+### Por que a última correção piorou
 
-### What This Fixes
+Na primeira tentativa, mudamos `getFloorRange` para 7→0 **E** mudamos `floorUp` para ler floors 5→0. Mas `floorUp`/`floorDown` só enviam dados do **único** novo floor visível, não todos os floors. Ler 6 floors quando só 1 foi enviado causou byte drift → DESYNCs.
 
-Since the JS parser already handles:
-- TibiaRelic protocol divergences (0xA4, 0xA7, 0xB6, 0xA8 payloads)
-- Correct floor ranges for scrolls vs mapDesc
-- Creature deduplication (`dedupCreaturesOnTiles`)
-- CR_OLD marker handling inside `addThing`
-- TCP demux + direct opcode detection
+Na correção seguinte, revertemos `getFloorRange` para ±2 (conservador demais) e criamos `getMapDescFloorRange` (7→0 só para mapDesc). Isso resolveu o mapDesc mas os scrolls continuam com ±2 → voltamos aos mesmos leftover.
 
-All the visual bugs (duplicated creatures, wrong floor, frozen animations) should be eliminated because the **same parser that works correctly in Protocol Lab** will now drive the visual output.
+### Correção cirúrgica
+
+A solução é simples — dois pontos:
+
+1. **`getFloorRange`**: mudar para 7→0 na superfície (afeta scrolls)
+2. **`floorUp`/`floorDown`**: manter como está (lê apenas 1 floor novo)
+3. **Remover `getMapDescFloorRange`**: não precisa mais, pois `getFloorRange` já retorna 7→0
+
+Isso funciona porque:
+- `scroll()` usa `getFloorRange` → agora lê 7→0 → consome todos os bytes ✓
+- `mapDesc()` pode usar `getFloorRange` também → mesmo resultado ✓
+- `floorUp`/`floorDown` chamam `readFloorArea` diretamente, **não usam** `getFloorRange` → não são afetados ✓
+- `readMultiFloorArea` já tem um guard `if (r.left() < 2) break` que para automaticamente quando não há mais dados para floors distantes → seguro ✓
+
+O `readMultiFloorArea` já lida com floors vazios (skip markers de 2 bytes) e com exhaustion (para quando o buffer acaba). Não há risco de ler dados demais.
+
+### Mudanças
+
+**`packetParser.ts`:**
+- `getFloorRange`: surface → `{ startz: 7, endz: 0, zstep: -1 }`
+- Remover `getMapDescFloorRange` (redundante)
+- `mapDesc`: usar `getFloorRange` em vez de `getMapDescFloorRange`
+- `floorUp`/`floorDown`: sem mudanças (já estão corretos)
 

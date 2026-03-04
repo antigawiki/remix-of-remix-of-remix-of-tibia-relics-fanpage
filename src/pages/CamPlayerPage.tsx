@@ -2,7 +2,7 @@ import { useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { ArrowLeft, Film, Info } from 'lucide-react';
 import { useTranslation } from '@/i18n';
-import TibiarcPlayer from '@/components/TibiarcPlayer';
+import JsCamPlayer from '@/components/JsCamPlayer';
 import { ThemeToggle } from '@/components/ThemeToggle';
 import { LanguageSelector } from '@/components/LanguageSelector';
 
@@ -54,7 +54,7 @@ const CamPlayerPage = () => {
 
       {/* Player */}
       <div className="flex-1 flex flex-col items-center p-4 pt-6 gap-6">
-        <TibiarcPlayer className="w-full max-w-[960px]" />
+        <JsCamPlayer className="w-full max-w-[960px]" />
 
         {/* Info box */}
         <div className="w-full max-w-[960px] bg-card border border-border/50 rounded-sm p-4 space-y-2">
