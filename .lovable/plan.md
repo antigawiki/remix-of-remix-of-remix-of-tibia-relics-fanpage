@@ -1,82 +1,54 @@
 
 
-## Root Cause Analysis: C++ Parser Byte Drift in Underground Areas
+## Diagnóstico: Não é luz — é o floor range dos scrolls
 
-### The Smoking Gun
+Sua hipótese sobre luminância é criativa, mas **não é isso**. No protocolo Tibia 7.72, a luz não é enviada como dados extras por tile na rede. A luz funciona assim:
 
-There are **two critical discrepancies** between the JS parser (which works with 0 errors) and the C++ parser (which produces ghosting):
+- **Luz ambiente (0x82)**: 2 bytes (intensidade + cor) — já lido pelo parser
+- **Luz de criatura (0x8D)**: 6 bytes (creatureId + intensidade + cor) — já lido
+- **Luz de item**: vem do arquivo `.dat` (flag 0x15, 4 bytes), não do protocolo de rede
 
----
+O parser lê todos esses corretamente. Os bytes sobrando não são dados de luz.
 
-### Problem 1: Scroll Dimensions (THE MAIN BUG)
+### A causa real (confirmada pelo JSON que você enviou)
 
-**Original tibiarc C++ scroll handlers read 1-tile strips** (standard Tibia protocol):
+O JSON mostra claramente:
+
 ```text
-ParseMoveEast:  (+9, -6,  1, 14)  → 1 column
-ParseMoveNorth: (-8, -6, 18,  1)  → 1 row
-ParseMoveSouth: (-8, +7, 18,  1)  → 1 row
-ParseMoveWest:  (-8, -6,  1, 14)  → 1 column
+150 anomalias — 100% são BYTES_LEFTOVER
+147 de 150 (98%) resolvidas pela estratégia A (7→0)
+0 DESYNCs, 0 PARSE_ERRORs
 ```
 
-**But TibiaRelic sends the FULL 18×14 viewport for every scroll** (modified OTHire behavior). The JS parser confirms this — it reads full 18×14 for all 4 directions and reports 0 parse errors:
-```typescript
-// JS parser scroll — works correctly:
-this.readMultiFloorArea(r, g.camX - 8, g.camY - 6, 18, 14, ...)
-```
+O problema é **exatamente o mesmo** que diagnosticamos antes: os **scrolls** (0x65-0x68) na superfície enviam dados para todos os floors visíveis (7→0), mas o parser usa `getFloorRange` que retorna apenas ±2 (3 floors). Os floors extras ficam não-lidos e são reportados como "leftover".
 
-**Impact**: Every single scroll underground leaves ~200+ tiles of unread data in the stream. These bytes get interpreted as the next opcode's data, creating phantom creatures, wrong positions, duplications — exactly what the screenshots show. This cascading byte drift explains why "it works fine until entering the cave" — that's when scrolls start happening underground.
+### Por que a última correção piorou
 
-The existing `fix-scroll-floor-range.patch` only changes the Z floor range (`isScroll=true`), but **never touches the width/height**. This is why ghosting persists.
+Na primeira tentativa, mudamos `getFloorRange` para 7→0 **E** mudamos `floorUp` para ler floors 5→0. Mas `floorUp`/`floorDown` só enviam dados do **único** novo floor visível, não todos os floors. Ler 6 floors quando só 1 foi enviado causou byte drift → DESYNCs.
 
----
+Na correção seguinte, revertemos `getFloorRange` para ±2 (conservador demais) e criamos `getMapDescFloorRange` (7→0 só para mapDesc). Isso resolveu o mapDesc mas os scrolls continuam com ±2 → voltamos aos mesmos leftover.
 
-### Problem 2: FloorUp z=7→ Surface Transition
+### Correção cirúrgica
 
-**C++ reads 6 floors** when transitioning from underground to surface (z=8→7):
-```cpp
-// C++ (original tibiarc):
-for (int zIdx = 5; zIdx >= 0; zIdx--) {  // reads floors 5,4,3,2,1,0
-    ParseFloorDescription(..., zIdx, 18, 14, ...);
-}
-```
+A solução é simples — dois pontos:
 
-**JS reads only 1 floor**:
-```typescript
-// JS parser:
-const newFloor = Math.max(g.camZ - 2, 0); // = 5
-this.readFloorArea(r, ..., newFloor, 18, 14, offset, 0); // only floor 5
-```
+1. **`getFloorRange`**: mudar para 7→0 na superfície (afeta scrolls)
+2. **`floorUp`/`floorDown`**: manter como está (lê apenas 1 floor novo)
+3. **Remover `getMapDescFloorRange`**: não precisa mais, pois `getFloorRange` já retorna 7→0
 
-TibiaRelic only sends 1 floor's data. The C++ over-reads by 5 floors, consuming ~1000+ bytes of subsequent opcodes.
+Isso funciona porque:
+- `scroll()` usa `getFloorRange` → agora lê 7→0 → consome todos os bytes ✓
+- `mapDesc()` pode usar `getFloorRange` também → mesmo resultado ✓
+- `floorUp`/`floorDown` chamam `readFloorArea` diretamente, **não usam** `getFloorRange` → não são afetados ✓
+- `readMultiFloorArea` já tem um guard `if (r.left() < 2) break` que para automaticamente quando não há mais dados para floors distantes → seguro ✓
 
----
+O `readMultiFloorArea` já lida com floors vazios (skip markers de 2 bytes) e com exhaustion (para quando o buffer acaba). Não há risco de ler dados demais.
 
-### Problem 3: isScroll Z Range (Minor, consequence of #1)
+### Mudanças
 
-The patch added `isScroll` to use ±2 floors instead of full 7→0 on surface scrolls. But this was a workaround for the wrong strip dimensions. With correct full-viewport dimensions, the default 7→0 range is correct (matches JS parser's `getMapDescFloorRange`).
-
----
-
-### Fix Plan
-
-| File | Change |
-|------|--------|
-| `tibiarc-player/fix-scroll-floor-range.patch` | **Rewrite completely**: (a) Change all 4 scroll functions to read full 18×14 viewport with offset `(-8, -6)`, (b) Remove `isScroll` parameter entirely — revert Z range to default 7→0 on surface, (c) Fix `ParseFloorChangeUp` z=7 case to read only 1 floor (z=5) instead of 6 floors |
-| `.github/workflows/build-player.yml` | No changes needed — already applies the patch via `git apply` |
-
-### Detailed patch changes
-
-**Scroll functions** (all 4 become identical viewport read):
-```text
-Before: ParseMapDescription(reader, events, +9, -6, 1, TileBufferHeight, true)
-After:  ParseMapDescription(reader, events, -8, -6, TileBufferWidth, TileBufferHeight)
-```
-
-**ParseFloorChangeUp z=7**:
-```text
-Before: for (zIdx = 5; zIdx >= 0; zIdx--) { read floor zIdx }  // 6 floors
-After:  read only floor 5 with offset 3                         // 1 floor
-```
-
-**ParseMapDescription signature**: remove `isScroll` parameter, revert to original signature.
+**`packetParser.ts`:**
+- `getFloorRange`: surface → `{ startz: 7, endz: 0, zstep: -1 }`
+- Remover `getMapDescFloorRange` (redundante)
+- `mapDesc`: usar `getFloorRange` em vez de `getMapDescFloorRange`
+- `floorUp`/`floorDown`: sem mudanças (já estão corretos)
 
