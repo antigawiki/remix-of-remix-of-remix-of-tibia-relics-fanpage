@@ -28,9 +28,12 @@ jobs:
         run: |
           git clone https://github.com/antigawiki/tibiarc.git /tmp/tibiarc
 
-      - name: Copy web player source
+      - name: Copy web player source and apply patches
         run: |
           cp tibiarc-player/web_player.cpp /tmp/tibiarc/web_player.cpp
+          cd /tmp/tibiarc
+          git apply $GITHUB_WORKSPACE/tibiarc-player/fix-scroll-floor-range.patch
+          echo "Patch applied successfully"
 
       - name: Build tibiarc library + web player
         run: |
