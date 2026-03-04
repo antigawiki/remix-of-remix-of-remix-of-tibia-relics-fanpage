@@ -261,6 +261,9 @@ int load_recording_tibiarelic(const uint8_t *buf, int len,
         int frameCount = 0;
         int parsedFrames = 0;
 
+        int failedFrames = 0;
+        const int MAX_FAIL_LOG = 50;
+
         while (pos + 10 <= len) {
             uint64_t ts = read_u64_le(buf + pos);
             uint16_t sz = read_u16_le(buf + pos + 8);
@@ -272,19 +275,39 @@ int load_recording_tibiarelic(const uint8_t *buf, int len,
 
             auto timestamp = std::chrono::milliseconds((int64_t)(ts - ts0));
 
-            // Replicate JS heuristic: check first byte to decide parsing mode
             if (sz > 0) {
                 try {
-                    // Always direct opcodes: .cam frames contain opcodes without
-                    // TCP length prefix. The recorder strips TCP headers.
                     DataReader packetReader(sz, buf + pos);
                     auto events = parser.Parse(packetReader);
                     if (!events.empty()) {
                         recording->Frames.emplace_back(timestamp, std::move(events));
                         parsedFrames++;
                     }
+                } catch (const std::exception &ex) {
+                    failedFrames++;
+                    if (failedFrames <= MAX_FAIL_LOG) {
+                        printf("[tibiarc] Frame %d FAILED (%d bytes): %s\n",
+                               frameCount, sz, ex.what());
+                        // Hex dump first 32 bytes
+                        int dumpLen = std::min((int)sz, 32);
+                        printf("[tibiarc]   hex: ");
+                        for (int i = 0; i < dumpLen; i++) {
+                            printf("%02X ", buf[pos + i]);
+                        }
+                        printf("\n");
+                    }
                 } catch (...) {
-                    // Skip unparseable frames
+                    failedFrames++;
+                    if (failedFrames <= MAX_FAIL_LOG) {
+                        printf("[tibiarc] Frame %d FAILED (%d bytes): unknown exception\n",
+                               frameCount, sz);
+                        int dumpLen = std::min((int)sz, 32);
+                        printf("[tibiarc]   hex: ");
+                        for (int i = 0; i < dumpLen; i++) {
+                            printf("%02X ", buf[pos + i]);
+                        }
+                        printf("\n");
+                    }
                 }
             }
 
@@ -300,8 +323,8 @@ int load_recording_tibiarelic(const uint8_t *buf, int len,
         // 4. Set runtime
         recording->Runtime = recording->Frames.back().Timestamp;
 
-        printf("[tibiarc] TibiaRelic parsed: %d raw frames -> %d parsed -> %zu game frames, %lld ms\n",
-               frameCount, parsedFrames, recording->Frames.size(), recording->Runtime.count());
+        printf("[tibiarc] TibiaRelic parsed: %d raw -> %d ok -> %d failed -> %zu game frames, %lld ms\n",
+               frameCount, parsedFrames, failedFrames, recording->Frames.size(), recording->Runtime.count());
 
         g_recording = std::move(recording);
         g_gamestate = std::make_unique<Gamestate>(*g_version);
