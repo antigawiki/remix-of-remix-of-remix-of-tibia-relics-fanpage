@@ -32,8 +32,30 @@ jobs:
         run: |
           cp tibiarc-player/web_player.cpp /tmp/tibiarc/web_player.cpp
           cd /tmp/tibiarc
-          git apply $GITHUB_WORKSPACE/tibiarc-player/fix-scroll-floor-range.patch
-          echo "Patch applied successfully"
+
+          # 1. parser.hpp: add isScroll parameter to ParseMapDescription declaration
+          sed -i 's/                             int height);/                             int height,\n                             bool isScroll = false);/' lib/parser.hpp
+
+          # 2. parser.cpp: add isScroll parameter to ParseMapDescription definition
+          sed -i 's/                                 int height) {/                                 int height,\n                                 bool isScroll) {/' lib/parser.cpp
+
+          # 3. parser.cpp: split the surface else branch into isScroll vs full
+          sed -i '/zStep = 1;/{n;s/    } else {/    } else if (isScroll) {\n        zIdx = std::min<int>(Position_.Z + 2, 7);\n        endZ = std::max<int>(Position_.Z - 2, 0);\n        zStep = -1;\n    } else {/}' lib/parser.cpp
+
+          # 4. parser.cpp: add true flag to ParseMoveEast scroll call
+          sed -i 's/ParseMapDescription(reader, events, +9, -6, 1, Map::TileBufferHeight);/ParseMapDescription(reader, events, +9, -6, 1, Map::TileBufferHeight, true);/' lib/parser.cpp
+
+          # 5. parser.cpp: add true flag to ParseMoveNorth scroll call
+          sed -i 's/ParseMapDescription(reader, events, -8, -6, Map::TileBufferWidth, 1);/ParseMapDescription(reader, events, -8, -6, Map::TileBufferWidth, 1, true);/' lib/parser.cpp
+
+          # 6. parser.cpp: add true flag to ParseMoveSouth scroll call
+          sed -i 's/ParseMapDescription(reader, events, -8, +7, Map::TileBufferWidth, 1);/ParseMapDescription(reader, events, -8, +7, Map::TileBufferWidth, 1, true);/' lib/parser.cpp
+
+          # 7. parser.cpp: add true flag to ParseMoveWest scroll call
+          sed -i 's/ParseMapDescription(reader, events, -8, -6, 1, Map::TileBufferHeight);/ParseMapDescription(reader, events, -8, -6, 1, Map::TileBufferHeight, true);/' lib/parser.cpp
+
+          echo "All patches applied successfully"
+          grep -n "isScroll" lib/parser.hpp lib/parser.cpp || echo "WARNING: isScroll not found"
 
       - name: Build tibiarc library + web player
         run: |
