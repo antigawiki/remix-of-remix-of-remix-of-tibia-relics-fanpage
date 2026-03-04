@@ -226,6 +226,7 @@ const CamFrameDebugger = ({ camBuffer, progress, isPlaying }: CamFrameDebuggerPr
       setStats({
         frames: idx,
         errors: logger.events.filter(e => e.type === 'PARSE_ERROR').length,
+        walkFails: logger.events.filter(e => e.type === 'WALK_FAIL').length,
         creatures: gs.creatures.size,
         cam: `${gs.camX},${gs.camY},${gs.camZ}`,
         player: gs.playerId ? (() => {
@@ -330,6 +331,10 @@ const CamFrameDebugger = ({ camBuffer, progress, isPlaying }: CamFrameDebuggerPr
           <div>
             <span className="text-muted-foreground">errors: </span>
             <span className={stats.errors > 0 ? 'text-red-400 font-bold' : 'text-foreground'}>{stats.errors}</span>
+          </div>
+          <div>
+            <span className="text-muted-foreground">walk_fails: </span>
+            <span className={stats.walkFails > 0 ? 'text-yellow-400 font-bold' : 'text-foreground'}>{stats.walkFails}</span>
           </div>
           <div>
             <span className="text-muted-foreground">cam: </span>
