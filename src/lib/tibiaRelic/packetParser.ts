@@ -248,12 +248,10 @@ export class PacketParser {
     const r = new Buf(payload);
     if (payload.length === 0) return;
 
-    // Always use TCP demux: .cam frames contain raw server TCP packets
-    // with [u16 length][opcodes...] structure. The old heuristic (firstByte < 0x0A)
-    // was wrong because the low byte of a u16 length can match valid opcodes
-    // (e.g. length=100 → 0x64 = MAP_DESC), causing silent state corruption.
+    // Always direct opcodes: .cam frames contain opcodes without TCP length prefix.
+    // The recorder strips TCP headers before writing frames.
     try {
-      this.processTcpDemux(r, payload.length);
+      this.processDirectOpcodes(r, payload.length);
     } catch (e: any) {
       this.lastError = e?.message || String(e);
       this.bytesLeftAfterProcess = r.left();
