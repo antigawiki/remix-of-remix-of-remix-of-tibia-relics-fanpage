@@ -405,7 +405,8 @@ void seek(double ms) {
 
     g_currentTick = target;
     g_gamestate->CurrentTick = target.count();
-    RenderFrame();
+        DeduplicateCreatures();
+        RenderFrame();
 }
 
 EMSCRIPTEN_KEEPALIVE
