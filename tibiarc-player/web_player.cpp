@@ -323,8 +323,8 @@ int load_recording_tibiarelic(const uint8_t *buf, int len,
         // 4. Set runtime
         recording->Runtime = recording->Frames.back().Timestamp;
 
-        printf("[tibiarc] TibiaRelic parsed: %d raw frames -> %d parsed -> %zu game frames, %lld ms\n",
-               frameCount, parsedFrames, recording->Frames.size(), recording->Runtime.count());
+        printf("[tibiarc] TibiaRelic parsed: %d raw -> %d ok -> %d failed -> %zu game frames, %lld ms\n",
+               frameCount, parsedFrames, failedFrames, recording->Frames.size(), recording->Runtime.count());
 
         g_recording = std::move(recording);
         g_gamestate = std::make_unique<Gamestate>(*g_version);
