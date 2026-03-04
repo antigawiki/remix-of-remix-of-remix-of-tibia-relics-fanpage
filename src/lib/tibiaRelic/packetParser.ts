@@ -592,7 +592,22 @@ export class PacketParser {
       r.skip(2);
       const c = this.readCreatureKnown(r);
       this.placeCreatureOnTile(c, x, y, z);
-    } else if (word >= 100 && word <= 9999) {
+    } else if (word === CR_OLD) {
+      r.skip(2); // consume marker
+      const cid = r.u32();
+      const dir = r.u8();
+      const c = this.gs.creatures.get(cid);
+      if (c) {
+        this.removeCreatureFromTile(cid, c.x, c.y, c.z);
+        c.direction = dir;
+        this.placeCreatureOnTile(c, x, y, z);
+      } else {
+        const nc = createCreature();
+        nc.id = cid;
+        nc.direction = dir;
+        this.placeCreatureOnTile(nc, x, y, z);
+      }
+    } else if (this.dat.items.has(word)) {
       const iid = this.skipItem(r);
       const tile = this.gs.getTile(x, y, z);
       tile.push(['it', iid]);
@@ -604,7 +619,15 @@ export class PacketParser {
     const [x, y, z] = this.pos3(r);
     const sp = r.u8();
     const word = r.peek16();
-    if (word === CR_OLD) {
+    if (word === CR_FULL) {
+      r.skip(2);
+      const c = this.readCreatureFull(r);
+      this.placeCreatureOnTile(c, x, y, z);
+    } else if (word === CR_KNOWN) {
+      r.skip(2);
+      const c = this.readCreatureKnown(r);
+      this.placeCreatureOnTile(c, x, y, z);
+    } else if (word === CR_OLD) {
       r.skip(2);
       const cid = r.u32();
       const dir = r.u8();
