@@ -843,7 +843,7 @@ export class PacketParser {
         }
       }
 
-      g.camX++; g.camY++;
+      if (g.camZ >= 7) { g.camX++; g.camY++; }
     } catch (e) {
       g.camZ = oldZ; g.camX = oldX; g.camY = oldY;
       throw e;
@@ -872,7 +872,7 @@ export class PacketParser {
         this.readFloorAreaWithOffset(r, g.camX - 8, g.camY - 6, nz, 18, 14, -3);
       }
 
-      g.camX--; g.camY--;
+      if (g.camZ > 7) { g.camX--; g.camY--; }
     } catch (e) {
       // Revert camera on failure
       g.camZ = oldZ; g.camX = oldX; g.camY = oldY;
@@ -1080,7 +1080,7 @@ export class PacketParser {
         break;
       }
       const floorStartPos = r.pos;
-      const offset = camZ - nz;
+      const offset = camZ > 7 ? (camZ - nz) : 0;
       try {
         skip = this.readFloorArea(r, ox, oy, nz, W, H, offset, skip);
       } catch (e: any) {
