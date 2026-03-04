@@ -115,7 +115,7 @@ const CamFrameDebugger = ({ camBuffer, progress, isPlaying }: CamFrameDebuggerPr
   useEffect(() => {
     if (!camBuffer || !open) return;
     try {
-      const cam = parseCamFile(camBuffer.buffer);
+      const cam = parseCamFile(camBuffer.buffer as ArrayBuffer);
       camFileRef.current = cam;
       lastFrameIdxRef.current = 0;
       console.log(`[CamFrameDebugger] Parsed ${cam.frames.length} frames, ${(cam.totalMs / 1000).toFixed(1)}s`);

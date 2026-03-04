@@ -10,7 +10,7 @@ interface CamDebugPanelProps {
   getSnapshot: () => DebugSnapshot | null;
 }
 
-const EVENT_COLORS: Record<DebugEventType, string> = {
+const EVENT_COLORS: Partial<Record<DebugEventType, string>> = {
   OPCODE: 'text-muted-foreground',
   MOVE_CR: 'text-blue-400',
   FLOOR_CHANGE: 'text-yellow-400',

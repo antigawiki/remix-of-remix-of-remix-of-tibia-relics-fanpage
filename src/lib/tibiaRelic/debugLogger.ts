@@ -60,7 +60,7 @@ export class DebugLogger {
     return this._lastMoveCr;
   }
 
-  log(type: DebugEventType, data: Record<string, unknown>) {
+  log(type: DebugEventType, data: Record<string, unknown>, description?: string) {
     if (!this.enabled) return;
     if (type === 'MOVE_CR') this._lastMoveCr = data;
     this.events.push({
@@ -68,6 +68,7 @@ export class DebugLogger {
       camMs: this._camMs,
       type,
       data,
+      description,
     });
     // Circular buffer — trim oldest when over limit
     if (this.events.length > MAX_EVENTS) {
