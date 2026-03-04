@@ -40,7 +40,8 @@ jobs:
           sed -i 's/                                 int height) {/                                 int height,\n                                 bool isScroll) {/' lib/parser.cpp
 
           # 3. parser.cpp: split the surface else branch into isScroll vs full
-          sed -i '/zStep = 1;/{n;s/    } else {/    } else if (isScroll) {\n        zIdx = std::min<int>(Position_.Z + 2, 7);\n        endZ = std::max<int>(Position_.Z - 2, 0);\n        zStep = -1;\n    } else {/}' lib/parser.cpp
+          # Single-floor only: TibiaRelic sends exactly 1 floor per scroll
+          sed -i '/zStep = 1;/{n;s/    } else {/    } else if (isScroll) {\n        zIdx = Position_.Z;\n        endZ = Position_.Z;\n        zStep = -1;\n    } else {/}' lib/parser.cpp
 
           # 4. parser.cpp: add true flag to ParseMoveEast scroll call
           sed -i 's/ParseMapDescription(reader, events, +9, -6, 1, Map::TileBufferHeight);/ParseMapDescription(reader, events, +9, -6, 1, Map::TileBufferHeight, true);/' lib/parser.cpp

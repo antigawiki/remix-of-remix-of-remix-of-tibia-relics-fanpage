@@ -30,12 +30,12 @@
          zStep = 1;
 -    } else {
 +    } else if (isScroll) {
-+        /* TibiaRelic recordings only send ±2 floors for scroll updates
-+         * on the surface, not the full 7→0 range. Using the full range
-+         * causes byte over-read, corrupting subsequent packets and
-+         * producing ghost creatures / wrong floor rendering. */
-+        zIdx = std::min<int>(Position_.Z + 2, 7);
-+        endZ = std::max<int>(Position_.Z - 2, 0);
++        /* TibiaRelic recordings send exactly 1 floor per scroll update,
++         * not the full 7→0 range. Reading more than 1 floor causes the
++         * parser to consume subsequent opcodes as tile data, producing
++         * ghost creatures and corrupted game state. */
++        zIdx = Position_.Z;
++        endZ = Position_.Z;
 +        zStep = -1;
 +    } else {
          zIdx = 7;
