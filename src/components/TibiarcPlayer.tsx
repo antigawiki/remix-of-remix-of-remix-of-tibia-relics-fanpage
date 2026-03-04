@@ -244,6 +244,7 @@ const TibiarcPlayer = ({ className }: TibiarcPlayerProps) => {
         const playing = safeCall(mod, 'is_playing', 'number', [], [], 1);
         setProgress(p);
         if (p > 0) lastGoodProgressRef.current = p;
+        updateLightOverlay(p);
 
         if (!playing) {
           setState('paused');
