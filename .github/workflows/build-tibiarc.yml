@@ -28,43 +28,131 @@ jobs:
         run: |
           git clone https://github.com/antigawiki/tibiarc.git /tmp/tibiarc
 
-      - name: Copy web player source and apply patches
+      - name: Copy web player source
         run: |
           cp tibiarc-player/web_player.cpp /tmp/tibiarc/web_player.cpp
-          cd /tmp/tibiarc
-          git apply $GITHUB_WORKSPACE/tibiarc-player/fix-scroll-floor-range.patch
-          echo "Patch applied successfully"
 
       - name: Apply TibiaRelic protocol fixes (sed)
         run: |
           cd /tmp/tibiarc
 
-          # 1. SpellCooldown (0xA4): tibiarc reads 5B (u8 spellId + u32 cooldown)
-          #    TibiaRelic sends 2B (u8 spellId + u8 cooldown)
+          # =============================================
+          # SCROLL FLOOR RANGE FIX (replaces .patch file)
+          # =============================================
+          
+          # Add isScroll parameter to ParseMapDescription declaration in parser.hpp
+          sed -i 's/int height);/int height,\n                             bool isScroll = false);/' lib/parser.hpp
+          
+          # Add isScroll parameter to ParseMapDescription definition in parser.cpp
+          sed -i '/void Parser::ParseMapDescription.*int height) {/s/int height) {/int height,\n                                 bool isScroll) {/' lib/parser.cpp
+          
+          # Replace the surface floor range logic to use ±2 when isScroll=true
+          # Original: } else { zIdx = 7; endZ = 0; zStep = -1; }
+          # New: } else if (isScroll) { zIdx = min(Z+2,7); endZ = max(Z-2,0); } else { zIdx=7; endZ=0; }
+          sed -i '/zIdx = Position_\.Z - 2;/{
+            # We are inside the underground branch, find the "} else {" for surface
+          }' lib/parser.cpp
+          
+          # More targeted: replace the else branch for surface floors
+          python3 -c "
+import re
+with open('lib/parser.cpp', 'r') as f:
+    code = f.read()
+
+# Find ParseMapDescription and replace the surface else branch
+old = '''    } else {
+        zIdx = 7;
+        endZ = 0;
+        zStep = -1;
+    }'''
+
+new = '''    } else if (isScroll) {
+        /* TibiaRelic recordings send ±2 floors for scroll updates
+         * on the surface, not the full 7→0 range. */
+        zIdx = std::min<int>(Position_.Z + 2, 7);
+        endZ = std::max<int>(Position_.Z - 2, 0);
+        zStep = -1;
+    } else {
+        zIdx = 7;
+        endZ = 0;
+        zStep = -1;
+    }'''
+
+code = code.replace(old, new, 1)
+with open('lib/parser.cpp', 'w') as f:
+    f.write(code)
+print('Fixed surface floor range logic')
+"
+
+          # Pass isScroll=true for scroll operations (MoveN/E/S/W)
+          python3 -c "
+with open('lib/parser.cpp', 'r') as f:
+    code = f.read()
+
+# MoveEast: +9, -6, 1, TileBufferHeight
+code = code.replace(
+    'ParseMapDescription(reader, events, +9, -6, 1, Map::TileBufferHeight);',
+    'ParseMapDescription(reader, events, +9, -6, 1, Map::TileBufferHeight, true);')
+
+# MoveNorth: -8, -6, TileBufferWidth, 1
+code = code.replace(
+    'ParseMapDescription(reader, events, -8, -6, Map::TileBufferWidth, 1);',
+    'ParseMapDescription(reader, events, -8, -6, Map::TileBufferWidth, 1, true);')
+
+# MoveSouth: -8, +7, TileBufferWidth, 1
+code = code.replace(
+    'ParseMapDescription(reader, events, -8, +7, Map::TileBufferWidth, 1);',
+    'ParseMapDescription(reader, events, -8, +7, Map::TileBufferWidth, 1, true);')
+
+# MoveWest: -8, -6, 1, TileBufferHeight (second occurrence)
+import re
+# Find the second occurrence of this pattern (MoveWest, not MoveEast)
+pattern = 'ParseMapDescription(reader, events, -8, -6, 1, Map::TileBufferHeight);'
+replacement = 'ParseMapDescription(reader, events, -8, -6, 1, Map::TileBufferHeight, true);'
+idx = code.find(pattern)
+if idx >= 0:
+    code = code[:idx] + replacement + code[idx+len(pattern):]
+    
+with open('lib/parser.cpp', 'w') as f:
+    f.write(code)
+print('Added isScroll=true to all 4 scroll parsers')
+"
+          echo "Scroll floor range fix applied"
+
+          # =============================================
+          # TIBIARELIC CUSTOM OPCODE FIXES
+          # =============================================
+
+          # 1. SpellCooldown (0xA4): tibiarc reads 5B (u8 + u32)
+          #    TibiaRelic sends 2B (u8 + u8)
           sed -i '/void Parser::ParseSpellCooldown/,/^}/ s/reader\.SkipU32()/reader.SkipU8()/' lib/parser.cpp
           echo "Fixed 0xA4 SpellCooldown: 5B → 2B"
 
-          # 2. PlayerTactics (0xA7): tibiarc reads 4B (attack+chase+secure+pvp)
-          #    TibiaRelic sends 3B (no PvPMode field)
+          # 2. PlayerTactics (0xA7): tibiarc reads 4B (4×u8)
+          #    TibiaRelic sends 3B (no PvPMode)
           sed -i '/void Parser::ParsePlayerTactics/,/^}/ { /PvPMode/d }' lib/parser.cpp
           echo "Fixed 0xA7 PlayerTactics: 4B → 3B"
 
-          # 3. CreatureSquare (0xA8): not handled in tibiarc → crash
+          # 3. CreatureSquare (0xA8): missing in tibiarc → crash
           #    TibiaRelic sends 5B (u32 creatureId + u8 color)
           sed -i '/case 0xAA:/i\    case 0xA8:\n        reader.Skip(5);\n        break;' lib/parser.cpp
-          echo "Added 0xA8 CreatureSquare handler: 5B"
+          echo "Added 0xA8 CreatureSquare: 5B"
 
-          # 4. WalkCancel (0xB6): tibiarc reads 2B (u16 delay via ParseMoveDelay)
-          #    TibiaRelic sends 0B (no payload)
+          # 4. WalkCancel (0xB6): tibiarc reads 2B (u16 via ParseMoveDelay)
+          #    TibiaRelic sends 0B
           sed -i '/case 0xB6:/{n;s/.*ParseMoveDelay.*/        \/* TibiaRelic: WalkCancel 0 bytes *\//}' lib/parser.cpp
           echo "Fixed 0xB6 WalkCancel: 2B → 0B"
 
-          # Verify all patches applied
-          echo "=== Verifying patches ==="
-          grep -n "SkipU8.*cooldown\|ParseSpellCooldown" lib/parser.cpp | head -5
+          # =============================================
+          # VERIFICATION
+          # =============================================
+          echo "=== Verifying all patches ==="
+          grep -n "isScroll" lib/parser.cpp | head -10
+          grep -n "isScroll" lib/parser.hpp | head -3
           grep -n "case 0xA8" lib/parser.cpp
           grep -n "WalkCancel 0 bytes" lib/parser.cpp
-          echo "All TibiaRelic protocol fixes applied"
+          grep -c "TileBufferHeight, true\|TileBufferWidth, 1, true\|TileBufferWidth, 1, true" lib/parser.cpp
+          echo "All TibiaRelic protocol fixes applied successfully"
 
       - name: Build tibiarc library + web player
         run: |
