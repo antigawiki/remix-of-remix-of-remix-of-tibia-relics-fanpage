@@ -538,7 +538,8 @@ export class PacketParser {
       dl.log('SCROLL', { dx, dy, oldCam: `${oldX},${oldY},${g.camZ}`, newCam: `${g.camX},${g.camY},${g.camZ}` });
     }
 
-    const { startz, endz, zstep } = this.getFloorRange(g.camZ);
+    // TFS server uses GetMapDescription (full surface range 7→0) for scrolls too
+    const { startz, endz, zstep } = this.getMapDescFloorRange(g.camZ);
 
     try {
       if (dx === 1) this.readMultiFloorArea(r, g.camX + 9, g.camY - 6, 1, 14, g.camZ, startz, endz, zstep);
