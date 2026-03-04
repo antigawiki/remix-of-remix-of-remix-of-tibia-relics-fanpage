@@ -84,6 +84,67 @@ jobs:
           # causing immediate byte drift and black screen.
 
           # =============================================
+          # REVERT SCROLL PATCHES (fork has 18x14 baked in, must restore standard)
+          # =============================================
+
+          # 6. Scroll East (0x65): fork reads 18x14, standard is 1×14
+          sed -i '/void Parser::ParseMoveEast/,/^}/ s|ParseMapDescription(reader, events, -8, -6, Map::TileBufferWidth, Map::TileBufferHeight)|ParseMapDescription(reader, events, +9, -6, 1, Map::TileBufferHeight)|' lib/parser.cpp
+          echo "Reverted 0x65 ScrollEast: 18x14 → 1×14"
+
+          # 7. Scroll North (0x66): fork reads 18x14, standard is 18×1
+          sed -i '/void Parser::ParseMoveNorth/,/^}/ s|ParseMapDescription(reader, events, -8, -6, Map::TileBufferWidth, Map::TileBufferHeight)|ParseMapDescription(reader, events, -8, -6, Map::TileBufferWidth, 1)|' lib/parser.cpp
+          echo "Reverted 0x66 ScrollNorth: 18x14 → 18×1"
+
+          # 8. Scroll South (0x67): fork reads 18x14, standard is 18×1
+          sed -i '/void Parser::ParseMoveSouth/,/^}/ s|ParseMapDescription(reader, events, -8, -6, Map::TileBufferWidth, Map::TileBufferHeight)|ParseMapDescription(reader, events, -8, +7, Map::TileBufferWidth, 1)|' lib/parser.cpp
+          echo "Reverted 0x67 ScrollSouth: 18x14 → 18×1"
+
+          # 9. Scroll West (0x68): fork reads 18x14, standard is 1×14
+          sed -i '/void Parser::ParseMoveWest/,/^}/ s|ParseMapDescription(reader, events, -8, -6, Map::TileBufferWidth, Map::TileBufferHeight)|ParseMapDescription(reader, events, -8, -6, 1, Map::TileBufferHeight)|' lib/parser.cpp
+          echo "Reverted 0x68 ScrollWest: 18x14 → 1×14"
+
+          # 10. FloorUp (0xBE z==7): fork reads only 1 floor, standard reads 6 (5→0)
+          #     Replace the single-floor TibiaRelic block with the original 6-floor loop
+          python3 -c "
+import re
+with open('lib/parser.cpp', 'r') as f:
+    code = f.read()
+
+# Find the TibiaRelic single-floor block and replace with original loop
+old = re.search(
+    r'/\* TibiaRelic: only the newly visible floor.*?\*/\s*'
+    r'tileSkip = ParseFloorDescription\(reader,\s*'
+    r'events,\s*'
+    r'Position_\.X - 8,\s*'
+    r'Position_\.Y - 6,\s*'
+    r'5,\s*'
+    r'Map::TileBufferWidth,\s*'
+    r'Map::TileBufferHeight,\s*'
+    r'3,\s*'
+    r'tileSkip\);',
+    code, re.DOTALL)
+
+if old:
+    replacement = '''for (int zIdx = 5; zIdx >= 0; zIdx--) {
+            tileSkip = ParseFloorDescription(reader,
+                                             events,
+                                             Position_.X - 8,
+                                             Position_.Y - 6,
+                                             zIdx,
+                                             Map::TileBufferWidth,
+                                             Map::TileBufferHeight,
+                                             Map::TileBufferDepth - zIdx,
+                                             tileSkip);
+        }'''
+    code = code[:old.start()] + replacement + code[old.end():]
+    with open('lib/parser.cpp', 'w') as f:
+        f.write(code)
+    print('Reverted FloorUp z==7: 1 floor → 6 floors (5→0)')
+else:
+    print('WARNING: FloorUp pattern not found — may already be standard')
+"
+
+          # =============================================
           # DIAGNOSTIC LOGGING (remove after debugging)
           # =============================================
           sed -i 's/switch (reader.ReadU8()) {/auto _op = reader.ReadU8(); printf("[DIAG] opcode=0x%02X rem=%zu\\n", _op, reader.Remaining()); switch (_op) {/' lib/parser.cpp
@@ -92,10 +153,12 @@ jobs:
           # =============================================
           # VERIFICATION
           # =============================================
-          echo "=== Verifying new patches ==="
-          grep -n "OutfitAddons" lib/versions.cpp
-          grep -n "PassableCreatures" lib/versions.cpp
-          grep -n "DIAG" lib/parser.cpp | head -3
+          echo "=== Verifying scroll reverts ==="
+          grep -n "ParseMoveEast" lib/parser.cpp
+          grep -n "ParseMoveNorth" lib/parser.cpp
+          grep -n "ParseMoveSouth" lib/parser.cpp
+          grep -n "ParseMoveWest" lib/parser.cpp
+          grep -A5 "Position_.Z == 7" lib/parser.cpp | head -10
           echo "All patches verified"
 
       - name: Build tibiarc library + web player
