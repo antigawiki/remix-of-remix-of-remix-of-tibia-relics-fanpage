@@ -1,57 +1,54 @@
 
 
-## Diagnosis: The TCP Demux Heuristic is the Shared Root Cause
+## Diagnóstico: Não é luz — é o floor range dos scrolls
 
-You're absolutely right — if both players produce the same corruption, the bug is shared. After deep analysis, I found what both parsers share: **the `firstByte < 0x0A` TCP demux heuristic**. It's literally the same logic in both the JS `packetParser.ts` (line 256) and the C++ `web_player.cpp` (line 280).
+Sua hipótese sobre luminância é criativa, mas **não é isso**. No protocolo Tibia 7.72, a luz não é enviada como dados extras por tile na rede. A luz funciona assim:
 
-### Why This Heuristic is Broken
+- **Luz ambiente (0x82)**: 2 bytes (intensidade + cor) — já lido pelo parser
+- **Luz de criatura (0x8D)**: 6 bytes (creatureId + intensidade + cor) — já lido
+- **Luz de item**: vem do arquivo `.dat` (flag 0x15, 4 bytes), não do protocolo de rede
 
-The `.cam` file frames contain raw server TCP packets. Each server packet starts with `[u16 length][opcodes...]`. The u16 length is little-endian, so the first byte is the LOW byte of the packet length.
+O parser lê todos esses corretamente. Os bytes sobrando não são dados de luz.
 
-```text
-Example: a 100-byte packet
-  TCP bytes: [0x64, 0x00] [opcode_data...]
-  First byte = 0x64 = MAP_DESC opcode!
-  
-  Heuristic says: "0x64 >= 0x0A → direct opcode mode"
-  Parser reads 0x64 as MAP_DESC → reads pos3 from [0x00, ...] → GARBAGE positions
-  → Tiles written to wrong coordinates → State permanently corrupted
-```
+### A causa real (confirmada pelo JSON que você enviou)
 
-This happens whenever the TCP packet length's low byte happens to match a valid opcode (0x0A, 0x64-0x68, 0x82, 0x9A, 0xAA, etc.). Most packet sizes would trigger this — it's NOT rare.
-
-The reason we see "0 parse errors" in the debugger: the garbage data often happens to form sequences that don't cause buffer overflows (they just write wrong tiles to wrong positions silently).
-
-### Plan: Fix the Frame Parsing, Not the Protocol Parser
-
-**Step 1: Add frame-level diagnostics to CamFrameDebugger**
-
-Add logging of each frame's first 4 bytes (hex) and which parsing mode was chosen (TCP vs direct). This will immediately show whether the format always uses TCP wrapping or not.
-
-**Step 2: Remove the heuristic — always use TCP demux**
-
-Since the `.cam` recorder likely captures raw server TCP data (like tibianic-dll does), every frame payload should start with a `u16 length` prefix. Change both JS and C++ to ALWAYS use TCP demux mode:
+O JSON mostra claramente:
 
 ```text
-JS:  process() → always call processTcpDemux()
-C++: load_recording_tibiarelic() → always use TCP sub-packet loop
+150 anomalias — 100% são BYTES_LEFTOVER
+147 de 150 (98%) resolvidas pela estratégia A (7→0)
+0 DESYNCs, 0 PARSE_ERRORs
 ```
 
-If this doesn't work, try the opposite: always treat as direct opcodes (meaning the recorder already stripped TCP lengths).
+O problema é **exatamente o mesmo** que diagnosticamos antes: os **scrolls** (0x65-0x68) na superfície enviam dados para todos os floors visíveis (7→0), mas o parser usa `getFloorRange` que retorna apenas ±2 (3 floors). Os floors extras ficam não-lidos e são reportados como "leftover".
 
-**Step 3: Update the C++ web_player.cpp** with the same fix
+### Por que a última correção piorou
 
-**Step 4: Rebuild WASM** with the corrected frame parsing
+Na primeira tentativa, mudamos `getFloorRange` para 7→0 **E** mudamos `floorUp` para ler floors 5→0. Mas `floorUp`/`floorDown` só enviam dados do **único** novo floor visível, não todos os floors. Ler 6 floors quando só 1 foi enviado causou byte drift → DESYNCs.
 
-### Why Previous Patches Failed
+Na correção seguinte, revertemos `getFloorRange` para ±2 (conservador demais) e criamos `getMapDescFloorRange` (7→0 só para mapDesc). Isso resolveu o mapDesc mas os scrolls continuam com ±2 → voltamos aos mesmos leftover.
 
-All our patches targeted the C++ protocol parser (scroll dimensions, floor ranges, opcode sizes). But if the frame-level TCP demux is wrong, those protocol fixes never even get a chance to run on the correct byte stream — the data is already misaligned before any opcode is dispatched.
+### Correção cirúrgica
 
-### Files to Change
+A solução é simples — dois pontos:
 
-| File | Change |
-|------|--------|
-| `src/lib/tibiaRelic/packetParser.ts` | Remove `firstByte < 0x0A` heuristic, try always-TCP and always-direct modes |
-| `src/components/CamFrameDebugger.tsx` | Add first-bytes hex dump per frame for diagnosis |
-| `tibiarc-player/web_player.cpp` | Mirror the TCP demux fix in C++ |
+1. **`getFloorRange`**: mudar para 7→0 na superfície (afeta scrolls)
+2. **`floorUp`/`floorDown`**: manter como está (lê apenas 1 floor novo)
+3. **Remover `getMapDescFloorRange`**: não precisa mais, pois `getFloorRange` já retorna 7→0
+
+Isso funciona porque:
+- `scroll()` usa `getFloorRange` → agora lê 7→0 → consome todos os bytes ✓
+- `mapDesc()` pode usar `getFloorRange` também → mesmo resultado ✓
+- `floorUp`/`floorDown` chamam `readFloorArea` diretamente, **não usam** `getFloorRange` → não são afetados ✓
+- `readMultiFloorArea` já tem um guard `if (r.left() < 2) break` que para automaticamente quando não há mais dados para floors distantes → seguro ✓
+
+O `readMultiFloorArea` já lida com floors vazios (skip markers de 2 bytes) e com exhaustion (para quando o buffer acaba). Não há risco de ler dados demais.
+
+### Mudanças
+
+**`packetParser.ts`:**
+- `getFloorRange`: surface → `{ startz: 7, endz: 0, zstep: -1 }`
+- Remover `getMapDescFloorRange` (redundante)
+- `mapDesc`: usar `getFloorRange` em vez de `getMapDescFloorRange`
+- `floorUp`/`floorDown`: sem mudanças (já estão corretos)
 
