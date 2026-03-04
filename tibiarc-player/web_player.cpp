@@ -60,6 +60,57 @@ static std::vector<uint8_t> g_datData;
 static void RenderFrame();
 static void MainLoop();
 static void FastForwardToPlayer();
+static void DeduplicateCreatures();
+
+// --- Helper: remove ghost creatures (duplicates at same position) ---
+static void DeduplicateCreatures() {
+    if (!g_gamestate) return;
+
+    auto &creatures = g_gamestate->Creatures;
+    if (creatures.size() < 2) return;
+
+    // Build a map of position → creature ID (keep player priority)
+    struct PosKey {
+        uint16_t x, y;
+        uint8_t z;
+        bool operator==(const PosKey &o) const {
+            return x == o.x && y == o.y && z == o.z;
+        }
+    };
+    struct PosHash {
+        size_t operator()(const PosKey &k) const {
+            return std::hash<uint64_t>()((uint64_t)k.x | ((uint64_t)k.y << 16) | ((uint64_t)k.z << 32));
+        }
+    };
+
+    std::unordered_map<PosKey, uint32_t, PosHash> seen;
+    std::vector<uint32_t> toRemove;
+
+    for (auto &[id, cr] : creatures) {
+        auto pos = cr.MovementInformation.Target;
+        PosKey key{pos.X, pos.Y, pos.Z};
+
+        // Skip creatures at null position (inventory/invalid)
+        if (pos.X == 0xFFFF) continue;
+
+        auto it = seen.find(key);
+        if (it != seen.end()) {
+            // Duplicate found - keep the player, remove the other
+            if (id == g_gamestate->Player.Id) {
+                toRemove.push_back(it->second);
+                it->second = id;
+            } else {
+                toRemove.push_back(id);
+            }
+        } else {
+            seen[key] = id;
+        }
+    }
+
+    for (auto id : toRemove) {
+        creatures.erase(id);
+    }
+}
 
 // --- Helper: fast-forward until player is initialized ---
 static void FastForwardToPlayer() {
