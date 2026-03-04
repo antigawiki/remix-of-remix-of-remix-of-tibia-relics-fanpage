@@ -1,54 +1,66 @@
 
 
-## Diagnóstico: Não é luz — é o floor range dos scrolls
+## Root Cause: Missing Data-Exhaustion Guard in C++ ParseMapDescription
 
-Sua hipótese sobre luminância é criativa, mas **não é isso**. No protocolo Tibia 7.72, a luz não é enviada como dados extras por tile na rede. A luz funciona assim:
+### The Problem (confirmed by reading the actual C++ source)
 
-- **Luz ambiente (0x82)**: 2 bytes (intensidade + cor) — já lido pelo parser
-- **Luz de criatura (0x8D)**: 6 bytes (creatureId + intensidade + cor) — já lido
-- **Luz de item**: vem do arquivo `.dat` (flag 0x15, 4 bytes), não do protocolo de rede
-
-O parser lê todos esses corretamente. Os bytes sobrando não são dados de luz.
-
-### A causa real (confirmada pelo JSON que você enviou)
-
-O JSON mostra claramente:
+The scroll dimension fix (18x14) was correct but **insufficient**. The real killer is `ParseMapDescription` (line 438-452 in `lib/parser.cpp`):
 
 ```text
-150 anomalias — 100% são BYTES_LEFTOVER
-147 de 150 (98%) resolvidas pela estratégia A (7→0)
-0 DESYNCs, 0 PARSE_ERRORs
+ParseMapDescription called from scroll → loops through 5 floors (z-2 to z+2)
+  → Floor 6 (z=6): reads 250 bytes ✓
+  → Floor 7 (z=7): 0 bytes remaining → DataReader::CheckRemaining throws
+  → Exception propagates up, frame events LOST
+  → But Parser::Position_ was ALREADY modified by scroll handler
+  → ALL subsequent frames parse with wrong Position_ → cascading corruption
 ```
 
-O problema é **exatamente o mesmo** que diagnosticamos antes: os **scrolls** (0x65-0x68) na superfície enviam dados para todos os floors visíveis (7→0), mas o parser usa `getFloorRange` que retorna apenas ±2 (3 floors). Os floors extras ficam não-lidos e são reportados como "leftover".
+The JS parser handles this with `if (r.left() < 2) break;` (MULTIFLOOR_EXHAUSTED in the debug log). The C++ has no such guard.
 
-### Por que a última correção piorou
+**This also explains why "nothing changed"**: the 18x14 fix was applied, but the multi-floor exception kills the frame before the tile data can be used.
 
-Na primeira tentativa, mudamos `getFloorRange` para 7→0 **E** mudamos `floorUp` para ler floors 5→0. Mas `floorUp`/`floorDown` só enviam dados do **único** novo floor visível, não todos os floors. Ler 6 floors quando só 1 foi enviado causou byte drift → DESYNCs.
+### Fix: Three Changes in One Patch
 
-Na correção seguinte, revertemos `getFloorRange` para ±2 (conservador demais) e criamos `getMapDescFloorRange` (7→0 só para mapDesc). Isso resolveu o mapDesc mas os scrolls continuam com ±2 → voltamos aos mesmos leftover.
+| Change | Location | What |
+|--------|----------|------|
+| **1. Add data-exhaustion guard** | `ParseMapDescription` (line 439) | Add `if (reader.Remaining() < 2) break;` inside the floor loop |
+| **2. Relax end assertion** | `ParseMapDescription` (line 451) | Remove `ParseAssert(tileSkip == 0)` — server sends fewer floors |
+| **3. Keep scroll + floorUp fixes** | Scroll handlers + FloorChangeUp | 18x14 viewport + single floor for z=7 transition |
 
-### Correção cirúrgica
+### Patch File: `tibiarc-player/fix-scroll-floor-range.patch`
 
-A solução é simples — dois pontos:
+Rewrite the patch to include ALL three fixes in a single consolidated diff against `lib/parser.cpp`:
 
-1. **`getFloorRange`**: mudar para 7→0 na superfície (afeta scrolls)
-2. **`floorUp`/`floorDown`**: manter como está (lê apenas 1 floor novo)
-3. **Remover `getMapDescFloorRange`**: não precisa mais, pois `getFloorRange` já retorna 7→0
+**Hunk 1 — ParseMapDescription (NEW)**:
+```text
+Before:
+    for (; zIdx != (endZ + zStep); zIdx += zStep) {
+        tileSkip = ParseFloorDescription(reader, ...);
+    }
+    ParseAssert(tileSkip == 0);
 
-Isso funciona porque:
-- `scroll()` usa `getFloorRange` → agora lê 7→0 → consome todos os bytes ✓
-- `mapDesc()` pode usar `getFloorRange` também → mesmo resultado ✓
-- `floorUp`/`floorDown` chamam `readFloorArea` diretamente, **não usam** `getFloorRange` → não são afetados ✓
-- `readMultiFloorArea` já tem um guard `if (r.left() < 2) break` que para automaticamente quando não há mais dados para floors distantes → seguro ✓
+After:
+    for (; zIdx != (endZ + zStep); zIdx += zStep) {
+        if (reader.Remaining() < 2) break;    ← NEW GUARD
+        tileSkip = ParseFloorDescription(reader, ...);
+    }
+    /* relaxed: TibiaRelic sends fewer floors */  ← ASSERTION REMOVED
+```
 
-O `readMultiFloorArea` já lida com floors vazios (skip markers de 2 bytes) e com exhaustion (para quando o buffer acaba). Não há risco de ler dados demais.
+**Hunk 2 — FloorChangeUp z=7** (existing fix, unchanged):
+Read only floor 5 instead of loop 5→0.
 
-### Mudanças
+**Hunks 3-6 — Scroll handlers** (existing fix, unchanged):
+All 4 directions use `(-8, -6, TileBufferWidth, TileBufferHeight)`.
 
-**`packetParser.ts`:**
-- `getFloorRange`: surface → `{ startz: 7, endz: 0, zstep: -1 }`
-- Remover `getMapDescFloorRange` (redundante)
-- `mapDesc`: usar `getFloorRange` em vez de `getMapDescFloorRange`
-- `floorUp`/`floorDown`: sem mudanças (já estão corretos)
+### Why This Fixes Everything
+
+1. Underground scrolls: ParseMapDescription reads floor 6 (250 bytes), then `Remaining() < 2` → breaks cleanly → no exception → events preserved → `Position_` remains correct
+2. Surface scrolls: all 8 floors have data → guard never triggers → works normally
+3. Floor transitions: floorUp z=7 reads 1 floor → correct
+4. No cascading corruption: every frame completes successfully
+
+### No Other File Changes Needed
+
+The `web_player.cpp` DeduplicateCreatures and the build workflow already handle everything else. This is purely a patch file rewrite.
 
