@@ -1,32 +1,57 @@
 
 
-# Fix Protocol Parser: Scroll Single-Floor + MapDesc Position-Only
+# Root Cause Analysis: TibiaRelic Protocol vs tibiarc C++ Parser
 
-## Root Cause Analysis (from diagnostic JSON)
+## The Real Problem
 
-The diagnostic reveals **two critical parsing issues** and one mystery to investigate:
+After comparing the **tibiarc C++ parser** (used by the WASM player) against the **JS PacketParser** (hand-tuned for TibiaRelic), I found **multiple critical protocol mismatches**. The C++ parser expects vanilla Tibia 7.72, but TibiaRelic uses a custom protocol with different payload sizes for several opcodes. Each mismatch causes **byte drift** — the parser reads too many or too few bytes, causing all subsequent data to be misinterpreted (wrong creature IDs, ghost sprites, frozen animations).
 
-### Issue 1: scroll() reads 8 floors, server sends 1
-Currently `scroll()` uses `getMapDescFloorRange` (full surface 7→0 = 8 floors). For a 1-tile column, that attempts 1×14×8 = 112 tiles. TibiaRelic only sends 1×14×1 = 14 tiles. The extra reads silently consume subsequent opcode bytes as tile data — no parse error, but massive state corruption (wrong items, ghost creatures). This is the primary cause of visual bugs.
+## Confirmed Protocol Mismatches (C++ vs TibiaRelic)
 
-### Issue 2: mapDesc() after map loaded re-reads full tile area
-The `< 100` bytes guard works for small frames but some mini-mapDesc packets are larger. A smarter heuristic is needed: peek at the next u16 and check if it looks like valid tile data.
+```text
+Opcode  | Name              | C++ reads     | TibiaRelic sends | Drift
+--------|-------------------|---------------|------------------|------
+0x9A    | PlayerPos         | NOT HANDLED   | pos3 (5 bytes)   | CRASH
+0xA4    | SpellCooldown     | u8+u32 (5B)   | u16 (2B)         | +3B
+0xA7    | PlayerTactics     | 4× u8 (4B)    | 3× u8 (3B)      | +1B
+0xA8    | CreatureSquare    | NOT HANDLED   | u32+u8 (5B)      | CRASH
+0xB6    | WalkCancel        | u16 (2B)      | no payload (0B)  | +2B
+0xB7    | UnjustifiedPts    | 7 bytes       | not used (0B)    | +7B
+0xB8    | PvPSituations     | u8 (1B)       | not used (0B)    | +1B
+0x92    | CreatureImpass.   | ASSERT FAIL   | u32+u8 (5B)      | CRASH
+0x96    | OpenEditText      | +author str   | 1 string only    | +N B
+0x14    | Error/MOTD        | NOT HANDLED   | u16+string       | CRASH
+```
 
-### Issue 3: Unknown opcode 0xA8 (630 occurrences, ALL in error frames)
-The pattern `[0x8C, 0xA8, 0x7F, 0x08, 0x08]` repeats hundreds of times. The 0xA8 handler reads 5 bytes but likely under-reads, causing everything after it to misalign. Need a hex dump tool to see the raw bytes and determine the correct payload size.
+**Any single "CRASH" opcode or drift >= 1 byte corrupts ALL subsequent parsing for the entire frame**, causing the wrong IDs, ghost creatures, and frozen animations you're seeing.
 
-## Implementation Plan
+## Why Previous Patches Failed
 
-### Task 1: Fix scroll() — single floor read
-In `packetParser.ts`, replace the `readMultiFloorArea` calls in `scroll()` with `readSingleFloorArea` using only the current camera Z floor. Remove the `getMapDescFloorRange` call from scroll.
+The `sed` / `.patch` approaches only tried to fix the **floor range** in `ParseMapDescription`. But the floor range was never the root cause — it's the **opcode payload size mismatches** above. Even with the correct floor range, if `0x9A` or `0xA4` appears in any frame before a map read, the parser drifts and reads garbage data as tile/creature information.
 
-### Task 2: Fix mapDesc() — smarter mini-mapDesc detection
-After reading x/y/z in `mapDesc()`, if `gs.mapLoaded` is already true, peek at the next u16:
-- If it IS a skip marker (≥0xFF00), item ID (100-9999), or creature marker (0x61-0x63), proceed with full tile read
-- Otherwise, treat as position-only update and return early
+## Proposed Fix: Two-Phase Approach
 
-This replaces the crude `r.left() < 100` guard with a content-aware check.
+### Phase 1: Build a Binary Diagnostic Tool
+Create a page that loads the uploaded `.cam` file and processes it frame-by-frame with the JS parser (which works correctly), logging:
+- Every opcode encountered, its position, and bytes consumed
+- Compare against what the C++ parser *would* read for each opcode
+- Flag every frame where drift would occur
+- Output a complete "protocol specification" for TibiaRelic
 
-### Task 3: Add hex dump to diagnostic tool
-Add a raw hex dump of problem frame payloads to the diagnostic output, so we can definitively determine what opcode 0xA8's real payload should be. This will be visible in the Protocol Diagnostic tab.
+This will give us a definitive list of every protocol difference.
+
+### Phase 2: Fork-Level C++ Fix
+With the complete protocol spec, apply targeted fixes to the `antigawiki/tibiarc` fork:
+- Add missing opcode handlers (0x9A, 0xA8, 0x14)
+- Fix payload sizes for existing handlers (0xA4, 0xA7, 0xB6)
+- Disable opcodes not used by TibiaRelic (0xB7, 0xB8, 0x92 assertion)
+- These changes go directly into the fork source code (not patches)
+
+### Data Files (.dat, .spr, .pic)
+The DatLoader flag parsing in JS matches the tibiarc C++ `InitTypeProperties` for 7.55+ correctly — flag order, payload sizes, and sprite index reading all align. The `.spr` loader (RLE decode with u16 sprite count) and `.pic` usage are also standard. **The data files are NOT the problem** — the protocol parsing is.
+
+## Implementation Priority
+1. Build the diagnostic tool against the uploaded `.cam` to catalog every opcode occurrence
+2. Generate a complete TibiaRelic protocol specification
+3. Apply fixes to the C++ fork and rebuild the WASM
 

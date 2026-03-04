@@ -502,21 +502,34 @@ export class PacketParser {
     const prevZ = this.gs.camZ;
     this.gs.camX = x; this.gs.camY = y; this.gs.camZ = z;
     this.clampCamZ();
-    this.gs.mapLoaded = true;
 
     const dl = this.debugLogger;
     if (dl && dl.enabled) {
       dl.log('MAP_DESC', { x, y, z, prevZ, bytesLeft: r.left() });
     }
 
-    // Mini MAP_DESC guard: a full 18×14 multi-floor area needs hundreds of bytes.
-    // Custom servers send position-only 0x64 (~5 bytes payload) every ~12s.
-    // Without this guard, readMultiFloorArea would consume subsequent opcodes as tile data.
-    if (r.left() < 100) {
-      if (dl && dl.enabled) dl.log('MAP_DESC_MINI', { x, y, z, bytesLeft: r.left() });
+    // Content-aware mini-mapDesc detection:
+    // After the map is already loaded, a second 0x64 may be a position-only update.
+    // Peek at the next u16 to decide if it looks like valid tile data.
+    if (this.gs.mapLoaded && r.left() >= 2) {
+      const peek = r.peek16();
+      const isSkipMarker = peek >= 0xFF00;
+      const isItemId = peek >= 100 && peek <= 9999;
+      const isCreatureMarker = peek === CR_FULL || peek === CR_KNOWN || peek === CR_OLD;
+      if (!isSkipMarker && !isItemId && !isCreatureMarker) {
+        // Not valid tile data — treat as position-only update
+        if (dl && dl.enabled) dl.log('MAP_DESC_MINI', { x, y, z, bytesLeft: r.left(), peek: '0x' + peek.toString(16) });
+        this.syncPlayerToCamera(prevZ);
+        return;
+      }
+    } else if (r.left() < 2) {
+      // No data after position — position-only
+      this.gs.mapLoaded = true;
       this.syncPlayerToCamera(prevZ);
       return;
     }
+
+    this.gs.mapLoaded = true;
 
     const { startz, endz, zstep } = this.getMapDescFloorRange(z);
     this.readMultiFloorArea(r, x - 8, y - 6, 18, 14, z, startz, endz, zstep);
@@ -538,22 +551,21 @@ export class PacketParser {
       dl.log('SCROLL', { dx, dy, oldCam: `${oldX},${oldY},${g.camZ}`, newCam: `${g.camX},${g.camY},${g.camZ}` });
     }
 
-    // TFS server uses GetMapDescription (full surface range 7→0) for scrolls too
-    const { startz, endz, zstep } = this.getMapDescFloorRange(g.camZ);
+    // TibiaRelic sends only the CURRENT floor per scroll update (not 8 floors).
+    // Using readMultiFloorArea here would consume subsequent opcodes as tile data.
+    const z = g.camZ;
 
     try {
-      if (dx === 1) this.readMultiFloorArea(r, g.camX + 9, g.camY - 6, 1, 14, g.camZ, startz, endz, zstep);
-      else if (dx === -1) this.readMultiFloorArea(r, g.camX - 8, g.camY - 6, 1, 14, g.camZ, startz, endz, zstep);
-      else if (dy === 1) this.readMultiFloorArea(r, g.camX - 8, g.camY + 7, 18, 1, g.camZ, startz, endz, zstep);
-      else if (dy === -1) this.readMultiFloorArea(r, g.camX - 8, g.camY - 6, 18, 1, g.camZ, startz, endz, zstep);
+      if (dx === 1) this.readSingleFloorArea(r, g.camX + 9, g.camY - 6, z, 1, 14);
+      else if (dx === -1) this.readSingleFloorArea(r, g.camX - 8, g.camY - 6, z, 1, 14);
+      else if (dy === 1) this.readSingleFloorArea(r, g.camX - 8, g.camY + 7, z, 18, 1);
+      else if (dy === -1) this.readSingleFloorArea(r, g.camX - 8, g.camY - 6, z, 18, 1);
     } catch (e) {
       // Revert camera on parse failure
       g.camX = oldX; g.camY = oldY;
       throw e;
     }
     // Only sync player to camera if positions are close (normal 1-tile scroll).
-    // After floor changes, cam has perspective offsets (camX++/camY++) that make it 2+ tiles
-    // away from the player — syncing in that state would corrupt the player's correct position.
     const player = g.creatures.get(g.playerId);
     if (player && Math.abs(player.x - g.camX) + Math.abs(player.y - g.camY) <= 2 && player.z === g.camZ) {
       this.syncPlayerToCamera();

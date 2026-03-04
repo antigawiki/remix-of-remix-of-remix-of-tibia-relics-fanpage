@@ -132,6 +132,8 @@ export interface FrameDiag {
   opcodes: number[];
   bytesLeft: number;
   error?: string;
+  /** First 128 bytes of the frame payload as hex string (for debugging opcode payloads) */
+  hexDump?: string;
 }
 
 export interface ProtocolDiagnosticResult {
@@ -195,6 +197,11 @@ export async function runProtocolDiagnostic(
 
     if (error || bytesLeft > 0) {
       if (problemFrames.length < 500) {
+        // Hex dump: first 128 bytes for debugging opcode payloads
+        const dumpLen = Math.min(frame.payload.length, 128);
+        const hexDump = Array.from(frame.payload.slice(0, dumpLen))
+          .map(b => b.toString(16).toUpperCase().padStart(2, '0'))
+          .join(' ');
         problemFrames.push({
           frameIndex: i,
           timestamp: frame.timestamp,
@@ -202,6 +209,7 @@ export async function runProtocolDiagnostic(
           opcodes,
           bytesLeft,
           error,
+          hexDump,
         });
       }
     }

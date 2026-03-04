@@ -228,16 +228,27 @@ export default function ProtocolDiagnosticTab({ fileBuffer, fileName, loadDat }:
                   </TableHeader>
                   <TableBody>
                     {result.problemFrames.slice(0, 100).map((f) => (
-                      <TableRow key={f.frameIndex}>
-                        <TableCell className="text-xs font-mono">{f.frameIndex}</TableCell>
-                        <TableCell className="text-xs">{fmtMs(f.timestamp)}</TableCell>
-                        <TableCell className="text-xs font-mono">{f.payloadSize}B</TableCell>
-                        <TableCell className="text-xs font-mono text-destructive">{f.bytesLeft}B</TableCell>
-                        <TableCell className="text-xs font-mono max-w-[200px] truncate">
-                          {f.opcodes.map(fmtOp).join(', ')}
-                        </TableCell>
-                        <TableCell className="text-xs max-w-[300px] truncate text-destructive">{f.error || '—'}</TableCell>
-                      </TableRow>
+                      <>
+                        <TableRow key={f.frameIndex}>
+                          <TableCell className="text-xs font-mono">{f.frameIndex}</TableCell>
+                          <TableCell className="text-xs">{fmtMs(f.timestamp)}</TableCell>
+                          <TableCell className="text-xs font-mono">{f.payloadSize}B</TableCell>
+                          <TableCell className="text-xs font-mono text-destructive">{f.bytesLeft}B</TableCell>
+                          <TableCell className="text-xs font-mono max-w-[200px] truncate">
+                            {f.opcodes.map(fmtOp).join(', ')}
+                          </TableCell>
+                          <TableCell className="text-xs max-w-[300px] truncate text-destructive">{f.error || '—'}</TableCell>
+                        </TableRow>
+                        {f.hexDump && (
+                          <TableRow key={`${f.frameIndex}-hex`}>
+                            <TableCell colSpan={6} className="p-2">
+                              <code className="text-[10px] font-mono text-muted-foreground break-all leading-relaxed block bg-muted/50 rounded p-2">
+                                {f.hexDump}
+                              </code>
+                            </TableCell>
+                          </TableRow>
+                        )}
+                      </>
                     ))}
                   </TableBody>
                 </Table>
