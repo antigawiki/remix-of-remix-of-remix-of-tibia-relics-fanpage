@@ -580,6 +580,21 @@ const TibiarcPlayer = ({ className }: TibiarcPlayerProps) => {
           >
             {overlayEnabled ? <MessageSquare className="w-4 h-4" /> : <MessageSquareOff className="w-4 h-4" />}
           </Button>
+          <Button
+            variant="outline"
+            size="icon"
+            onClick={() => {
+              const next = !lightingEnabled;
+              setLightingEnabled(next);
+              lightingEnabledRef.current = next;
+              updateLightOverlay(progress);
+            }}
+            disabled={!hasRecording}
+            className="border-border/50"
+            title={lightingEnabled ? 'Desativar iluminação' : 'Ativar iluminação'}
+          >
+            {lightingEnabled ? <Moon className="w-4 h-4" /> : <Sun className="w-4 h-4" />}
+          </Button>
           <Button variant="outline" size="icon" onClick={toggleFullscreen} disabled={!hasRecording} className="border-border/50" title={isFullscreen ? 'Sair do fullscreen' : 'Fullscreen'}>
             {isFullscreen ? <Minimize className="w-4 h-4" /> : <Maximize className="w-4 h-4" />}
           </Button>
@@ -632,6 +647,13 @@ const TibiarcPlayer = ({ className }: TibiarcPlayerProps) => {
               imageRendering: 'auto',
               ...(isFullscreen ? { aspectRatio: '480/352' } : {}),
             }}
+          />
+
+          {/* Ambient light darkness overlay */}
+          <div
+            ref={lightOverlayRef}
+            className="absolute inset-0 bg-black pointer-events-none"
+            style={{ opacity: 0, transition: 'opacity 0.3s ease' }}
           />
 
           {/* Hidden file input */}
