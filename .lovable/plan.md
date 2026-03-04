@@ -1,50 +1,54 @@
 
 
-## Diagnóstico: O problema é mais profundo que offsets e floor ranges
+## Diagnóstico: Não é luz — é o floor range dos scrolls
 
-Após análise extensiva do código, identifiquei que todas as "correções" anteriores (offset=0, camX/Y condicional) **divergem da implementação de referência C++** e podem estar piorando as coisas. O problema real é que o parser silenciosamente consome bytes inválidos sem reportar erro, mascarando byte drift.
+Sua hipótese sobre luminância é criativa, mas **não é isso**. No protocolo Tibia 7.72, a luz não é enviada como dados extras por tile na rede. A luz funciona assim:
 
-### Problemas encontrados
+- **Luz ambiente (0x82)**: 2 bytes (intensidade + cor) — já lido pelo parser
+- **Luz de criatura (0x8D)**: 6 bytes (creatureId + intensidade + cor) — já lido
+- **Luz de item**: vem do arquivo `.dat` (flag 0x15, 4 bytes), não do protocolo de rede
 
-**1. `readTileItems` consome u16 desconhecidos silenciosamente**
-Quando o parse fica desalinhado por 1 byte (por qualquer razão), valores u16 inválidos (fora do range 100-9999, não são creature markers, não são skip markers) são consumidos sem erro. Isso permite que a corrupção se propague silenciosamente por centenas de bytes sem nunca lançar um erro.
+O parser lê todos esses corretamente. Os bytes sobrando não são dados de luz.
 
-**2. Nossas "correções" divergem do C++ de referência**
-- O C++ usa `offset = camZ - nz` SEMPRE (incluindo superfície) — nós mudamos para `offset = 0`
-- O C++ faz `camX++/camY++` INCONDICIONALMENTE no floorUp — nós tornamos condicional
-- Essas divergências podem causar inconsistências entre como os tiles são armazenados vs como o renderer os procura
+### A causa real (confirmada pelo JSON que você enviou)
 
-**3. Sem detecção de formato por gravação**
-Diferentes .cam files podem ter variações de protocolo. Sem detecção automática, usamos um formato fixo que funciona para alguns e quebra para outros.
+O JSON mostra claramente:
 
-### Plano de correção
+```text
+150 anomalias — 100% são BYTES_LEFTOVER
+147 de 150 (98%) resolvidas pela estratégia A (7→0)
+0 DESYNCs, 0 PARSE_ERRORs
+```
 
-**Passo 1: Reverter offset e camX/Y para o comportamento original (match C++)**
-- `readMultiFloorArea`: voltar para `offset = camZ - nz` (sem condição)
-- `floorUp`: `camX++; camY++` incondicional
-- `floorDown`: `camX--; camY--` incondicional
+O problema é **exatamente o mesmo** que diagnosticamos antes: os **scrolls** (0x65-0x68) na superfície enviam dados para todos os floors visíveis (7→0), mas o parser usa `getFloorRange` que retorna apenas ±2 (3 floors). Os floors extras ficam não-lidos e são reportados como "leftover".
 
-**Passo 2: Adicionar validação em `readTileItems` para detectar byte drift**
-- Quando um u16 não é skip marker, creature marker, nem item válido (100-9999): lançar erro em vez de consumir silenciosamente
-- Isso vai EXPOR o verdadeiro ponto de falha em vez de mascará-lo
+### Por que a última correção piorou
 
-**Passo 3: Adicionar detecção de formato per-scroll**
-- Antes de ler o scroll, salvar posição do buffer
-- Após ler, verificar se o próximo byte é um opcode válido (0x0a-0xf1)
-- Se não for, reverter e tentar formato alternativo (standard 1-row/col vs full viewport)
-- Isso lida com gravações que usam formatos diferentes
+Na primeira tentativa, mudamos `getFloorRange` para 7→0 **E** mudamos `floorUp` para ler floors 5→0. Mas `floorUp`/`floorDown` só enviam dados do **único** novo floor visível, não todos os floors. Ler 6 floors quando só 1 foi enviado causou byte drift → DESYNCs.
 
-**Passo 4: Ajustar `mapExtractor.ts` para reverter o offset ao armazenar tiles**
-- Para o mapa, queremos coordenadas reais: `actual_x = stored_x - offset`
-- Adicionar compensação no `snapshotTiles` para que tiles do mapa tenham posições absolutas
+Na correção seguinte, revertemos `getFloorRange` para ±2 (conservador demais) e criamos `getMapDescFloorRange` (7→0 só para mapDesc). Isso resolveu o mapDesc mas os scrolls continuam com ±2 → voltamos aos mesmos leftover.
 
-### Arquivos alterados
+### Correção cirúrgica
 
-| Arquivo | Mudança |
-|---------|---------|
-| `packetParser.ts` | Reverter offset e camX/Y; validação em readTileItems; scroll auto-detect |
-| `mapExtractor.ts` | Compensar offset na captura de tiles para coordenadas absolutas |
+A solução é simples — dois pontos:
 
-### Por que isso vai funcionar
-O problema central é que o parser mascara erros. Ao tornar erros **visíveis** (passo 2) e **adaptar o formato** (passo 3), o parser vai ou processar corretamente ou falhar rápido e recuperar, em vez de corromper silenciosamente o estado do jogo.
+1. **`getFloorRange`**: mudar para 7→0 na superfície (afeta scrolls)
+2. **`floorUp`/`floorDown`**: manter como está (lê apenas 1 floor novo)
+3. **Remover `getMapDescFloorRange`**: não precisa mais, pois `getFloorRange` já retorna 7→0
+
+Isso funciona porque:
+- `scroll()` usa `getFloorRange` → agora lê 7→0 → consome todos os bytes ✓
+- `mapDesc()` pode usar `getFloorRange` também → mesmo resultado ✓
+- `floorUp`/`floorDown` chamam `readFloorArea` diretamente, **não usam** `getFloorRange` → não são afetados ✓
+- `readMultiFloorArea` já tem um guard `if (r.left() < 2) break` que para automaticamente quando não há mais dados para floors distantes → seguro ✓
+
+O `readMultiFloorArea` já lida com floors vazios (skip markers de 2 bytes) e com exhaustion (para quando o buffer acaba). Não há risco de ler dados demais.
+
+### Mudanças
+
+**`packetParser.ts`:**
+- `getFloorRange`: surface → `{ startz: 7, endz: 0, zstep: -1 }`
+- Remover `getMapDescFloorRange` (redundante)
+- `mapDesc`: usar `getFloorRange` em vez de `getMapDescFloorRange`
+- `floorUp`/`floorDown`: sem mudanças (já estão corretos)
 

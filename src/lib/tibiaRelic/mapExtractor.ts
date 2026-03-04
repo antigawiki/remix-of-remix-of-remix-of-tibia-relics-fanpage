@@ -252,17 +252,22 @@ function snapshotCreaturesForVisit(
     if (c.outfit === 0 && c.outfitItem === 0) continue;
     if (c.health <= 0) continue; // Only living creatures
     if (c.x < 30000 || c.x > 35000 || c.y < 30000 || c.y > 35000 || c.z < 0 || c.z > 15) continue;
-    if (Math.abs(c.x - camX) > 20 || Math.abs(c.y - camY) > 16) continue;
-    // Accept creatures from all visible floors (no Z filter)
+
+    // Reverse perspective offset to get absolute world coordinates
+    const perspectiveOffset = camZ <= 7 ? (camZ - c.z) : 0;
+    const absX = c.x - perspectiveOffset;
+    const absY = c.y - perspectiveOffset;
+
+    if (Math.abs(absX - camX) > 20 || Math.abs(absY - camY) > 16) continue;
     if (c.id === gs.playerId) continue;
     if (c.head !== 0 || c.body !== 0 || c.legs !== 0 || c.feet !== 0) continue;
     if (c.outfit >= 128 && c.outfit <= 143) continue;
 
-    const cx = Math.floor(c.x / DB_CHUNK);
-    const cy = Math.floor(c.y / DB_CHUNK);
+    const cx = Math.floor(absX / DB_CHUNK);
+    const cy = Math.floor(absY / DB_CHUNK);
     const chunkKey = `${cx},${cy},${c.z}`;
-    const relX = c.x - cx * DB_CHUNK;
-    const relY = c.y - cy * DB_CHUNK;
+    const relX = absX - cx * DB_CHUNK;
+    const relY = absY - cy * DB_CHUNK;
 
     let chunkSnap = snapshotCounts.get(chunkKey);
     if (!chunkSnap) { chunkSnap = new Map(); snapshotCounts.set(chunkKey, chunkSnap); }
@@ -367,8 +372,8 @@ function snapshotTiles(
   for (const [key, tileItems] of gs.tiles.entries()) {
     const parts = key.split(',');
     if (parts.length !== 3) continue;
-    const tx = parseInt(parts[0], 10);
-    const ty = parseInt(parts[1], 10);
+    let tx = parseInt(parts[0], 10);
+    let ty = parseInt(parts[1], 10);
     const tz = parseInt(parts[2], 10);
 
     if (tx === 0 || ty === 0) continue;
@@ -384,9 +389,15 @@ function snapshotTiles(
 
     if (tx < 30000 || tx > 35000 || ty < 30000 || ty > 35000) continue;
 
-    // Viewport radius filter: only capture tiles near the camera
-    // to prevent stale/displaced tiles from entering the output
-    if (Math.abs(tx - camX) > 40 || Math.abs(ty - camY) > 40) continue;
+    // Reverse the perspective offset applied by readMultiFloorArea.
+    // The parser stores tiles at (ox + tx + offset, oy + ty + offset) where offset = camZ - nz.
+    // To get absolute world coordinates, we subtract the offset.
+    const perspectiveOffset = camZ - tz;
+    const absX = tx - perspectiveOffset;
+    const absY = ty - perspectiveOffset;
+
+    // Viewport radius filter using absolute coordinates
+    if (Math.abs(absX - camX) > 40 || Math.abs(absY - camY) > 40) continue;
 
     let items: number[] = [];
     let hasValidGround = false;
@@ -405,7 +416,7 @@ function snapshotTiles(
 
     // Discard tiles without a valid ground sprite — these produce white squares
     if (items.length > 0 && hasValidGround) {
-      const correctedKey = `${tx},${ty},${tz}`;
+      const correctedKey = `${absX},${absY},${tz}`;
       latestTiles.set(correctedKey, items);
     }
   }

@@ -104,7 +104,9 @@ export class PacketParser {
   private unknownWarnCount = 0;
   private frameErrorCount = 0;
 
-  /** Get the floor range for multi-floor reading (scrolls) — ±2 */
+  /** Get the floor range for multi-floor reading (scrolls + mapDesc).
+   *  Surface: full range 7→0 (TibiaRelic sends all surface floors).
+   *  Underground: ±2 around camera Z. */
   private getFloorRange(z: number): { startz: number; endz: number; zstep: number } {
     const ovr = this.floorRangeOverride;
     if (ovr) {
@@ -117,25 +119,7 @@ export class PacketParser {
     if (z > 7) {
       return { startz: z - 2, endz: Math.min(z + 2, 15), zstep: 1 };
     } else {
-      // Surface scrolls: ±2 floors around camera Z
-      return { startz: Math.min(z + 2, 7), endz: Math.max(z - 2, 0), zstep: -1 };
-    }
-  }
-
-  /** Get floor range for mapDesc (0x64) only — full surface range 7→0 */
-  private getMapDescFloorRange(z: number): { startz: number; endz: number; zstep: number } {
-    const ovr = this.floorRangeOverride;
-    if (ovr) {
-      if (z > 7) {
-        return { startz: Math.max(z - ovr.minus, 0), endz: Math.min(z + ovr.plus, 15), zstep: 1 };
-      } else {
-        return { startz: Math.min(z + ovr.plus, 7), endz: Math.max(z - ovr.minus, 0), zstep: -1 };
-      }
-    }
-    if (z > 7) {
-      return { startz: z - 2, endz: Math.min(z + 2, 15), zstep: 1 };
-    } else {
-      // mapDesc: TibiaRelic sends ALL surface floors 7→0
+      // Surface: TibiaRelic sends ALL surface floors 7→0
       return { startz: 7, endz: 0, zstep: -1 };
     }
   }
@@ -512,7 +496,7 @@ export class PacketParser {
       return;
     }
 
-    const { startz, endz, zstep } = this.getMapDescFloorRange(z);
+    const { startz, endz, zstep } = this.getFloorRange(z);
     this.readMultiFloorArea(r, x - 8, y - 6, 18, 14, z, startz, endz, zstep);
     this.syncPlayerToCamera(prevZ);
 
@@ -532,8 +516,7 @@ export class PacketParser {
       dl.log('SCROLL', { dx, dy, oldCam: `${oldX},${oldY},${g.camZ}`, newCam: `${g.camX},${g.camY},${g.camZ}` });
     }
 
-    // TFS server uses GetMapDescription (full surface range 7→0) for scrolls too
-    const { startz, endz, zstep } = this.getMapDescFloorRange(g.camZ);
+    const { startz, endz, zstep } = this.getFloorRange(g.camZ);
 
     try {
       if (dx === 1) this.readMultiFloorArea(r, g.camX - 8, g.camY - 6, 18, 14, g.camZ, startz, endz, zstep);
@@ -843,7 +826,7 @@ export class PacketParser {
         }
       }
 
-      if (g.camZ >= 7) { g.camX++; g.camY++; }
+      g.camX++; g.camY++;
     } catch (e) {
       g.camZ = oldZ; g.camX = oldX; g.camY = oldY;
       throw e;
@@ -872,7 +855,7 @@ export class PacketParser {
         this.readFloorAreaWithOffset(r, g.camX - 8, g.camY - 6, nz, 18, 14, -3);
       }
 
-      if (g.camZ > 7) { g.camX--; g.camY--; }
+      g.camX--; g.camY--;
     } catch (e) {
       // Revert camera on failure
       g.camZ = oldZ; g.camX = oldX; g.camY = oldY;
@@ -1009,6 +992,11 @@ export class PacketParser {
           r.u8();
         }
         items.push(['it', word]);
+      } else {
+        // Invalid u16: not a skip marker, creature marker, or valid item ID.
+        // This indicates byte drift — throw to expose the real parse failure point.
+        this.gs.setTile(x, y, z, items);
+        throw new Error(`[readTileItems] Invalid tile word 0x${word.toString(16)} (${word}) at pos ${r.pos - 2} tile (${x},${y},${z})`);
       }
     }
     this.gs.setTile(x, y, z, items);
@@ -1080,7 +1068,7 @@ export class PacketParser {
         break;
       }
       const floorStartPos = r.pos;
-      const offset = camZ > 7 ? (camZ - nz) : 0;
+      const offset = camZ - nz;
       try {
         skip = this.readFloorArea(r, ox, oy, nz, W, H, offset, skip);
       } catch (e: any) {
