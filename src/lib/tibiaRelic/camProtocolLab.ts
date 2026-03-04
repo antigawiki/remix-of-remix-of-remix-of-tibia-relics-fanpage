@@ -149,7 +149,9 @@ export async function runProtocolLab(
 
     if (playerAfter && gs.mapLoaded) {
       const delta = posDelta(playerAfter, camAfter);
-      if (delta > 2) {
+      // Only flag DESYNC if player and camera are on the SAME floor
+      // When player changes Z via moveCr (e.g. ramp), camera updates next frame — that's normal
+      if (delta > 2 && playerAfter.z === camAfter.z) {
         anomalies.push({
           type: 'DESYNC',
           detail: `Player (${playerAfter.x},${playerAfter.y},${playerAfter.z}) vs Cam (${camAfter.x},${camAfter.y},${camAfter.z}) delta=${delta}`,
@@ -159,11 +161,15 @@ export async function runProtocolLab(
     }
 
     if (playerAfter && gs.mapLoaded && playerAfter.z !== camAfter.z) {
-      anomalies.push({
-        type: 'FLOOR_JUMP',
-        detail: `Player Z=${playerAfter.z} vs Cam Z=${camAfter.z}`,
-        floorDelta: Math.abs(playerAfter.z - camAfter.z),
-      });
+      // Only flag as anomaly if floor difference is > 1 (1 floor diff is normal during transitions)
+      const floorDelta = Math.abs(playerAfter.z - camAfter.z);
+      if (floorDelta > 1) {
+        anomalies.push({
+          type: 'FLOOR_JUMP',
+          detail: `Player Z=${playerAfter.z} vs Cam Z=${camAfter.z}`,
+          floorDelta,
+        });
+      }
     }
 
     if (playerBefore && playerAfter && gs.mapLoaded && !opcodes.includes(0x64)) {
