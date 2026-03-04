@@ -1,54 +1,52 @@
 
 
-## Diagnóstico: Não é luz — é o floor range dos scrolls
+## Diagnóstico: Os patches de scroll no fork são a causa raiz
 
-Sua hipótese sobre luminância é criativa, mas **não é isso**. No protocolo Tibia 7.72, a luz não é enviada como dados extras por tile na rede. A luz funciona assim:
+### O que encontrei
 
-- **Luz ambiente (0x82)**: 2 bytes (intensidade + cor) — já lido pelo parser
-- **Luz de criatura (0x8D)**: 6 bytes (creatureId + intensidade + cor) — já lido
-- **Luz de item**: vem do arquivo `.dat` (flag 0x15, 4 bytes), não do protocolo de rede
+O fork `antigawiki/tibiarc` tem as mudanças do `fix-scroll-floor-range.patch` **baked in** (commitadas diretamente). Essas mudanças fazem:
 
-O parser lê todos esses corretamente. Os bytes sobrando não são dados de luz.
+1. **Scroll (0x65-0x68)**: Lê 18x14 viewport completo em vez de 1 coluna/linha
+2. **FloorUp (0xBE)**: Lê apenas 1 floor em vez de 6 ao subir para superfície
+3. **ParseMapDescription**: Relaxa o assert de tileSkip e adiciona `reader.Remaining() < 2` guard
 
-### A causa real (confirmada pelo JSON que você enviou)
+O problema é que o `.patch` file **nunca é aplicado via workflow** — ele foi commitado direto no fork. E o workflow faz `git clone` do fork, recebendo essas mudanças automaticamente.
 
-O JSON mostra claramente:
+**Por que isso causa o crash:** Se o TibiaRelic envia scroll padrão (1 coluna = ~14 tiles), mas o parser tenta ler 18x14 = 252 tiles, ele consome bytes do próximo opcode → byte drift massivo → todos os opcodes seguintes são lidos errados → tela preta/crash.
+
+### Evidência
+
+Os logs do console mostram que o frame inicial (0x0A + 0x64 mapDesc) funciona perfeitamente — porque `mapDesc` sempre lê viewport completo. O crash acontece quando o jogador se move (scroll), porque aí o parser tenta ler 252 tiles quando só ~14 foram enviados.
+
+### Solução
+
+Adicionar `sed` commands ao workflow para **reverter os patches de scroll** no fork antes de compilar, restaurando o comportamento padrão:
 
 ```text
-150 anomalias — 100% são BYTES_LEFTOVER
-147 de 150 (98%) resolvidas pela estratégia A (7→0)
-0 DESYNCs, 0 PARSE_ERRORs
+Scroll East  (0x65): ler 1×14 (nova coluna à direita)
+Scroll North (0x66): ler 18×1 (nova linha acima)
+Scroll South (0x67): ler 18×1 (nova linha abaixo)  
+Scroll West  (0x68): ler 1×14 (nova coluna à esquerda)
+FloorUp (0xBE z==7): ler 6 floors (5→0), não apenas 1
 ```
 
-O problema é **exatamente o mesmo** que diagnosticamos antes: os **scrolls** (0x65-0x68) na superfície enviam dados para todos os floors visíveis (7→0), mas o parser usa `getFloorRange` que retorna apenas ±2 (3 floors). Os floors extras ficam não-lidos e são reportados como "leftover".
-
-### Por que a última correção piorou
-
-Na primeira tentativa, mudamos `getFloorRange` para 7→0 **E** mudamos `floorUp` para ler floors 5→0. Mas `floorUp`/`floorDown` só enviam dados do **único** novo floor visível, não todos os floors. Ler 6 floors quando só 1 foi enviado causou byte drift → DESYNCs.
-
-Na correção seguinte, revertemos `getFloorRange` para ±2 (conservador demais) e criamos `getMapDescFloorRange` (7→0 só para mapDesc). Isso resolveu o mapDesc mas os scrolls continuam com ±2 → voltamos aos mesmos leftover.
-
-### Correção cirúrgica
-
-A solução é simples — dois pontos:
-
-1. **`getFloorRange`**: mudar para 7→0 na superfície (afeta scrolls)
-2. **`floorUp`/`floorDown`**: manter como está (lê apenas 1 floor novo)
-3. **Remover `getMapDescFloorRange`**: não precisa mais, pois `getFloorRange` já retorna 7→0
-
-Isso funciona porque:
-- `scroll()` usa `getFloorRange` → agora lê 7→0 → consome todos os bytes ✓
-- `mapDesc()` pode usar `getFloorRange` também → mesmo resultado ✓
-- `floorUp`/`floorDown` chamam `readFloorArea` diretamente, **não usam** `getFloorRange` → não são afetados ✓
-- `readMultiFloorArea` já tem um guard `if (r.left() < 2) break` que para automaticamente quando não há mais dados para floors distantes → seguro ✓
-
-O `readMultiFloorArea` já lida com floors vazios (skip markers de 2 bytes) e com exhaustion (para quando o buffer acaba). Não há risco de ler dados demais.
+O guard `reader.Remaining() < 2` no `ParseMapDescription` pode ficar — é uma proteção segura que não causa byte drift.
 
 ### Mudanças
 
-**`packetParser.ts`:**
-- `getFloorRange`: surface → `{ startz: 7, endz: 0, zstep: -1 }`
-- Remover `getMapDescFloorRange` (redundante)
-- `mapDesc`: usar `getFloorRange` em vez de `getMapDescFloorRange`
-- `floorUp`/`floorDown`: sem mudanças (já estão corretos)
+| Arquivo | Mudança |
+|---------|---------|
+| `.github/workflows/build-tibiarc.yml` | Adicionar sed commands para reverter scroll para comportamento padrão (1 col/row) e restaurar floorUp completo |
+
+### Detalhe técnico dos sed commands
+
+```bash
+# Reverter scroll East: 18x14 → 1×14
+sed -i 's/ParseMapDescription(reader, events, -8, -6, Map::TileBufferWidth, Map::TileBufferHeight);.*full 18x14.*East/ParseMapDescription(reader, events, +9, -6, 1, Map::TileBufferHeight);/' ...
+
+# Similar para North, South, West
+# Reverter floorUp: restaurar loop 5→0
+```
+
+Isso restaura o parser ao comportamento original do tibiarc para scrolls — que é o que funcionava antes.
 
