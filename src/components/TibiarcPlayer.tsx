@@ -1,9 +1,8 @@
 import { useRef, useState, useCallback, useEffect } from 'react';
-import { Upload, Play, Pause, FastForward, Loader2, SkipBack, SkipForward, MessageSquare, MessageSquareOff, Maximize, Minimize, Sun, Moon } from 'lucide-react';
+import { Upload, Play, Pause, FastForward, Loader2, SkipBack, SkipForward, MessageSquare, MessageSquareOff, Maximize, Minimize } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Slider } from '@/components/ui/slider';
 import { useTranslation } from '@/i18n';
-import { extractLightTimeline, type LightEvent, getLightAtTime } from '@/lib/tibiaRelic/lightExtractor';
 
 type PlayerState = 'idle' | 'loading-data' | 'ready' | 'loading-cam' | 'playing' | 'paused' | 'error';
 
