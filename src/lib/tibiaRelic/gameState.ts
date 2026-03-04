@@ -84,6 +84,8 @@ export class GameState {
   camZ = 7;
   playerId = 0;
   mapLoaded = false;
+  ambientLightLevel = 255; // 0=total darkness, 255=full bright
+  ambientLightColor = 215; // default daylight color
   messages: ChatMessage[] = [];
   effects: ActiveEffect[] = [];
   projectiles: ActiveProjectile[] = [];
@@ -171,6 +173,8 @@ export class GameState {
     this.camZ = 7;
     this.playerId = 0;
     this.mapLoaded = false;
+    this.ambientLightLevel = 255;
+    this.ambientLightColor = 215;
     this.messages = [];
     this.effects = [];
     this.projectiles = [];

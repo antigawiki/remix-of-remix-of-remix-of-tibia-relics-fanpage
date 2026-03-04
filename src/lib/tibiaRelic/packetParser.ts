@@ -382,7 +382,7 @@ export class PacketParser {
     else if (t === 0x7e) { r.skip16(); const n2 = r.u8(); for (let i = 0; i < n2; i++) this.skipItem(r); }
     else if (t === 0x7f) { /* close trade */ }
     // World light
-    else if (t === 0x82) { r.u8(); r.u8(); }
+    else if (t === 0x82) { g.ambientLightLevel = r.u8(); g.ambientLightColor = r.u8(); }
     // Effects
     else if (t === 0x83) {
       const [ex, ey, ez] = this.pos3(r);
