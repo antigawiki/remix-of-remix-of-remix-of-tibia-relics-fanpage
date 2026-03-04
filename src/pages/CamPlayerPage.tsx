@@ -2,7 +2,7 @@ import { useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { ArrowLeft, Film, Info } from 'lucide-react';
 import { useTranslation } from '@/i18n';
-import TibiarcPlayer from '@/components/TibiarcPlayer';
+import JsCamPlayer from '@/components/JsCamPlayer';
 import { ThemeToggle } from '@/components/ThemeToggle';
 import { LanguageSelector } from '@/components/LanguageSelector';
 
