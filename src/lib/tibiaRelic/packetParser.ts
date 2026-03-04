@@ -118,26 +118,7 @@ export class PacketParser {
       // Underground: z-2 to z+2, capped at 15
       return { startz: z - 2, endz: Math.min(z + 2, 15), zstep: 1 };
     } else {
-      // Surface: ±2 floors (used by scroll, floorUp, floorDown)
-      // mapDesc uses its own full 7→0 range via getMapDescFloorRange()
-      return { startz: Math.min(z + 2, 7), endz: Math.max(z - 2, 0), zstep: -1 };
-    }
-  }
-
-  /** Get floor range specifically for mapDesc (0x64) — full surface range 7→0 */
-  private getMapDescFloorRange(z: number): { startz: number; endz: number; zstep: number } {
-    const ovr = this.floorRangeOverride;
-    if (ovr) {
-      if (z > 7) {
-        return { startz: Math.max(z - ovr.minus, 0), endz: Math.min(z + ovr.plus, 15), zstep: 1 };
-      } else {
-        return { startz: Math.min(z + ovr.plus, 7), endz: Math.max(z - ovr.minus, 0), zstep: -1 };
-      }
-    }
-    if (z > 7) {
-      return { startz: z - 2, endz: Math.min(z + 2, 15), zstep: 1 };
-    } else {
-      // Surface mapDesc: TibiaRelic sends ALL surface floors 7→0
+      // Surface: FULL range 7→0 (TibiaRelic sends all surface floors for scrolls AND mapDesc)
       return { startz: 7, endz: 0, zstep: -1 };
     }
   }
@@ -520,7 +501,7 @@ export class PacketParser {
       return;
     }
 
-    const { startz, endz, zstep } = this.getMapDescFloorRange(z);
+    const { startz, endz, zstep } = this.getFloorRange(z);
     this.readMultiFloorArea(r, x - 8, y - 6, 18, 14, z, startz, endz, zstep);
     this.syncPlayerToCamera(prevZ);
 
