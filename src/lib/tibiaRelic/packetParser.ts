@@ -70,9 +70,9 @@ export class PacketParser {
 
   private skipItem(r: Buf): number {
     const iid = r.u16();
-    if (iid >= 100 && iid <= 9999) {
-      const it = this.dat.items.get(iid);
-      if (it && (it.isStackable || it.isFluid || it.isSplash)) {
+    if (this.dat.items.has(iid)) {
+      const it = this.dat.items.get(iid)!;
+      if (it.isStackable || it.isFluid || it.isSplash) {
         r.u8();
       }
     }
@@ -302,14 +302,55 @@ export class PacketParser {
       try {
         const t = r.u8();
         if (!this.dispatch(t, r)) {
-          // Unknown opcode inside sub-packet — skip rest
-          break;
+          // Unknown opcode — scan forward up to 4 bytes looking for a known opcode
+          let recovered = false;
+          for (let skip = 0; skip < 4 && r.pos < endPos; skip++) {
+            const next = r.peekU8();
+            if (this.isKnownOpcode(next)) {
+              recovered = true;
+              break;
+            }
+            r.pos++;
+          }
+          if (!recovered) break;
         }
       } catch (e) {
         if (this.strictMode) throw e;
-        break;
+        // Try to recover: scan forward for next valid opcode
+        let recovered = false;
+        for (let skip = 0; skip < 4 && r.pos < endPos; skip++) {
+          const next = r.peekU8();
+          if (this.isKnownOpcode(next)) {
+            recovered = true;
+            break;
+          }
+          r.pos++;
+        }
+        if (!recovered) break;
       }
     }
+  }
+
+  /** Check if a byte is a known opcode */
+  private isKnownOpcode(b: number): boolean {
+    // Map opcodes
+    if (b >= 0x64 && b <= 0x6d) return true;
+    // Creature turn
+    if (b === 0x63) return true;
+    // Login/system
+    if (b === 0x0a || b === 0x0b || b === 0x0f || b === 0x1d || b === 0x1e) return true;
+    // Container
+    if (b >= 0x6e && b <= 0x72) return true;
+    // Inventory/trade/world
+    if (b === 0x78 || b === 0x79 || b === 0x7d || b === 0x7e || b === 0x7f) return true;
+    if (b >= 0x82 && b <= 0x85) return true;
+    if (b >= 0x8c && b <= 0x8f) return true;
+    if (b >= 0x96 && b <= 0x9a) return true;
+    if (b >= 0xa0 && b <= 0xa4) return true;
+    if (b === 0xa7 || b === 0xa8) return true;
+    if (b >= 0xaa && b <= 0xb4) return true;
+    if (b === 0xb6 || b === 0xbe || b === 0xbf) return true;
+    return false;
   }
 
   private dispatch(t: number, r: Buf): boolean {
@@ -984,17 +1025,25 @@ export class PacketParser {
           c.direction = dir; c.x = x; c.y = y; c.z = z;
         }
         items.push(['cr', cid]);
-      } else if (word >= 100 && word <= 9999) {
-        const it = this.dat.items.get(word);
-        if (it && (it.isStackable || it.isFluid || it.isSplash)) {
+      } else if (this.dat.items.has(word)) {
+        // Valid item confirmed by DAT
+        const it = this.dat.items.get(word)!;
+        if (it.isStackable || it.isFluid || it.isSplash) {
           r.u8();
         }
         items.push(['it', word]);
       } else {
-        // Invalid u16: not a skip marker, creature marker, or valid item ID.
-        // This indicates byte drift — throw to expose the real parse failure point.
+        // Unknown word — not a skip/creature/known item.
+        // Rewind and stop reading this tile gracefully (like C++ does).
+        r.pos -= 2;
         this.gs.setTile(x, y, z, items);
-        throw new Error(`[readTileItems] Invalid tile word 0x${word.toString(16)} (${word}) at pos ${r.pos - 2} tile (${x},${y},${z})`);
+        this.debugLogger?.log('TILE_UPDATE', {
+          msg: 'unknown_word_rewind',
+          word: '0x' + word.toString(16),
+          pos: r.pos,
+          tile: `${x},${y},${z}`,
+        });
+        return 0;
       }
     }
     this.gs.setTile(x, y, z, items);

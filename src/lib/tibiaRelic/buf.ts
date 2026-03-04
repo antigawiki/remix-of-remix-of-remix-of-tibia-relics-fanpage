@@ -11,8 +11,13 @@ export class BufOverflowError extends Error {
 }
 
 export class Buf {
-  private d: Uint8Array;
+  d: Uint8Array;
   private view: DataView;
+  /** Peek at byte at given offset without advancing position */
+  peekU8(offset = 0): number {
+    const idx = this.pos + offset;
+    return idx < this.d.length ? this.d[idx] : 0xFF;
+  }
   pos: number;
 
   constructor(data: Uint8Array) {

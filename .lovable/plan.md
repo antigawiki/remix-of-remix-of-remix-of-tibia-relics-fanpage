@@ -1,53 +1,54 @@
 
 
-## Diagnóstico: Validação estrita em `readTileItems` mata frames que o C++ processaria normalmente
+## Diagnóstico: Não é luz — é o floor range dos scrolls
 
-Analisei o código extensivamente e identifiquei três diferenças fundamentais entre o parser JS e o C++ que explicam por que os erros persistem independentemente das mudanças de scroll/floor range.
+Sua hipótese sobre luminância é criativa, mas **não é isso**. No protocolo Tibia 7.72, a luz não é enviada como dados extras por tile na rede. A luz funciona assim:
 
-### Problema 1: `readTileItems` lança exceção em items "inválidos"
+- **Luz ambiente (0x82)**: 2 bytes (intensidade + cor) — já lido pelo parser
+- **Luz de criatura (0x8D)**: 6 bytes (creatureId + intensidade + cor) — já lido
+- **Luz de item**: vem do arquivo `.dat` (flag 0x15, 4 bytes), não do protocolo de rede
 
-Na linha 997, adicionamos uma validação estrita:
-```typescript
-throw new Error(`[readTileItems] Invalid tile word 0x${word.toString(16)}...`);
+O parser lê todos esses corretamente. Os bytes sobrando não são dados de luz.
+
+### A causa real (confirmada pelo JSON que você enviou)
+
+O JSON mostra claramente:
+
+```text
+150 anomalias — 100% são BYTES_LEFTOVER
+147 de 150 (98%) resolvidas pela estratégia A (7→0)
+0 DESYNCs, 0 PARSE_ERRORs
 ```
 
-Quando um `u16` não é skip marker (≥0xFF00), creature marker (0x61/0x62/0x63), nem item no range 100-9999, o parser **lança exceção**. O C++ não faz isso — ele simplesmente tenta processar o word como item normalmente. Se o item não existe no DAT, nenhum byte extra é lido e a vida continua.
+O problema é **exatamente o mesmo** que diagnosticamos antes: os **scrolls** (0x65-0x68) na superfície enviam dados para todos os floors visíveis (7→0), mas o parser usa `getFloorRange` que retorna apenas ±2 (3 floors). Os floors extras ficam não-lidos e são reportados como "leftover".
 
-Esta exceção propaga-se até `scroll()` ou `mapDesc()`, que revertem a câmera e abortam. O restante dos opcodes no frame é perdido.
+### Por que a última correção piorou
 
-### Problema 2: Range de item IDs hardcoded como 100-9999
+Na primeira tentativa, mudamos `getFloorRange` para 7→0 **E** mudamos `floorUp` para ler floors 5→0. Mas `floorUp`/`floorDown` só enviam dados do **único** novo floor visível, não todos os floors. Ler 6 floors quando só 1 foi enviado causou byte drift → DESYNCs.
 
-O range real depende do `itemMaxId` do arquivo `.dat`. A validação deveria usar o valor real do DAT em vez de um número fixo. Além disso, words entre 1-99 e words acima do `itemMaxId` podem aparecer legitimamente em frames com skip encoding residual entre floors.
+Na correção seguinte, revertemos `getFloorRange` para ±2 (conservador demais) e criamos `getMapDescFloorRange` (7→0 só para mapDesc). Isso resolveu o mapDesc mas os scrolls continuam com ±2 → voltamos aos mesmos leftover.
 
-### Problema 3: `processDirectOpcodes` para completamente no primeiro erro
+### Correção cirúrgica
 
-Quando um opcode falha, `break` encerra o processamento de TODO o restante do frame. O C++ também perde o frame inteiro em caso de exceção durante parsing, MAS o C++ quase nunca lança exceção porque não tem a validação estrita do Problema 1.
+A solução é simples — dois pontos:
 
-### Plano de correção
+1. **`getFloorRange`**: mudar para 7→0 na superfície (afeta scrolls)
+2. **`floorUp`/`floorDown`**: manter como está (lê apenas 1 floor novo)
+3. **Remover `getMapDescFloorRange`**: não precisa mais, pois `getFloorRange` já retorna 7→0
 
-**Passo 1: Remover throw em `readTileItems`, substituir por break gracioso**
+Isso funciona porque:
+- `scroll()` usa `getFloorRange` → agora lê 7→0 → consome todos os bytes ✓
+- `mapDesc()` pode usar `getFloorRange` também → mesmo resultado ✓
+- `floorUp`/`floorDown` chamam `readFloorArea` diretamente, **não usam** `getFloorRange` → não são afetados ✓
+- `readMultiFloorArea` já tem um guard `if (r.left() < 2) break` que para automaticamente quando não há mais dados para floors distantes → seguro ✓
 
-Quando um word é inválido, em vez de lançar exceção:
-- Reverter os 2 bytes lidos (pos -= 2)
-- Salvar os items lidos até agora no tile
-- Retornar skip = 0 (fim do tile)
-- Logar warning no debugLogger
-
-Isso imita o comportamento do C++ onde a leitura de tiles para naturalmente quando encontra dados não reconhecidos.
-
-**Passo 2: Usar `itemMaxId` do DAT em vez de 9999**
-
-O `PacketParser` já recebe o `DatLoader`. Usar `dat.items` para validar se um word é um item real: `this.dat.items.has(word)` em vez de `word >= 100 && word <= 9999`.
-
-**Passo 3: Tornar `processDirectOpcodes` mais resiliente**
-
-Em vez de `break` no primeiro erro, tentar recuperar: pular 1 byte e procurar o próximo opcode válido (scan forward). Se encontrar um opcode conhecido dentro de 4 bytes, resumir parsing.
+O `readMultiFloorArea` já lida com floors vazios (skip markers de 2 bytes) e com exhaustion (para quando o buffer acaba). Não há risco de ler dados demais.
 
 ### Mudanças
 
-| Arquivo | Mudança |
-|---------|---------|
-| `packetParser.ts` | `readTileItems`: remover throw, usar break gracioso com rewind |
-| `packetParser.ts` | `readTileItems`: validar items via `dat.items.has(word)` |
-| `packetParser.ts` | `processDirectOpcodes`: scan-forward recovery em vez de break |
+**`packetParser.ts`:**
+- `getFloorRange`: surface → `{ startz: 7, endz: 0, zstep: -1 }`
+- Remover `getMapDescFloorRange` (redundante)
+- `mapDesc`: usar `getFloorRange` em vez de `getMapDescFloorRange`
+- `floorUp`/`floorDown`: sem mudanças (já estão corretos)
 
