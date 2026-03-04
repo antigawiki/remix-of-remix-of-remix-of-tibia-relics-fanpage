@@ -55,68 +55,39 @@ jobs:
           
           # More targeted: replace the else branch for surface floors
           python3 -c "
-import re
-with open('lib/parser.cpp', 'r') as f:
-    code = f.read()
-
-# Find ParseMapDescription and replace the surface else branch
-old = '''    } else {
-        zIdx = 7;
-        endZ = 0;
-        zStep = -1;
-    }'''
-
-new = '''    } else if (isScroll) {
-        /* TibiaRelic recordings send ±2 floors for scroll updates
-         * on the surface, not the full 7→0 range. */
-        zIdx = std::min<int>(Position_.Z + 2, 7);
-        endZ = std::max<int>(Position_.Z - 2, 0);
-        zStep = -1;
-    } else {
-        zIdx = 7;
-        endZ = 0;
-        zStep = -1;
-    }'''
-
-code = code.replace(old, new, 1)
-with open('lib/parser.cpp', 'w') as f:
-    f.write(code)
-print('Fixed surface floor range logic')
-"
+          import re
+          with open('lib/parser.cpp', 'r') as f:
+              code = f.read()
+          old = '    } else {\n        zIdx = 7;\n        endZ = 0;\n        zStep = -1;\n    }'
+          new = '    } else if (isScroll) {\n        /* TibiaRelic recordings send +-2 floors for scroll updates\n         * on the surface, not the full 7->0 range. */\n        zIdx = std::min<int>(Position_.Z + 2, 7);\n        endZ = std::max<int>(Position_.Z - 2, 0);\n        zStep = -1;\n    } else {\n        zIdx = 7;\n        endZ = 0;\n        zStep = -1;\n    }'
+          code = code.replace(old, new, 1)
+          with open('lib/parser.cpp', 'w') as f:
+              f.write(code)
+          print('Fixed surface floor range logic')
+          "
 
           # Pass isScroll=true for scroll operations (MoveN/E/S/W)
           python3 -c "
-with open('lib/parser.cpp', 'r') as f:
-    code = f.read()
-
-# MoveEast: +9, -6, 1, TileBufferHeight
-code = code.replace(
-    'ParseMapDescription(reader, events, +9, -6, 1, Map::TileBufferHeight);',
-    'ParseMapDescription(reader, events, +9, -6, 1, Map::TileBufferHeight, true);')
-
-# MoveNorth: -8, -6, TileBufferWidth, 1
-code = code.replace(
-    'ParseMapDescription(reader, events, -8, -6, Map::TileBufferWidth, 1);',
-    'ParseMapDescription(reader, events, -8, -6, Map::TileBufferWidth, 1, true);')
-
-# MoveSouth: -8, +7, TileBufferWidth, 1
-code = code.replace(
-    'ParseMapDescription(reader, events, -8, +7, Map::TileBufferWidth, 1);',
-    'ParseMapDescription(reader, events, -8, +7, Map::TileBufferWidth, 1, true);')
-
-# MoveWest: -8, -6, 1, TileBufferHeight (second occurrence)
-import re
-# Find the second occurrence of this pattern (MoveWest, not MoveEast)
-pattern = 'ParseMapDescription(reader, events, -8, -6, 1, Map::TileBufferHeight);'
-replacement = 'ParseMapDescription(reader, events, -8, -6, 1, Map::TileBufferHeight, true);'
-idx = code.find(pattern)
-if idx >= 0:
-    code = code[:idx] + replacement + code[idx+len(pattern):]
-    
-with open('lib/parser.cpp', 'w') as f:
-    f.write(code)
-print('Added isScroll=true to all 4 scroll parsers')
-"
+          with open('lib/parser.cpp', 'r') as f:
+              code = f.read()
+          code = code.replace(
+              'ParseMapDescription(reader, events, +9, -6, 1, Map::TileBufferHeight);',
+              'ParseMapDescription(reader, events, +9, -6, 1, Map::TileBufferHeight, true);')
+          code = code.replace(
+              'ParseMapDescription(reader, events, -8, -6, Map::TileBufferWidth, 1);',
+              'ParseMapDescription(reader, events, -8, -6, Map::TileBufferWidth, 1, true);')
+          code = code.replace(
+              'ParseMapDescription(reader, events, -8, +7, Map::TileBufferWidth, 1);',
+              'ParseMapDescription(reader, events, -8, +7, Map::TileBufferWidth, 1, true);')
+          pattern = 'ParseMapDescription(reader, events, -8, -6, 1, Map::TileBufferHeight);'
+          replacement = 'ParseMapDescription(reader, events, -8, -6, 1, Map::TileBufferHeight, true);'
+          idx = code.find(pattern)
+          if idx >= 0:
+              code = code[:idx] + replacement + code[idx+len(pattern):]
+          with open('lib/parser.cpp', 'w') as f:
+              f.write(code)
+          print('Added isScroll=true to all 4 scroll parsers')
+          "
           echo "Scroll floor range fix applied"
 
           # =============================================
