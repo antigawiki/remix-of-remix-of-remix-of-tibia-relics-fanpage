@@ -248,16 +248,12 @@ export class PacketParser {
     const r = new Buf(payload);
     if (payload.length === 0) return;
 
-    // Heuristic: valid Tibia 7.72 opcodes start at 0x0A.
-    // If first byte < 0x0A, it's almost certainly a TCP u16 length prefix.
-    const firstByte = payload[0];
-
+    // Always use TCP demux: .cam frames contain raw server TCP packets
+    // with [u16 length][opcodes...] structure. The old heuristic (firstByte < 0x0A)
+    // was wrong because the low byte of a u16 length can match valid opcodes
+    // (e.g. length=100 → 0x64 = MAP_DESC), causing silent state corruption.
     try {
-      if (firstByte < 0x0A && payload.length >= 2) {
-        this.processTcpDemux(r, payload.length);
-      } else {
-        this.processOpcodes(r, payload.length);
-      }
+      this.processTcpDemux(r, payload.length);
     } catch (e: any) {
       this.lastError = e?.message || String(e);
       this.bytesLeftAfterProcess = r.left();

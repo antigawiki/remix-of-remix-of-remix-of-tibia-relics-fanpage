@@ -275,33 +275,24 @@ int load_recording_tibiarelic(const uint8_t *buf, int len,
             // Replicate JS heuristic: check first byte to decide parsing mode
             if (sz > 0) {
                 try {
-                    uint8_t firstByte = buf[pos];
-                    
-                    if (firstByte < 0x0A && sz >= 2) {
-                        // TCP demux mode: loop through sub-packets
-                        int subPos = 0;
-                        while (subPos + 2 <= (int)sz) {
-                            uint16_t subLen = read_u16_le(buf + pos + subPos);
-                            subPos += 2;
-                            if (subLen == 0) continue;
-                            if (subPos + subLen > (int)sz) break;
-                            
-                            DataReader packetReader(subLen, buf + pos + subPos);
-                            auto events = parser.Parse(packetReader);
-                            if (!events.empty()) {
-                                recording->Frames.emplace_back(timestamp, std::move(events));
-                                parsedFrames++;
-                            }
-                            subPos += subLen;
-                        }
-                    } else {
-                        // Direct opcode mode: feed entire payload
-                        DataReader packetReader(sz, buf + pos);
+                    // Always TCP demux: .cam frames contain raw server TCP packets
+                    // with [u16 length][opcodes...]. The old firstByte < 0x0A heuristic
+                    // was wrong — a u16 length's low byte can match valid opcodes
+                    // (e.g. length=100 → 0x64 = MAP_DESC), causing silent corruption.
+                    int subPos = 0;
+                    while (subPos + 2 <= (int)sz) {
+                        uint16_t subLen = read_u16_le(buf + pos + subPos);
+                        subPos += 2;
+                        if (subLen == 0) continue;
+                        if (subPos + subLen > (int)sz) break;
+                        
+                        DataReader packetReader(subLen, buf + pos + subPos);
                         auto events = parser.Parse(packetReader);
                         if (!events.empty()) {
                             recording->Frames.emplace_back(timestamp, std::move(events));
                             parsedFrames++;
                         }
+                        subPos += subLen;
                     }
                 } catch (...) {
                     // Skip unparseable frames

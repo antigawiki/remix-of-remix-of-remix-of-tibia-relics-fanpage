@@ -151,8 +151,12 @@ const CamFrameDebugger = ({ camBuffer, progress, isPlaying }: CamFrameDebuggerPr
       const frame = cam.frames[idx];
       logger.setCamMs(frame.timestamp);
 
-      // FRAME_START
-      logger.log('FRAME_START', { frameIdx: idx, bytes: frame.payload.length }, `Frame #${idx} (${frame.payload.length} bytes)`);
+      // FRAME_START with first bytes hex dump for TCP demux diagnosis
+      const firstBytes = Array.from(frame.payload.slice(0, Math.min(4, frame.payload.length)))
+        .map(b => b.toString(16).padStart(2, '0')).join(' ');
+      const tcpLen = frame.payload.length >= 2 ? (frame.payload[0] | (frame.payload[1] << 8)) : 0;
+      logger.log('FRAME_START', { frameIdx: idx, bytes: frame.payload.length, hex: firstBytes, tcpLen },
+        `Frame #${idx} (${frame.payload.length}B) first=[${firstBytes}] tcpLen=${tcpLen}`);
 
       try {
         // Track creatures before
