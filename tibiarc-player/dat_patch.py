@@ -20,18 +20,15 @@ if not match:
 original_body = match.group(2)
 replacement = (
     match.group(1) + "\n"
-    "    /* TibiaRelic: Two-phase DAT parsing for resilience */\n"
-    "    auto _savedPos = reader.Position();\n"
-    "    while (reader.Remaining() > 0) {\n"
-    "        if (reader.ReadU8() == 0xFF) break;\n"
-    "    }\n"
-    "    auto _endPos = reader.Position();\n"
-    "    reader.Seek(_savedPos);\n"
+    "    /* TibiaRelic: Two-phase DAT parsing - wrap in try-catch for resilience */\n"
     "    try {\n"
     + original_body +
-    "\n    } catch (...) { /* TibiaRelic: ignore metadata errors */ }\n"
-    "    reader.Seek(_endPos);\n"
-    "    return;\n"
+    "\n    } catch (...) {\n"
+    "        /* TibiaRelic: ignore metadata errors, skip to 0xFF terminator */\n"
+    "        while (reader.Remaining() > 0) {\n"
+    "            if (reader.ReadU8() == 0xFF) break;\n"
+    "        }\n"
+    "    }\n"
     + match.group(3)
 )
 
