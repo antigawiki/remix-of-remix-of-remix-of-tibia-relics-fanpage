@@ -156,59 +156,16 @@ export class DatLoader {
     const it = createItemType();
     const flagsRead: number[] = [];
 
-    // Parse flags
-    for (let iter = 0; iter < 100; iter++) {
-      if (p >= bytes.length) break;
-      const flag = bytes[p]; p++;
-      if (flag === 0xFF) break;
-
-      flagsRead.push(flag);
-
-      if (flag === 0x00) {
-        it.isGround = true; it.stackPrio = 0;
-        if (p + 1 >= bytes.length) break;
-        it.speed = view.getUint16(p, true); p += 2;
-      } else if (flag === 0x01) { it.stackPrio = 1; }
-      else if (flag === 0x02) { it.stackPrio = 2; }
-      else if (flag === 0x03) { it.stackPrio = 3; }
-      else if (flag === 0x04) { /* container */ }
-      else if (flag === 0x05) { it.isStackable = true; }
-      else if (flag === 0x06) { /* multiuse */ }
-      else if (flag === 0x07) { /* boolean */ }
-      else if (flag === 0x08) { if (p + 1 >= bytes.length) break; p += 2; }
-      else if (flag === 0x09) { if (p + 1 >= bytes.length) break; p += 2; }
-      else if (flag === 0x0A) { it.isFluid = true; }
-      else if (flag === 0x0B) { it.isSplash = true; }
-      else if (flag === 0x0C) { it.isBlocking = true; }
-      else if (flag === 0x0D) { /* notMovable */ }
-      else if (flag === 0x0E) { /* blockMissile */ }
-      else if (flag === 0x0F) { /* blockPath */ }
-      else if (flag === 0x10) { /* pickupable */ }
-      else if (flag === 0x11) { it.isHangable = true; }
-      else if (flag === 0x12) { it.isVertical = true; }
-      else if (flag === 0x13) { it.isHorizontal = true; }
-      else if (flag === 0x14) { /* rotateable */ }
-      else if (flag === 0x15) { if (p + 3 >= bytes.length) break; p += 4; }
-      else if (flag === 0x16) { it.dontHide = true; }
-      else if (flag === 0x17) { /* translucent */ }
-      else if (flag === 0x18) {
-        if (p + 3 >= bytes.length) break;
-        it.dispX = view.getUint16(p, true); it.dispY = view.getUint16(p + 2, true); p += 4;
-      }
-      else if (flag === 0x19) { if (p + 1 >= bytes.length) break; it.elevation = view.getUint16(p, true); p += 2; }
-      else if (flag === 0x1A) { /* redrawNearbyTop */ }
-      else if (flag === 0x1B) { it.animateIdle = true; }
-      else if (flag === 0x1C) { if (p + 1 >= bytes.length) break; p += 2; }
-      else if (flag === 0x1D) { if (p + 1 >= bytes.length) break; p += 2; }
-      else if (flag === 0x1E) { /* walkable */ }
-      else if (flag >= 0x1F && flag <= 0x28) { /* boolean flags */ }
-      else if (flag >= 0x29 && flag <= 0x4F) { /* extended boolean flags, no param */ }
-      // TibiaRelic custom flags (protection for future .dat versions)
-      else if (flag === 0x50) { if (p >= bytes.length) break; p += 1; }
-      else if (flag === 0xC8) { if (p >= bytes.length) break; p += 1; }
-      else if (flag === 0xD0) { /* custom boolean flag, no param */ }
-      else { /* unknown flag, skip and continue to 0xFF */ }
+    // Phase 1: Skip to 0xFF terminator (guarantees correct alignment)
+    const attrStart = p;
+    while (p < bytes.length) {
+      const b = bytes[p]; p++;
+      if (b === 0xFF) break;
     }
+    const attrEnd = p; // p is now right after 0xFF
+
+    // Phase 2: Best-effort metadata extraction from the attribute bytes
+    this.extractMetadata(bytes, view, attrStart, attrEnd - 1, it, flagsRead);
 
     // Read dimensions
     const minBytes = hasPatZ ? 8 : 7;
