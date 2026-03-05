@@ -20,14 +20,12 @@ if not match:
 original_body = match.group(2)
 replacement = (
     match.group(1) + "\n"
-    "    /* TibiaRelic: Two-phase DAT parsing - wrap in try-catch for resilience */\n"
+    "    /* TibiaRelic: Safe DAT parsing - catch unknown property errors */\n"
     "    try {\n"
     + original_body +
     "\n    } catch (...) {\n"
-    "        /* TibiaRelic: ignore metadata errors, skip to 0xFF terminator */\n"
-    "        while (reader.Remaining() > 0) {\n"
-    "            if (reader.ReadU8() == 0xFF) break;\n"
-    "        }\n"
+    "        /* TibiaRelic: custom flag error, skip remaining properties */\n"
+    "        return;\n"
     "    }\n"
     + match.group(3)
 )

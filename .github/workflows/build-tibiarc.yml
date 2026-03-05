@@ -73,14 +73,8 @@ jobs:
             sed -i '/void Parser::ParseTalk/a\    /* TibiaRelic: skip u32 statementGuid */ reader.SkipU32();' lib/parser.cpp
           echo "Fixed 0xAA Talk: added SkipU32 for statementGuid"
 
-          # 6. MapDescription (0x64): mini MAP_DESC guard
-          #    Insert after Position_.Z assignment inside ParseMapDescription
-          sed -i '/ParseMapDescription.*DataReader/,/tileSkip = 0/{
-            /Position_.Z/a\    /* TibiaRelic: guard mini MAP_DESC */ if (reader.Remaining() < 100) return;
-          }' lib/parser.cpp
-          grep -q "mini MAP_DESC" lib/parser.cpp || \
-            sed -i '/Position_.Z.*Read/a\    /* TibiaRelic: guard mini MAP_DESC */ if (reader.Remaining() < 100) return;' lib/parser.cpp
-          echo "Fixed 0x64 MapDesc: added mini-MAP_DESC guard"
+          # 6. MapDescription (0x64): guard REMOVED — was skipping valid small updates
+          echo "MapDesc guard skipped (removed to prevent black squares)"
 
           # 7. PlayerStats (0xA0): remove stamina (TibiaRelic sends 20B, not 22B)
           sed -i '/void Parser::ParsePlayerStats/,/^}/{ /[Ss]tamina/d; }' lib/parser.cpp
