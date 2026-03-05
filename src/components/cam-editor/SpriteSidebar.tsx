@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
+import { useState, useRef, useEffect, useCallback } from 'react';
 import { Search, X } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
@@ -33,23 +33,13 @@ export const SpriteSidebar = ({ renderer, selectedItemId, onSelect, onClose }: S
     ? allIds.filter(id => String(id).includes(searchId.trim()))
     : allIds;
 
-  // Pre-filter: only include items that have at least one valid sprite
-  const validIds = useMemo(() => {
-    return filteredIds.filter(id => {
-      if (canvasRefs.current.has(id)) return canvasRefs.current.get(id) !== null;
-      const rendered = renderer.renderSingleSprite(id);
-      canvasRefs.current.set(id, rendered);
-      return rendered !== null;
-    });
-  }, [filteredIds, renderer]);
-
-  const totalRows = Math.ceil(validIds.length / ITEMS_PER_ROW);
+  const totalRows = Math.ceil(filteredIds.length / ITEMS_PER_ROW);
   const totalHeight = totalRows * ROW_HEIGHT;
 
   const startRow = Math.max(0, Math.floor(scrollTop / ROW_HEIGHT) - VISIBLE_BUFFER);
   const endRow = Math.min(totalRows, Math.ceil((scrollTop + containerHeight) / ROW_HEIGHT) + VISIBLE_BUFFER);
 
-  const visibleIds = validIds.slice(startRow * ITEMS_PER_ROW, endRow * ITEMS_PER_ROW);
+  const visibleIds = filteredIds.slice(startRow * ITEMS_PER_ROW, endRow * ITEMS_PER_ROW);
 
   const renderSprite = useCallback((canvas: HTMLCanvasElement, itemId: number) => {
     const ctx = canvas.getContext('2d')!;
@@ -81,7 +71,7 @@ export const SpriteSidebar = ({ renderer, selectedItemId, onSelect, onClose }: S
       {/* Header */}
       <div className="p-2 border-b border-border/50 flex items-center gap-2">
         <span className="text-xs font-bold text-gold">SPRITES</span>
-        <span className="text-xs text-muted-foreground ml-auto">{validIds.length}</span>
+        <span className="text-xs text-muted-foreground ml-auto">{filteredIds.length}</span>
         <Button variant="ghost" size="icon" className="h-6 w-6" onClick={onClose}>
           <X className="w-3.5 h-3.5" />
         </Button>
