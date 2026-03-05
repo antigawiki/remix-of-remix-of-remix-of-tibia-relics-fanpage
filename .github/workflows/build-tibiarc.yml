@@ -100,14 +100,16 @@ jobs:
           echo "Added 0x63 CreatureTurn: 5B"
 
           # 11. OutfitWindow (0xC8): u16 range → u8 (7.72 style)
-          sed -i '/void Parser::ParseOutfitWindow/,/^}/{ s/ReadU16()/ReadU8()/g; }' lib/parser.cpp
-          echo "Fixed 0xC8 OutfitWindow: u16 range → u8 range"
+          #     ONLY target RangeStart/RangeEnd — LookType must stay u16
+          sed -i '/void Parser::ParseOutfitWindow/,/^}/{
+            s/RangeStart = reader.ReadU16()/RangeStart = reader.ReadU8()/
+            s/RangeEnd = reader.ReadU16()/RangeEnd = reader.ReadU8()/
+          }' lib/parser.cpp
+          echo "Fixed 0xC8 OutfitWindow: u16 range → u8 range (targeted)"
 
-          # =============================================
-          # DAT PARSER: TWO-PHASE RESILIENT PARSING
-          # =============================================
-          python3 $GITHUB_WORKSPACE/tibiarc-player/dat_patch.py lib/types.cpp
-          grep -c "Two-phase DAT parsing" lib/types.cpp && echo "DAT two-phase patch verified" || echo "WARN: DAT two-phase patch not applied"
+          # DAT PARSER: dat_patch.py REMOVED — was corrupting item database
+          # by scanning for 0xFF which appears as normal data bytes
+          echo "DAT patch skipped (removed to prevent sprite corruption)"
 
           # =============================================
           # VERIFICATION (non-fatal)
@@ -141,37 +143,9 @@ jobs:
           sed -i 's/Position Position_;/public: Position Position_; private:/' lib/parser.hpp
           echo "Made Position_ public in parser.hpp"
 
-          # =============================================
-          # FLOORDOWN (0xBF) REVERT — standard multi-floor reading
-          # =============================================
-
-          # FloorDown z==7: fork may read wrong number of floors
-          # Standard behavior: read floors zIdx from Position_.Z+1 to 7 (surface floors)
-          # This ensures cave→surface transition reads correct data
-          sed -i '/void Parser::ParseFloorDown/,/^}/{
-            /Position_.Z == 7/,/tileSkip)/{
-              /for.*zIdx/{
-                s|zIdx = .*; zIdx <= .*; zIdx++|zIdx = Position_.Z; zIdx <= 7; zIdx++|
-              }
-            }
-          }' lib/parser.cpp
-          echo "Patched 0xBF FloorDown: ensure correct floor range"
-
-          # =============================================
-          # STUCK-BUFFER DETECTION in ParseFloorDescription
-          # =============================================
-
-          # If reader position doesn't advance during tile parsing,
-          # break out to avoid infinite loop and state corruption
-          sed -i '/int Parser::ParseFloorDescription/,/^}/{
-            /while.*tileSkip.*!=.*0xFF/{
-              a\        auto _posBeforeTile = reader.Position();
-            }
-            /tileSkip = ParseTile/{
-              a\        if (reader.Position() == _posBeforeTile \&\& tileSkip == 0) { break; }
-            }
-          }' lib/parser.cpp
-          echo "Added stuck-buffer detection in ParseFloorDescription"
+          # FLOORDOWN (0xBF) patch REMOVED — was causing partial floor reads
+          # STUCK-BUFFER detection REMOVED — was breaking valid tile loops
+          echo "FloorDown and stuck-buffer patches skipped (removed to prevent corruption)"
 
           # =============================================
           # REVERT SCROLL PATCHES (fork has 18x14 baked in, must restore standard)
@@ -203,11 +177,8 @@ jobs:
           }' lib/parser.cpp
           echo "Reverted FloorUp z==7: 1 floor → 6 floors (5→0)"
 
-          # =============================================
-          # DIAGNOSTIC LOGGING (remove after debugging)
-          # =============================================
-          sed -i 's/switch (reader.ReadU8()) {/auto _op = reader.ReadU8(); printf("[DIAG] opcode=0x%02X rem=%zu\\n", _op, reader.Remaining()); switch (_op) {/' lib/parser.cpp
-          echo "Added diagnostic opcode logging"
+          # DIAGNOSTIC LOGGING REMOVED — global sed was matching multiple switches
+          echo "Diagnostic logging skipped (removed to prevent corruption)"
 
           # =============================================
           # VERIFICATION
