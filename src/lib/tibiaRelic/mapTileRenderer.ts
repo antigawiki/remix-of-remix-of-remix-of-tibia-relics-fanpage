@@ -322,12 +322,36 @@ export class MapTileRenderer {
   renderSingleSprite(itemId: number): HTMLCanvasElement | null {
     const def = this.dat.items.get(itemId);
     if (!def) return null;
+
+    // For multi-tile items, render on a larger canvas then scale to 32x32
+    const fullW = def.width * TILE_PX;
+    const fullH = def.height * TILE_PX;
+
+    const tmpCanvas = document.createElement('canvas');
+    tmpCanvas.width = fullW;
+    tmpCanvas.height = fullH;
+    const tmpCtx = tmpCanvas.getContext('2d')!;
+    tmpCtx.imageSmoothingEnabled = false;
+
+    // Draw at bottom-right corner so multi-tile sprites are visible
+    // drawItem draws at (px - tw*32 - dispX, py - th*32 - dispY)
+    // We need the origin at (fullW - 32, fullH - 32) so tw=width-1 lands at x=0
+    const ox = (def.width - 1) * TILE_PX;
+    const oy = (def.height - 1) * TILE_PX;
+    this.drawItem(tmpCtx, def, ox, oy, 0, 0);
+
+    // If single-tile, return directly
+    if (def.width === 1 && def.height === 1 && def.dispX === 0 && def.dispY === 0) {
+      return tmpCanvas;
+    }
+
+    // Scale down to 32x32
     const canvas = document.createElement('canvas');
     canvas.width = 32;
     canvas.height = 32;
     const ctx = canvas.getContext('2d')!;
     ctx.imageSmoothingEnabled = false;
-    this.drawItem(ctx, def, 0, 0, 0, 0);
+    ctx.drawImage(tmpCanvas, 0, 0, fullW, fullH, 0, 0, 32, 32);
     return canvas;
   }
 
