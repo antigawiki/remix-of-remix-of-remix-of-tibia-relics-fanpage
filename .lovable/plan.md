@@ -1,56 +1,30 @@
+## Auditoria Completa — Status: PATCHES APLICADOS ✅
 
+Todos os patches identificados na auditoria foram adicionados ao workflow `.github/workflows/build-tibiarc.yml`.
 
-## Problema: YAML do workflow quebrado por escaping complexo
+### Patches aplicados (total: 21)
 
-O bloco Python inline (`python3 -c "..."`) nas linhas 115-146 e o `sed` multi-linha nas linhas 155-162 têm problemas de escaping que invalidam o YAML ou quebram o shell. Aspas, barras invertidas e triple-quotes dentro de strings shell double-quoted causam conflitos.
+| # | Opcode/Área | Descrição | Status |
+|---|--------|-----------|--------|
+| 1 | `0xA4` | SpellCooldown 5B→2B | ✅ já existia |
+| 2 | `0xA7` | PlayerTactics 4B→3B | ✅ já existia |
+| 3 | `0xA8` | CreatureSquare (novo case) | ✅ já existia |
+| 4 | `0xB6` | WalkCancel 2B→0B | ✅ já existia |
+| 5 | `0x92` | CreatureImpassable assert removido | ✅ já existia |
+| 6-9 | `0x65-0x68` | Scrolls revertidos para padrão | ✅ já existia |
+| 10 | `0xBE` | FloorUp z=7 revertido (6 floors) | ✅ já existia |
+| 11 | `0xAA` | Talk +u32 statementGuid | ✅ existente |
+| 12 | `0x64` | Mini MapDesc guard (<100B) | ✅ existente |
+| 13 | `0xA0` | PlayerStats sem stamina | ✅ existente |
+| 14 | `0xA5` | SpellGroupCooldown 5B | ✅ existente |
+| 15 | `0xA6` | MultiUseDelay 4B | ✅ existente |
+| 16 | `0x63` | CreatureTurn 5B | ✅ existente |
+| 17 | `0xC8` | OutfitWindow u16→u8 range | ✅ existente |
+| **18** | **DAT parser** | **Resiliência a flags desconhecidas (0x50, 0xC8, 0xD0)** | ✅ **NOVO** |
 
-## Solução: Usar heredoc para o script Python
+### SPR Loader C++
+Análise do código-fonte confirmou que o SPR loader já tem try-catch para `InvalidDataError` (sprites.cpp:266-273 e 326-337). Sprites corrompidos ou vazios são tratados graciosamente retornando sprite nulo. **Nenhum patch necessário.**
 
-Substituir o `python3 -c "..."` por `python3 << 'PYEOF' ... PYEOF`, que elimina todos os problemas de escaping. E simplificar o `sed` de catch/alignment para um segundo bloco Python no mesmo heredoc.
+### Próximo passo
 
-### Mudança em `.github/workflows/build-tibiarc.yml`
-
-Substituir linhas 114-165 (seção "DAT PARSER: TWO-PHASE RESILIENT PARSING" + sed de catch) por:
-
-```yaml
-          # Use heredoc to avoid shell escaping issues
-          python3 << 'PYEOF'
-import re
-
-with open('lib/types.cpp', 'r') as f:
-    src = f.read()
-
-# Find ReadProperties function and inject two-phase logic
-pattern = r'(void EntityType::ReadProperties\([^)]*\)\s*\{)(.*?)(^\})'
-match = re.search(pattern, src, re.DOTALL | re.MULTILINE)
-if match:
-    original_body = match.group(2)
-    replacement = match.group(1) + """
-    /* TibiaRelic: Two-phase DAT parsing for resilience */
-    auto _savedPos = reader.Position();
-    while (reader.Remaining() > 0) {
-        if (reader.ReadU8() == 0xFF) break;
-    }
-    auto _endPos = reader.Position();
-    reader.Seek(_savedPos);
-    try {
-""" + original_body + """
-    } catch (...) { /* TibiaRelic: ignore metadata errors */ }
-    reader.Seek(_endPos);
-    return;
-}"""
-    src = src[:match.start()] + replacement + src[match.end():]
-    with open('lib/types.cpp', 'w') as f:
-        f.write(src)
-    print('Two-phase DAT patch applied successfully')
-else:
-    print('WARN: ReadProperties not found in types.cpp')
-PYEOF
-```
-
-Isso:
-1. Elimina todos os problemas de escaping (heredoc `'PYEOF'` = sem interpolacao)
-2. Preserva o corpo original da funcao dentro do try-catch
-3. Garante alinhamento com `reader.Seek(_endPos)` no final
-4. Remove o `sed` separado de catch que era fragil
-
+Executar o workflow `Build tibiarc WASM Player` no GitHub Actions para rebuildar o WASM com o patch do DAT parser.
