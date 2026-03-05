@@ -106,62 +106,38 @@ jobs:
           # =============================================
           # DAT PARSER: TWO-PHASE RESILIENT PARSING
           # =============================================
-          # Replace ReadProperties with two-phase logic:
-          # Phase 1: scan forward to 0xFF terminator (guarantees alignment)
-          # Phase 2: best-effort metadata extraction in try-catch
-          # This prevents byte drift from unknown/changed flag payloads.
-          
-          # First, find the function and replace its entire body
-          python3 -c "
+          python3 << 'PYEOF'
 import re
+
 with open('lib/types.cpp', 'r') as f:
     src = f.read()
 
-# Find ReadProperties and replace the body
-pattern = r'(void EntityType::ReadProperties\([^)]*\)\s*\{)'
-replacement = r'''\1
+# Find ReadProperties function and inject two-phase logic
+pattern = r'(void EntityType::ReadProperties\([^)]*\)\s*\{)(.*?)(^\})'
+match = re.search(pattern, src, re.DOTALL | re.MULTILINE)
+if match:
+    original_body = match.group(2)
+    replacement = match.group(1) + """
     /* TibiaRelic: Two-phase DAT parsing for resilience */
-    /* Phase 1: Scan to 0xFF terminator to guarantee alignment */
     auto _savedPos = reader.Position();
     while (reader.Remaining() > 0) {
         if (reader.ReadU8() == 0xFF) break;
     }
     auto _endPos = reader.Position();
-    
-    /* Phase 2: Best-effort metadata extraction */
     reader.Seek(_savedPos);
     try {
-        while (reader.Position() < _endPos - 1) {
-            /* Call original property reading - one iteration */
-            auto _origPos = reader.Position();'''
-
-src_new = re.sub(pattern, replacement, src, count=1)
-
-# Now we need to add the catch block after the closing brace of ReadProperties
-# Find the function's closing brace and wrap the existing loop
-# Strategy: add catch + seek after the existing function body
-with open('lib/types.cpp', 'w') as f:
-    f.write(src_new)
-print('Phase 1 of patch applied')
-"
-
-          # Now wrap the existing while loop body with try-catch and add alignment guarantee
-          # The function already has a while loop reading properties - we need to:
-          # 1. Close the inner while we added
-          # 2. Close the try block  
-          # 3. Add catch + seek
-          
-          # Find the closing brace of ReadProperties and insert before it
-          sed -i '/void EntityType::ReadProperties/,/^}/ {
-            /^}/ {
-              i\    } catch (...) { /* TibiaRelic: ignore metadata errors */ }\
-    /* Guarantee alignment after properties */\
-    reader.Seek(_endPos);\
+""" + original_body + """
+    } catch (...) { /* TibiaRelic: ignore metadata errors */ }
+    reader.Seek(_endPos);
     return;
-            }
-          }' lib/types.cpp
-
-          echo "Patched ReadProperties: two-phase DAT parsing"
+""" + match.group(3)
+    src = src[:match.start()] + replacement + src[match.end():]
+    with open('lib/types.cpp', 'w') as f:
+        f.write(src)
+    print('Two-phase DAT patch applied successfully')
+else:
+    print('WARN: ReadProperties not found in types.cpp')
+PYEOF
           grep -c "Two-phase DAT parsing" lib/types.cpp && echo "DAT two-phase patch verified" || echo "WARN: DAT two-phase patch not applied"
 
           # =============================================
