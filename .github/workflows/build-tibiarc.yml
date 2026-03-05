@@ -186,11 +186,13 @@ jobs:
           echo "Fixed FloorUp z==7: 6 floors → 1 floor"
 
           # =============================================
-          # CREATURE NAME FONT: Use smaller font
+          # CREATURE NAME HALF-SCALE RENDERING
           # =============================================
-          # Replace Game font with InterfaceSmall for creature name overlay
-          sed -i 's/version.Fonts.Game/version.Fonts.InterfaceSmall/g' lib/renderer.cpp
-          echo "Fixed creature names: Game font → InterfaceSmall font"
+          # Render creature names at full quality then downscale 2:1
+          # using 2x2 pixel averaging for smooth anti-aliased result.
+          cp $GITHUB_WORKSPACE/tibiarc-player/name_scale_patch.py /tmp/tibiarc/name_scale_patch.py
+          python3 /tmp/tibiarc/name_scale_patch.py lib/renderer.cpp
+          echo "Applied half-scale creature name rendering patch"
 
       - name: Build tibiarc library + web player
         run: |
