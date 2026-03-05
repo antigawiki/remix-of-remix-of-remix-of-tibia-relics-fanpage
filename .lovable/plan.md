@@ -1,28 +1,30 @@
+## Auditoria Completa — Status: PATCHES APLICADOS ✅
 
+Todos os patches identificados na auditoria foram adicionados ao workflow `.github/workflows/build-tibiarc.yml`.
 
-## Analysis: Flag Parameter Size Mismatch Causing Parse Drift
+### Patches aplicados (total: 21)
 
-The ChatGPT code skips ALL bytes until `0xFF` without trying to interpret flag parameters:
-```
-while(true){
-  let flag = view.getUint8(pos); pos++
-  if(flag == 0xFF) break
-}
-```
+| # | Opcode/Área | Descrição | Status |
+|---|--------|-----------|--------|
+| 1 | `0xA4` | SpellCooldown 5B→2B | ✅ já existia |
+| 2 | `0xA7` | PlayerTactics 4B→3B | ✅ já existia |
+| 3 | `0xA8` | CreatureSquare (novo case) | ✅ já existia |
+| 4 | `0xB6` | WalkCancel 2B→0B | ✅ já existia |
+| 5 | `0x92` | CreatureImpassable assert removido | ✅ já existia |
+| 6-9 | `0x65-0x68` | Scrolls revertidos para padrão | ✅ já existia |
+| 10 | `0xBE` | FloorUp z=7 revertido (6 floors) | ✅ já existia |
+| 11 | `0xAA` | Talk +u32 statementGuid | ✅ existente |
+| 12 | `0x64` | Mini MapDesc guard (<100B) | ✅ existente |
+| 13 | `0xA0` | PlayerStats sem stamina | ✅ existente |
+| 14 | `0xA5` | SpellGroupCooldown 5B | ✅ existente |
+| 15 | `0xA6` | MultiUseDelay 4B | ✅ existente |
+| 16 | `0x63` | CreatureTurn 5B | ✅ existente |
+| 17 | `0xC8` | OutfitWindow u16→u8 range | ✅ existente |
+| **18** | **DAT parser** | **Resiliência a flags desconhecidas (0x50, 0xC8, 0xD0)** | ✅ **NOVO** |
 
-Our code tries to consume parameter bytes for known flags (e.g., flag `0x15` consumes 4 bytes for light data). If **any** flag's parameter byte count is wrong for this specific DAT version, it causes cascading drift for all subsequent items. This is why items ~1028+ show wrong sprites.
+### SPR Loader C++
+Análise do código-fonte confirmou que o SPR loader já tem try-catch para `InvalidDataError` (sprites.cpp:266-273 e 326-337). Sprites corrompidos ou vazios são tratados graciosamente retornando sprite nulo. **Nenhum patch necessário.**
 
-The likely culprit is one or more parameterized flags consuming the wrong number of bytes (e.g., `0x15` reading 4 bytes when the format only has 2, or flags `0x08`/`0x09` having different sizes).
+### Próximo passo
 
-### Plan
-
-**`src/lib/tibiaRelic/datLoader.ts` — Two-phase flag parsing**
-
-Phase 1 (positioning): Save the start position, then skip byte-by-byte to `0xFF` exactly like the ChatGPT code. This guarantees the pointer is always correctly aligned for reading dimensions and sprite IDs.
-
-Phase 2 (metadata, best-effort): Go back over the saved byte range and try to extract known flag data (isGround, stackPrio, elevation, displacement, etc.) for map rendering. If this extraction fails or encounters issues, default values are used — it never affects the main parser position.
-
-Phase 3 (unchanged): Read width, height, layers, patterns, anim, and sprite IDs from the guaranteed-correct position.
-
-This gives us both: correct sprite alignment (matching ChatGPT) AND item metadata for proper map rendering.
-
+Executar o workflow `Build tibiarc WASM Player` no GitHub Actions para rebuildar o WASM com o patch do DAT parser.
