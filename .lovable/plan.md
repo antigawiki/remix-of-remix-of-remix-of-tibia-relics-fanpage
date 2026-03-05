@@ -1,30 +1,20 @@
-## Auditoria Completa — Status: PATCHES APLICADOS ✅
+## Limpeza de Patches Corruptivos — Status: APLICADO ✅
 
-Todos os patches identificados na auditoria foram adicionados ao workflow `.github/workflows/build-tibiarc.yml`.
+Removidos 5 patches que estavam causando corrupção generalizada de sprites e tiles:
 
-### Patches aplicados (total: 21)
+| # | Patch removido | Motivo |
+|---|---------------|--------|
+| 1 | `dat_patch.py` (Two-phase DAT) | Scan por 0xFF corrompia database de itens |
+| 2 | OutfitWindow `ReadU16→ReadU8` global | Mudava LookType (u16 legítimo), causando drift de 1 byte |
+| 3 | FloorDown (0xBF) range patch | Leitura parcial de andares |
+| 4 | Stuck-buffer detection | Abortava loops válidos de tiles |
+| 5 | Diagnostic opcode logging | Sed global matchava múltiplos switches |
 
-| # | Opcode/Área | Descrição | Status |
-|---|--------|-----------|--------|
-| 1 | `0xA4` | SpellCooldown 5B→2B | ✅ já existia |
-| 2 | `0xA7` | PlayerTactics 4B→3B | ✅ já existia |
-| 3 | `0xA8` | CreatureSquare (novo case) | ✅ já existia |
-| 4 | `0xB6` | WalkCancel 2B→0B | ✅ já existia |
-| 5 | `0x92` | CreatureImpassable assert removido | ✅ já existia |
-| 6-9 | `0x65-0x68` | Scrolls revertidos para padrão | ✅ já existia |
-| 10 | `0xBE` | FloorUp z=7 revertido (6 floors) | ✅ já existia |
-| 11 | `0xAA` | Talk +u32 statementGuid | ✅ existente |
-| 12 | `0x64` | Mini MapDesc guard (<100B) | ✅ existente |
-| 13 | `0xA0` | PlayerStats sem stamina | ✅ existente |
-| 14 | `0xA5` | SpellGroupCooldown 5B | ✅ existente |
-| 15 | `0xA6` | MultiUseDelay 4B | ✅ existente |
-| 16 | `0x63` | CreatureTurn 5B | ✅ existente |
-| 17 | `0xC8` | OutfitWindow u16→u8 range | ✅ existente |
-| **18** | **DAT parser** | **Resiliência a flags desconhecidas (0x50, 0xC8, 0xD0)** | ✅ **NOVO** |
-
-### SPR Loader C++
-Análise do código-fonte confirmou que o SPR loader já tem try-catch para `InvalidDataError` (sprites.cpp:266-273 e 326-337). Sprites corrompidos ou vazios são tratados graciosamente retornando sprite nulo. **Nenhum patch necessário.**
+### Patches mantidos (corretos)
+- 0xA4, 0xA7, 0xA8, 0xB6, 0xAA, 0x64, 0xA0, 0xA5, 0xA6, 0x63, 0x92
+- OutfitWindow com sed targetado (só RangeStart/RangeEnd)
+- Scroll reverts (0x65-0x68) e FloorUp (0xBE)
+- Position_ public + save/restore em web_player.cpp
 
 ### Próximo passo
-
-Executar o workflow `Build tibiarc WASM Player` no GitHub Actions para rebuildar o WASM com o patch do DAT parser.
+Executar workflow no GitHub Actions e atualizar o WASM.
