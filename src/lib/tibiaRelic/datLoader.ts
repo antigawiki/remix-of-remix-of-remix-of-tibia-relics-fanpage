@@ -231,8 +231,8 @@ export class DatLoader {
 
     it.spriteIds = [];
     for (let i = 0; i < n; i++) {
-      if (p + 3 >= bytes.length) break;
-      it.spriteIds.push(view.getUint32(p, true)); p += 4;
+      if (p + 1 >= bytes.length) break;
+      it.spriteIds.push(view.getUint16(p, true)); p += 2;
     }
 
     return [it, p, flagsRead];
