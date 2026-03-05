@@ -33,7 +33,17 @@ export const SpriteSidebar = ({ renderer, selectedItemId, onSelect, onClose }: S
     ? allIds.filter(id => String(id).includes(searchId.trim()))
     : allIds;
 
-  const totalRows = Math.ceil(filteredIds.length / ITEMS_PER_ROW);
+  // Pre-filter: only include items that have at least one valid sprite
+  const validIds = useMemo(() => {
+    return filteredIds.filter(id => {
+      if (canvasRefs.current.has(id)) return canvasRefs.current.get(id) !== null;
+      const rendered = renderer.renderSingleSprite(id);
+      canvasRefs.current.set(id, rendered);
+      return rendered !== null;
+    });
+  }, [filteredIds, renderer]);
+
+  const totalRows = Math.ceil(validIds.length / ITEMS_PER_ROW);
   const totalHeight = totalRows * ROW_HEIGHT;
 
   const startRow = Math.max(0, Math.floor(scrollTop / ROW_HEIGHT) - VISIBLE_BUFFER);
