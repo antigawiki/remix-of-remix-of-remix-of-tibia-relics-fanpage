@@ -339,6 +339,14 @@ export class MapTileRenderer {
     const oy = (def.height - 1) * TILE_PX + (def.dispY || 0);
     this.drawItem(tmpCtx, def, ox, oy, 0, 0);
 
+    // Check if any pixel was actually drawn (alpha > 0)
+    const imgData = tmpCtx.getImageData(0, 0, fullW, fullH).data;
+    let hasPixels = false;
+    for (let i = 3; i < imgData.length; i += 4) {
+      if (imgData[i] > 0) { hasPixels = true; break; }
+    }
+    if (!hasPixels) return null;
+
     // If fits exactly in 32x32 with no displacement, return directly
     if (fullW === TILE_PX && fullH === TILE_PX) {
       return tmpCanvas;
