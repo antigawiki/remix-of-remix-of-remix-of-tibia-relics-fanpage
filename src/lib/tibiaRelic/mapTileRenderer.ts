@@ -323,9 +323,9 @@ export class MapTileRenderer {
     const def = this.dat.items.get(itemId);
     if (!def) return null;
 
-    // For multi-tile items, render on a larger canvas then scale to 32x32
-    const fullW = def.width * TILE_PX;
-    const fullH = def.height * TILE_PX;
+    // Include displacement in canvas size so sprites drawn at negative offsets remain visible
+    const fullW = def.width * TILE_PX + (def.dispX || 0);
+    const fullH = def.height * TILE_PX + (def.dispY || 0);
 
     const tmpCanvas = document.createElement('canvas');
     tmpCanvas.width = fullW;
@@ -333,15 +333,14 @@ export class MapTileRenderer {
     const tmpCtx = tmpCanvas.getContext('2d')!;
     tmpCtx.imageSmoothingEnabled = false;
 
-    // Draw at bottom-right corner so multi-tile sprites are visible
     // drawItem draws at (px - tw*32 - dispX, py - th*32 - dispY)
-    // We need the origin at (fullW - 32, fullH - 32) so tw=width-1 lands at x=0
-    const ox = (def.width - 1) * TILE_PX;
-    const oy = (def.height - 1) * TILE_PX;
+    // Origin must account for displacement so nothing lands at negative coords
+    const ox = (def.width - 1) * TILE_PX + (def.dispX || 0);
+    const oy = (def.height - 1) * TILE_PX + (def.dispY || 0);
     this.drawItem(tmpCtx, def, ox, oy, 0, 0);
 
-    // If single-tile, return directly
-    if (def.width === 1 && def.height === 1 && def.dispX === 0 && def.dispY === 0) {
+    // If fits exactly in 32x32 with no displacement, return directly
+    if (fullW === TILE_PX && fullH === TILE_PX) {
       return tmpCanvas;
     }
 
