@@ -202,11 +202,12 @@ export class DatLoader {
       else if (flag === 0x1D) { if (p + 1 >= bytes.length) break; p += 2; }
       else if (flag === 0x1E) { /* walkable */ }
       else if (flag >= 0x1F && flag <= 0x28) { /* boolean flags */ }
+      else if (flag >= 0x29 && flag <= 0x4F) { /* extended boolean flags, no param */ }
       // TibiaRelic custom flags (protection for future .dat versions)
       else if (flag === 0x50) { if (p >= bytes.length) break; p += 1; }
       else if (flag === 0xC8) { if (p >= bytes.length) break; p += 1; }
       else if (flag === 0xD0) { /* custom boolean flag, no param */ }
-      else { p--; break; /* unknown flag */ }
+      else { /* unknown flag, skip and continue to 0xFF */ }
     }
 
     // Read dimensions
