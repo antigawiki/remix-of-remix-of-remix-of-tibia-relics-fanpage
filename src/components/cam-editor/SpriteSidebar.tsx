@@ -49,7 +49,7 @@ export const SpriteSidebar = ({ renderer, selectedItemId, onSelect, onClose }: S
   const startRow = Math.max(0, Math.floor(scrollTop / ROW_HEIGHT) - VISIBLE_BUFFER);
   const endRow = Math.min(totalRows, Math.ceil((scrollTop + containerHeight) / ROW_HEIGHT) + VISIBLE_BUFFER);
 
-  const visibleIds = filteredIds.slice(startRow * ITEMS_PER_ROW, endRow * ITEMS_PER_ROW);
+  const visibleIds = validIds.slice(startRow * ITEMS_PER_ROW, endRow * ITEMS_PER_ROW);
 
   const renderSprite = useCallback((canvas: HTMLCanvasElement, itemId: number) => {
     const ctx = canvas.getContext('2d')!;
