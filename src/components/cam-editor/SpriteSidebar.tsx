@@ -65,12 +65,8 @@ export const SpriteSidebar = ({ renderer, selectedItemId, onSelect, onClose }: S
   }, [renderer]);
 
   function drawEmptyPlaceholder(ctx: CanvasRenderingContext2D) {
-    ctx.fillStyle = 'rgba(30, 30, 30, 0.6)';
+    ctx.fillStyle = 'rgba(20, 18, 15, 0.4)';
     ctx.fillRect(0, 0, 32, 32);
-    ctx.strokeStyle = 'rgba(100, 100, 100, 0.5)';
-    ctx.setLineDash([3, 3]);
-    ctx.strokeRect(1, 1, 30, 30);
-    ctx.setLineDash([]);
   }
 
   useEffect(() => {
