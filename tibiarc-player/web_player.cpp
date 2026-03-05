@@ -276,19 +276,24 @@ int load_recording_tibiarelic(const uint8_t *buf, int len,
             auto timestamp = std::chrono::milliseconds((int64_t)(ts - ts0));
 
             if (sz > 0) {
+                // Save parser state before parsing — if frame fails,
+                // restore Position_ to prevent cascading corruption
+                auto savedPosition = parser.Position_;
+
                 try {
                     DataReader packetReader(sz, buf + pos);
                     auto events = parser.Parse(packetReader);
                     if (!events.empty()) {
                         recording->Frames.emplace_back(timestamp, std::move(events));
+                        savedPosition = parser.Position_;  // commit on success
                         parsedFrames++;
                     }
                 } catch (const std::exception &ex) {
+                    parser.Position_ = savedPosition;  // restore on failure
                     failedFrames++;
                     if (failedFrames <= MAX_FAIL_LOG) {
-                        printf("[tibiarc] Frame %d FAILED (%d bytes): %s\n",
+                        printf("[tibiarc] Frame %d FAILED (%d bytes, pos restored): %s\n",
                                frameCount, sz, ex.what());
-                        // Hex dump first 32 bytes
                         int dumpLen = std::min((int)sz, 32);
                         printf("[tibiarc]   hex: ");
                         for (int i = 0; i < dumpLen; i++) {
@@ -297,9 +302,10 @@ int load_recording_tibiarelic(const uint8_t *buf, int len,
                         printf("\n");
                     }
                 } catch (...) {
+                    parser.Position_ = savedPosition;  // restore on failure
                     failedFrames++;
                     if (failedFrames <= MAX_FAIL_LOG) {
-                        printf("[tibiarc] Frame %d FAILED (%d bytes): unknown exception\n",
+                        printf("[tibiarc] Frame %d FAILED (%d bytes, pos restored): unknown exception\n",
                                frameCount, sz);
                         int dumpLen = std::min((int)sz, 32);
                         printf("[tibiarc]   hex: ");

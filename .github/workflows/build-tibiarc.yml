@@ -136,6 +136,38 @@ jobs:
           # causing immediate byte drift and black screen.
 
           # =============================================
+          # FLOORDOWN (0xBF) REVERT — standard multi-floor reading
+          # =============================================
+
+          # FloorDown z==7: fork may read wrong number of floors
+          # Standard behavior: read floors zIdx from Position_.Z+1 to 7 (surface floors)
+          # This ensures cave→surface transition reads correct data
+          sed -i '/void Parser::ParseFloorDown/,/^}/{
+            /Position_.Z == 7/,/tileSkip)/{
+              /for.*zIdx/{
+                s|zIdx = .*; zIdx <= .*; zIdx++|zIdx = Position_.Z; zIdx <= 7; zIdx++|
+              }
+            }
+          }' lib/parser.cpp
+          echo "Patched 0xBF FloorDown: ensure correct floor range"
+
+          # =============================================
+          # STUCK-BUFFER DETECTION in ParseFloorDescription
+          # =============================================
+
+          # If reader position doesn't advance during tile parsing,
+          # break out to avoid infinite loop and state corruption
+          sed -i '/int Parser::ParseFloorDescription/,/^}/{
+            /while.*tileSkip.*!=.*0xFF/{
+              a\        auto _posBeforeTile = reader.Position();
+            }
+            /tileSkip = ParseTile/{
+              a\        if (reader.Position() == _posBeforeTile \&\& tileSkip == 0) { break; }
+            }
+          }' lib/parser.cpp
+          echo "Added stuck-buffer detection in ParseFloorDescription"
+
+          # =============================================
           # REVERT SCROLL PATCHES (fork has 18x14 baked in, must restore standard)
           # =============================================
 
