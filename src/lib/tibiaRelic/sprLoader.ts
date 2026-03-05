@@ -127,13 +127,12 @@ export class SprLoader {
     let pixel = 0;
     const end = off + 5 + sz;
 
-    while (pixel < N && p < end - 3) {
-      if (p + 3 >= raw.length) break;
+    while (p + 3 < end && pixel < N) {
       const tr = this.view.getUint16(p, true); p += 2;
       const cl = this.view.getUint16(p, true); p += 2;
       pixel += tr;
-      for (let j = 0; j < cl; j++) {
-        if (pixel >= N || p + 2 >= raw.length) break;
+      for (let j = 0; j < cl && pixel < N; j++) {
+        if (p + 2 >= end) break;
         const r = raw[p], g = raw[p + 1], b = raw[p + 2]; p += 3;
         const i = pixel * 4;
         px[i] = r; px[i + 1] = g; px[i + 2] = b; px[i + 3] = 255;

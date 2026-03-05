@@ -1,0 +1,1083 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Tibia SPR Viewer — v7.72</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=MedievalSharp&family=IM+Fell+English:ital@0;1&family=Fira+Mono:wght@400;500&display=swap');
+
+  :root {
+    --bg: #0d0b08;
+    --panel: #141009;
+    --border: #6b4c1e;
+    --border-light: #c8963e;
+    --gold: #e8b84b;
+    --gold-dim: #9a7530;
+    --text: #d4c4a0;
+    --text-dim: #7a6a50;
+    --red: #8b1a1a;
+    --green: #2a5a1a;
+    --blue: #1a3a6b;
+    --highlight: #2a1e08;
+    --shadow: rgba(0,0,0,0.8);
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background-color: var(--bg);
+    background-image:
+      radial-gradient(ellipse at 20% 20%, rgba(100,60,10,0.08) 0%, transparent 60%),
+      radial-gradient(ellipse at 80% 80%, rgba(60,30,5,0.1) 0%, transparent 60%),
+      url("data:image/svg+xml,%3Csvg width='60' height='60' xmlns='http://www.w3.org/2000/svg'%3E%3Crect width='60' height='60' fill='none'/%3E%3Cpath d='M0 0h1v1H0zm2 0h1v1H2zm4 0h1v1H4zm6 2h1v1H6zM0 4h1v1H0zm8 4h1v1H8z' fill='rgba(200,150,50,0.015)'/%3E%3C/svg%3E");
+    color: var(--text);
+    font-family: 'IM Fell English', Georgia, serif;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+  }
+
+  /* Header */
+  header {
+    background: linear-gradient(180deg, #1a1005 0%, #0d0b08 100%);
+    border-bottom: 2px solid var(--border);
+    padding: 16px 24px;
+    display: flex;
+    align-items: center;
+    gap: 20px;
+    position: sticky;
+    top: 0;
+    z-index: 100;
+    box-shadow: 0 4px 20px rgba(0,0,0,0.8);
+  }
+
+  .logo {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+
+  .logo-icon {
+    width: 44px;
+    height: 44px;
+    background: radial-gradient(circle at 40% 35%, #e8b84b, #7a4a10);
+    border-radius: 50%;
+    border: 2px solid var(--border-light);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 22px;
+    box-shadow: 0 0 16px rgba(232,184,75,0.3), inset 0 2px 4px rgba(255,255,255,0.1);
+    flex-shrink: 0;
+  }
+
+  h1 {
+    font-size: 22px;
+    color: var(--gold);
+    text-shadow: 0 0 20px rgba(232,184,75,0.4);
+    letter-spacing: 1px;
+    line-height: 1;
+  }
+
+  h1 small {
+    display: block;
+    font-size: 11px;
+    color: var(--gold-dim);
+    font-family: 'Fira Mono', monospace;
+    letter-spacing: 3px;
+    margin-top: 2px;
+    font-style: normal;
+  }
+
+  .header-info {
+    margin-left: auto;
+    display: flex;
+    gap: 16px;
+    align-items: center;
+  }
+
+  .stat-badge {
+    background: var(--highlight);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 4px 10px;
+    font-family: 'Fira Mono', monospace;
+    font-size: 11px;
+    color: var(--text-dim);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 1px;
+  }
+
+  .stat-badge span {
+    color: var(--gold);
+    font-size: 15px;
+    font-weight: 500;
+  }
+
+  /* Upload zone */
+  #upload-zone {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    flex: 1;
+    padding: 60px 20px;
+    gap: 24px;
+  }
+
+  .upload-box {
+    border: 2px dashed var(--border);
+    border-radius: 8px;
+    padding: 60px 80px;
+    text-align: center;
+    cursor: pointer;
+    transition: all 0.3s;
+    background: rgba(107,76,30,0.06);
+    max-width: 500px;
+    width: 100%;
+    position: relative;
+  }
+
+  .upload-box::before, .upload-box::after {
+    content: '✦';
+    position: absolute;
+    color: var(--border-light);
+    font-size: 12px;
+    opacity: 0.5;
+  }
+  .upload-box::before { top: 10px; left: 14px; }
+  .upload-box::after { bottom: 10px; right: 14px; }
+
+  .upload-box:hover, .upload-box.drag-over {
+    border-color: var(--gold);
+    background: rgba(232,184,75,0.06);
+    box-shadow: 0 0 30px rgba(232,184,75,0.1);
+  }
+
+  .upload-icon {
+    font-size: 48px;
+    margin-bottom: 16px;
+    display: block;
+    filter: drop-shadow(0 0 10px rgba(232,184,75,0.3));
+  }
+
+  .upload-box h2 {
+    color: var(--gold);
+    font-size: 20px;
+    margin-bottom: 8px;
+  }
+
+  .upload-box p {
+    color: var(--text-dim);
+    font-size: 13px;
+    font-family: 'Fira Mono', monospace;
+  }
+
+  #file-input { display: none; }
+
+  /* Main viewer */
+  #viewer {
+    display: none;
+    flex: 1;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  /* Toolbar */
+  .toolbar {
+    background: var(--panel);
+    border-bottom: 1px solid var(--border);
+    padding: 10px 20px;
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    flex-wrap: wrap;
+  }
+
+  .toolbar-group {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .toolbar-label {
+    font-family: 'Fira Mono', monospace;
+    font-size: 10px;
+    color: var(--text-dim);
+    text-transform: uppercase;
+    letter-spacing: 1px;
+  }
+
+  input[type="text"], input[type="number"], select {
+    background: #0d0b08;
+    border: 1px solid var(--border);
+    border-radius: 3px;
+    color: var(--text);
+    font-family: 'Fira Mono', monospace;
+    font-size: 12px;
+    padding: 5px 8px;
+    outline: none;
+    transition: border-color 0.2s;
+  }
+
+  input[type="text"]:focus, input[type="number"]:focus, select:focus {
+    border-color: var(--gold);
+  }
+
+  input[type="text"] { width: 180px; }
+  input[type="number"] { width: 70px; }
+  select { cursor: pointer; }
+
+  .btn {
+    background: linear-gradient(180deg, #2a1e08 0%, #1a1005 100%);
+    border: 1px solid var(--border);
+    color: var(--gold);
+    font-family: 'Fira Mono', monospace;
+    font-size: 11px;
+    padding: 5px 12px;
+    border-radius: 3px;
+    cursor: pointer;
+    transition: all 0.2s;
+    letter-spacing: 0.5px;
+    text-transform: uppercase;
+  }
+
+  .btn:hover {
+    background: linear-gradient(180deg, #3a2e18 0%, #2a1e08 100%);
+    border-color: var(--gold);
+    box-shadow: 0 0 10px rgba(232,184,75,0.15);
+  }
+
+  .btn:active { transform: translateY(1px); }
+
+  .btn-primary {
+    background: linear-gradient(180deg, #5a3a10 0%, #3a2008 100%);
+    border-color: var(--gold-dim);
+  }
+
+  .divider {
+    width: 1px;
+    height: 24px;
+    background: var(--border);
+    opacity: 0.5;
+  }
+
+  /* Pagination */
+  .pagination {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-family: 'Fira Mono', monospace;
+    font-size: 12px;
+    color: var(--text-dim);
+    margin-left: auto;
+  }
+
+  /* Grid */
+  .viewer-body {
+    display: flex;
+    flex: 1;
+    overflow: hidden;
+  }
+
+  #grid-container {
+    flex: 1;
+    overflow-y: auto;
+    padding: 16px;
+    scrollbar-width: thin;
+    scrollbar-color: var(--border) var(--panel);
+  }
+
+  #grid-container::-webkit-scrollbar { width: 8px; }
+  #grid-container::-webkit-scrollbar-track { background: var(--panel); }
+  #grid-container::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+
+  #sprite-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(var(--cell-size, 48px), max-content));
+    gap: 4px;
+  }
+
+  .sprite-cell {
+    position: relative;
+    cursor: pointer;
+    border: 1px solid transparent;
+    border-radius: 3px;
+    transition: all 0.15s;
+    background: #0a0806;
+  }
+
+  .sprite-cell:hover {
+    border-color: var(--gold-dim);
+    background: #1a1208;
+    z-index: 1;
+    transform: scale(1.05);
+    box-shadow: 0 0 12px rgba(232,184,75,0.2);
+  }
+
+  .sprite-cell.selected {
+    border-color: var(--gold);
+    background: var(--highlight);
+    box-shadow: 0 0 16px rgba(232,184,75,0.3);
+  }
+
+  .sprite-cell.empty {
+    border-color: #1a1208;
+    opacity: 0.3;
+    cursor: default;
+  }
+
+  .sprite-cell.empty:hover {
+    transform: none;
+    border-color: #1a1208;
+    box-shadow: none;
+  }
+
+  .sprite-cell canvas {
+    display: block;
+    image-rendering: pixelated;
+    image-rendering: crisp-edges;
+  }
+
+  .sprite-id {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    background: rgba(0,0,0,0.7);
+    font-family: 'Fira Mono', monospace;
+    font-size: 8px;
+    color: var(--text-dim);
+    text-align: center;
+    padding: 1px;
+    display: none;
+  }
+
+  .sprite-cell:hover .sprite-id { display: block; }
+
+  /* Checkerboard bg option */
+  .sprite-cell.checker canvas {
+    background-image:
+      linear-gradient(45deg, #2a2a2a 25%, transparent 25%),
+      linear-gradient(-45deg, #2a2a2a 25%, transparent 25%),
+      linear-gradient(45deg, transparent 75%, #2a2a2a 75%),
+      linear-gradient(-45deg, transparent 75%, #2a2a2a 75%);
+    background-size: 8px 8px;
+    background-position: 0 0, 0 4px, 4px -4px, -4px 0px;
+    background-color: #1a1a1a;
+  }
+
+  /* Sidebar / Detail Panel */
+  #detail-panel {
+    width: 260px;
+    background: var(--panel);
+    border-left: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    flex-shrink: 0;
+  }
+
+  .detail-header {
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--border);
+    background: linear-gradient(180deg, rgba(107,76,30,0.2) 0%, transparent 100%);
+  }
+
+  .detail-header h3 {
+    color: var(--gold);
+    font-size: 14px;
+    margin-bottom: 2px;
+  }
+
+  .detail-header p {
+    font-family: 'Fira Mono', monospace;
+    font-size: 10px;
+    color: var(--text-dim);
+  }
+
+  .detail-preview {
+    padding: 20px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 12px;
+    border-bottom: 1px solid var(--border);
+    background: #0a0806;
+  }
+
+  #preview-canvas {
+    image-rendering: pixelated;
+    image-rendering: crisp-edges;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    box-shadow: 0 0 20px rgba(0,0,0,0.8);
+  }
+
+  .detail-zoom-controls {
+    display: flex;
+    gap: 6px;
+  }
+
+  .zoom-btn {
+    background: var(--highlight);
+    border: 1px solid var(--border);
+    color: var(--gold);
+    width: 24px;
+    height: 24px;
+    border-radius: 3px;
+    cursor: pointer;
+    font-size: 14px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.15s;
+  }
+
+  .zoom-btn:hover { border-color: var(--gold); background: #2a1e08; }
+
+  .zoom-level {
+    font-family: 'Fira Mono', monospace;
+    font-size: 11px;
+    color: var(--text-dim);
+    min-width: 36px;
+    text-align: center;
+    line-height: 24px;
+  }
+
+  .detail-info {
+    padding: 12px 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    flex: 1;
+    overflow-y: auto;
+  }
+
+  .info-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 4px 0;
+    border-bottom: 1px solid rgba(107,76,30,0.2);
+  }
+
+  .info-key {
+    font-family: 'Fira Mono', monospace;
+    font-size: 10px;
+    color: var(--text-dim);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+
+  .info-val {
+    font-family: 'Fira Mono', monospace;
+    font-size: 11px;
+    color: var(--text);
+  }
+
+  .detail-actions {
+    padding: 12px 16px;
+    border-top: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  .btn-full {
+    width: 100%;
+    padding: 7px;
+    text-align: center;
+  }
+
+  /* Loading overlay */
+  #loading {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(13,11,8,0.92);
+    z-index: 200;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 20px;
+  }
+
+  .loading-text {
+    color: var(--gold);
+    font-size: 18px;
+    text-shadow: 0 0 20px rgba(232,184,75,0.5);
+  }
+
+  .loading-sub {
+    font-family: 'Fira Mono', monospace;
+    font-size: 12px;
+    color: var(--text-dim);
+  }
+
+  .loading-bar {
+    width: 300px;
+    height: 4px;
+    background: var(--highlight);
+    border: 1px solid var(--border);
+    border-radius: 2px;
+    overflow: hidden;
+  }
+
+  .loading-fill {
+    height: 100%;
+    background: linear-gradient(90deg, var(--gold-dim), var(--gold));
+    width: 0%;
+    transition: width 0.1s;
+    box-shadow: 0 0 8px rgba(232,184,75,0.4);
+  }
+
+  /* No sprite placeholder */
+  .no-selection {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 40px 20px;
+    gap: 10px;
+    color: var(--text-dim);
+    font-size: 13px;
+    text-align: center;
+    font-style: italic;
+    flex: 1;
+  }
+
+  .no-selection-icon { font-size: 36px; opacity: 0.3; }
+
+  /* Background selector */
+  .bg-toggle {
+    display: flex;
+    gap: 4px;
+  }
+
+  .bg-opt {
+    width: 20px;
+    height: 20px;
+    border-radius: 3px;
+    border: 1px solid var(--border);
+    cursor: pointer;
+    transition: border-color 0.15s;
+  }
+
+  .bg-opt:hover, .bg-opt.active { border-color: var(--gold); }
+  .bg-opt.black { background: #0a0806; }
+  .bg-opt.checker { 
+    background-image: linear-gradient(45deg, #2a2a2a 25%, transparent 25%),
+      linear-gradient(-45deg, #2a2a2a 25%, transparent 25%),
+      linear-gradient(45deg, transparent 75%, #2a2a2a 75%),
+      linear-gradient(-45deg, transparent 75%, #2a2a2a 75%);
+    background-size: 8px 8px;
+    background-position: 0 0, 0 4px, 4px -4px, -4px 0px;
+    background-color: #1a1a1a;
+  }
+  .bg-opt.white { background: #ddd; }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo">
+    <div class="logo-icon">⚔️</div>
+    <h1>
+      Tibia SPR Viewer
+      <small>VERSÃO 7.72 • RELIC</small>
+    </h1>
+  </div>
+  <div class="header-info">
+    <div class="stat-badge" id="stat-total">
+      <span id="total-count">—</span>
+      sprites
+    </div>
+    <div class="stat-badge" id="stat-valid">
+      <span id="valid-count">—</span>
+      válidos
+    </div>
+    <div class="stat-badge" id="stat-sig">
+      <span id="sig-val">—</span>
+      assinatura
+    </div>
+  </div>
+</header>
+
+<!-- Upload -->
+<div id="upload-zone">
+  <div class="upload-box" id="drop-zone">
+    <span class="upload-icon">🗡️</span>
+    <h2>Carregar arquivo .spr</h2>
+    <p>Arraste e solte ou clique para selecionar<br>Compatível com Tibia 7.72</p>
+    <input type="file" id="file-input" accept=".spr">
+  </div>
+</div>
+
+<!-- Viewer -->
+<div id="viewer">
+  <div class="toolbar">
+    <div class="toolbar-group">
+      <span class="toolbar-label">Busca</span>
+      <input type="text" id="search-id" placeholder="ID do sprite..." />
+      <button class="btn" onclick="goToSprite()">Ir</button>
+    </div>
+    <div class="divider"></div>
+    <div class="toolbar-group">
+      <span class="toolbar-label">Zoom grade</span>
+      <select id="zoom-select" onchange="setGridZoom(this.value)">
+        <option value="1">1× (32px)</option>
+        <option value="1.5">1.5× (48px)</option>
+        <option value="2" selected>2× (64px)</option>
+        <option value="3">3× (96px)</option>
+        <option value="4">4× (128px)</option>
+      </select>
+    </div>
+    <div class="toolbar-group">
+      <span class="toolbar-label">Fundo</span>
+      <div class="bg-toggle">
+        <div class="bg-opt black active" title="Preto" onclick="setBg('black', this)"></div>
+        <div class="bg-opt checker" title="Xadrez" onclick="setBg('checker', this)"></div>
+        <div class="bg-opt white" title="Branco" onclick="setBg('white', this)"></div>
+      </div>
+    </div>
+    <div class="toolbar-group">
+      <span class="toolbar-label">Filtro</span>
+      <select id="filter-select" onchange="applyFilter()">
+        <option value="all">Todos sprites</option>
+        <option value="valid">Apenas válidos</option>
+        <option value="empty">Apenas vazios</option>
+      </select>
+    </div>
+    <div class="toolbar-group">
+      <button class="btn btn-primary" onclick="exportAll()">↓ Exportar todos PNG</button>
+    </div>
+    <div class="pagination" id="pagination">
+      <button class="btn" onclick="changePage(-1)">◀</button>
+      <span id="page-info">—</span>
+      <button class="btn" onclick="changePage(1)">▶</button>
+    </div>
+  </div>
+
+  <div class="viewer-body">
+    <div id="grid-container">
+      <div id="sprite-grid"></div>
+    </div>
+    <div id="detail-panel">
+      <div class="detail-header">
+        <h3>Detalhes do Sprite</h3>
+        <p id="detail-subtitle">Selecione um sprite</p>
+      </div>
+      <div id="detail-content">
+        <div class="no-selection">
+          <div class="no-selection-icon">🛡️</div>
+          Clique em um sprite para ver os detalhes
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Loading -->
+<div id="loading">
+  <div class="loading-text">Carregando sprites...</div>
+  <div class="loading-bar"><div class="loading-fill" id="loading-fill"></div></div>
+  <div class="loading-sub" id="loading-sub">Aguarde...</div>
+</div>
+
+<script>
+// ========== SPR Parser ==========
+let sprData = null;
+let allSprites = [];   // {id, offset, canvas} 
+let displaySprites = [];
+let currentPage = 0;
+const PAGE_SIZE = 500;
+let gridZoom = 2;
+let bgMode = 'black';
+let selectedId = null;
+let previewZoom = 8;
+
+const SIG_EXPECTED = 0x439852be;
+
+function parseSPR(buffer) {
+  const view = new DataView(buffer);
+  const sig = view.getUint32(0, true);
+  const count = view.getUint16(4, true);
+
+  document.getElementById('sig-val').textContent = '0x' + sig.toString(16).toUpperCase();
+  document.getElementById('total-count').textContent = count.toLocaleString();
+
+  const sprites = [];
+  let validCount = 0;
+
+  for (let i = 0; i < count; i++) {
+    const offset = view.getUint32(6 + i * 4, true);
+    sprites.push({ id: i + 1, offset, canvas: null, empty: offset === 0 });
+    if (offset !== 0) validCount++;
+  }
+
+  document.getElementById('valid-count').textContent = validCount.toLocaleString();
+  return { sig, count, sprites };
+}
+
+function decodeSprite(buffer, offset) {
+  const view = new DataView(buffer);
+  const bytes = new Uint8Array(buffer);
+
+  // Skip 3 bytes color key
+  const size = view.getUint16(offset + 3, true);
+  const rawStart = offset + 5;
+
+  const pixels = new Uint8Array(32 * 32 * 4); // RGBA flat
+  let pixelIdx = 0;
+  let i = 0;
+
+  while (i < size && pixelIdx < 32 * 32) {
+    const transparentCount = view.getUint16(rawStart + i, true); i += 2;
+    const coloredCount = view.getUint16(rawStart + i, true); i += 2;
+
+    // Transparent pixels
+    for (let t = 0; t < transparentCount && pixelIdx < 32 * 32; t++, pixelIdx++) {
+      const base = pixelIdx * 4;
+      pixels[base] = 255; pixels[base+1] = 0; pixels[base+2] = 255; pixels[base+3] = 0;
+    }
+
+    // Colored pixels
+    for (let c = 0; c < coloredCount && pixelIdx < 32 * 32; c++, pixelIdx++) {
+      const base = pixelIdx * 4;
+      pixels[base]   = bytes[rawStart + i];
+      pixels[base+1] = bytes[rawStart + i + 1];
+      pixels[base+2] = bytes[rawStart + i + 2];
+      pixels[base+3] = 255;
+      i += 3;
+    }
+  }
+
+  // Fill remaining with transparent
+  while (pixelIdx < 32 * 32) {
+    const base = pixelIdx * 4;
+    pixels[base] = 0; pixels[base+1] = 0; pixels[base+2] = 0; pixels[base+3] = 0;
+    pixelIdx++;
+  }
+
+  const canvas = document.createElement('canvas');
+  canvas.width = 32;
+  canvas.height = 32;
+  const ctx = canvas.getContext('2d');
+  const imgData = ctx.createImageData(32, 32);
+  imgData.data.set(pixels);
+  ctx.putImageData(imgData, 0, 0);
+  return canvas;
+}
+
+// ========== UI ==========
+function setGridZoom(v) {
+  gridZoom = parseFloat(v);
+  const size = Math.round(32 * gridZoom);
+  document.getElementById('sprite-grid').style.setProperty('--cell-size', size + 'px');
+  renderPage();
+}
+
+function setBg(mode, el) {
+  bgMode = mode;
+  document.querySelectorAll('.bg-opt').forEach(e => e.classList.remove('active'));
+  el.classList.add('active');
+  renderPage();
+}
+
+function applyFilter() {
+  const f = document.getElementById('filter-select').value;
+  if (f === 'all') displaySprites = allSprites;
+  else if (f === 'valid') displaySprites = allSprites.filter(s => !s.empty);
+  else displaySprites = allSprites.filter(s => s.empty);
+  currentPage = 0;
+  renderPage();
+}
+
+function changePage(dir) {
+  const maxPage = Math.ceil(displaySprites.length / PAGE_SIZE) - 1;
+  currentPage = Math.max(0, Math.min(maxPage, currentPage + dir));
+  renderPage();
+}
+
+function goToSprite() {
+  const id = parseInt(document.getElementById('search-id').value);
+  if (isNaN(id) || id < 1) return;
+  
+  // Find page
+  const idx = displaySprites.findIndex(s => s.id === id);
+  if (idx === -1) { alert('Sprite não encontrado'); return; }
+  
+  currentPage = Math.floor(idx / PAGE_SIZE);
+  renderPage(() => {
+    const cell = document.querySelector(`[data-id="${id}"]`);
+    if (cell) { cell.scrollIntoView({ behavior: 'smooth', block: 'center' }); selectSprite(id); }
+  });
+}
+
+function renderPage(callback) {
+  const grid = document.getElementById('sprite-grid');
+  grid.innerHTML = '';
+
+  const start = currentPage * PAGE_SIZE;
+  const end = Math.min(start + PAGE_SIZE, displaySprites.length);
+  const pageSprites = displaySprites.slice(start, end);
+
+  const size = Math.round(32 * gridZoom);
+
+  for (const s of pageSprites) {
+    const cell = document.createElement('div');
+    cell.className = 'sprite-cell' + (s.empty ? ' empty' : '') + (bgMode === 'checker' && !s.empty ? ' checker' : '');
+    cell.dataset.id = s.id;
+    if (s.id === selectedId) cell.classList.add('selected');
+
+    let c;
+    if (!s.empty) {
+      c = s.canvas || decodeSprite(sprData, s.offset);
+      if (!s.canvas) s.canvas = c;
+      const scaled = document.createElement('canvas');
+      scaled.width = size;
+      scaled.height = size;
+      scaled.getContext('2d').drawImage(c, 0, 0, size, size);
+      cell.appendChild(scaled);
+    } else {
+      c = document.createElement('canvas');
+      c.width = size; c.height = size;
+      const ctx = c.getContext('2d');
+      ctx.fillStyle = 'rgba(30,15,5,0.5)';
+      ctx.fillRect(0, 0, size, size);
+      ctx.strokeStyle = '#2a1a08';
+      ctx.setLineDash([3,3]);
+      ctx.strokeRect(1, 1, size-2, size-2);
+      cell.appendChild(c);
+    }
+
+    const idLabel = document.createElement('div');
+    idLabel.className = 'sprite-id';
+    idLabel.textContent = '#' + s.id;
+    cell.appendChild(idLabel);
+
+    if (!s.empty) {
+      cell.addEventListener('click', () => selectSprite(s.id));
+    }
+
+    grid.appendChild(cell);
+  }
+
+  // Update pagination
+  const maxPage = Math.ceil(displaySprites.length / PAGE_SIZE);
+  document.getElementById('page-info').textContent = `Pág. ${currentPage + 1}/${maxPage} (${start+1}–${end} de ${displaySprites.length})`;
+
+  if (callback) callback();
+}
+
+function selectSprite(id) {
+  selectedId = id;
+  document.querySelectorAll('.sprite-cell').forEach(c => {
+    c.classList.toggle('selected', parseInt(c.dataset.id) === id);
+  });
+
+  const sprite = allSprites.find(s => s.id === id);
+  if (!sprite || sprite.empty) return;
+
+  if (!sprite.canvas) sprite.canvas = decodeSprite(sprData, sprite.offset);
+  
+  updateDetailPanel(sprite);
+}
+
+function updateDetailPanel(sprite) {
+  const panel = document.getElementById('detail-content');
+  document.getElementById('detail-subtitle').textContent = `Sprite #${sprite.id}`;
+
+  // Count pixels
+  const ctx = sprite.canvas.getContext('2d');
+  const imgData = ctx.getImageData(0, 0, 32, 32);
+  let opaqueCount = 0;
+  const colorSet = new Set();
+  for (let i = 0; i < imgData.data.length; i += 4) {
+    if (imgData.data[i+3] > 0) {
+      opaqueCount++;
+      const r = imgData.data[i];
+      const g = imgData.data[i+1];
+      const b = imgData.data[i+2];
+      colorSet.add((r << 16) | (g << 8) | b);
+    }
+  }
+
+  const dv = new DataView(sprData);
+  const size = dv.getUint16(sprite.offset + 3, true);
+
+  panel.innerHTML = `
+    <div class="detail-preview">
+      <canvas id="preview-canvas" width="${32*previewZoom}" height="${32*previewZoom}" style="width:${32*previewZoom}px;height:${32*previewZoom}px;"></canvas>
+      <div class="detail-zoom-controls">
+        <button class="zoom-btn" onclick="changePreviewZoom(-1)">−</button>
+        <span class="zoom-level" id="pz-label">${previewZoom}×</span>
+        <button class="zoom-btn" onclick="changePreviewZoom(1)">+</button>
+      </div>
+    </div>
+    <div class="detail-info">
+      <div class="info-row"><span class="info-key">ID</span><span class="info-val">#${sprite.id}</span></div>
+      <div class="info-row"><span class="info-key">Offset</span><span class="info-val">0x${sprite.offset.toString(16).toUpperCase()}</span></div>
+      <div class="info-row"><span class="info-key">Tamanho dados</span><span class="info-val">${size} bytes</span></div>
+      <div class="info-row"><span class="info-key">Dimensões</span><span class="info-val">32 × 32 px</span></div>
+      <div class="info-row"><span class="info-key">Pixels opacos</span><span class="info-val">${opaqueCount}/1024</span></div>
+      <div class="info-row"><span class="info-key">Cores únicas</span><span class="info-val">${colorSet.size}</span></div>
+    </div>
+    <div class="detail-actions">
+      <button class="btn btn-full btn-primary" onclick="downloadSprite(${sprite.id})">↓ Baixar PNG</button>
+      <button class="btn btn-full" onclick="copyToClipboard(${sprite.id})">⧉ Copiar imagem</button>
+    </div>
+  `;
+
+  drawPreview(sprite);
+}
+
+function drawPreview(sprite) {
+  const canvas = document.getElementById('preview-canvas');
+  if (!canvas) return;
+  canvas.width = 32 * previewZoom;
+  canvas.height = 32 * previewZoom;
+  canvas.style.width = (32 * previewZoom) + 'px';
+  canvas.style.height = (32 * previewZoom) + 'px';
+  const ctx = canvas.getContext('2d');
+  
+  if (bgMode === 'checker') {
+    // Draw checkerboard
+    for (let y = 0; y < 32 * previewZoom; y += 8) {
+      for (let x = 0; x < 32 * previewZoom; x += 8) {
+        ctx.fillStyle = ((x/8 + y/8) % 2 === 0) ? '#1a1a1a' : '#2a2a2a';
+        ctx.fillRect(x, y, 8, 8);
+      }
+    }
+  } else if (bgMode === 'white') {
+    ctx.fillStyle = '#ddd';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+  }
+
+  ctx.imageSmoothingEnabled = false;
+  ctx.drawImage(sprite.canvas, 0, 0, 32 * previewZoom, 32 * previewZoom);
+}
+
+function changePreviewZoom(delta) {
+  previewZoom = Math.max(2, Math.min(16, previewZoom + delta));
+  document.getElementById('pz-label').textContent = previewZoom + '×';
+  const sprite = allSprites.find(s => s.id === selectedId);
+  if (sprite) drawPreview(sprite);
+}
+
+function downloadSprite(id) {
+  const sprite = allSprites.find(s => s.id === id);
+  if (!sprite || !sprite.canvas) return;
+  const link = document.createElement('a');
+  link.download = `tibia_sprite_${id}.png`;
+  link.href = sprite.canvas.toDataURL('image/png');
+  link.click();
+}
+
+async function copyToClipboard(id) {
+  const sprite = allSprites.find(s => s.id === id);
+  if (!sprite || !sprite.canvas) return;
+  sprite.canvas.toBlob(async (blob) => {
+    try {
+      await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]);
+    } catch(e) { alert('Não foi possível copiar: ' + e.message); }
+  });
+}
+
+function exportAll() {
+  const valid = allSprites.filter(s => !s.empty);
+  if (!confirm(`Exportar ${valid.length} sprites como PNGs individuais? (pode demorar)`)) return;
+
+  let idx = 0;
+  function next() {
+    if (idx >= valid.length) return;
+    const s = valid[idx++];
+    if (!s.canvas) s.canvas = decodeSprite(sprData, s.offset);
+    downloadSprite(s.id);
+    setTimeout(next, 50);
+  }
+  next();
+}
+
+// ========== File loading ==========
+async function loadFile(file) {
+  showLoading('Lendo arquivo...', 5);
+  const buffer = await file.arrayBuffer();
+  sprData = buffer;
+
+  showLoading('Analisando cabeçalho SPR...', 20);
+  await sleep(10);
+  
+  const parsed = parseSPR(buffer);
+  allSprites = parsed.sprites;
+  displaySprites = allSprites;
+
+  showLoading('Pré-decodificando sprites...', 40);
+  await sleep(10);
+
+  // Pre-decode first page for speed
+  let decoded = 0;
+  for (const s of allSprites.slice(0, PAGE_SIZE)) {
+    if (!s.empty && !s.canvas) {
+      s.canvas = decodeSprite(buffer, s.offset);
+      decoded++;
+    }
+  }
+
+  showLoading('Renderizando grade...', 80);
+  await sleep(10);
+
+  document.getElementById('upload-zone').style.display = 'none';
+  document.getElementById('viewer').style.display = 'flex';
+
+  setGridZoom('2');
+  hideLoading();
+}
+
+function showLoading(msg, pct) {
+  document.getElementById('loading').style.display = 'flex';
+  document.getElementById('loading-sub').textContent = msg;
+  document.getElementById('loading-fill').style.width = pct + '%';
+}
+
+function hideLoading() {
+  document.getElementById('loading').style.display = 'none';
+}
+
+function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+// ========== Event listeners ==========
+const dropZone = document.getElementById('drop-zone');
+const fileInput = document.getElementById('file-input');
+
+dropZone.addEventListener('click', () => fileInput.click());
+
+dropZone.addEventListener('dragover', e => {
+  e.preventDefault();
+  dropZone.classList.add('drag-over');
+});
+
+dropZone.addEventListener('dragleave', () => dropZone.classList.remove('drag-over'));
+
+dropZone.addEventListener('drop', e => {
+  e.preventDefault();
+  dropZone.classList.remove('drag-over');
+  const file = e.dataTransfer.files[0];
+  if (file && file.name.endsWith('.spr')) loadFile(file);
+  else alert('Por favor selecione um arquivo .spr válido');
+});
+
+fileInput.addEventListener('change', e => {
+  if (e.target.files[0]) loadFile(e.target.files[0]);
+});
+
+document.getElementById('search-id').addEventListener('keydown', e => {
+  if (e.key === 'Enter') goToSprite();
+});
+</script>
+</body>
+</html>
