@@ -390,8 +390,8 @@ const CamMapPage = () => {
   // Build external tile URL for a given leaflet coord
   const getExternalTileUrl = useCallback((z: number, x: number, y: number, floor: number) => {
     const externalZoom = z + 3;
-    const proxyBase = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/map-tile-proxy`;
-    return `${proxyBase}?zoom=${externalZoom}&floor=${floor}&x=${x}&y=${y}`;
+    const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || `https://rmofmkjmzwkxjzfirbpt.supabase.co`;
+    return `${supabaseUrl}/functions/v1/map-tile-proxy?zoom=${externalZoom}&floor=${floor}&x=${x}&y=${y}`;
   }, []);
 
   // Create/update tile layer when floor data is ready
@@ -419,7 +419,6 @@ const CamMapPage = () => {
 
         // Load external base tile first, then overlay cam data
         const img = new Image();
-        img.crossOrigin = '';
         img.onload = () => {
           ctx.drawImage(img, 0, 0, 256, 256);
           drawCamData(ctx, coords);
