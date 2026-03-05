@@ -85,7 +85,7 @@ export const SpriteSidebar = ({ renderer, selectedItemId, onSelect, onClose }: S
       {/* Header */}
       <div className="p-2 border-b border-border/50 flex items-center gap-2">
         <span className="text-xs font-bold text-gold">SPRITES</span>
-        <span className="text-xs text-muted-foreground ml-auto">{filteredIds.length}</span>
+        <span className="text-xs text-muted-foreground ml-auto">{validIds.length}</span>
         <Button variant="ghost" size="icon" className="h-6 w-6" onClick={onClose}>
           <X className="w-3.5 h-3.5" />
         </Button>
