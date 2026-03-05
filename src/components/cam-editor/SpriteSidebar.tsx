@@ -47,21 +47,12 @@ export const SpriteSidebar = ({ renderer, selectedItemId, onSelect, onClose }: S
 
     if (canvasRefs.current.has(itemId)) {
       const cached = canvasRefs.current.get(itemId)!;
-      if (cached) {
-        ctx.drawImage(cached, 0, 0);
-      } else {
-        // Empty/transparent sprite placeholder
-        drawEmptyPlaceholder(ctx);
-      }
+      if (cached) ctx.drawImage(cached, 0, 0);
       return;
     }
     const rendered = renderer.renderSingleSprite(itemId);
     canvasRefs.current.set(itemId, rendered);
-    if (rendered) {
-      ctx.drawImage(rendered, 0, 0);
-    } else {
-      drawEmptyPlaceholder(ctx);
-    }
+    if (rendered) ctx.drawImage(rendered, 0, 0);
   }, [renderer]);
 
   function drawEmptyPlaceholder(ctx: CanvasRenderingContext2D) {
