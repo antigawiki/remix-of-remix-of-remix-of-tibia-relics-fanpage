@@ -65,10 +65,6 @@ export const SpriteSidebar = ({ renderer, selectedItemId, onSelect, onClose }: S
     if (rendered) ctx.drawImage(rendered, 0, 0);
   }, [renderer]);
 
-  function drawEmptyPlaceholder(ctx: CanvasRenderingContext2D) {
-    ctx.fillStyle = 'rgba(20, 18, 15, 0.4)';
-    ctx.fillRect(0, 0, 32, 32);
-  }
 
   useEffect(() => {
     const el = scrollRef.current;
