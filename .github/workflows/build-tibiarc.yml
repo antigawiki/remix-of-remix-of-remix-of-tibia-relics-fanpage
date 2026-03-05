@@ -115,6 +115,7 @@ jobs:
           grep -n "case 0xA5" lib/parser.cpp || echo "WARN: 0xA5 not found"
           grep -n "case 0xA6" lib/parser.cpp || echo "WARN: 0xA6 not found"
           grep -c "case 0x63" lib/parser.cpp || echo "WARN: 0x63 not found"
+          grep -n "FloorDown z==7 reads 3 floors" lib/parser.cpp || echo "WARN: FloorDown patch not found"
           echo "New patches verification complete"
 
           # =============================================
@@ -138,9 +139,12 @@ jobs:
           sed -i 's/Position Position_;/public: Position Position_; private:/' lib/parser.hpp
           echo "Made Position_ public in parser.hpp"
 
-          # FLOORDOWN (0xBF) patch REMOVED — was causing partial floor reads
-          # STUCK-BUFFER detection REMOVED — was breaking valid tile loops
-          echo "FloorDown and stuck-buffer patches skipped (removed to prevent corruption)"
+          # =============================================
+          # FLOORDOWN (0xBF) PATCH: 3-floor read at z==7
+          # =============================================
+          cp $GITHUB_WORKSPACE/tibiarc-player/floor_down_patch.py /tmp/tibiarc/floor_down_patch.py
+          python3 /tmp/tibiarc/floor_down_patch.py lib/parser.cpp
+          echo "Applied FloorDown z==7 patch (3 floors: 8, 9, 10)"
 
           # =============================================
           # SCROLL PATCHES: Force 18x14 full viewport reads

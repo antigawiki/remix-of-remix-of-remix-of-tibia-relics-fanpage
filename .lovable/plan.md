@@ -1,13 +1,16 @@
-## Scroll/FloorUp/Font Patches — Status: APLICADO ✅
+## Scroll/FloorUp/FloorDown/Font Patches — Status: APLICADO ✅
 
 ### Correções aplicadas no build-tibiarc.yml
 
 1. **Scroll 18×14**: Os 4 ParseMove (North/East/South/West) agora leem viewport completo 18×14 em vez de 1 row/column, alinhando com o protocolo TibiaRelic
 2. **FloorUp z=7**: Loop de 6 floors substituído por leitura de 1 floor (z=5), como o parser JS
-3. **Nomes de criaturas half-scale**: Renderiza nomes com `Fonts.Game` em tamanho original num canvas temporário, depois faz downscale 2:1 com averaging de pixels 2x2 para resultado anti-aliased suave
-4. **Nomes de monstros ocultos**: `SkipRenderingNonPlayerNames = true` no web_player.cpp
+3. **FloorDown z=7→8**: Quando o player entra na cave (z=7→8), o servidor envia 3 floors (8, 9, 10) com ~3848 bytes. O patch `floor_down_patch.py` corrige `ParseFloorChangeDown` para ler 3 floors nesse caso, evitando ~2600 bytes órfãos que corrompiam todos os pacotes seguintes
+4. **Nomes de criaturas half-scale**: Renderiza nomes com `Fonts.Game` em tamanho original num canvas temporário, depois faz downscale 2:1 com averaging de pixels 2x2 para resultado anti-aliased suave
+5. **Nomes de monstros ocultos**: `SkipRenderingNonPlayerNames = true` no web_player.cpp
+6. **SanitizeCreatureState robusta**: Em transições superfície↔subterrâneo (cruzando z=7/8), purga TODAS as criaturas não-player para evitar ghosts de parsing corrompido
 
 ### Arquivos de patch
+- `tibiarc-player/floor_down_patch.py` — corrige ParseFloorChangeDown para ler 3 floors quando z==7
 - `tibiarc-player/name_scale_patch.py` — adiciona função `DrawCreatureNameHalfScale` ao renderer.cpp
 - `tibiarc-player/dat_patch.py` — wrapper try-catch para propriedades .dat customizadas
 

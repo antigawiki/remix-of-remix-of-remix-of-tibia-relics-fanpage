@@ -83,13 +83,23 @@ static void SanitizeCreatureState() {
     // The server will re-send creatures on the new floor via AddThing.
     // This prevents cross-floor ghosts that linger from failed removals.
     if (playerZ != g_lastPlayerZ) {
+        // Detect surface↔underground transition (crossing z=7/8 boundary)
+        bool crossingSurface = (g_lastPlayerZ <= 7 && playerZ >= 8) ||
+                               (g_lastPlayerZ >= 8 && playerZ <= 7);
+
         std::vector<uint32_t> toRemove;
         for (auto &[id, cr] : creatures) {
             if (id == g_gamestate->Player.Id) continue;
-            auto pos = cr.MovementInformation.Target;
-            // Remove creatures still on the old floor
-            if (pos.Z == g_lastPlayerZ) {
+            if (crossingSurface) {
+                // Surface↔underground: purge ALL non-player creatures
+                // The server will re-send everything on the new floor(s)
                 toRemove.push_back(id);
+            } else {
+                auto pos = cr.MovementInformation.Target;
+                // Normal floor change: remove creatures from old floor only
+                if (pos.Z == g_lastPlayerZ) {
+                    toRemove.push_back(id);
+                }
             }
         }
         for (auto id : toRemove) {
