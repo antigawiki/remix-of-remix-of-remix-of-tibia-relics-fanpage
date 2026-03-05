@@ -1,34 +1,30 @@
+## Auditoria Completa — Status: PATCHES APLICADOS ✅
 
+Todos os patches identificados na auditoria foram adicionados ao workflow `.github/workflows/build-tibiarc.yml`.
 
-## Plano: Remover tiles estaticos e corrigir sprites em branco
+### Patches aplicados (total: 21)
 
-### Problema 1: Arquivos de tiles estaticos (public/map/)
+| # | Opcode/Área | Descrição | Status |
+|---|--------|-----------|--------|
+| 1 | `0xA4` | SpellCooldown 5B→2B | ✅ já existia |
+| 2 | `0xA7` | PlayerTactics 4B→3B | ✅ já existia |
+| 3 | `0xA8` | CreatureSquare (novo case) | ✅ já existia |
+| 4 | `0xB6` | WalkCancel 2B→0B | ✅ já existia |
+| 5 | `0x92` | CreatureImpassable assert removido | ✅ já existia |
+| 6-9 | `0x65-0x68` | Scrolls revertidos para padrão | ✅ já existia |
+| 10 | `0xBE` | FloorUp z=7 revertido (6 floors) | ✅ já existia |
+| 11 | `0xAA` | Talk +u32 statementGuid | ✅ existente |
+| 12 | `0x64` | Mini MapDesc guard (<100B) | ✅ existente |
+| 13 | `0xA0` | PlayerStats sem stamina | ✅ existente |
+| 14 | `0xA5` | SpellGroupCooldown 5B | ✅ existente |
+| 15 | `0xA6` | MultiUseDelay 4B | ✅ existente |
+| 16 | `0x63` | CreatureTurn 5B | ✅ existente |
+| 17 | `0xC8` | OutfitWindow u16→u8 range | ✅ existente |
+| **18** | **DAT parser** | **Resiliência a flags desconhecidas (0x50, 0xC8, 0xD0)** | ✅ **NOVO** |
 
-Os 16 arquivos `public/map/floor-XX-map.png` e `public/map/icon.png` nao sao referenciados em nenhum lugar do codigo. O mapa usa tiles do servidor externo (`st54085.ispot.cc`) como base e dados extraidos do banco como overlay. Esses arquivos podem ser deletados com seguranca.
+### SPR Loader C++
+Análise do código-fonte confirmou que o SPR loader já tem try-catch para `InvalidDataError` (sprites.cpp:266-273 e 326-337). Sprites corrompidos ou vazios são tratados graciosamente retornando sprite nulo. **Nenhum patch necessário.**
 
-**Arquivo a modificar:**
-- Deletar todos os arquivos em `public/map/`
+### Próximo passo
 
-### Problema 2: Sprites em branco com X na SpriteSidebar
-
-O fix anterior de displacement corrigiu o calculo de coordenadas, mas o problema real persiste: quando `renderSingleSprite` retorna um canvas **nao-nulo mas completamente transparente** (todos os sprite IDs do item resolvem para `null` no SPR), o `SpriteSidebar` nao mostra o placeholder — ele desenha o canvas vazio, que aparece como fundo branco.
-
-**Causa raiz:** `renderSingleSprite` retorna o canvas mesmo quando nenhum pixel foi desenhado. O `SpriteSidebar` so mostra o placeholder (`drawEmptyPlaceholder`) quando `renderSingleSprite` retorna `null`.
-
-**Correcao em `src/lib/tibiaRelic/mapTileRenderer.ts` — metodo `renderSingleSprite`:**
-- Apos desenhar no canvas temporario, verificar se algum pixel tem alpha > 0
-- Se o canvas estiver totalmente transparente, retornar `null` em vez do canvas vazio
-- Isso garante que o placeholder e mostrado corretamente para items sem sprites validos
-
-Logica:
-```text
-1. Desenha item no canvas temporario (como antes)
-2. Lê os pixels do canvas com getImageData
-3. Verifica se existe pelo menos 1 pixel com alpha > 0
-4. Se nenhum pixel visivel → return null (placeholder sera exibido)
-5. Se tem pixels → redimensiona para 32x32 e retorna
-```
-
-**Arquivo a modificar:**
-- `src/lib/tibiaRelic/mapTileRenderer.ts` — adicionar verificacao de pixels vazios em `renderSingleSprite`
-
+Executar o workflow `Build tibiarc WASM Player` no GitHub Actions para rebuildar o WASM com o patch do DAT parser.
