@@ -1,41 +1,30 @@
+## Auditoria Completa — Status: PATCHES APLICADOS ✅
 
+Todos os patches identificados na auditoria foram adicionados ao workflow `.github/workflows/build-tibiarc.yml`.
 
-## Analise: Cam Player vs Cam Editor/Map
+### Patches aplicados (total: 21)
 
-As alteracoes feitas anteriormente (sprLoader.ts, datLoader.ts, mapTileRenderer.ts) sao **exclusivas do parser JavaScript** usado pelo editor de mapa e pela SpriteSidebar. O Cam Player WASM usa a biblioteca C++ `tibiarc` que tem seu **proprio parser de DAT e SPR** compilado no binario.
+| # | Opcode/Área | Descrição | Status |
+|---|--------|-----------|--------|
+| 1 | `0xA4` | SpellCooldown 5B→2B | ✅ já existia |
+| 2 | `0xA7` | PlayerTactics 4B→3B | ✅ já existia |
+| 3 | `0xA8` | CreatureSquare (novo case) | ✅ já existia |
+| 4 | `0xB6` | WalkCancel 2B→0B | ✅ já existia |
+| 5 | `0x92` | CreatureImpassable assert removido | ✅ já existia |
+| 6-9 | `0x65-0x68` | Scrolls revertidos para padrão | ✅ já existia |
+| 10 | `0xBE` | FloorUp z=7 revertido (6 floors) | ✅ já existia |
+| 11 | `0xAA` | Talk +u32 statementGuid | ✅ existente |
+| 12 | `0x64` | Mini MapDesc guard (<100B) | ✅ existente |
+| 13 | `0xA0` | PlayerStats sem stamina | ✅ existente |
+| 14 | `0xA5` | SpellGroupCooldown 5B | ✅ existente |
+| 15 | `0xA6` | MultiUseDelay 4B | ✅ existente |
+| 16 | `0x63` | CreatureTurn 5B | ✅ existente |
+| 17 | `0xC8` | OutfitWindow u16→u8 range | ✅ existente |
+| **18** | **DAT parser** | **Resiliência a flags desconhecidas (0x50, 0xC8, 0xD0)** | ✅ **NOVO** |
 
-Isso significa que as flags customizadas (0x50, 0xC8, 0xD0) precisam ser injetadas como **patches no workflow de build** do WASM (`.github/workflows/build-tibiarc.yml`), da mesma forma que ja fazemos com os patches de protocolo.
+### SPR Loader C++
+Análise do código-fonte confirmou que o SPR loader já tem try-catch para `InvalidDataError` (sprites.cpp:266-273 e 326-337). Sprites corrompidos ou vazios são tratados graciosamente retornando sprite nulo. **Nenhum patch necessário.**
 
-### O que pode estar causando crashes no player
+### Próximo passo
 
-Se o parser C++ do tibiarc encontrar uma flag desconhecida no DAT (como 0x50), ele provavelmente:
-1. Le bytes errados como tamanho de parametro
-2. Corrompe a leitura de TODOS os items subsequentes
-3. Gera sprite IDs errados para tiles, causando crash ou renderizacao corrupta
-
-### Plano
-
-**1. Patch do DAT parser C++** (`.github/workflows/build-tibiarc.yml`)
-- Injetar tratamento das flags customizadas TibiaRelic no parser de DAT do tibiarc
-- Flag 0x50: skip 1 byte
-- Flag 0xC8: skip 1 byte (se no contexto DAT, nao confundir com opcode OutfitWindow)
-- Flag 0xD0: skip 0 bytes (flag booleana)
-- Localizar o arquivo correto no source do tibiarc (provavelmente `lib/versions.cpp` ou `lib/datareader.cpp`)
-
-**2. Patch do SPR loader C++** (mesmo workflow)
-- Aplicar a mesma correcao de boundary check no decoder RLE do SPR
-- Garantir que sprites com `size=0` retornam transparente em vez de crashar
-
-### Desafio
-
-Nao temos acesso direto ao source do tibiarc para ver a estrutura exata do DAT parser. O patch precisa ser feito "as cegas" via `sed` no workflow, similar aos patches de protocolo existentes. Seria necessario:
-1. Clonar o repo `antigawiki/tibiarc` localmente para inspecionar os arquivos
-2. Identificar onde as flags do DAT sao processadas (provavelmente um `switch` ou `if/else` chain)
-3. Escrever os comandos `sed` corretos
-
-### Arquivos a modificar
-- `.github/workflows/build-tibiarc.yml` — adicionar patches para o DAT parser e SPR loader do C++
-
-### Nota importante
-Apos editar o workflow, sera necessario **executar o workflow manualmente** no GitHub Actions para recompilar o WASM. As alteracoes so terao efeito apos o novo `tibiarc_player.wasm` ser commitado.
-
+Executar o workflow `Build tibiarc WASM Player` no GitHub Actions para rebuildar o WASM com o patch do DAT parser.
