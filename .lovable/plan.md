@@ -1,30 +1,64 @@
-## Auditoria Completa — Status: PATCHES APLICADOS ✅
 
-Todos os patches identificados na auditoria foram adicionados ao workflow `.github/workflows/build-tibiarc.yml`.
 
-### Patches aplicados (total: 21)
+## Diagnóstico: Buffer travado em `readTileItems` causa corrupção em cascata
 
-| # | Opcode/Área | Descrição | Status |
-|---|--------|-----------|--------|
-| 1 | `0xA4` | SpellCooldown 5B→2B | ✅ já existia |
-| 2 | `0xA7` | PlayerTactics 4B→3B | ✅ já existia |
-| 3 | `0xA8` | CreatureSquare (novo case) | ✅ já existia |
-| 4 | `0xB6` | WalkCancel 2B→0B | ✅ já existia |
-| 5 | `0x92` | CreatureImpassable assert removido | ✅ já existia |
-| 6-9 | `0x65-0x68` | Scrolls revertidos para padrão | ✅ já existia |
-| 10 | `0xBE` | FloorUp z=7 revertido (6 floors) | ✅ já existia |
-| 11 | `0xAA` | Talk +u32 statementGuid | ✅ existente |
-| 12 | `0x64` | Mini MapDesc guard (<100B) | ✅ existente |
-| 13 | `0xA0` | PlayerStats sem stamina | ✅ existente |
-| 14 | `0xA5` | SpellGroupCooldown 5B | ✅ existente |
-| 15 | `0xA6` | MultiUseDelay 4B | ✅ existente |
-| 16 | `0x63` | CreatureTurn 5B | ✅ existente |
-| 17 | `0xC8` | OutfitWindow u16→u8 range | ✅ existente |
-| **18** | **DAT parser** | **Resiliência a flags desconhecidas (0x50, 0xC8, 0xD0)** | ✅ **NOVO** |
+### Problema raiz
 
-### SPR Loader C++
-Análise do código-fonte confirmou que o SPR loader já tem try-catch para `InvalidDataError` (sprites.cpp:266-273 e 326-337). Sprites corrompidos ou vazios são tratados graciosamente retornando sprite nulo. **Nenhum patch necessário.**
+O log mostra **um único frame** (`[7250.84s]`) onde `readTileItems` lê `0x6865` (que em ASCII = "eh", texto corrompido), faz `r.pos -= 2` (rewind) e retorna `skip=0`. Mas `readFloorArea` continua iterando por TODAS as tiles (18×14 = 252 por andar × 8 andares = ~2016 chamadas), cada uma lendo o mesmo `0x6865` no pos=1510, rewind, retorna 0 — o buffer fica **travado**.
 
-### Próximo passo
+Após o `readMultiFloorArea` terminar sem consumir bytes, todos os opcodes subsequentes do frame são lidos a partir da posição errada (1510), causando corrupção permanente do estado.
 
-Executar o workflow `Build tibiarc WASM Player` no GitHub Actions para rebuildar o WASM com o patch do DAT parser.
+Os logs confirmam:
+- `bytesConsumed=0` em cada andar após o travamento
+- `totalConsumed=548` (os primeiros 2-3 andares foram lidos ok, depois travou)
+- `bytesLeft=569` — bytes restantes nunca são consumidos
+
+### Causa provável da dessincronização inicial
+
+Quando o jogador entra na cave (~59 min), o servidor TibiaRelic provavelmente envia **menos andares** do que o parser espera. O `getFloorRange` retorna 8 andares (7→0) para superfície, mas se o servidor enviar apenas 3-4, o parser consome bytes de **opcodes seguintes** como se fossem tiles — daí `0x6865` (que são bytes de outro opcode/string).
+
+### Plano de correção (2 arquivos)
+
+**1. `src/lib/tibiaRelic/packetParser.ts` — Detecção de buffer travado**
+
+Em `readFloorArea`: salvar `r.pos` antes de chamar `readTileItems`. Se após a chamada `pos` não avançou E `skip === 0`, o buffer está travado — parar de ler este andar imediatamente.
+
+```typescript
+private readFloorArea(r, ox, oy, z, W, H, offset, skip) {
+  for (tx...) {
+    for (ty...) {
+      if (r.left() < 2) return skip;
+      if (skip > 0) { ... skip--; continue; }
+      const posBefore = r.pos;
+      skip = this.readTileItems(r, ...);
+      // Se pos não avançou e skip=0, buffer travado — abortar andar
+      if (r.pos === posBefore && skip === 0) return -1; // sentinel
+    }
+  }
+  return skip;
+}
+```
+
+Em `readMultiFloorArea`: se `readFloorArea` retornou `-1` (sentinel), parar de ler mais andares.
+
+```typescript
+skip = this.readFloorArea(r, ...);
+if (skip < 0) {
+  // Buffer stuck — stop reading floors
+  break;
+}
+```
+
+**2. `readFloorAreaWithOffset` — Mesmo fix** (usada em floorUp/floorDown)
+
+Aplicar a mesma detecção de pos travado.
+
+### Impacto
+
+- Corrige o problema de corrupção em cascata no parser JS (debugger)
+- Não corrige o player WASM (C++), mas o patch de DAT + try-catch já mitiga parcialmente
+- Frames corrompidos terão tiles vazias (melhor que corromper TODO o estado restante)
+
+### Arquivos alterados
+- `src/lib/tibiaRelic/packetParser.ts` — readFloorArea, readFloorAreaWithOffset, readMultiFloorArea
+
