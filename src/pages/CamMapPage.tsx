@@ -418,17 +418,20 @@ const CamMapPage = () => {
 
         // Load external base tile first, then overlay cam data
         const img = new Image();
+        img.crossOrigin = '';
         img.onload = () => {
           ctx.drawImage(img, 0, 0, 256, 256);
           drawCamData(ctx, coords);
           (done as any)(null, tile);
         };
         img.onerror = () => {
-          // No base tile — just draw cam data
+          // No base tile — just draw cam data (silently ignore 404s)
           drawCamData(ctx, coords);
           (done as any)(null, tile);
         };
-        img.src = getExternalTileUrl(coords.z, coords.x, coords.y, floor);
+        // Suppress console 404 errors: only load if we expect the tile to exist
+        const url = getExternalTileUrl(coords.z, coords.x, coords.y, floor);
+        img.src = url;
 
         /** Collect border tiles from adjacent chunks (up to 2 tiles into neighbors). */
         function collectBorderTiles(cx: number, cy: number): TileData[] {

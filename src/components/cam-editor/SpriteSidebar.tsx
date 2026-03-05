@@ -42,21 +42,36 @@ export const SpriteSidebar = ({ renderer, selectedItemId, onSelect, onClose }: S
   const visibleIds = filteredIds.slice(startRow * ITEMS_PER_ROW, endRow * ITEMS_PER_ROW);
 
   const renderSprite = useCallback((canvas: HTMLCanvasElement, itemId: number) => {
+    const ctx = canvas.getContext('2d')!;
+    ctx.clearRect(0, 0, 32, 32);
+
     if (canvasRefs.current.has(itemId)) {
       const cached = canvasRefs.current.get(itemId)!;
-      const ctx = canvas.getContext('2d')!;
-      ctx.clearRect(0, 0, 32, 32);
-      ctx.drawImage(cached, 0, 0);
+      if (cached) {
+        ctx.drawImage(cached, 0, 0);
+      } else {
+        // Empty/transparent sprite placeholder
+        drawEmptyPlaceholder(ctx);
+      }
       return;
     }
     const rendered = renderer.renderSingleSprite(itemId);
+    canvasRefs.current.set(itemId, rendered);
     if (rendered) {
-      canvasRefs.current.set(itemId, rendered);
-      const ctx = canvas.getContext('2d')!;
-      ctx.clearRect(0, 0, 32, 32);
       ctx.drawImage(rendered, 0, 0);
+    } else {
+      drawEmptyPlaceholder(ctx);
     }
   }, [renderer]);
+
+  function drawEmptyPlaceholder(ctx: CanvasRenderingContext2D) {
+    ctx.fillStyle = 'rgba(30, 30, 30, 0.6)';
+    ctx.fillRect(0, 0, 32, 32);
+    ctx.strokeStyle = 'rgba(100, 100, 100, 0.5)';
+    ctx.setLineDash([3, 3]);
+    ctx.strokeRect(1, 1, 30, 30);
+    ctx.setLineDash([]);
+  }
 
   useEffect(() => {
     const el = scrollRef.current;
