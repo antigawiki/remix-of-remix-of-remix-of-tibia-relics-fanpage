@@ -1097,7 +1097,18 @@ export class PacketParser {
           skip--;
           continue;
         }
+        const posBefore = r.pos;
         skip = this.readTileItems(r, ox + tx + offset, oy + ty + offset, z);
+        // Stuck-buffer detection: if readTileItems didn't advance and returned skip=0,
+        // the buffer is locked on an unknown word. Abort this floor to prevent cascading corruption.
+        if (r.pos === posBefore && skip === 0) {
+          this.debugLogger?.log('PARSE_ERROR', {
+            type: 'FLOOR_STUCK',
+            floor: z, tx, ty, pos: r.pos,
+            word: r.left() >= 2 ? '0x' + r.peek16().toString(16) : 'EOF',
+          }, `Buffer stuck at floor z=${z} tile (${tx},${ty}) pos=${r.pos} — aborting floor`);
+          return -1; // sentinel: stuck
+        }
       }
     }
     return skip;
@@ -1113,7 +1124,16 @@ export class PacketParser {
           skip--;
           continue;
         }
+        const posBefore = r.pos;
         skip = this.readTileItems(r, ox + tx + offset, oy + ty + offset, z);
+        // Stuck-buffer detection (same logic as readFloorArea)
+        if (r.pos === posBefore && skip === 0) {
+          this.debugLogger?.log('PARSE_ERROR', {
+            type: 'FLOOR_STUCK',
+            floor: z, tx, ty, pos: r.pos,
+          }, `Buffer stuck at floor z=${z} tile (${tx},${ty}) — aborting floor`);
+          return;
+        }
       }
     }
   }
@@ -1146,6 +1166,21 @@ export class PacketParser {
           this.traceLog.push({ op: 'readFloorArea', posBefore: floorStartPos, posAfter: r.pos, bytesConsumed: r.pos - floorStartPos, floor: nz, error: e?.message || String(e) });
         }
         throw e;
+      }
+      // Stuck-buffer sentinel: stop reading further floors to prevent cascading corruption
+      if (skip < 0) {
+        if (dl && dl.enabled) {
+          dl.log('MULTIFLOOR_STEP', {
+            floor: nz, floorIndex: floorCount, offset,
+            bytesConsumed: r.pos - floorStartPos,
+            totalConsumed: r.pos - startPos,
+            bytesLeft: r.left(),
+            skipCarry: skip,
+            stuck: true,
+          }, `Floor z=${nz} stuck — stopping multi-floor read`);
+        }
+        skip = 0; // reset for callers
+        break;
       }
       floorCount++;
       if (this.traceMode) {
