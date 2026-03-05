@@ -1,11 +1,7 @@
-## SanitizeCreatureState — Status: APLICADO ✅
+## GPT Creature ID Tracking — Status: REJEITADO ✅
 
-### Mudanças aplicadas
-
-| # | Arquivo | Mudança |
-|---|---------|---------|
-| 1 | `web_player.cpp` | Substituído `DeduplicateCreatures` por `SanitizeCreatureState` com 4 etapas: floor-change cleanup, invalid position purge, floor distance filter (±2), position dedup |
-| 2 | `web_player.cpp` | Adicionado tracking de `g_lastPlayerZ` para detectar mudança de andar e purgar criaturas do andar anterior |
+### Decisão
+O código do GPT foi analisado e **não será implementado** — ele cria um registro paralelo desconectado do renderer. Nossa `SanitizeCreatureState` já implementa a mesma estratégia diretamente no gamestate real.
 
 ### Próximo passo
-Rebuild WASM via GitHub Actions e testar com .cam problemáticos.
+Se fantasmas/duplicações persistirem após o último build WASM, investigar **byte drift no parser de protocolo** (patches sed no workflow de build).
