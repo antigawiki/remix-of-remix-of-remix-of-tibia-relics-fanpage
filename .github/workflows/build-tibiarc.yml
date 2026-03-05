@@ -142,55 +142,7 @@ jobs:
           # STUCK-BUFFER detection REMOVED — was breaking valid tile loops
           echo "FloorDown and stuck-buffer patches skipped (removed to prevent corruption)"
 
-          # =============================================
-          # SCROLL PATCHES: Force 18x14 full viewport reads
-          # =============================================
-          # TibiaRelic sends FULL 18x14 viewport on every scroll opcode,
-          # NOT just the newly visible row/column like vanilla Tibia.
-          # The fork uses standard dimensions (18x1 / 1x14) — we must patch them.
-
-          # ParseMoveNorth: (-8, -6, width=18, height=1) → height=14
-          sed -i '/void Parser::ParseMoveNorth/,/^}/{
-            s/Map::TileBufferWidth, 1/Map::TileBufferWidth, Map::TileBufferHeight/
-          }' lib/parser.cpp
-          echo "Fixed ParseMoveNorth: 18x1 → 18x14"
-
-          # ParseMoveEast: (+9, -6, width=1, height=14) → x=-8, width=18
-          sed -i '/void Parser::ParseMoveEast/,/^}/{
-            s/Position_.X + 9/Position_.X - 8/
-            s/1, Map::TileBufferHeight/Map::TileBufferWidth, Map::TileBufferHeight/
-          }' lib/parser.cpp
-          echo "Fixed ParseMoveEast: 1x14 → 18x14"
-
-          # ParseMoveSouth: (-8, +7, width=18, height=1) → y=-6, height=14
-          sed -i '/void Parser::ParseMoveSouth/,/^}/{
-            s/Position_.Y + 7/Position_.Y - 6/
-            s/Map::TileBufferWidth, 1/Map::TileBufferWidth, Map::TileBufferHeight/
-          }' lib/parser.cpp
-          echo "Fixed ParseMoveSouth: 18x1 → 18x14"
-
-          # ParseMoveWest: (-8, -6, width=1, height=14) → width=18
-          sed -i '/void Parser::ParseMoveWest/,/^}/{
-            s/1, Map::TileBufferHeight/Map::TileBufferWidth, Map::TileBufferHeight/
-          }' lib/parser.cpp
-          echo "Fixed ParseMoveWest: 1x14 → 18x14"
-
-          # =============================================
-          # FLOORUP PATCH: Single floor at z=7
-          # =============================================
-          # TibiaRelic sends only 1 floor when going up to surface (z=7).
-          # The C++ reads 6 floors (z=5→0). Replace loop with single floor read.
-          sed -i '/void Parser::ParseFloorUp/,/^}/{
-            s/for (int zIdx = 5; zIdx >= 0; zIdx--)/int zIdx = 5; \/* TibiaRelic: single floor *\//
-          }' lib/parser.cpp
-          echo "Fixed FloorUp z==7: 6 floors → 1 floor"
-
-          # =============================================
-          # CREATURE NAME FONT: Use smaller font
-          # =============================================
-          # Replace Game font with InterfaceSmall for creature name overlay
-          sed -i 's/version.Fonts.Game/version.Fonts.InterfaceSmall/g' lib/renderer.cpp
-          echo "Fixed creature names: Game font → InterfaceSmall font"
+          # SCROLL, FLOORUP and FONT patches REMOVED — reverted to original fork behavior
 
       - name: Build tibiarc library + web player
         run: |
