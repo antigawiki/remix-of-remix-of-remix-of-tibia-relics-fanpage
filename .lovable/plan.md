@@ -1,7 +1,7 @@
-## GPT Creature ID Tracking — Status: REJEITADO ✅
+## Scroll/FloorUp Revert Patches — Status: REMOVIDO ✅
 
-### Decisão
-O código do GPT foi analisado e **não será implementado** — ele cria um registro paralelo desconectado do renderer. Nossa `SanitizeCreatureState` já implementa a mesma estratégia diretamente no gamestate real.
+### Correção
+Removidos os patches `sed` que revertiam as dimensões de scroll (18×14 → 1×14/18×1) e FloorUp (1 floor → 6 floors). O fork `antigawiki/tibiarc` já lê 18×14 porque o TibiaRelic envia viewport completo — os reverts causavam byte drift massivo em cada passo do jogador.
 
 ### Próximo passo
-Se fantasmas/duplicações persistirem após o último build WASM, investigar **byte drift no parser de protocolo** (patches sed no workflow de build).
+Rodar o workflow `Build tibiarc WASM Player` no GitHub Actions para compilar o novo WASM e testar.
