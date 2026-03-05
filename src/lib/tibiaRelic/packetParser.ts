@@ -302,9 +302,9 @@ export class PacketParser {
       try {
         const t = r.u8();
         if (!this.dispatch(t, r)) {
-          // Unknown opcode — scan forward up to 4 bytes looking for a known opcode
+          // Unknown opcode — scan forward up to 128 bytes looking for a known opcode
           let recovered = false;
-          for (let skip = 0; skip < 4 && r.pos < endPos; skip++) {
+          for (let skip = 0; skip < 128 && r.pos < endPos; skip++) {
             const next = r.peekU8();
             if (this.isKnownOpcode(next)) {
               recovered = true;
@@ -318,7 +318,7 @@ export class PacketParser {
         if (this.strictMode) throw e;
         // Try to recover: scan forward for next valid opcode
         let recovered = false;
-        for (let skip = 0; skip < 4 && r.pos < endPos; skip++) {
+        for (let skip = 0; skip < 128 && r.pos < endPos; skip++) {
           const next = r.peekU8();
           if (this.isKnownOpcode(next)) {
             recovered = true;
@@ -329,6 +329,38 @@ export class PacketParser {
         if (!recovered) break;
       }
     }
+  }
+
+  /**
+   * Scan forward through the buffer looking for a known opcode byte.
+   * Consumes orphaned tile data after a stuck-buffer abort, landing r.pos
+   * at the next valid opcode so playback can continue normally.
+   * Returns true if a known opcode was found.
+   */
+  private scanForwardToOpcode(r: Buf): boolean {
+    const maxScan = Math.min(r.left(), 1024);
+    const startPos = r.pos;
+    for (let i = 0; i < maxScan; i++) {
+      if (this.isKnownOpcode(r.peekU8())) {
+        const skipped = r.pos - startPos;
+        this.debugLogger?.log('PARSE_ERROR', {
+          type: 'SCAN_FORWARD_RECOVERY',
+          skippedBytes: skipped,
+          foundOpcode: '0x' + r.peekU8().toString(16),
+          pos: r.pos,
+        }, `Scan-forward recovered: skipped ${skipped} bytes, found opcode 0x${r.peekU8().toString(16)} at pos ${r.pos}`);
+        return true;
+      }
+      r.pos++;
+    }
+    // No known opcode found — revert to where we started
+    const skipped = r.pos - startPos;
+    this.debugLogger?.log('PARSE_ERROR', {
+      type: 'SCAN_FORWARD_FAILED',
+      scannedBytes: skipped,
+      pos: r.pos,
+    }, `Scan-forward failed after ${skipped} bytes — no valid opcode found`);
+    return false;
   }
 
   /** Check if a byte is a known opcode */
@@ -1132,7 +1164,9 @@ export class PacketParser {
           this.debugLogger?.log('PARSE_ERROR', {
             type: 'FLOOR_STUCK',
             floor: z, tx, ty, pos: r.pos,
-          }, `Buffer stuck at floor z=${z} tile (${tx},${ty}) — aborting floor`);
+          }, `Buffer stuck at floor z=${z} tile (${tx},${ty}) — aborting floor, scanning forward`);
+          // Scan forward to recover to next valid opcode
+          this.scanForwardToOpcode(r);
           return;
         }
       }
@@ -1178,8 +1212,10 @@ export class PacketParser {
             bytesLeft: r.left(),
             skipCarry: skip,
             stuck: true,
-          }, `Floor z=${nz} stuck — stopping multi-floor read`);
+          }, `Floor z=${nz} stuck — stopping multi-floor read, scanning forward`);
         }
+        // Scan forward to find the next valid opcode, consuming orphaned tile data
+        this.scanForwardToOpcode(r);
         skip = 0; // reset for callers
         break;
       }
