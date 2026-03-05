@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useCallback } from 'react';
+import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { Search, X } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
@@ -33,13 +33,23 @@ export const SpriteSidebar = ({ renderer, selectedItemId, onSelect, onClose }: S
     ? allIds.filter(id => String(id).includes(searchId.trim()))
     : allIds;
 
-  const totalRows = Math.ceil(filteredIds.length / ITEMS_PER_ROW);
+  // Pre-filter: only include items that have at least one valid sprite
+  const validIds = useMemo(() => {
+    return filteredIds.filter(id => {
+      if (canvasRefs.current.has(id)) return canvasRefs.current.get(id) !== null;
+      const rendered = renderer.renderSingleSprite(id);
+      canvasRefs.current.set(id, rendered);
+      return rendered !== null;
+    });
+  }, [filteredIds, renderer]);
+
+  const totalRows = Math.ceil(validIds.length / ITEMS_PER_ROW);
   const totalHeight = totalRows * ROW_HEIGHT;
 
   const startRow = Math.max(0, Math.floor(scrollTop / ROW_HEIGHT) - VISIBLE_BUFFER);
   const endRow = Math.min(totalRows, Math.ceil((scrollTop + containerHeight) / ROW_HEIGHT) + VISIBLE_BUFFER);
 
-  const visibleIds = filteredIds.slice(startRow * ITEMS_PER_ROW, endRow * ITEMS_PER_ROW);
+  const visibleIds = validIds.slice(startRow * ITEMS_PER_ROW, endRow * ITEMS_PER_ROW);
 
   const renderSprite = useCallback((canvas: HTMLCanvasElement, itemId: number) => {
     const ctx = canvas.getContext('2d')!;
@@ -47,27 +57,14 @@ export const SpriteSidebar = ({ renderer, selectedItemId, onSelect, onClose }: S
 
     if (canvasRefs.current.has(itemId)) {
       const cached = canvasRefs.current.get(itemId)!;
-      if (cached) {
-        ctx.drawImage(cached, 0, 0);
-      } else {
-        // Empty/transparent sprite placeholder
-        drawEmptyPlaceholder(ctx);
-      }
+      if (cached) ctx.drawImage(cached, 0, 0);
       return;
     }
     const rendered = renderer.renderSingleSprite(itemId);
     canvasRefs.current.set(itemId, rendered);
-    if (rendered) {
-      ctx.drawImage(rendered, 0, 0);
-    } else {
-      drawEmptyPlaceholder(ctx);
-    }
+    if (rendered) ctx.drawImage(rendered, 0, 0);
   }, [renderer]);
 
-  function drawEmptyPlaceholder(ctx: CanvasRenderingContext2D) {
-    ctx.fillStyle = 'rgba(20, 18, 15, 0.4)';
-    ctx.fillRect(0, 0, 32, 32);
-  }
 
   useEffect(() => {
     const el = scrollRef.current;
@@ -84,7 +81,7 @@ export const SpriteSidebar = ({ renderer, selectedItemId, onSelect, onClose }: S
       {/* Header */}
       <div className="p-2 border-b border-border/50 flex items-center gap-2">
         <span className="text-xs font-bold text-gold">SPRITES</span>
-        <span className="text-xs text-muted-foreground ml-auto">{filteredIds.length}</span>
+        <span className="text-xs text-muted-foreground ml-auto">{validIds.length}</span>
         <Button variant="ghost" size="icon" className="h-6 w-6" onClick={onClose}>
           <X className="w-3.5 h-3.5" />
         </Button>
