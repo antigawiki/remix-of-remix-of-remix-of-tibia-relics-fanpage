@@ -143,48 +143,17 @@ jobs:
           echo "FloorDown and stuck-buffer patches skipped (removed to prevent corruption)"
 
           # =============================================
-          # REVERT SCROLL PATCHES (fork has 18x14 baked in, must restore standard)
+          # SCROLL PATCHES: KEPT AS FORK DEFAULTS (18x14)
           # =============================================
+          # TibiaRelic sends FULL 18x14 viewport on every scroll opcode,
+          # NOT just the newly visible row/column like vanilla Tibia.
+          # The antigawiki/tibiarc fork correctly reads 18x14 — do NOT revert.
+          echo "Scroll dimensions: keeping fork's 18x14 (TibiaRelic full viewport)"
 
-          # 6. Scroll East (0x65): fork reads 18x14, standard is 1×14
-          sed -i '/void Parser::ParseMoveEast/,/^}/ s|ParseMapDescription(reader, events, -8, -6, Map::TileBufferWidth, Map::TileBufferHeight)|ParseMapDescription(reader, events, +9, -6, 1, Map::TileBufferHeight)|' lib/parser.cpp
-          echo "Reverted 0x65 ScrollEast: 18x14 → 1×14"
-
-          # 7. Scroll North (0x66): fork reads 18x14, standard is 18×1
-          sed -i '/void Parser::ParseMoveNorth/,/^}/ s|ParseMapDescription(reader, events, -8, -6, Map::TileBufferWidth, Map::TileBufferHeight)|ParseMapDescription(reader, events, -8, -6, Map::TileBufferWidth, 1)|' lib/parser.cpp
-          echo "Reverted 0x66 ScrollNorth: 18x14 → 18×1"
-
-          # 8. Scroll South (0x67): fork reads 18x14, standard is 18×1
-          sed -i '/void Parser::ParseMoveSouth/,/^}/ s|ParseMapDescription(reader, events, -8, -6, Map::TileBufferWidth, Map::TileBufferHeight)|ParseMapDescription(reader, events, -8, +7, Map::TileBufferWidth, 1)|' lib/parser.cpp
-          echo "Reverted 0x67 ScrollSouth: 18x14 → 18×1"
-
-          # 9. Scroll West (0x68): fork reads 18x14, standard is 1×14
-          sed -i '/void Parser::ParseMoveWest/,/^}/ s|ParseMapDescription(reader, events, -8, -6, Map::TileBufferWidth, Map::TileBufferHeight)|ParseMapDescription(reader, events, -8, -6, 1, Map::TileBufferHeight)|' lib/parser.cpp
-          echo "Reverted 0x68 ScrollWest: 18x14 → 1×14"
-
-          # 10. FloorUp (0xBE z==7): fork reads only 1 floor, standard reads 6 (5→0)
-          #     Use sed to remove the single-floor comment+call and insert the loop
-          sed -i '/TibiaRelic: only the newly visible floor/,/tileSkip);/{
-            /TibiaRelic: only the newly visible floor/{
-              s|.*|        for (int zIdx = 5; zIdx >= 0; zIdx--) {\n            tileSkip = ParseFloorDescription(reader,\n                                             events,\n                                             Position_.X - 8,\n                                             Position_.Y - 6,\n                                             zIdx,\n                                             Map::TileBufferWidth,\n                                             Map::TileBufferHeight,\n                                             Map::TileBufferDepth - zIdx,\n                                             tileSkip);\n        }|
-            }
-            /TibiaRelic: only the newly visible floor/!d
-          }' lib/parser.cpp
-          echo "Reverted FloorUp z==7: 1 floor → 6 floors (5→0)"
-
-          # DIAGNOSTIC LOGGING REMOVED — global sed was matching multiple switches
-          echo "Diagnostic logging skipped (removed to prevent corruption)"
-
-          # =============================================
-          # VERIFICATION
-          # =============================================
-          echo "=== Verifying scroll reverts ==="
-          grep -n "ParseMoveEast" lib/parser.cpp
-          grep -n "ParseMoveNorth" lib/parser.cpp
-          grep -n "ParseMoveSouth" lib/parser.cpp
-          grep -n "ParseMoveWest" lib/parser.cpp
-          grep -A5 "Position_.Z == 7" lib/parser.cpp | head -10
-          echo "All patches verified"
+          # FloorUp (0xBE z==7): keeping fork's single-floor read.
+          # TibiaRelic sends only the newly visible floor, not 6 floors.
+          # JS parser (packetParser.ts) also reads only 1 floor here.
+          echo "FloorUp z==7: keeping fork's single-floor read (TibiaRelic sends 1 floor)"
 
       - name: Build tibiarc library + web player
         run: |
