@@ -104,6 +104,21 @@ jobs:
           echo "Fixed 0xC8 OutfitWindow: u16 range → u8 range"
 
           # =============================================
+          # DAT PARSER: RESILIENT TO UNKNOWN FLAGS
+          # =============================================
+          # The TranslationTable::Get() throws InvalidDataError for unknown
+          # flag bytes (like TibiaRelic custom 0x50, 0xC8, 0xD0).
+          # Patch ReadProperties in types.cpp to catch this and treat as end-of-entry.
+          # Replace the switch line to wrap TranslateTypeProperty in try-catch.
+          sed -i '/void EntityType::ReadProperties/,/^}/ {
+            s|switch (version.TranslateTypeProperty(reader.ReadU8())) {|auto _flagByte = reader.ReadU8();\n        TypeProperty _prop;\n        try { _prop = version.TranslateTypeProperty(_flagByte); } catch (...) {\n            /* TibiaRelic: unknown flag, skip based on known custom flags */\n            if (_flagByte == 0x50 \|\| _flagByte == 0xC8) { reader.Skip(1); break; }\n            if (_flagByte == 0xD0) { break; }\n            /* Unknown flag: treat as end of properties */\n            return;\n        }\n        switch (_prop) {|
+          }' lib/types.cpp
+          echo "Patched ReadProperties: resilient to unknown DAT flags (0x50, 0xC8, 0xD0)"
+
+          # Verify the patch was applied
+          grep -c "TibiaRelic: unknown flag" lib/types.cpp && echo "DAT flag patch verified" || echo "WARN: DAT flag patch not applied"
+
+          # =============================================
           # VERIFICATION (non-fatal)
           # =============================================
           echo "=== Verifying new patches ==="
