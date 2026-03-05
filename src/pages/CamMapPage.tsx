@@ -390,7 +390,8 @@ const CamMapPage = () => {
   // Build external tile URL for a given leaflet coord
   const getExternalTileUrl = useCallback((z: number, x: number, y: number, floor: number) => {
     const externalZoom = z + 3;
-    return `https://st54085.ispot.cc/mapper/tibiarelic/${externalZoom}/${floor}/${x}_${y}.png`;
+    const proxyBase = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/map-tile-proxy`;
+    return `${proxyBase}?zoom=${externalZoom}&floor=${floor}&x=${x}&y=${y}`;
   }, []);
 
   // Create/update tile layer when floor data is ready
