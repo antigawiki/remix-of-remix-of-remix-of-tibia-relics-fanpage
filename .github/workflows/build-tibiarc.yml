@@ -106,38 +106,7 @@ jobs:
           # =============================================
           # DAT PARSER: TWO-PHASE RESILIENT PARSING
           # =============================================
-          python3 << 'PYEOF'
-import re
-
-with open('lib/types.cpp', 'r') as f:
-    src = f.read()
-
-# Find ReadProperties function and inject two-phase logic
-pattern = r'(void EntityType::ReadProperties\([^)]*\)\s*\{)(.*?)(^\})'
-match = re.search(pattern, src, re.DOTALL | re.MULTILINE)
-if match:
-    original_body = match.group(2)
-    replacement = match.group(1) + """
-    /* TibiaRelic: Two-phase DAT parsing for resilience */
-    auto _savedPos = reader.Position();
-    while (reader.Remaining() > 0) {
-        if (reader.ReadU8() == 0xFF) break;
-    }
-    auto _endPos = reader.Position();
-    reader.Seek(_savedPos);
-    try {
-""" + original_body + """
-    } catch (...) { /* TibiaRelic: ignore metadata errors */ }
-    reader.Seek(_endPos);
-    return;
-""" + match.group(3)
-    src = src[:match.start()] + replacement + src[match.end():]
-    with open('lib/types.cpp', 'w') as f:
-        f.write(src)
-    print('Two-phase DAT patch applied successfully')
-else:
-    print('WARN: ReadProperties not found in types.cpp')
-PYEOF
+          python3 $GITHUB_WORKSPACE/tibiarc-player/dat_patch.py lib/types.cpp
           grep -c "Two-phase DAT parsing" lib/types.cpp && echo "DAT two-phase patch verified" || echo "WARN: DAT two-phase patch not applied"
 
           # =============================================
