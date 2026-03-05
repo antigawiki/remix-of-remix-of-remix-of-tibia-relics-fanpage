@@ -438,15 +438,14 @@ static void RenderFrame() {
     if (!g_gamestate->Creatures.contains(g_gamestate->Player.Id)) return;
 
     try {
-        Renderer::Options options{
-            .Width = RENDER_WIDTH,
-            .Height = RENDER_HEIGHT,
-            .SkipRenderingMessages = g_skip_messages,
-            .SkipRenderingPlayerNames = false,
-            .SkipRenderingYellingMessages = g_skip_messages,
-            .SkipRenderingCreatureHealthBars = false,
-            .SkipRenderingStatusBars = g_skip_messages,
-        };
+        Renderer::Options options{};
+        options.Width = RENDER_WIDTH;
+        options.Height = RENDER_HEIGHT;
+        options.SkipRenderingMessages = g_skip_messages;
+        options.SkipRenderingPlayerNames = false;
+        options.SkipRenderingYellingMessages = g_skip_messages;
+        options.SkipRenderingCreatureHealthBars = false;
+        options.SkipRenderingStatusBars = g_skip_messages;
 
         // Force-clear all pending messages/speech bubbles before rendering
         // This ensures DrawOverlay won't render any chat text even if
