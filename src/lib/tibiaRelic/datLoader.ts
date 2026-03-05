@@ -167,25 +167,34 @@ export class DatLoader {
     // Phase 2: Best-effort metadata extraction from the attribute bytes
     this.extractMetadata(bytes, view, attrStart, attrEnd - 1, it, flagsRead);
 
-    // Read dimensions
-    const minBytes = hasPatZ ? 8 : 7;
-    if (p + minBytes > bytes.length) return [it, p, flagsRead];
+    // Read dimensions — use RAW values for sprite count calculation (matching reference parser)
+    // Clamped values stored on the item are only for rendering safety
+    if (p + 2 > bytes.length) return [it, p, flagsRead];
 
-    it.width = Math.max(1, Math.min(bytes[p], 8)); p++;
-    it.height = Math.max(1, Math.min(bytes[p], 8)); p++;
-    if (it.width > 1 || it.height > 1) p++; // exact_size
-    it.layers = Math.max(1, Math.min(bytes[p], 8)); p++;
-    it.patX = Math.max(1, Math.min(bytes[p], 8)); p++;
-    it.patY = Math.max(1, Math.min(bytes[p], 8)); p++;
-    if (hasPatZ) {
-      it.patZ = Math.max(1, Math.min(bytes[p], 8)); p++;
-    } else {
-      it.patZ = 1;
-    }
-    it.anim = Math.max(1, Math.min(bytes[p], 32)); p++;
+    const rawWidth = bytes[p]; p++;
+    const rawHeight = bytes[p]; p++;
+    if (rawWidth > 1 || rawHeight > 1) p++; // exact_size
 
-    let n = it.anim * it.patZ * it.patY * it.patX * it.layers * it.height * it.width;
-    if (n < 1 || n > 4096) n = 1;
+    if (p + (hasPatZ ? 5 : 4) > bytes.length) return [it, p, flagsRead];
+
+    const rawLayers = bytes[p]; p++;
+    const rawPatX = bytes[p]; p++;
+    const rawPatY = bytes[p]; p++;
+    let rawPatZ = 1;
+    if (hasPatZ) { rawPatZ = bytes[p]; p++; }
+    const rawAnim = bytes[p]; p++;
+
+    // Store clamped values for rendering
+    it.width = Math.max(1, Math.min(rawWidth, 8));
+    it.height = Math.max(1, Math.min(rawHeight, 8));
+    it.layers = Math.max(1, Math.min(rawLayers, 8));
+    it.patX = Math.max(1, Math.min(rawPatX, 8));
+    it.patY = Math.max(1, Math.min(rawPatY, 8));
+    it.patZ = Math.max(1, Math.min(rawPatZ, 8));
+    it.anim = Math.max(1, Math.min(rawAnim, 32));
+
+    // Sprite count uses RAW values — if any dimension is 0, spriteCount = 0 (no sprites to read)
+    const n = rawWidth * rawHeight * rawLayers * rawPatX * rawPatY * rawPatZ * rawAnim;
 
     it.spriteIds = [];
     for (let i = 0; i < n; i++) {
