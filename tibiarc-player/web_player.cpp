@@ -497,7 +497,7 @@ static void RenderFrame() {
         options.Height = RENDER_HEIGHT;
         options.SkipRenderingMessages = g_skip_messages;
         options.SkipRenderingPlayerNames = false;
-        options.SkipRenderingNonPlayerNames = true;
+        options.SkipRenderingNonPlayerNames = false;
         options.SkipRenderingYellingMessages = g_skip_messages;
         options.SkipRenderingCreatureHealthBars = false;
         options.SkipRenderingStatusBars = g_skip_messages;
