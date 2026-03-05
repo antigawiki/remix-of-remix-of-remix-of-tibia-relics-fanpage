@@ -321,79 +321,19 @@ export class MapTileRenderer {
    */
   renderSingleSprite(itemId: number): HTMLCanvasElement | null {
     const def = this.dat.items.get(itemId);
-    if (!def) return null;
+    if (!def || !def.spriteIds || def.spriteIds.length === 0) return null;
 
-    // Try all pattern combinations to find one that produces visible pixels
-    const PX = Math.max(1, def.patX);
-    const PY = Math.max(1, def.patY);
-    const PZ = Math.max(1, def.patZ);
-    const L = Math.max(1, def.layers);
-    const A = Math.max(1, def.anim);
-    const H = def.height, W = def.width;
-
-    // Attempt 1: try several pattern combinations (not just 0,0)
-    const attempts: Array<[number, number]> = [];
-    for (let py = 0; py < PY; py++) {
-      for (let px = 0; px < PX; px++) {
-        attempts.push([px, py]);
-      }
-    }
-
-    for (const [patXVal, patYVal] of attempts) {
-      const fullW = W * TILE_PX + (def.dispX || 0);
-      const fullH = H * TILE_PX + (def.dispY || 0);
-      const tmpCanvas = document.createElement('canvas');
-      tmpCanvas.width = fullW;
-      tmpCanvas.height = fullH;
-      const tmpCtx = tmpCanvas.getContext('2d')!;
-      tmpCtx.imageSmoothingEnabled = false;
-
-      // Draw using this pattern combination
-      for (let l = 0; l < L; l++) {
-        for (let th = 0; th < H; th++) {
-          for (let tw = 0; tw < W; tw++) {
-            const idx = ((((((0 * PZ + 0) * PY + patYVal) * PX + patXVal) * L + l) * H + th) * W + tw);
-            const sid = (def.spriteIds && idx < def.spriteIds.length) ? def.spriteIds[idx] : 0;
-            if (!sid) continue;
-            const sprCanvas = this.getSpriteCanvas(sid);
-            if (sprCanvas) {
-              const ox = (W - 1) * TILE_PX + (def.dispX || 0);
-              const oy = (H - 1) * TILE_PX + (def.dispY || 0);
-              tmpCtx.drawImage(sprCanvas, ox - tw * TILE_PX - def.dispX, oy - th * TILE_PX - def.dispY);
-            }
-          }
-        }
-      }
-
-      // Check if any pixel was drawn
-      const imgData = tmpCtx.getImageData(0, 0, fullW, fullH).data;
-      let hasPixels = false;
-      for (let i = 3; i < imgData.length; i += 4) {
-        if (imgData[i] > 0) { hasPixels = true; break; }
-      }
-      if (!hasPixels) continue;
-
-      if (fullW === TILE_PX && fullH === TILE_PX) return tmpCanvas;
-      const canvas = document.createElement('canvas');
-      canvas.width = 32;
-      canvas.height = 32;
-      const ctx = canvas.getContext('2d')!;
-      ctx.imageSmoothingEnabled = false;
-      ctx.drawImage(tmpCanvas, 0, 0, fullW, fullH, 0, 0, 32, 32);
-      return canvas;
-    }
-
-    // Attempt 2: fallback to first valid spriteId directly
+    // Simple direct approach: find the first valid sprite ID and render it
     for (const sid of def.spriteIds) {
       if (sid <= 0) continue;
-      const fallbackCanvas = this.getSpriteCanvas(sid);
-      if (!fallbackCanvas) continue;
+      const sprCanvas = this.getSpriteCanvas(sid);
+      if (!sprCanvas) continue;
       const out = document.createElement('canvas');
       out.width = 32;
       out.height = 32;
       const outCtx = out.getContext('2d')!;
       outCtx.imageSmoothingEnabled = false;
-      outCtx.drawImage(fallbackCanvas, 0, 0);
+      outCtx.drawImage(sprCanvas, 0, 0);
       return out;
     }
 
