@@ -66,10 +66,6 @@ static void SanitizeCreatureState();
 // --- Helper: comprehensive creature state cleanup ---
 // Fixes ghost duplicates, cross-floor creatures, and invalid positions
 // caused by stackpos-based removal mismatches in the tibiarc gamestate.
-//
-// NOTE: The primary fix for floor-change corruption is the FloorDown z==7 patch
-// (reading 3 floors instead of 1). This sanitizer is a secondary safety net
-// for any residual edge cases.
 static void SanitizeCreatureState() {
     if (!g_gamestate) return;
 
@@ -120,9 +116,7 @@ static void SanitizeCreatureState() {
     }
 
     // --- 3. Remove creatures too far from player's floor ---
-    // Creatures more than 2 floors away shouldn't be visible.
-    // Underground (z>=8): visible range is playerZ-2 to playerZ+2.
-    // Surface (z<8): only floor 7 creatures visible (no underground bleed).
+    // Creatures more than 2 floors away shouldn't be visible
     {
         std::vector<uint32_t> toRemove;
         for (auto &[id, cr] : creatures) {
@@ -130,10 +124,7 @@ static void SanitizeCreatureState() {
             auto pos = cr.MovementInformation.Target;
             if (pos.X == 0xFFFF) continue; // already handled
             int dz = (int)pos.Z - (int)playerZ;
-            // Max 2 floors away; also reject underground creatures on surface view
-            bool cross_surface = (playerZ <= 7 && pos.Z >= 8) ||
-                                  (playerZ >= 8 && pos.Z <= 7);
-            if (dz < -2 || dz > 2 || cross_surface) {
+            if (dz < -2 || dz > 2) {
                 toRemove.push_back(id);
             }
         }
@@ -506,6 +497,7 @@ static void RenderFrame() {
         options.Height = RENDER_HEIGHT;
         options.SkipRenderingMessages = g_skip_messages;
         options.SkipRenderingPlayerNames = false;
+        options.SkipRenderingNonPlayerNames = true;
         options.SkipRenderingYellingMessages = g_skip_messages;
         options.SkipRenderingCreatureHealthBars = false;
         options.SkipRenderingStatusBars = g_skip_messages;

@@ -138,63 +138,11 @@ jobs:
           sed -i 's/Position Position_;/public: Position Position_; private:/' lib/parser.hpp
           echo "Made Position_ public in parser.hpp"
 
-          # 11-B. FloorDown (0xBF) z==7: fork reads only 1 floor, but standard protocol
-          #       sends 3 floors (8, 9, 10) when entering underground from surface.
-          #       Reading 1 floor leaves ~2600 bytes of unread tile data which makes
-          #       EVERY following packet parse at the wrong offset → ghost creatures,
-          #       cross-floor rendering, position corruption after minute 59.
-          #       Evidence: quests-hj.cam 0xBF frames at 59:17/59:25 have 3848 bytes
-          #       of floor data ≈ 3 floors × 1282 bytes/floor. z>7 frames have ~800 bytes.
-          cp $GITHUB_WORKSPACE/tibiarc-player/floor_down_patch.py /tmp/tibiarc/floor_down_patch.py
-          python3 /tmp/tibiarc/floor_down_patch.py lib/parser.cpp
-          echo "Applied FloorDown z==7 patch: 1 floor → 3 floors (8,9,10)"
+          # FLOORDOWN (0xBF) patch REMOVED — was causing partial floor reads
+          # STUCK-BUFFER detection REMOVED — was breaking valid tile loops
+          echo "FloorDown and stuck-buffer patches skipped (removed to prevent corruption)"
 
-          # =============================================
-          # REVERT SCROLL PATCHES (fork has 18x14 baked in, must restore standard)
-          # =============================================
-
-          # 6. Scroll East (0x65): fork reads 18x14, standard is 1×14
-          sed -i '/void Parser::ParseMoveEast/,/^}/ s|ParseMapDescription(reader, events, -8, -6, Map::TileBufferWidth, Map::TileBufferHeight)|ParseMapDescription(reader, events, +9, -6, 1, Map::TileBufferHeight)|' lib/parser.cpp
-          echo "Reverted 0x65 ScrollEast: 18x14 → 1×14"
-
-          # 7. Scroll North (0x66): fork reads 18x14, standard is 18×1
-          sed -i '/void Parser::ParseMoveNorth/,/^}/ s|ParseMapDescription(reader, events, -8, -6, Map::TileBufferWidth, Map::TileBufferHeight)|ParseMapDescription(reader, events, -8, -6, Map::TileBufferWidth, 1)|' lib/parser.cpp
-          echo "Reverted 0x66 ScrollNorth: 18x14 → 18×1"
-
-          # 8. Scroll South (0x67): fork reads 18x14, standard is 18×1
-          sed -i '/void Parser::ParseMoveSouth/,/^}/ s|ParseMapDescription(reader, events, -8, -6, Map::TileBufferWidth, Map::TileBufferHeight)|ParseMapDescription(reader, events, -8, +7, Map::TileBufferWidth, 1)|' lib/parser.cpp
-          echo "Reverted 0x67 ScrollSouth: 18x14 → 18×1"
-
-          # 9. Scroll West (0x68): fork reads 18x14, standard is 1×14
-          sed -i '/void Parser::ParseMoveWest/,/^}/ s|ParseMapDescription(reader, events, -8, -6, Map::TileBufferWidth, Map::TileBufferHeight)|ParseMapDescription(reader, events, -8, -6, 1, Map::TileBufferHeight)|' lib/parser.cpp
-          echo "Reverted 0x68 ScrollWest: 18x14 → 1×14"
-
-          # 10. FloorUp (0xBE z==7): fork reads only 1 floor, standard reads 6 (5→0)
-          #     Use sed to remove the single-floor comment+call and insert the loop
-          sed -i '/TibiaRelic: only the newly visible floor/,/tileSkip);/{
-            /TibiaRelic: only the newly visible floor/{
-              s|.*|        for (int zIdx = 5; zIdx >= 0; zIdx--) {\n            tileSkip = ParseFloorDescription(reader,\n                                             events,\n                                             Position_.X - 8,\n                                             Position_.Y - 6,\n                                             zIdx,\n                                             Map::TileBufferWidth,\n                                             Map::TileBufferHeight,\n                                             Map::TileBufferDepth - zIdx,\n                                             tileSkip);\n        }|
-            }
-            /TibiaRelic: only the newly visible floor/!d
-          }' lib/parser.cpp
-          echo "Reverted FloorUp z==7: 1 floor → 6 floors (5→0)"
-
-          # DIAGNOSTIC LOGGING REMOVED — global sed was matching multiple switches
-          echo "Diagnostic logging skipped (removed to prevent corruption)"
-
-          # =============================================
-          # VERIFICATION
-          # =============================================
-          echo "=== Verifying scroll reverts ==="
-          grep -n "ParseMoveEast" lib/parser.cpp
-          grep -n "ParseMoveNorth" lib/parser.cpp
-          grep -n "ParseMoveSouth" lib/parser.cpp
-          grep -n "ParseMoveWest" lib/parser.cpp
-          grep -A5 "Position_.Z == 7" lib/parser.cpp | head -20
-          echo "=== Verifying FloorDown patch ==="
-          grep -n "FloorDown z==7 reads 3 floors" lib/parser.cpp || echo "WARN: FloorDown 3-floor patch not found"
-          grep -c "ParseFloorDescription" lib/parser.cpp
-          echo "All patches verified"
+          # SCROLL, FLOORUP and FONT patches REMOVED — reverted to original fork behavior
 
       - name: Build tibiarc library + web player
         run: |
