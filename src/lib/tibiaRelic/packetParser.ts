@@ -910,6 +910,7 @@ export class PacketParser {
         let j = -1;
         for (let nz = g.camZ; nz <= Math.min(g.camZ + 2, 15); nz++) {
           skip = this.readFloorArea(r, g.camX - 8, g.camY - 6, nz, 18, 14, j, skip);
+          if (skip < 0) { skip = 0; break; } // stuck — stop
           j--;
         }
       } else if (g.camZ > 8 && g.camZ < 14) {
