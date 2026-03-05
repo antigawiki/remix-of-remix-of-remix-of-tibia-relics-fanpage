@@ -2,9 +2,9 @@
 
 Todos os patches identificados na auditoria foram adicionados ao workflow `.github/workflows/build-tibiarc.yml`.
 
-### Patches aplicados (total: 20)
+### Patches aplicados (total: 21)
 
-| # | Opcode | Descrição | Status |
+| # | Opcode/Área | Descrição | Status |
 |---|--------|-----------|--------|
 | 1 | `0xA4` | SpellCooldown 5B→2B | ✅ já existia |
 | 2 | `0xA7` | PlayerTactics 4B→3B | ✅ já existia |
@@ -13,14 +13,18 @@ Todos os patches identificados na auditoria foram adicionados ao workflow `.gith
 | 5 | `0x92` | CreatureImpassable assert removido | ✅ já existia |
 | 6-9 | `0x65-0x68` | Scrolls revertidos para padrão | ✅ já existia |
 | 10 | `0xBE` | FloorUp z=7 revertido (6 floors) | ✅ já existia |
-| **11** | **`0xAA`** | **Talk +u32 statementGuid** | ✅ **NOVO** |
-| **12** | **`0x64`** | **Mini MapDesc guard (<100B)** | ✅ **NOVO** |
-| **13** | **`0xA0`** | **PlayerStats sem stamina** | ✅ **NOVO** |
-| **14** | **`0xA5`** | **SpellGroupCooldown 5B** | ✅ **NOVO** |
-| **15** | **`0xA6`** | **MultiUseDelay 4B** | ✅ **NOVO** |
-| **16** | **`0x63`** | **CreatureTurn 5B** | ✅ **NOVO** |
-| **17** | **`0xC8`** | **OutfitWindow u16→u8 range** | ✅ **NOVO** |
+| 11 | `0xAA` | Talk +u32 statementGuid | ✅ existente |
+| 12 | `0x64` | Mini MapDesc guard (<100B) | ✅ existente |
+| 13 | `0xA0` | PlayerStats sem stamina | ✅ existente |
+| 14 | `0xA5` | SpellGroupCooldown 5B | ✅ existente |
+| 15 | `0xA6` | MultiUseDelay 4B | ✅ existente |
+| 16 | `0x63` | CreatureTurn 5B | ✅ existente |
+| 17 | `0xC8` | OutfitWindow u16→u8 range | ✅ existente |
+| **18** | **DAT parser** | **Resiliência a flags desconhecidas (0x50, 0xC8, 0xD0)** | ✅ **NOVO** |
+
+### SPR Loader C++
+Análise do código-fonte confirmou que o SPR loader já tem try-catch para `InvalidDataError` (sprites.cpp:266-273 e 326-337). Sprites corrompidos ou vazios são tratados graciosamente retornando sprite nulo. **Nenhum patch necessário.**
 
 ### Próximo passo
 
-Executar o workflow `Build tibiarc WASM Player` no GitHub Actions para rebuildar o WASM com todos os patches e testar a reprodução de .cam files.
+Executar o workflow `Build tibiarc WASM Player` no GitHub Actions para rebuildar o WASM com o patch do DAT parser.
