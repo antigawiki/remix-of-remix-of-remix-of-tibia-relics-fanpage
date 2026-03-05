@@ -1,20 +1,12 @@
-## Limpeza de Patches Corruptivos — Status: APLICADO ✅
+## Correção: Position_ Save/Restore + MapDesc Guard — Status: APLICADO ✅
 
-Removidos 5 patches que estavam causando corrupção generalizada de sprites e tiles:
+### Mudanças aplicadas
 
-| # | Patch removido | Motivo |
-|---|---------------|--------|
-| 1 | `dat_patch.py` (Two-phase DAT) | Scan por 0xFF corrompia database de itens |
-| 2 | OutfitWindow `ReadU16→ReadU8` global | Mudava LookType (u16 legítimo), causando drift de 1 byte |
-| 3 | FloorDown (0xBF) range patch | Leitura parcial de andares |
-| 4 | Stuck-buffer detection | Abortava loops válidos de tiles |
-| 5 | Diagnostic opcode logging | Sed global matchava múltiplos switches |
-
-### Patches mantidos (corretos)
-- 0xA4, 0xA7, 0xA8, 0xB6, 0xAA, 0x64, 0xA0, 0xA5, 0xA6, 0x63, 0x92
-- OutfitWindow com sed targetado (só RangeStart/RangeEnd)
-- Scroll reverts (0x65-0x68) e FloorUp (0xBE)
-- Position_ public + save/restore em web_player.cpp
+| # | Arquivo | Mudança |
+|---|---------|---------|
+| 1 | `web_player.cpp` | Removido save/restore de `Position_` — parser mantém estado natural após exceção |
+| 2 | `dat_patch.py` | Trocado scan-0xFF por `return` simples no catch |
+| 3 | `build-tibiarc.yml` | Removido MapDesc guard (`< 100 bytes`), re-adicionado dat_patch.py seguro |
 
 ### Próximo passo
-Executar workflow no GitHub Actions e atualizar o WASM.
+Executar workflow no GitHub Actions e atualizar os arquivos WASM.
