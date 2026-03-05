@@ -136,6 +136,12 @@ jobs:
           # causing immediate byte drift and black screen.
 
           # =============================================
+          # Make Position_ public so web_player.cpp can save/restore it
+          # =============================================
+          sed -i 's/Position Position_;/public: Position Position_; private:/' lib/parser.hpp
+          echo "Made Position_ public in parser.hpp"
+
+          # =============================================
           # FLOORDOWN (0xBF) REVERT — standard multi-floor reading
           # =============================================
 
