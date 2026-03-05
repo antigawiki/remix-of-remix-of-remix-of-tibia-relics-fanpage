@@ -345,7 +345,21 @@ export class MapTileRenderer {
     for (let i = 3; i < imgData.length; i += 4) {
       if (imgData[i] > 0) { hasPixels = true; break; }
     }
-    if (!hasPixels) return null;
+
+    // Fallback: if drawItem produced nothing, render the first valid sprite directly
+    if (!hasPixels) {
+      const firstValidSid = def.spriteIds.find(sid => sid > 0);
+      if (!firstValidSid) return null;
+      const fallbackCanvas = this.getSpriteCanvas(firstValidSid);
+      if (!fallbackCanvas) return null;
+      const out = document.createElement('canvas');
+      out.width = 32;
+      out.height = 32;
+      const outCtx = out.getContext('2d')!;
+      outCtx.imageSmoothingEnabled = false;
+      outCtx.drawImage(fallbackCanvas, 0, 0);
+      return out;
+    }
 
     // If fits exactly in 32x32 with no displacement, return directly
     if (fullW === TILE_PX && fullH === TILE_PX) {
