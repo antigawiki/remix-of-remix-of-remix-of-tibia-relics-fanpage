@@ -249,15 +249,16 @@ export class PacketParser {
     while (r.pos + 2 <= totalLen) {
       try {
         const subLen = r.u16();
-        if (subLen === 0) continue;
+        if (subLen === 0) continue; // skip empty TCP packets
         if (r.pos + subLen > totalLen) {
-          r.pos -= 2;
+          // Invalid length — maybe not TCP after all, try as direct opcodes
+          r.pos -= 2; // rewind the u16
           this.processDirectOpcodes(r, totalLen);
           return;
         }
         const subEnd = r.pos + subLen;
         this.processDirectOpcodes(r, subEnd);
-        r.pos = subEnd;
+        r.pos = subEnd; // ensure alignment even if opcode parse stopped early
       } catch (e) {
         if (this.strictMode) throw e;
         if (this.frameErrorCount < 30) {
@@ -269,18 +270,87 @@ export class PacketParser {
     }
   }
 
-  /** Process opcodes directly — fail-fast like C++ (abort frame on error) */
-  private processDirectOpcodes(r: Buf, endPos: number) {
+  /** Process opcodes with TCP fallback for unknown opcodes mid-stream */
+  private processOpcodes(r: Buf, endPos: number) {
     while (r.pos < endPos) {
-      const t = r.u8();
-      if (!this.dispatch(t, r)) {
+      try {
+        const t = r.u8();
+        if (this.dispatch(t, r)) continue;
+
+        // Unknown opcode — try TCP demux for rest of frame
+        r.pos -= 1;
+        this.processTcpDemux(r, endPos);
+        return;
+      } catch (e) {
+        if (this.strictMode) throw e;
         if (this.frameErrorCount < 30) {
           this.frameErrorCount++;
-          console.warn(`[PacketParser] Unknown opcode 0x${t.toString(16)} at pos ${r.pos - 1} — aborting frame`);
+          if (e instanceof BufOverflowError) {
+            console.warn(`[PacketParser] Buffer overflow: ${e.message}`);
+          } else {
+            console.warn(`[PacketParser] Parse error:`, e);
+          }
         }
-        throw new Error(`Unknown opcode 0x${t.toString(16)}`);
+        break;
       }
     }
+  }
+
+  /** Process opcodes directly — no TCP fallback (used inside demuxed sub-packets) */
+  private processDirectOpcodes(r: Buf, endPos: number) {
+    while (r.pos < endPos) {
+      try {
+        const t = r.u8();
+        if (!this.dispatch(t, r)) {
+          // Unknown opcode — scan forward up to 4 bytes looking for a known opcode
+          let recovered = false;
+          for (let skip = 0; skip < 4 && r.pos < endPos; skip++) {
+            const next = r.peekU8();
+            if (this.isKnownOpcode(next)) {
+              recovered = true;
+              break;
+            }
+            r.pos++;
+          }
+          if (!recovered) break;
+        }
+      } catch (e) {
+        if (this.strictMode) throw e;
+        // Try to recover: scan forward for next valid opcode
+        let recovered = false;
+        for (let skip = 0; skip < 4 && r.pos < endPos; skip++) {
+          const next = r.peekU8();
+          if (this.isKnownOpcode(next)) {
+            recovered = true;
+            break;
+          }
+          r.pos++;
+        }
+        if (!recovered) break;
+      }
+    }
+  }
+
+  /** Check if a byte is a known opcode */
+  private isKnownOpcode(b: number): boolean {
+    // Map opcodes
+    if (b >= 0x64 && b <= 0x6d) return true;
+    // Creature turn
+    if (b === 0x63) return true;
+    // Login/system
+    if (b === 0x0a || b === 0x0b || b === 0x0f || b === 0x1d || b === 0x1e) return true;
+    // Container
+    if (b >= 0x6e && b <= 0x72) return true;
+    // Inventory/trade/world
+    if (b === 0x78 || b === 0x79 || b === 0x7d || b === 0x7e || b === 0x7f) return true;
+    if (b >= 0x82 && b <= 0x85) return true;
+    if (b >= 0x8c && b <= 0x8f) return true;
+    if (b >= 0x96 && b <= 0x9a) return true;
+    if (b >= 0xa0 && b <= 0xa4) return true;
+    if (b === 0xa7 || b === 0xa8) return true;
+    if (b >= 0xaa && b <= 0xb4) return true;
+    if (b === 0xb6 || b === 0xbe || b === 0xbf) return true;
+    return false;
   }
 
   private dispatch(t: number, r: Buf): boolean {
@@ -313,7 +383,6 @@ export class PacketParser {
     else if (t === 0x0f) { /* FYI token */ }
     else if (t === 0x1d) { /* pingback (7.72) */ }
     else if (t === 0x1e) { /* ping */ }
-    else if (t === 0x16) { /* TibiaRelic: world enter marker — no payload */ }
     // Container
     else if (t === 0x6e) this.openCont(r);
     else if (t === 0x6f) r.u8();
@@ -400,7 +469,7 @@ export class PacketParser {
     else if (t === 0xa5) { r.skip(5); /* spellGroupCooldown: u8 groupId + u32 delay */ }
     else if (t === 0xa6) { r.u32(); /* multiUseDelay */ }
     else if (t === 0xa7) { r.skip(3); /* setPlayerModes: u8 fight + u8 chase + u8 safe */ }
-    else if (t === 0xa8) { r.u8(); /* creatureSquare: u8 color (creatureId is implicit from last known) */ }
+    else if (t === 0xa8) { r.skip(5); /* creatureSquare: u32 creatureId + u8 color */ }
     // Chat
     else if (t === 0xaa) this.talk(r);
     else if (t === 0xab) { const nc = r.u8(); for (let i = 0; i < nc; i++) { r.u16(); r.str16(); } }
@@ -490,20 +559,9 @@ export class PacketParser {
 
     const { startz, endz, zstep } = this.getFloorRange(g.camZ);
 
-    // Standard Tibia 7.x protocol: scroll sends only the NEW strip of tiles entering the viewport
-    let ox: number, oy: number, w: number, h: number;
-    if (dy === -1) {        // North: new row at top
-      ox = g.camX - 8; oy = g.camY - 6; w = 18; h = 1;
-    } else if (dx === 1) {  // East: new column at right
-      ox = g.camX + 9; oy = g.camY - 6; w = 1; h = 14;
-    } else if (dy === 1) {  // South: new row at bottom
-      ox = g.camX - 8; oy = g.camY + 7; w = 18; h = 1;
-    } else {                // West: new column at left
-      ox = g.camX - 8; oy = g.camY - 6; w = 1; h = 14;
-    }
-
     try {
-      this.readMultiFloorArea(r, ox, oy, w, h, g.camZ, startz, endz, zstep);
+      // TibiaRelic sends full 18x14 viewport with skip encoding for all scroll directions
+      this.readMultiFloorArea(r, g.camX - 8, g.camY - 6, 18, 14, g.camZ, startz, endz, zstep);
     } catch (e) {
       // Revert camera on parse failure
       g.camX = oldX; g.camY = oldY;
@@ -816,16 +874,12 @@ export class PacketParser {
 
     try {
       if (g.camZ === 7) {
-        // Exiting underground to surface — read 3 floors (z=5, 6, 7)
-        // Symmetric to floorDown z=7→8 which reads z=8(j=-1), 9(j=-2), 10(j=-3)
-        // Here we read z=5(j=+3), 6(j=+2), 7(j=+1)
-        let skip = 0;
-        let j = 3;
-        for (let nz = Math.max(g.camZ - 2, 0); nz <= g.camZ; nz++) {
-          skip = this.readFloorArea(r, g.camX - 8, g.camY - 6, nz, 18, 14, j, skip);
-          if (skip < 0) { skip = 0; break; }
-          j--;
-        }
+        // Exiting underground to surface — read the newly visible floor (z=5)
+        // Old visible (z=8): [6,7,8,9,10]. New visible (z=7): [5,6,7]
+        // Only NEW floor is z=5. Read it with perspective offset = 8 - 5 = 3
+        const newFloor = Math.max(g.camZ - 2, 0);
+        const offset = 8 - newFloor;
+        this.readFloorArea(r, g.camX - 8, g.camY - 6, newFloor, 18, 14, offset, 0);
       } else if (g.camZ > 7) {
         // Underground going up — read the newly visible floor (camZ - 2)
         const nz = g.camZ - 2;
@@ -856,7 +910,6 @@ export class PacketParser {
         let j = -1;
         for (let nz = g.camZ; nz <= Math.min(g.camZ + 2, 15); nz++) {
           skip = this.readFloorArea(r, g.camX - 8, g.camY - 6, nz, 18, 14, j, skip);
-          if (skip < 0) { skip = 0; break; } // stuck — stop
           j--;
         }
       } else if (g.camZ > 8 && g.camZ < 14) {
@@ -1044,18 +1097,7 @@ export class PacketParser {
           skip--;
           continue;
         }
-        const posBefore = r.pos;
         skip = this.readTileItems(r, ox + tx + offset, oy + ty + offset, z);
-        // Stuck-buffer detection: if readTileItems didn't advance and returned skip=0,
-        // the buffer is locked on an unknown word. Abort this floor to prevent cascading corruption.
-        if (r.pos === posBefore && skip === 0) {
-          this.debugLogger?.log('PARSE_ERROR', {
-            type: 'FLOOR_STUCK',
-            floor: z, tx, ty, pos: r.pos,
-            word: r.left() >= 2 ? '0x' + r.peek16().toString(16) : 'EOF',
-          }, `Buffer stuck at floor z=${z} tile (${tx},${ty}) pos=${r.pos} — aborting floor`);
-          return -1; // sentinel: stuck
-        }
       }
     }
     return skip;
@@ -1071,16 +1113,7 @@ export class PacketParser {
           skip--;
           continue;
         }
-        const posBefore = r.pos;
         skip = this.readTileItems(r, ox + tx + offset, oy + ty + offset, z);
-        // Stuck-buffer detection (same logic as readFloorArea)
-        if (r.pos === posBefore && skip === 0) {
-          this.debugLogger?.log('PARSE_ERROR', {
-            type: 'FLOOR_STUCK',
-            floor: z, tx, ty, pos: r.pos,
-          }, `Buffer stuck at floor z=${z} tile (${tx},${ty}) — aborting frame`);
-          throw new Error(`Floor stuck at z=${z} tile (${tx},${ty})`);
-        }
       }
     }
   }
@@ -1113,21 +1146,6 @@ export class PacketParser {
           this.traceLog.push({ op: 'readFloorArea', posBefore: floorStartPos, posAfter: r.pos, bytesConsumed: r.pos - floorStartPos, floor: nz, error: e?.message || String(e) });
         }
         throw e;
-      }
-      // Stuck-buffer sentinel: stop reading further floors to prevent cascading corruption
-      if (skip < 0) {
-        if (dl && dl.enabled) {
-          dl.log('MULTIFLOOR_STEP', {
-            floor: nz, floorIndex: floorCount, offset,
-            bytesConsumed: r.pos - floorStartPos,
-            totalConsumed: r.pos - startPos,
-            bytesLeft: r.left(),
-            skipCarry: skip,
-            stuck: true,
-          }, `Floor z=${nz} stuck — aborting frame`);
-        }
-        throw new Error(`Multi-floor stuck at z=${nz}`);
-        break;
       }
       floorCount++;
       if (this.traceMode) {

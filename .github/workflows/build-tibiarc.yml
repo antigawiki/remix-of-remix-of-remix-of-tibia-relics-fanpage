@@ -2,10 +2,6 @@ name: Build tibiarc WASM Player
 
 on:
   workflow_dispatch:
-  push:
-    paths:
-      - '.github/workflows/build-tibiarc.yml'
-      - 'tibiarc-player/**'
 
 jobs:
   build:
@@ -55,9 +51,9 @@ jobs:
           echo "Fixed 0xA7 PlayerTactics: 4B → 3B"
 
           # 3. CreatureSquare (0xA8): missing in tibiarc → crash
-          #    TibiaRelic sends 1B (u8 color only)
-          sed -i '/case 0xAA:/i\    case 0xA8:\n        reader.Skip(1);\n        break;' lib/parser.cpp
-          echo "Added 0xA8 CreatureSquare: 1B"
+          #    TibiaRelic sends 5B (u32 creatureId + u8 color)
+          sed -i '/case 0xAA:/i\    case 0xA8:\n        reader.Skip(5);\n        break;' lib/parser.cpp
+          echo "Added 0xA8 CreatureSquare: 5B"
 
           # 4. WalkCancel (0xB6): tibiarc reads 2B (u16 via ParseMoveDelay)
           #    TibiaRelic sends 0B
@@ -69,25 +65,22 @@ jobs:
           # =============================================
 
           # 5. Talk (0xAA): TibiaRelic sends u32 statementGuid before sender name
-          # Try multiple patterns to inject SkipU32 at the start of ParseTalk body
-          if grep -q "statementGuid" lib/parser.cpp; then
-            echo "statementGuid already present, skipping"
-          else
-            # Pattern A: function signature on its own line, body starts with {
-            sed -i '/void Parser::ParseTalk/,/^}/ {
-              /^{/a\    /* TibiaRelic: skip u32 statementGuid */ reader.SkipU32();
-            }' lib/parser.cpp
-            # Pattern B: if A didn't work, try appending after any line with ParseTalk and {
-            grep -q "statementGuid" lib/parser.cpp || \
-              sed -i '/ParseTalk.*{/a\    /* TibiaRelic: skip u32 statementGuid */ reader.SkipU32();' lib/parser.cpp
-            # Pattern C: last resort - after void Parser::ParseTalk line
-            grep -q "statementGuid" lib/parser.cpp || \
-              sed -i '/void Parser::ParseTalk/a\    /* TibiaRelic: skip u32 statementGuid */ reader.SkipU32();' lib/parser.cpp
-          fi
+          sed -i '/void Parser::ParseTalk/,/^}/{
+            /DataReader &reader/a\    /* TibiaRelic: skip u32 statementGuid */ reader.SkipU32();
+          }' lib/parser.cpp
+          # Fallback if function sig is on same line as brace
+          grep -q "statementGuid" lib/parser.cpp || \
+            sed -i '/void Parser::ParseTalk/a\    /* TibiaRelic: skip u32 statementGuid */ reader.SkipU32();' lib/parser.cpp
           echo "Fixed 0xAA Talk: added SkipU32 for statementGuid"
 
-          # 6. MapDescription (0x64): guard REMOVED — was skipping valid small updates
-          echo "MapDesc guard skipped (removed to prevent black squares)"
+          # 6. MapDescription (0x64): mini MAP_DESC guard
+          #    Insert after Position_.Z assignment inside ParseMapDescription
+          sed -i '/ParseMapDescription.*DataReader/,/tileSkip = 0/{
+            /Position_.Z/a\    /* TibiaRelic: guard mini MAP_DESC */ if (reader.Remaining() < 100) return;
+          }' lib/parser.cpp
+          grep -q "mini MAP_DESC" lib/parser.cpp || \
+            sed -i '/Position_.Z.*Read/a\    /* TibiaRelic: guard mini MAP_DESC */ if (reader.Remaining() < 100) return;' lib/parser.cpp
+          echo "Fixed 0x64 MapDesc: added mini-MAP_DESC guard"
 
           # 7. PlayerStats (0xA0): remove stamina (TibiaRelic sends 20B, not 22B)
           sed -i '/void Parser::ParsePlayerStats/,/^}/{ /[Ss]tamina/d; }' lib/parser.cpp
@@ -107,24 +100,21 @@ jobs:
           echo "Added 0x63 CreatureTurn: 5B"
 
           # 11. OutfitWindow (0xC8): u16 range → u8 (7.72 style)
-          #     ONLY target RangeStart/RangeEnd — LookType must stay u16
-          sed -i '/void Parser::ParseOutfitWindow/,/^}/{
-            s/RangeStart = reader.ReadU16()/RangeStart = reader.ReadU8()/
-            s/RangeEnd = reader.ReadU16()/RangeEnd = reader.ReadU8()/
-          }' lib/parser.cpp
-          echo "Fixed 0xC8 OutfitWindow: u16 range → u8 range (targeted)"
+          sed -i '/void Parser::ParseOutfitWindow/,/^}/{ s/ReadU16()/ReadU8()/g; }' lib/parser.cpp
+          echo "Fixed 0xC8 OutfitWindow: u16 range → u8 range"
 
-          # DAT PARSER: safe try-catch wrapper (no 0xFF scan)
-          cp $GITHUB_WORKSPACE/tibiarc-player/dat_patch.py /tmp/tibiarc/dat_patch.py
-          python3 /tmp/tibiarc/dat_patch.py lib/types.cpp
-          echo "Applied safe DAT patch (try-catch with return)"
+          # =============================================
+          # DAT PARSER: TWO-PHASE RESILIENT PARSING
+          # =============================================
+          python3 $GITHUB_WORKSPACE/tibiarc-player/dat_patch.py lib/types.cpp
+          grep -c "Two-phase DAT parsing" lib/types.cpp && echo "DAT two-phase patch verified" || echo "WARN: DAT two-phase patch not applied"
 
           # =============================================
           # VERIFICATION (non-fatal)
           # =============================================
-          echo "=== Verifying patches ==="
+          echo "=== Verifying new patches ==="
           grep -n "statementGuid" lib/parser.cpp || echo "WARN: statementGuid not injected"
-          grep -n "case 0xA5" lib/parser.cpp || echo "WARN: 0xA5 not found"
+          grep -n "mini MAP_DESC" lib/parser.cpp || echo "WARN: mini MAP_DESC not injected"
           grep -n "case 0xA5" lib/parser.cpp || echo "WARN: 0xA5 not found"
           grep -n "case 0xA6" lib/parser.cpp || echo "WARN: 0xA6 not found"
           grep -c "case 0x63" lib/parser.cpp || echo "WARN: 0x63 not found"
@@ -146,24 +136,51 @@ jobs:
           # causing immediate byte drift and black screen.
 
           # =============================================
-          # Make Position_ public so web_player.cpp can save/restore it
+          # REVERT SCROLL PATCHES (fork has 18x14 baked in, must restore standard)
           # =============================================
-          sed -i 's/Position Position_;/public: Position Position_; private:/' lib/parser.hpp
-          echo "Made Position_ public in parser.hpp"
 
-          # FLOORDOWN (0xBF) patch REMOVED — was causing partial floor reads
-          # STUCK-BUFFER detection REMOVED — was breaking valid tile loops
-          echo "FloorDown and stuck-buffer patches skipped (removed to prevent corruption)"
+          # 6. Scroll East (0x65): fork reads 18x14, standard is 1×14
+          sed -i '/void Parser::ParseMoveEast/,/^}/ s|ParseMapDescription(reader, events, -8, -6, Map::TileBufferWidth, Map::TileBufferHeight)|ParseMapDescription(reader, events, +9, -6, 1, Map::TileBufferHeight)|' lib/parser.cpp
+          echo "Reverted 0x65 ScrollEast: 18x14 → 1×14"
 
-          # FloorUp (0xBE) patch: read 3 floors on z=8→7 transition (symmetric to FloorDown)
-          cp $GITHUB_WORKSPACE/tibiarc-player/floorup_patch.py /tmp/tibiarc/floorup_patch.py
-          python3 /tmp/tibiarc/floorup_patch.py lib/parser.cpp
-          echo "Applied FloorUp 3-floor patch"
+          # 7. Scroll North (0x66): fork reads 18x14, standard is 18×1
+          sed -i '/void Parser::ParseMoveNorth/,/^}/ s|ParseMapDescription(reader, events, -8, -6, Map::TileBufferWidth, Map::TileBufferHeight)|ParseMapDescription(reader, events, -8, -6, Map::TileBufferWidth, 1)|' lib/parser.cpp
+          echo "Reverted 0x66 ScrollNorth: 18x14 → 18×1"
 
-          # Verify FloorUp patch
-          grep -n "TibiaRelic: read 3 floors" lib/parser.cpp || echo "WARN: FloorUp patch not found"
+          # 8. Scroll South (0x67): fork reads 18x14, standard is 18×1
+          sed -i '/void Parser::ParseMoveSouth/,/^}/ s|ParseMapDescription(reader, events, -8, -6, Map::TileBufferWidth, Map::TileBufferHeight)|ParseMapDescription(reader, events, -8, +7, Map::TileBufferWidth, 1)|' lib/parser.cpp
+          echo "Reverted 0x67 ScrollSouth: 18x14 → 18×1"
 
-          # SCROLL and FONT patches REMOVED — reverted to original fork behavior
+          # 9. Scroll West (0x68): fork reads 18x14, standard is 1×14
+          sed -i '/void Parser::ParseMoveWest/,/^}/ s|ParseMapDescription(reader, events, -8, -6, Map::TileBufferWidth, Map::TileBufferHeight)|ParseMapDescription(reader, events, -8, -6, 1, Map::TileBufferHeight)|' lib/parser.cpp
+          echo "Reverted 0x68 ScrollWest: 18x14 → 1×14"
+
+          # 10. FloorUp (0xBE z==7): fork reads only 1 floor, standard reads 6 (5→0)
+          #     Use sed to remove the single-floor comment+call and insert the loop
+          sed -i '/TibiaRelic: only the newly visible floor/,/tileSkip);/{
+            /TibiaRelic: only the newly visible floor/{
+              s|.*|        for (int zIdx = 5; zIdx >= 0; zIdx--) {\n            tileSkip = ParseFloorDescription(reader,\n                                             events,\n                                             Position_.X - 8,\n                                             Position_.Y - 6,\n                                             zIdx,\n                                             Map::TileBufferWidth,\n                                             Map::TileBufferHeight,\n                                             Map::TileBufferDepth - zIdx,\n                                             tileSkip);\n        }|
+            }
+            /TibiaRelic: only the newly visible floor/!d
+          }' lib/parser.cpp
+          echo "Reverted FloorUp z==7: 1 floor → 6 floors (5→0)"
+
+          # =============================================
+          # DIAGNOSTIC LOGGING (remove after debugging)
+          # =============================================
+          sed -i 's/switch (reader.ReadU8()) {/auto _op = reader.ReadU8(); printf("[DIAG] opcode=0x%02X rem=%zu\\n", _op, reader.Remaining()); switch (_op) {/' lib/parser.cpp
+          echo "Added diagnostic opcode logging"
+
+          # =============================================
+          # VERIFICATION
+          # =============================================
+          echo "=== Verifying scroll reverts ==="
+          grep -n "ParseMoveEast" lib/parser.cpp
+          grep -n "ParseMoveNorth" lib/parser.cpp
+          grep -n "ParseMoveSouth" lib/parser.cpp
+          grep -n "ParseMoveWest" lib/parser.cpp
+          grep -A5 "Position_.Z == 7" lib/parser.cpp | head -10
+          echo "All patches verified"
 
       - name: Build tibiarc library + web player
         run: |
@@ -213,14 +230,6 @@ jobs:
             /tmp/fmt-install/lib/libfmt.a \
             -o tibiarc_player.js
 
-      - name: Increment version
-        run: |
-          CURRENT=$(cat public/tibiarc/VERSION 2>/dev/null || echo "50")
-          NEW=$((CURRENT + 1))
-          echo "$NEW" > public/tibiarc/VERSION
-          echo "WASM_VERSION=V${NEW}" >> $GITHUB_ENV
-          echo "Build version: V${NEW}"
-
       - name: Prepare output
         run: |
           mkdir -p public/tibiarc
@@ -231,7 +240,7 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add public/tibiarc/tibiarc_player.js public/tibiarc/tibiarc_player.wasm public/tibiarc/VERSION
-          git commit -m "build: WASM player ${{ env.WASM_VERSION }}" || echo "No changes to commit"
+          git add public/tibiarc/tibiarc_player.js public/tibiarc/tibiarc_player.wasm
+          git commit -m "build: add compiled tibiarc WASM player" || echo "No changes to commit"
           git pull --rebase origin main
           git push

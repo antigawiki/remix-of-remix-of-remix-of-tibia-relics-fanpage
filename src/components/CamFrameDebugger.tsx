@@ -1,9 +1,8 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
-import { Bug, Download, Filter, Pause, Play, Trash2, Search, AlertTriangle } from 'lucide-react';
+import { Bug, Download, Filter, Pause, Play, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Switch } from '@/components/ui/switch';
-import { Progress } from '@/components/ui/progress';
 import { parseCamFile, type CamFile } from '@/lib/tibiaRelic/camParser';
 import { GameState } from '@/lib/tibiaRelic/gameState';
 import { DatLoader } from '@/lib/tibiaRelic/datLoader';
@@ -79,16 +78,6 @@ const OPCODE_NAMES: Record<number, string> = {
   0xbf: 'FLOOR_DOWN',
 };
 
-interface DriftResult {
-  frameIdx: number;
-  timestamp: number;
-  bytesLeft: number;
-  totalBytes: number;
-  opcodes: string[];
-  hexDump: string;
-  error?: string;
-}
-
 const CamFrameDebugger = ({ camBuffer, progress, isPlaying }: CamFrameDebuggerProps) => {
   const [open, setOpen] = useState(false);
   const [pauseOnError, setPauseOnError] = useState(false);
@@ -98,13 +87,6 @@ const CamFrameDebugger = ({ camBuffer, progress, isPlaying }: CamFrameDebuggerPr
   const [displayEvents, setDisplayEvents] = useState<DebugEvent[]>([]);
   const [stats, setStats] = useState({ frames: 0, errors: 0, walkFails: 0, creatures: 0, cam: '', player: '' });
   const scrollRef = useRef<HTMLDivElement>(null);
-
-  // Drift scanner state
-  const [scanning, setScanning] = useState(false);
-  const [scanProgress, setScanProgress] = useState(0);
-  const [driftResults, setDriftResults] = useState<DriftResult[]>([]);
-  const [scanDone, setScanDone] = useState(false);
-  const scanAbortRef = useRef(false);
 
   // Parser state refs
   const camFileRef = useRef<CamFile | null>(null);
@@ -278,72 +260,6 @@ const CamFrameDebugger = ({ camBuffer, progress, isPlaying }: CamFrameDebuggerPr
     });
   };
 
-  const handleScanDrift = useCallback(async () => {
-    if (!camBuffer || !datLoaderRef.current) return;
-    
-    const cam = parseCamFile(camBuffer.buffer as ArrayBuffer);
-    const gs = new GameState();
-    const parser = new PacketParser(gs, datLoaderRef.current, { looktypeU16: true, strictMode: true });
-    parser.seekMode = true;
-    
-    setScanning(true);
-    setScanDone(false);
-    setDriftResults([]);
-    setScanProgress(0);
-    scanAbortRef.current = false;
-    
-    const results: DriftResult[] = [];
-    const BATCH = 50; // frames per tick
-    
-    for (let i = 0; i < cam.frames.length; i += BATCH) {
-      if (scanAbortRef.current) break;
-      
-      const end = Math.min(i + BATCH, cam.frames.length);
-      for (let j = i; j < end; j++) {
-        const frame = cam.frames[j];
-        const opcodes: string[] = [];
-        let bytesLeft = 0;
-        let error: string | undefined;
-        
-        try {
-          parser.process(frame.payload);
-          bytesLeft = parser.bytesLeftAfterProcess;
-          opcodes.push(...parser.lastFrameOpcodes.map(op => OPCODE_NAMES[op] || `0x${op.toString(16).padStart(2, '0')}`));
-        } catch (e: any) {
-          error = e?.message || String(e);
-          bytesLeft = -1; // crash
-          opcodes.push(...parser.lastFrameOpcodes.map(op => OPCODE_NAMES[op] || `0x${op.toString(16).padStart(2, '0')}`));
-        }
-        
-        if (bytesLeft !== 0 || error) {
-          // Hex dump of the problematic area
-          const dumpStart = error ? 0 : Math.max(0, frame.payload.length - Math.abs(bytesLeft));
-          const hexBytes = Array.from(frame.payload.slice(dumpStart, Math.min(dumpStart + 64, frame.payload.length)))
-            .map(b => b.toString(16).padStart(2, '0')).join(' ');
-          
-          results.push({
-            frameIdx: j,
-            timestamp: frame.timestamp,
-            bytesLeft,
-            totalBytes: frame.payload.length,
-            opcodes,
-            hexDump: hexBytes,
-            error,
-          });
-        }
-      }
-      
-      setScanProgress(Math.round((end / cam.frames.length) * 100));
-      // Yield to UI
-      await new Promise(r => requestAnimationFrame(r));
-    }
-    
-    setDriftResults(results);
-    setScanning(false);
-    setScanDone(true);
-    console.log(`[DriftScan] Done. ${results.length} problematic frames out of ${cam.frames.length}`);
-  }, [camBuffer]);
-
   const handleExport = () => {
     const logger = loggerRef.current;
     const text = logger.exportText();
@@ -356,24 +272,11 @@ const CamFrameDebugger = ({ camBuffer, progress, isPlaying }: CamFrameDebuggerPr
     URL.revokeObjectURL(url);
   };
 
-  const handleExportDrift = () => {
-    const lines = driftResults.map(r => 
-      `Frame #${r.frameIdx} @ ${(r.timestamp/1000).toFixed(2)}s | ${r.totalBytes}B | left=${r.bytesLeft} | ops=[${r.opcodes.join(',')}]${r.error ? ` | ERR: ${r.error}` : ''}\n  hex: ${r.hexDump}`
-    );
-    const text = `Drift Scan Results — ${driftResults.length} problematic frames\n${'='.repeat(60)}\n${lines.join('\n\n')}`;
-    const blob = new Blob([text], { type: 'text/plain' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `drift-scan-${Date.now()}.log`;
-    a.click();
-    URL.revokeObjectURL(url);
-  };
-
   const handleClear = () => {
     loggerRef.current.clear();
     setDisplayEvents([]);
     lastFrameIdxRef.current = 0;
+    // Re-init parser
     if (camBuffer && datLoaderRef.current) {
       const gs = new GameState();
       const logger = new DebugLogger();
@@ -521,103 +424,6 @@ const CamFrameDebugger = ({ camBuffer, progress, isPlaying }: CamFrameDebuggerPr
             );
           })}
         </div>
-      </div>
-
-      {/* Drift Scanner Panel */}
-      <div className="bg-card border border-border/50 rounded-sm overflow-hidden">
-        <div className="p-2 border-b border-border/30 flex items-center gap-2 flex-wrap">
-          <Search className="w-3.5 h-3.5 text-muted-foreground" />
-          <span className="text-xs font-bold text-foreground">Frame Drift Detector</span>
-          {!scanning && (
-            <Button
-              variant="outline"
-              size="sm"
-              className="h-6 px-2 text-[10px] border-border/50"
-              onClick={handleScanDrift}
-              disabled={!camBuffer}
-            >
-              {scanDone ? '🔄 Re-Scan' : '🔍 Scan All Frames'}
-            </Button>
-          )}
-          {scanning && (
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-6 px-2 text-[10px] text-destructive"
-              onClick={() => { scanAbortRef.current = true; }}
-            >
-              ✕ Abort
-            </Button>
-          )}
-          {scanDone && driftResults.length > 0 && (
-            <>
-              <Badge variant="destructive" className="text-[10px]">
-                {driftResults.length} drift{driftResults.length > 1 ? 's' : ''}
-              </Badge>
-              <Button variant="ghost" size="sm" className="h-6 px-2 text-[10px]" onClick={handleExportDrift}>
-                <Download className="w-3 h-3 mr-1" />Export
-              </Button>
-            </>
-          )}
-          {scanDone && driftResults.length === 0 && (
-            <Badge variant="outline" className="text-[10px] text-green-400 border-green-400/50">
-              ✓ No drift detected
-            </Badge>
-          )}
-        </div>
-        
-        {scanning && (
-          <div className="p-3">
-            <Progress value={scanProgress} className="h-2" />
-            <p className="text-[10px] text-muted-foreground mt-1 text-center">
-              Scanning... {scanProgress}%
-            </p>
-          </div>
-        )}
-
-        {scanDone && driftResults.length > 0 && (
-          <div className="max-h-[300px] overflow-y-auto p-2 font-mono text-[11px] leading-tight space-y-1.5 bg-background/50">
-            {driftResults.map((r, i) => (
-              <div
-                key={i}
-                className={`p-1.5 rounded-sm border-l-2 ${i === 0 ? 'border-destructive bg-destructive/10' : 'border-yellow-500/50 bg-yellow-900/10'}`}
-              >
-                <div className="flex items-center gap-2 flex-wrap">
-                  {i === 0 && (
-                    <AlertTriangle className="w-3.5 h-3.5 text-destructive shrink-0" />
-                  )}
-                  <span className="text-muted-foreground">[{(r.timestamp / 1000).toFixed(2)}s]</span>
-                  <span className="font-bold text-foreground">Frame #{r.frameIdx}</span>
-                  <span className="text-muted-foreground">{r.totalBytes}B</span>
-                  {r.error ? (
-                    <Badge variant="destructive" className="text-[9px] px-1 py-0">CRASH</Badge>
-                  ) : (
-                    <Badge variant="outline" className="text-[9px] px-1 py-0 text-yellow-400 border-yellow-500/50">
-                      {r.bytesLeft}B left
-                    </Badge>
-                  )}
-                </div>
-                <div className="mt-0.5 text-muted-foreground">
-                  ops: {r.opcodes.join(' → ')}
-                </div>
-                {r.error && (
-                  <div className="mt-0.5 text-destructive text-[10px]">
-                    {r.error}
-                  </div>
-                )}
-                <div className="mt-0.5 text-muted-foreground/70 break-all text-[10px]">
-                  hex: {r.hexDump}
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-
-        {!scanning && !scanDone && (
-          <div className="p-4 text-center text-muted-foreground text-[11px]">
-            Carregue uma .cam e clique "Scan All Frames" para detectar byte drift
-          </div>
-        )}
       </div>
     </div>
   );

@@ -46,7 +46,6 @@ static double g_lastFrameTime = 0;
 static const int RENDER_WIDTH = 480;
 static const int RENDER_HEIGHT = 352;
 static bool g_skip_messages = true;
-static uint8_t g_lastPlayerZ = 7; // Track player floor for change detection
 
 // Static canvas buffers — allocated once to avoid WASM heap fragmentation
 static Canvas* g_mapCanvas = nullptr;
@@ -61,121 +60,55 @@ static std::vector<uint8_t> g_datData;
 static void RenderFrame();
 static void MainLoop();
 static void FastForwardToPlayer();
-static void SanitizeCreatureState();
+static void DeduplicateCreatures();
 
-// --- Helper: comprehensive creature state cleanup ---
-// Fixes ghost duplicates, cross-floor creatures, and invalid positions
-// caused by stackpos-based removal mismatches in the tibiarc gamestate.
-static void SanitizeCreatureState() {
+// --- Helper: remove ghost creatures (duplicates at same position) ---
+static void DeduplicateCreatures() {
     if (!g_gamestate) return;
 
     auto &creatures = g_gamestate->Creatures;
-    if (creatures.empty()) return;
+    if (creatures.size() < 2) return;
 
-    // Get player's current position for reference
-    auto playerIt = creatures.find(g_gamestate->Player.Id);
-    if (playerIt == creatures.end()) return;
-
-    uint8_t playerZ = playerIt->second.MovementInformation.Target.Z;
-
-    // --- 1. Floor-change cleanup ---
-    // When the player changes floors, purge ALL creatures from the old floor.
-    // The server will re-send creatures on the new floor via AddThing.
-    // This prevents cross-floor ghosts that linger from failed removals.
-    if (playerZ != g_lastPlayerZ) {
-        std::vector<uint32_t> toRemove;
-        for (auto &[id, cr] : creatures) {
-            if (id == g_gamestate->Player.Id) continue;
-            auto pos = cr.MovementInformation.Target;
-            // Remove creatures still on the old floor
-            if (pos.Z == g_lastPlayerZ) {
-                toRemove.push_back(id);
-            }
+    // Build a map of position → creature ID (keep player priority)
+    struct PosKey {
+        uint16_t x, y;
+        uint8_t z;
+        bool operator==(const PosKey &o) const {
+            return x == o.x && y == o.y && z == o.z;
         }
-        for (auto id : toRemove) {
-            creatures.erase(id);
+    };
+    struct PosHash {
+        size_t operator()(const PosKey &k) const {
+            return std::hash<uint64_t>()((uint64_t)k.x | ((uint64_t)k.y << 16) | ((uint64_t)k.z << 32));
         }
-        g_lastPlayerZ = playerZ;
-    }
+    };
 
-    // --- 2. Remove creatures with invalid positions ---
-    // Failed removals can leave creatures at (0,0,0) or (0xFFFF,0xFFFF,0xFFFF)
-    {
-        std::vector<uint32_t> toRemove;
-        for (auto &[id, cr] : creatures) {
-            if (id == g_gamestate->Player.Id) continue;
-            auto pos = cr.MovementInformation.Target;
-            // Null/invalid position
-            if (pos.X == 0xFFFF || (pos.X == 0 && pos.Y == 0 && pos.Z == 0)) {
-                toRemove.push_back(id);
-            }
-        }
-        for (auto id : toRemove) {
-            creatures.erase(id);
-        }
-    }
+    std::unordered_map<PosKey, uint32_t, PosHash> seen;
+    std::vector<uint32_t> toRemove;
 
-    // --- 3. Remove creatures too far from player's floor ---
-    // Creatures more than 2 floors away shouldn't be visible
-    {
-        std::vector<uint32_t> toRemove;
-        for (auto &[id, cr] : creatures) {
-            if (id == g_gamestate->Player.Id) continue;
-            auto pos = cr.MovementInformation.Target;
-            if (pos.X == 0xFFFF) continue; // already handled
-            int dz = (int)pos.Z - (int)playerZ;
-            if (dz < -2 || dz > 2) {
-                toRemove.push_back(id);
-            }
-        }
-        for (auto id : toRemove) {
-            creatures.erase(id);
-        }
-    }
+    for (auto &[id, cr] : creatures) {
+        auto pos = cr.MovementInformation.Target;
+        PosKey key{pos.X, pos.Y, pos.Z};
 
-    // --- 4. Deduplicate by position (same tile) ---
-    // If two creatures occupy the exact same tile, one is a ghost.
-    // Keep the player if involved, otherwise keep the first seen.
-    {
-        struct PosKey {
-            uint16_t x, y;
-            uint8_t z;
-            bool operator==(const PosKey &o) const {
-                return x == o.x && y == o.y && z == o.z;
-            }
-        };
-        struct PosHash {
-            size_t operator()(const PosKey &k) const {
-                return std::hash<uint64_t>()(
-                    (uint64_t)k.x | ((uint64_t)k.y << 16) | ((uint64_t)k.z << 32));
-            }
-        };
+        // Skip creatures at null position (inventory/invalid)
+        if (pos.X == 0xFFFF) continue;
 
-        std::unordered_map<PosKey, uint32_t, PosHash> seen;
-        std::vector<uint32_t> toRemove;
-
-        for (auto &[id, cr] : creatures) {
-            auto pos = cr.MovementInformation.Target;
-            if (pos.X == 0xFFFF) continue;
-            PosKey key{pos.X, pos.Y, pos.Z};
-
-            auto it = seen.find(key);
-            if (it != seen.end()) {
-                // Duplicate — keep the player, remove the other
-                if (id == g_gamestate->Player.Id) {
-                    toRemove.push_back(it->second);
-                    it->second = id;
-                } else {
-                    toRemove.push_back(id);
-                }
+        auto it = seen.find(key);
+        if (it != seen.end()) {
+            // Duplicate found - keep the player, remove the other
+            if (id == g_gamestate->Player.Id) {
+                toRemove.push_back(it->second);
+                it->second = id;
             } else {
-                seen[key] = id;
+                toRemove.push_back(id);
             }
+        } else {
+            seen[key] = id;
         }
+    }
 
-        for (auto id : toRemove) {
-            creatures.erase(id);
-        }
+    for (auto id : toRemove) {
+        creatures.erase(id);
     }
 }
 
@@ -355,6 +288,7 @@ int load_recording_tibiarelic(const uint8_t *buf, int len,
                     if (failedFrames <= MAX_FAIL_LOG) {
                         printf("[tibiarc] Frame %d FAILED (%d bytes): %s\n",
                                frameCount, sz, ex.what());
+                        // Hex dump first 32 bytes
                         int dumpLen = std::min((int)sz, 32);
                         printf("[tibiarc]   hex: ");
                         for (int i = 0; i < dumpLen; i++) {
@@ -367,6 +301,12 @@ int load_recording_tibiarelic(const uint8_t *buf, int len,
                     if (failedFrames <= MAX_FAIL_LOG) {
                         printf("[tibiarc] Frame %d FAILED (%d bytes): unknown exception\n",
                                frameCount, sz);
+                        int dumpLen = std::min((int)sz, 32);
+                        printf("[tibiarc]   hex: ");
+                        for (int i = 0; i < dumpLen; i++) {
+                            printf("%02X ", buf[pos + i]);
+                        }
+                        printf("\n");
                     }
                 }
             }
@@ -469,7 +409,7 @@ void seek(double ms) {
     g_currentTick = target;
     g_gamestate->CurrentTick = target.count();
     g_gamestate->Messages.Prune(g_currentTick.count());
-    SanitizeCreatureState();
+    DeduplicateCreatures();
     RenderFrame();
 }
 
@@ -492,15 +432,15 @@ static void RenderFrame() {
     if (!g_gamestate->Creatures.contains(g_gamestate->Player.Id)) return;
 
     try {
-        Renderer::Options options{};
-        options.Width = RENDER_WIDTH;
-        options.Height = RENDER_HEIGHT;
-        options.SkipRenderingMessages = g_skip_messages;
-        options.SkipRenderingPlayerNames = false;
-        options.SkipRenderingNonPlayerNames = false;
-        options.SkipRenderingYellingMessages = g_skip_messages;
-        options.SkipRenderingCreatureHealthBars = false;
-        options.SkipRenderingStatusBars = g_skip_messages;
+        Renderer::Options options{
+            .Width = RENDER_WIDTH,
+            .Height = RENDER_HEIGHT,
+            .SkipRenderingMessages = g_skip_messages,
+            .SkipRenderingPlayerNames = false,
+            .SkipRenderingYellingMessages = g_skip_messages,
+            .SkipRenderingCreatureHealthBars = false,
+            .SkipRenderingStatusBars = g_skip_messages,
+        };
 
         // Force-clear all pending messages/speech bubbles before rendering
         // This ensures DrawOverlay won't render any chat text even if
@@ -562,7 +502,7 @@ static void MainLoop() {
         }
 
         g_gamestate->Messages.Prune(g_currentTick.count());
-        SanitizeCreatureState();
+        DeduplicateCreatures();
         RenderFrame();
     } catch (...) {
         // Prevent any exception from killing the main loop

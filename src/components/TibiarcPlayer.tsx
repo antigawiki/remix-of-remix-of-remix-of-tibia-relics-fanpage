@@ -9,8 +9,6 @@ type PlayerState = 'idle' | 'loading-data' | 'ready' | 'loading-cam' | 'playing'
 interface TibiarcPlayerProps {
   className?: string;
   onStateChange?: (info: { camBuffer: Uint8Array | null; progress: number; isPlaying: boolean }) => void;
-  onWasmVersion?: (version: string) => void;
-  onFileNameChange?: (name: string) => void;
 }
 
 interface WasmModule {
@@ -87,7 +85,7 @@ function isCanvasBlack(canvas: HTMLCanvasElement): boolean {
   }
 }
 
-const TibiarcPlayer = ({ className, onStateChange, onWasmVersion, onFileNameChange }: TibiarcPlayerProps) => {
+const TibiarcPlayer = ({ className, onStateChange }: TibiarcPlayerProps) => {
   const { t } = useTranslation();
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -169,19 +167,6 @@ const TibiarcPlayer = ({ className, onStateChange, onWasmVersion, onFileNameChan
 
         const canvas = canvasRef.current;
         if (!canvas) return;
-
-        // Fetch WASM version from VERSION file
-        try {
-          const vResp = await fetch('/tibiarc/VERSION');
-          if (vResp.ok) {
-            const vNum = (await vResp.text()).trim();
-            onWasmVersion?.(`V${vNum}`);
-          } else {
-            onWasmVersion?.('V?');
-          }
-        } catch {
-          onWasmVersion?.('V?');
-        }
 
         const TibiarcModuleFactory = (window as any).TibiarcModule;
         const mod: WasmModule = await TibiarcModuleFactory({
@@ -329,7 +314,6 @@ const TibiarcPlayer = ({ className, onStateChange, onWasmVersion, onFileNameChan
     if (!mod) return;
 
     setFileName(file.name);
-    onFileNameChange?.(file.name);
     setErrorMsg('');
     setState('loading-cam');
 
