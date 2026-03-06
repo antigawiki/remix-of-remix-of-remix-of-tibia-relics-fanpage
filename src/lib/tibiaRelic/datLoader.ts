@@ -31,6 +31,44 @@ export interface ItemType {
   stackPrio: number;
 }
 
+/**
+ * Payload sizes for each known DAT attribute flag.
+ * 0 = boolean (no payload), N = N bytes to consume after the flag byte.
+ */
+const FLAG_PAYLOADS: Record<number, number> = {
+  0x00: 2, // ground speed (u16)
+  0x01: 0, // on-top (clip)
+  0x02: 0, // on-top (bottom)
+  0x03: 0, // on-top (top)
+  0x04: 0, // container
+  0x05: 0, // stackable
+  0x06: 0, // multi-use
+  0x07: 0, // force-use (boolean in 7.72)
+  0x08: 2, // writeable (u16 max chars)
+  0x09: 2, // writeable once (u16 max chars)
+  0x0A: 0, // fluid container
+  0x0B: 0, // splash
+  0x0C: 0, // blocking
+  0x0D: 0, // not movable
+  0x0E: 0, // block missile
+  0x0F: 0, // block path
+  0x10: 0, // pickupable
+  0x11: 0, // hangable
+  0x12: 0, // vertical
+  0x13: 0, // horizontal
+  0x14: 0, // rotateable
+  0x15: 4, // light (u16 intensity + u16 color)
+  0x16: 0, // don't hide
+  0x17: 0, // translucent
+  0x18: 4, // displacement (u16 x + u16 y)
+  0x19: 2, // elevation (u16)
+  0x1A: 0, // redraw nearby top
+  0x1B: 0, // animate idle
+  0x1C: 2, // lens help (u16)
+  0x1D: 2, // full ground (u16)
+  0x1E: 0, // walkable (boolean)
+};
+
 function createItemType(): ItemType {
   return {
     id: 0, spriteIds: [],
@@ -156,16 +194,27 @@ export class DatLoader {
     const it = createItemType();
     const flagsRead: number[] = [];
 
-    // Phase 1: Skip to 0xFF terminator (guarantees correct alignment)
-    const attrStart = p;
+    // Payload-aware flag parser — consumes each flag + its known payload
+    // This prevents false 0xFF termination inside payload data
     while (p < bytes.length) {
-      const b = bytes[p]; p++;
-      if (b === 0xFF) break;
-    }
-    const attrEnd = p; // p is now right after 0xFF
+      const flag = bytes[p]; p++;
+      if (flag === 0xFF) break;
+      flagsRead.push(flag);
 
-    // Phase 2: Best-effort metadata extraction from the attribute bytes
-    this.extractMetadata(bytes, view, attrStart, attrEnd - 1, it, flagsRead);
+      const payloadSize = FLAG_PAYLOADS[flag];
+      if (payloadSize !== undefined) {
+        // Known flag — extract metadata and advance by payload size
+        this.applyFlag(flag, bytes, view, p, it);
+        p += payloadSize;
+      } else {
+        // Unknown flag — could be boolean (0 bytes) or have unknown payload
+        // For flags in 0x1F-0x4F range, treat as boolean (no payload)
+        // For truly unknown flags, log and treat as boolean
+        if (flag < 0x1F || flag > 0x4F) {
+          console.warn(`[DatLoader] Unknown flag 0x${flag.toString(16).padStart(2, '0')} at offset ${p - 1}`);
+        }
+      }
+    }
 
     // Read dimensions — use RAW values for sprite count calculation (matching reference parser)
     // Clamped values stored on the item are only for rendering safety
