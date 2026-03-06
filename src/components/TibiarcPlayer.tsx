@@ -170,8 +170,18 @@ const TibiarcPlayer = ({ className, onStateChange, onWasmVersion, onFileNameChan
         const canvas = canvasRef.current;
         if (!canvas) return;
 
-        // Fetch WASM info for version badge
-        onWasmVersion?.('V50');
+        // Fetch WASM version from VERSION file
+        try {
+          const vResp = await fetch('/tibiarc/VERSION');
+          if (vResp.ok) {
+            const vNum = (await vResp.text()).trim();
+            onWasmVersion?.(`V${vNum}`);
+          } else {
+            onWasmVersion?.('V?');
+          }
+        } catch {
+          onWasmVersion?.('V?');
+        }
 
         const TibiarcModuleFactory = (window as any).TibiarcModule;
         const mod: WasmModule = await TibiarcModuleFactory({

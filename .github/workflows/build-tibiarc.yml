@@ -213,6 +213,14 @@ jobs:
             /tmp/fmt-install/lib/libfmt.a \
             -o tibiarc_player.js
 
+      - name: Increment version
+        run: |
+          CURRENT=$(cat public/tibiarc/VERSION 2>/dev/null || echo "50")
+          NEW=$((CURRENT + 1))
+          echo "$NEW" > public/tibiarc/VERSION
+          echo "WASM_VERSION=V${NEW}" >> $GITHUB_ENV
+          echo "Build version: V${NEW}"
+
       - name: Prepare output
         run: |
           mkdir -p public/tibiarc
@@ -223,7 +231,7 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add public/tibiarc/tibiarc_player.js public/tibiarc/tibiarc_player.wasm
-          git commit -m "build: add compiled tibiarc WASM player" || echo "No changes to commit"
+          git add public/tibiarc/tibiarc_player.js public/tibiarc/tibiarc_player.wasm public/tibiarc/VERSION
+          git commit -m "build: WASM player ${{ env.WASM_VERSION }}" || echo "No changes to commit"
           git pull --rebase origin main
           git push
