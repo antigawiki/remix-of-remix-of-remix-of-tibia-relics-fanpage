@@ -1,11 +1,35 @@
-## Scroll/FloorUp/Font Patches — Status: APLICADO ✅
 
-### Correções aplicadas no build-tibiarc.yml
 
-1. **Scroll 18×14**: Os 4 ParseMove (North/East/South/West) agora leem viewport completo 18×14 em vez de 1 row/column, alinhando com o protocolo TibiaRelic
-2. **FloorUp z=7**: Loop de 6 floors substituído por leitura de 1 floor (z=5), como o parser JS
-3. **Fonte menor**: Nomes de criaturas usam `InterfaceSmall` em vez de `Game` font
-4. **Nomes de monstros ocultos**: `SkipRenderingNonPlayerNames = true` no web_player.cpp
+## Plano: Recalibrar o prompt da IA para análise neutra do protocolo
 
-### Próximo passo
-Rodar o workflow `Build tibiarc WASM Player` no GitHub Actions para compilar o novo WASM e testar.
+### Problema atual
+
+O `PROTOCOL_SPEC` na edge function `analyze-cam-protocol` contém vieses incorretos:
+
+1. **Linha 19-22**: Scroll opcodes documentados como "18x14 viewport" — errado, o protocolo real usa faixas (18x1 / 1x14)
+2. **Linha 58**: OutfitWindow documentado como "u16 rangeStart + u16 rangeEnd" — errado, TibiaRelic usa u8+u8
+3. **Linhas 60-64**: Seção "Known C++ Parser Divergences" assume que o C++ está errado e o JS está certo
+4. **Linhas 66-70**: "Analysis Goal" pede para comparar com o JS "which works correctly" — falso, ambos estão quebrados
+5. **System prompt (linha 84-95)**: Instrui a IA a focar em divergências entre JS e C++, quando o objetivo real é encontrar o protocolo correto independente de ambos
+
+### Correções
+
+**Arquivo: `supabase/functions/analyze-cam-protocol/index.ts`**
+
+1. **Corrigir o PROTOCOL_SPEC**:
+   - Scroll opcodes: documentar como faixas (18x1 / 1x14), não viewport inteiro
+   - OutfitWindow: range u8+u8 (2 bytes total), não u16+u16
+   - Remover a seção "Known C++ Parser Divergences" que enviesava a análise
+   - Reescrever "Analysis Goal" para ser neutro: analisar os bytes brutos contra a spec do protocolo, sem assumir que nenhum parser está correto
+
+2. **Reescrever o system prompt**:
+   - Remover a premissa de que o JS está correto
+   - Instruir a IA a analisar os bytes brutos do .cam contra a especificação do protocolo TibiaRelic
+   - Quando encontrar divergências, apontar o que o protocolo exige vs o que os bytes mostram
+   - Sugerir correções para ambos os parsers (JS e C++) quando aplicável
+   - Focar em: validação de consumo de bytes por opcode, detecção de drift, e identificação de opcodes customizados não documentados
+
+### Resultado esperado
+
+A IA deixará de tratar o parser JS como referência e passará a analisar objetivamente os bytes brutos, identificando erros em ambos os parsers e propondo o comportamento correto baseado na especificação do protocolo.
+
