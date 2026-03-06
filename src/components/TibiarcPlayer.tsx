@@ -327,6 +327,7 @@ const TibiarcPlayer = ({ className, onStateChange, onWasmVersion, onFileNameChan
     if (!mod) return;
 
     setFileName(file.name);
+    onFileNameChange?.(file.name);
     setErrorMsg('');
     setState('loading-cam');
 
