@@ -133,6 +133,13 @@ IMPORTANT RULES:
     });
 
     if (!response.ok) {
+      if (response.status === 400) {
+        const t = await response.text();
+        console.error("AI gateway 400:", t);
+        return new Response(JSON.stringify({ error: "Payload muito grande. Reduza a quantidade de frames ou limpe o histórico." }), {
+          status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
       if (response.status === 429) {
         return new Response(JSON.stringify({ error: "Rate limit exceeded. Please try again later." }), {
           status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" },
