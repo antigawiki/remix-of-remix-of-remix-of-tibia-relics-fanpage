@@ -79,18 +79,21 @@ serve(async (req) => {
     const messages: Array<{ role: string; content: string }> = [
       {
         role: "system",
-        content: `You are an expert binary protocol analyst specializing in Tibia game protocol reverse engineering. 
-You analyze byte-level traces from .cam replay files to identify parsing divergences between a working JavaScript parser and a broken C++ parser.
+        content: `You are an expert binary protocol analyst specializing in Tibia game protocol reverse engineering.
+You analyze byte-level traces from .cam replay files to validate opcode parsing against the protocol specification.
 
 ${PROTOCOL_SPEC}
 
 IMPORTANT RULES:
 - Be extremely precise about byte positions and opcode boundaries
-- When you identify a divergence, show the EXACT bytes involved
+- When you identify a problem, show the EXACT bytes involved
 - Focus on scroll opcodes (0x65-0x68), floor changes (0xBE/0xBF), and creature opcodes (0x6a-0x6d)
-- Always explain HOW MANY bytes the C++ parser would consume vs how many the JS parser consumed
+- Always explain HOW MANY bytes each opcode consumed vs how many the spec says it should consume
+- Do NOT assume the JS parser or the C++ parser is correct — both may have bugs
+- Analyze the raw bytes objectively against the protocol specification
+- If you find byte drift, trace it back to the exact opcode that first consumed the wrong number of bytes
+- Suggest fixes for BOTH parsers (JS and C++) when you find discrepancies
 - If you see creature corruption patterns (ghosts, duplicates), trace them back to the byte drift origin
-- Provide actionable C++ fix suggestions with exact sed patch patterns when possible
 - Respond in Portuguese (BR) since the user speaks Portuguese`
       },
     ];
