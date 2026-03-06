@@ -14,6 +14,7 @@ const CamPlayerPage = () => {
     camBuffer: null, progress: 0, isPlaying: false,
   });
   const [wasmVersion, setWasmVersion] = useState<string | null>(null);
+  const [camFileName, setCamFileName] = useState<string | null>(null);
 
   const handleStateChange = useCallback((info: { camBuffer: Uint8Array | null; progress: number; isPlaying: boolean }) => {
     setDebugState(info);
