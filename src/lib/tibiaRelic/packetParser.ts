@@ -313,6 +313,7 @@ export class PacketParser {
     else if (t === 0x0f) { /* FYI token */ }
     else if (t === 0x1d) { /* pingback (7.72) */ }
     else if (t === 0x1e) { /* ping */ }
+    else if (t === 0x16) { /* TibiaRelic: world enter marker — no payload */ }
     // Container
     else if (t === 0x6e) this.openCont(r);
     else if (t === 0x6f) r.u8();
@@ -399,7 +400,7 @@ export class PacketParser {
     else if (t === 0xa5) { r.skip(5); /* spellGroupCooldown: u8 groupId + u32 delay */ }
     else if (t === 0xa6) { r.u32(); /* multiUseDelay */ }
     else if (t === 0xa7) { r.skip(3); /* setPlayerModes: u8 fight + u8 chase + u8 safe */ }
-    else if (t === 0xa8) { r.skip(5); /* creatureSquare: u32 creatureId + u8 color */ }
+    else if (t === 0xa8) { r.u8(); /* creatureSquare: u8 color (creatureId is implicit from last known) */ }
     // Chat
     else if (t === 0xaa) this.talk(r);
     else if (t === 0xab) { const nc = r.u8(); for (let i = 0; i < nc; i++) { r.u16(); r.str16(); } }

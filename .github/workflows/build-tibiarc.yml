@@ -55,9 +55,9 @@ jobs:
           echo "Fixed 0xA7 PlayerTactics: 4B → 3B"
 
           # 3. CreatureSquare (0xA8): missing in tibiarc → crash
-          #    TibiaRelic sends 5B (u32 creatureId + u8 color)
-          sed -i '/case 0xAA:/i\    case 0xA8:\n        reader.Skip(5);\n        break;' lib/parser.cpp
-          echo "Added 0xA8 CreatureSquare: 5B"
+          #    TibiaRelic sends 1B (u8 color only)
+          sed -i '/case 0xAA:/i\    case 0xA8:\n        reader.Skip(1);\n        break;' lib/parser.cpp
+          echo "Added 0xA8 CreatureSquare: 1B"
 
           # 4. WalkCancel (0xB6): tibiarc reads 2B (u16 via ParseMoveDelay)
           #    TibiaRelic sends 0B
