@@ -449,10 +449,10 @@ export class PacketParser {
     const g = this.gs;
     // Map
     if (t === 0x64) this.mapDesc(r);
-    else if (t === 0x65) this.scroll(r, 0, -1);
-    else if (t === 0x66) this.scroll(r, 1, 0);
-    else if (t === 0x67) this.scroll(r, 0, 1);
-    else if (t === 0x68) this.scroll(r, -1, 0);
+    else if (t === 0x65) this.scrollN(r);
+    else if (t === 0x66) this.scrollE(r);
+    else if (t === 0x67) this.scrollS(r);
+    else if (t === 0x68) this.scrollW(r);
     else if (t === 0x69) this.tileUpd(r);
     else if (t === 0x6a) this.addThing(r);
     else if (t === 0x6b) this.chgThing(r);
@@ -630,29 +630,40 @@ export class PacketParser {
     }
   }
 
-  private scroll(r: Buf, dx: number, dy: number) {
+  private scrollN(r: Buf) {
     const g = this.gs;
-    const oldX = g.camX, oldY = g.camY;
-    g.camX += dx; g.camY += dy;
-
-    const dl = this.debugLogger;
-    if (dl && dl.enabled) {
-      dl.log('SCROLL', { dx, dy, oldCam: `${oldX},${oldY},${g.camZ}`, newCam: `${g.camX},${g.camY},${g.camZ}` });
-    }
-
+    g.camY--;
     const { startz, endz, zstep } = this.getFloorRange(g.camZ);
+    this.readMultiFloorArea(r, g.camX - 8, g.camY - 6, 18, 1, g.camZ, startz, endz, zstep);
+    this.trySyncPlayerToCamera();
+  }
 
-    try {
-      // TibiaRelic sends full 18x14 viewport with skip encoding for all scroll directions
-      this.readMultiFloorArea(r, g.camX - 8, g.camY - 6, 18, 14, g.camZ, startz, endz, zstep);
-    } catch (e) {
-      // Revert camera on parse failure
-      g.camX = oldX; g.camY = oldY;
-      throw e;
-    }
-    // Only sync player to camera if positions are close (normal 1-tile scroll).
-    // After floor changes, cam has perspective offsets (camX++/camY++) that make it 2+ tiles
-    // away from the player — syncing in that state would corrupt the player's correct position.
+  private scrollE(r: Buf) {
+    const g = this.gs;
+    g.camX++;
+    const { startz, endz, zstep } = this.getFloorRange(g.camZ);
+    this.readMultiFloorArea(r, g.camX + 9, g.camY - 6, 1, 14, g.camZ, startz, endz, zstep);
+    this.trySyncPlayerToCamera();
+  }
+
+  private scrollS(r: Buf) {
+    const g = this.gs;
+    g.camY++;
+    const { startz, endz, zstep } = this.getFloorRange(g.camZ);
+    this.readMultiFloorArea(r, g.camX - 8, g.camY + 7, 18, 1, g.camZ, startz, endz, zstep);
+    this.trySyncPlayerToCamera();
+  }
+
+  private scrollW(r: Buf) {
+    const g = this.gs;
+    g.camX--;
+    const { startz, endz, zstep } = this.getFloorRange(g.camZ);
+    this.readMultiFloorArea(r, g.camX - 8, g.camY - 6, 1, 14, g.camZ, startz, endz, zstep);
+    this.trySyncPlayerToCamera();
+  }
+
+  private trySyncPlayerToCamera() {
+    const g = this.gs;
     const player = g.creatures.get(g.playerId);
     if (player && Math.abs(player.x - g.camX) + Math.abs(player.y - g.camY) <= 2 && player.z === g.camZ) {
       this.syncPlayerToCamera();
