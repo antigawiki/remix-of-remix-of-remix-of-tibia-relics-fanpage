@@ -489,9 +489,20 @@ export class PacketParser {
 
     const { startz, endz, zstep } = this.getFloorRange(g.camZ);
 
+    // Standard Tibia 7.x protocol: scroll sends only the NEW strip of tiles entering the viewport
+    let ox: number, oy: number, w: number, h: number;
+    if (dy === -1) {        // North: new row at top
+      ox = g.camX - 8; oy = g.camY - 6; w = 18; h = 1;
+    } else if (dx === 1) {  // East: new column at right
+      ox = g.camX + 9; oy = g.camY - 6; w = 1; h = 14;
+    } else if (dy === 1) {  // South: new row at bottom
+      ox = g.camX - 8; oy = g.camY + 7; w = 18; h = 1;
+    } else {                // West: new column at left
+      ox = g.camX - 8; oy = g.camY - 6; w = 1; h = 14;
+    }
+
     try {
-      // TibiaRelic sends full 18x14 viewport with skip encoding for all scroll directions
-      this.readMultiFloorArea(r, g.camX - 8, g.camY - 6, 18, 14, g.camZ, startz, endz, zstep);
+      this.readMultiFloorArea(r, ox, oy, w, h, g.camZ, startz, endz, zstep);
     } catch (e) {
       // Revert camera on parse failure
       g.camX = oldX; g.camY = oldY;
