@@ -1,30 +1,26 @@
-## Auditoria Completa — Status: PATCHES APLICADOS ✅
 
-Todos os patches identificados na auditoria foram adicionados ao workflow `.github/workflows/build-tibiarc.yml`.
 
-### Patches aplicados (total: 21)
+## Correção dos flags 32 (0x20), 33 (0x21) e 34 (0x22) no parser DAT
 
-| # | Opcode/Área | Descrição | Status |
-|---|--------|-----------|--------|
-| 1 | `0xA4` | SpellCooldown 5B→2B | ✅ já existia |
-| 2 | `0xA7` | PlayerTactics 4B→3B | ✅ já existia |
-| 3 | `0xA8` | CreatureSquare (novo case) | ✅ já existia |
-| 4 | `0xB6` | WalkCancel 2B→0B | ✅ já existia |
-| 5 | `0x92` | CreatureImpassable assert removido | ✅ já existia |
-| 6-9 | `0x65-0x68` | Scrolls revertidos para padrão | ✅ já existia |
-| 10 | `0xBE` | FloorUp z=7 revertido (6 floors) | ✅ já existia |
-| 11 | `0xAA` | Talk +u32 statementGuid | ✅ existente |
-| 12 | `0x64` | Mini MapDesc guard (<100B) | ✅ existente |
-| 13 | `0xA0` | PlayerStats sem stamina | ✅ existente |
-| 14 | `0xA5` | SpellGroupCooldown 5B | ✅ existente |
-| 15 | `0xA6` | MultiUseDelay 4B | ✅ existente |
-| 16 | `0x63` | CreatureTurn 5B | ✅ existente |
-| 17 | `0xC8` | OutfitWindow u16→u8 range | ✅ existente |
-| **18** | **DAT parser** | **Resiliência a flags desconhecidas (0x50, 0xC8, 0xD0)** | ✅ **NOVO** |
+### Problema
+A linha 254 trata flags `0x1F` até `0x4F` como booleanos sem payload. Isso está incorreto para:
+- **Flag 0x20 (cloth)**: payload `u16` (2 bytes)
+- **Flag 0x21 (market)**: payload `u16 + u16` (4 bytes)  
+- **Flag 0x22 (usable)**: boolean (sem payload) — já está correto
 
-### SPR Loader C++
-Análise do código-fonte confirmou que o SPR loader já tem try-catch para `InvalidDataError` (sprites.cpp:266-273 e 326-337). Sprites corrompidos ou vazios são tratados graciosamente retornando sprite nulo. **Nenhum patch necessário.**
+### Alteração
+**Arquivo:** `src/lib/tibiaRelic/datLoader.ts` (linhas 253-254)
 
-### Próximo passo
+Substituir o bloco genérico `0x1F-0x4F` por tratamento específico:
 
-Executar o workflow `Build tibiarc WASM Player` no GitHub Actions para rebuildar o WASM com o patch do DAT parser.
+```typescript
+else if (flag === 0x1E) { /* walkable */ }
+else if (flag === 0x1F) { /* look — boolean */ }
+else if (flag === 0x20) { /* cloth */ if (p + 1 < end) p += 2; else return; }
+else if (flag === 0x21) { /* market */ if (p + 3 < end) p += 4; else return; }
+else if (flag === 0x22) { /* usable — boolean */ }
+else { /* unknown flag — skip, don't break */ }
+```
+
+Isso garante que os bytes de payload dessas flags sejam consumidos corretamente, evitando desalinhamento na leitura dos metadados.
+
