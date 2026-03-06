@@ -218,7 +218,7 @@ export class DatLoader {
       try {
         if (flag === 0x00) {
           it.isGround = true; it.stackPrio = 0;
-          if (p + 1 < end) { it.speed = view.getUint16(p, true); p += 2; } else return;
+          if (p + 2 < end) { it.speed = view.getUint16(p, true); /* groundType = bytes[p+2] */ p += 3; } else return;
         } else if (flag === 0x01) { it.stackPrio = 1; }
         else if (flag === 0x02) { it.stackPrio = 2; }
         else if (flag === 0x03) { it.stackPrio = 3; }
