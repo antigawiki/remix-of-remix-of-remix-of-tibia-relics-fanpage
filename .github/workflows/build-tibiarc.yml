@@ -142,7 +142,15 @@ jobs:
           # STUCK-BUFFER detection REMOVED — was breaking valid tile loops
           echo "FloorDown and stuck-buffer patches skipped (removed to prevent corruption)"
 
-          # SCROLL, FLOORUP and FONT patches REMOVED — reverted to original fork behavior
+          # FloorUp (0xBE) patch: read 3 floors on z=8→7 transition (symmetric to FloorDown)
+          cp $GITHUB_WORKSPACE/tibiarc-player/floorup_patch.py /tmp/tibiarc/floorup_patch.py
+          python3 /tmp/tibiarc/floorup_patch.py lib/parser.cpp
+          echo "Applied FloorUp 3-floor patch"
+
+          # Verify FloorUp patch
+          grep -n "TibiaRelic: read 3 floors" lib/parser.cpp || echo "WARN: FloorUp patch not found"
+
+          # SCROLL and FONT patches REMOVED — reverted to original fork behavior
 
       - name: Build tibiarc library + web player
         run: |
