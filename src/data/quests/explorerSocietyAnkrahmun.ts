@@ -2,7 +2,7 @@ import { Quest } from "./index";
 
 export const explorerSocietyAnkrahmun: Quest = {
   id: "explorer-society-ankrahmun",
-  slug: "b9d4f2a7e1c6380f54a8c2d6e9f3b1a7",
+  slug: "explorer-society-ankrahmun",
   title: {
     pt: "Explorer Society / Acesso a Ankrahmun",
     en: "Explorer Society / Access to Ankrahmun",

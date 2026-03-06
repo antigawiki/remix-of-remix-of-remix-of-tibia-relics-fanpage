@@ -2,7 +2,7 @@ import { Quest } from "./index";
 
 export const sawsankAccess: Quest = {
   id: "sawsank-access",
-  slug: "a7c3e9f1b2d8406592e4f7a1c3b5d8e2",
+  slug: "sawsank-access",
   title: {
     pt: "Acesso a Sawsank",
     en: "Access to Sawsank",
