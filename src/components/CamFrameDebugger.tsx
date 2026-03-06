@@ -522,6 +522,103 @@ const CamFrameDebugger = ({ camBuffer, progress, isPlaying }: CamFrameDebuggerPr
           })}
         </div>
       </div>
+
+      {/* Drift Scanner Panel */}
+      <div className="bg-card border border-border/50 rounded-sm overflow-hidden">
+        <div className="p-2 border-b border-border/30 flex items-center gap-2 flex-wrap">
+          <Search className="w-3.5 h-3.5 text-muted-foreground" />
+          <span className="text-xs font-bold text-foreground">Frame Drift Detector</span>
+          {!scanning && (
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-6 px-2 text-[10px] border-border/50"
+              onClick={handleScanDrift}
+              disabled={!camBuffer}
+            >
+              {scanDone ? '🔄 Re-Scan' : '🔍 Scan All Frames'}
+            </Button>
+          )}
+          {scanning && (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-6 px-2 text-[10px] text-destructive"
+              onClick={() => { scanAbortRef.current = true; }}
+            >
+              ✕ Abort
+            </Button>
+          )}
+          {scanDone && driftResults.length > 0 && (
+            <>
+              <Badge variant="destructive" className="text-[10px]">
+                {driftResults.length} drift{driftResults.length > 1 ? 's' : ''}
+              </Badge>
+              <Button variant="ghost" size="sm" className="h-6 px-2 text-[10px]" onClick={handleExportDrift}>
+                <Download className="w-3 h-3 mr-1" />Export
+              </Button>
+            </>
+          )}
+          {scanDone && driftResults.length === 0 && (
+            <Badge variant="outline" className="text-[10px] text-green-400 border-green-400/50">
+              ✓ No drift detected
+            </Badge>
+          )}
+        </div>
+        
+        {scanning && (
+          <div className="p-3">
+            <Progress value={scanProgress} className="h-2" />
+            <p className="text-[10px] text-muted-foreground mt-1 text-center">
+              Scanning... {scanProgress}%
+            </p>
+          </div>
+        )}
+
+        {scanDone && driftResults.length > 0 && (
+          <div className="max-h-[300px] overflow-y-auto p-2 font-mono text-[11px] leading-tight space-y-1.5 bg-background/50">
+            {driftResults.map((r, i) => (
+              <div
+                key={i}
+                className={`p-1.5 rounded-sm border-l-2 ${i === 0 ? 'border-destructive bg-destructive/10' : 'border-yellow-500/50 bg-yellow-900/10'}`}
+              >
+                <div className="flex items-center gap-2 flex-wrap">
+                  {i === 0 && (
+                    <AlertTriangle className="w-3.5 h-3.5 text-destructive shrink-0" />
+                  )}
+                  <span className="text-muted-foreground">[{(r.timestamp / 1000).toFixed(2)}s]</span>
+                  <span className="font-bold text-foreground">Frame #{r.frameIdx}</span>
+                  <span className="text-muted-foreground">{r.totalBytes}B</span>
+                  {r.error ? (
+                    <Badge variant="destructive" className="text-[9px] px-1 py-0">CRASH</Badge>
+                  ) : (
+                    <Badge variant="outline" className="text-[9px] px-1 py-0 text-yellow-400 border-yellow-500/50">
+                      {r.bytesLeft}B left
+                    </Badge>
+                  )}
+                </div>
+                <div className="mt-0.5 text-muted-foreground">
+                  ops: {r.opcodes.join(' → ')}
+                </div>
+                {r.error && (
+                  <div className="mt-0.5 text-destructive text-[10px]">
+                    {r.error}
+                  </div>
+                )}
+                <div className="mt-0.5 text-muted-foreground/70 break-all text-[10px]">
+                  hex: {r.hexDump}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {!scanning && !scanDone && (
+          <div className="p-4 text-center text-muted-foreground text-[11px]">
+            Carregue uma .cam e clique "Scan All Frames" para detectar byte drift
+          </div>
+        )}
+      </div>
     </div>
   );
 };
