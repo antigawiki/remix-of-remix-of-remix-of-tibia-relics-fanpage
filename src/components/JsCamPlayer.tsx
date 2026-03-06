@@ -115,13 +115,9 @@ const JsCamPlayer = ({ className, onStateChange, onFileNameChange }: JsCamPlayer
 
     const frames = framesRef.current;
     const gs = renderer.gs;
-    const parser = new PacketParser(dat, gs, { looktypeU16: true, outfitWindowRangeU16: true });
-
-    // Reset game state and replay from beginning up to targetMs
-    // (simplified approach — for large files, could cache checkpoints)
     const gsNew = new GameState();
     renderer.gs = gsNew;
-    const parserNew = new PacketParser(dat, gsNew, { looktypeU16: true, outfitWindowRangeU16: true });
+    const parserNew = new PacketParser(gsNew, dat, { looktypeU16: true, outfitWindowRangeU16: true });
 
     for (let i = 0; i < frames.length; i++) {
       if (frames[i].timestamp > targetMs) {
@@ -129,7 +125,7 @@ const JsCamPlayer = ({ className, onStateChange, onFileNameChange }: JsCamPlayer
         break;
       }
       try {
-        parserNew.parseServerPacket(frames[i].payload);
+        parserNew.process(frames[i].payload);
       } catch { /* skip broken frames */ }
       if (i === frames.length - 1) frameIdxRef.current = frames.length;
     }
@@ -153,11 +149,11 @@ const JsCamPlayer = ({ className, onStateChange, onFileNameChange }: JsCamPlayer
     if (!dat) return;
 
     // Process frames up to current elapsed time
-    const parser = new PacketParser(dat, gs, { looktypeU16: true, outfitWindowRangeU16: true });
+    const parser = new PacketParser(gs, dat, { looktypeU16: true, outfitWindowRangeU16: true });
     let idx = frameIdxRef.current;
     while (idx < frames.length && frames[idx].timestamp <= elapsed) {
       try {
-        parser.parseServerPacket(frames[idx].payload);
+        parser.process(frames[idx].payload);
       } catch { /* skip */ }
       idx++;
     }
