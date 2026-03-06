@@ -6,10 +6,11 @@ import { Textarea } from '@/components/ui/textarea';
 import { Progress } from '@/components/ui/progress';
 import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { Play, Send, Trash2, Bot, User, Loader2 } from 'lucide-react';
+import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
+import { Play, Send, Trash2, Bot, User, Loader2, FlaskConical, Binary } from 'lucide-react';
 import { DatLoader } from '@/lib/tibiaRelic/datLoader';
 import { runDeepTrace, findFrameAtTime, getCamFileInfo, type DeepTraceResult } from '@/lib/tibiaRelic/deepTracer';
-
+import DatSprTester from './DatSprTester';
 interface Message {
   role: 'user' | 'assistant';
   content: string;
