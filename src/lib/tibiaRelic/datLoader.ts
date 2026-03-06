@@ -79,7 +79,7 @@ function getFlagPayloadSize(flag: number): number {
     case 0x16: return 4;  // light: u16 intensity + u16 color
     case 0x17: return 0;  // dontHide
     case 0x18: return 0;  // translucent
-    case 0x19: return 4;  // displacement: u16 x + u16 y
+    case 0x19: return 2;  // displacement: u16 (TibiaRelic uses single u16)
     case 0x1A: return 2;  // elevation: u16
     case 0x1B: return 0;  // lyingCorpse
     case 0x1C: return 0;  // animateAlways
@@ -285,7 +285,7 @@ export class DatLoader {
       case 0x13: it.isHorizontal = true; break;
       case 0x14: it.isVertical = true; break;
       case 0x17: it.dontHide = true; break;
-      case 0x19: it.dispX = view.getUint16(p, true); it.dispY = view.getUint16(p + 2, true); break;
+      case 0x19: it.dispX = view.getUint16(p, true); it.dispY = 0; break;
       case 0x1A: it.elevation = view.getUint16(p, true); break;
       case 0x1C: it.animateIdle = true; break;
     }
