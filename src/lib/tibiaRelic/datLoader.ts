@@ -74,12 +74,26 @@ export class DatLoader {
     let parseErrors = 0;
     const flagStats = new Map<number, number>();
 
+    const debugIds = new Set([853, 870, 102, 408]);
     for (let i = 0; i < itemCount; i++) {
       const startP = p;
+      const itemId = 100 + i;
+      
+      // Hex dump for debug items
+      if (debugIds.has(itemId)) {
+        const hexSlice = Array.from(bytes.slice(startP, Math.min(startP + 60, bytes.length)))
+          .map(b => b.toString(16).padStart(2, '0')).join(' ');
+        console.log(`[DatLoader] 📦 item ${itemId} raw @${startP}: ${hexSlice}`);
+      }
+      
       const [it, np, flags] = this.readEntry(bytes, view, p, true);
-      it.id = 100 + i;
+      it.id = itemId;
       this.items.set(it.id, it);
       for (const f of flags) flagStats.set(f, (flagStats.get(f) || 0) + 1);
+      
+      if (debugIds.has(itemId)) {
+        console.log(`[DatLoader] 📦 item ${itemId} flags=[${flags.map(f=>'0x'+f.toString(16)).join(',')}] bytes=${np - startP}`);
+      }
       
       // Check for suspicious dimensions
       if (it.width > 4 || it.height > 4 || it.anim > 16 || it.spriteIds.length > 256) {
@@ -146,6 +160,21 @@ export class DatLoader {
       } else {
         console.log(`[DatLoader] ✓ verify item ${id}: sprite[0]=${spr0} OK`);
       }
+    }
+
+    // Detailed diagnostic for specific items
+    for (const id of [853, 870, 102, 408]) {
+      const it = this.items.get(id);
+      if (!it) { console.warn(`[DatLoader] 🔍 item ${id}: NOT FOUND`); continue; }
+      const sprPreview = it.spriteIds.slice(0, 8).join(',');
+      const validSprites = it.spriteIds.filter(s => s > 0 && s < 20000).length;
+      console.log(
+        `[DatLoader] 🔍 item ${id}: w=${it.width} h=${it.height} layers=${it.layers} ` +
+        `patX=${it.patX} patY=${it.patY} patZ=${it.patZ} anim=${it.anim} ` +
+        `sprites=${it.spriteIds.length} validSprites=${validSprites} ` +
+        `ground=${it.isGround} speed=${it.speed} blocking=${it.isBlocking} ` +
+        `spr[0..7]=[${sprPreview}]`
+      );
     }
   }
 
