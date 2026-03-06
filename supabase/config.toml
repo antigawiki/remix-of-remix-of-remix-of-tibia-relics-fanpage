@@ -5,3 +5,6 @@ verify_jwt = false
 
 [functions.cast-vote]
 verify_jwt = false
+
+[functions.analyze-cam-protocol]
+verify_jwt = false
