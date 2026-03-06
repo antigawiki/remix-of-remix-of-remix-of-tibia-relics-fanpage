@@ -635,7 +635,6 @@ export class PacketParser {
     g.camY--;
     const { startz, endz, zstep } = this.getFloorRange(g.camZ);
     this.readMultiFloorArea(r, g.camX - 8, g.camY - 6, 18, 1, g.camZ, startz, endz, zstep);
-    this.trySyncPlayerToCamera();
   }
 
   private scrollE(r: Buf) {
@@ -643,7 +642,6 @@ export class PacketParser {
     g.camX++;
     const { startz, endz, zstep } = this.getFloorRange(g.camZ);
     this.readMultiFloorArea(r, g.camX + 9, g.camY - 6, 1, 14, g.camZ, startz, endz, zstep);
-    this.trySyncPlayerToCamera();
   }
 
   private scrollS(r: Buf) {
@@ -651,7 +649,6 @@ export class PacketParser {
     g.camY++;
     const { startz, endz, zstep } = this.getFloorRange(g.camZ);
     this.readMultiFloorArea(r, g.camX - 8, g.camY + 7, 18, 1, g.camZ, startz, endz, zstep);
-    this.trySyncPlayerToCamera();
   }
 
   private scrollW(r: Buf) {
@@ -659,15 +656,6 @@ export class PacketParser {
     g.camX--;
     const { startz, endz, zstep } = this.getFloorRange(g.camZ);
     this.readMultiFloorArea(r, g.camX - 8, g.camY - 6, 1, 14, g.camZ, startz, endz, zstep);
-    this.trySyncPlayerToCamera();
-  }
-
-  private trySyncPlayerToCamera() {
-    const g = this.gs;
-    const player = g.creatures.get(g.playerId);
-    if (player && Math.abs(player.x - g.camX) + Math.abs(player.y - g.camY) <= 2 && player.z === g.camZ) {
-      this.syncPlayerToCamera();
-    }
   }
 
   private tileUpd(r: Buf) {
