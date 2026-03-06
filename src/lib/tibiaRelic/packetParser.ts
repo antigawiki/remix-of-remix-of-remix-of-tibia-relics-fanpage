@@ -974,7 +974,7 @@ export class PacketParser {
         }
         const dl = this.debugLogger;
         if (dl && dl.enabled) {
-          dl.log('FLOOR_UP', { transition: 'Z=8→7', floorsRead: 6, bytesConsumed: r.pos - posBefore });
+          dl.log('FLOOR_CHANGE', { transition: 'Z=8→7', floorsRead: 6, bytesConsumed: r.pos - posBefore });
         }
       } else if (g.camZ > 7) {
         // Underground going up — read the newly visible floor (camZ - 2)
