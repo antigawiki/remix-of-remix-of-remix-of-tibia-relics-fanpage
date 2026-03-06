@@ -102,13 +102,11 @@ export class DissectorBuffer {
     return all;
   }
 
-  /** Get opcodes with errors or unexpected anomalies */
+  /** Get opcodes with errors or anomalies */
   getAnomalies(): DissectedOpcode[] {
-    // These opcodes are expected to change the camera position
-    const expectedCamOps = new Set([0x64,0x65,0x66,0x67,0x68,0xbe,0xbf,0x9a,0x6d]);
     return this.getAllOpcodes().filter(op => 
       op.error || 
-      (op.camBefore !== op.camAfter && !expectedCamOps.has(op.opcode)) ||
+      op.camBefore !== op.camAfter ||
       (op.isMapOp && op.bytesConsumed < 10) // suspiciously small map op
     );
   }
