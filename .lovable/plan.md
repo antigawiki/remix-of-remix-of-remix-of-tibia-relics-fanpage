@@ -1,20 +1,30 @@
+## Auditoria Completa — Status: PATCHES APLICADOS ✅
 
+Todos os patches identificados na auditoria foram adicionados ao workflow `.github/workflows/build-tibiarc.yml`.
 
-## Diagnóstico e Solução
+### Patches aplicados (total: 21)
 
-O problema é o bloco `define` no `vite.config.ts`. Usar `define` para sobrescrever `import.meta.env.VITE_*` **conflita com o mecanismo nativo do Vite** de injeção de variáveis de ambiente do `.env`. Isso pode fazer com que os valores sejam substituídos por `undefined` ou causar erros silenciosos que impedem a renderização do app.
+| # | Opcode/Área | Descrição | Status |
+|---|--------|-----------|--------|
+| 1 | `0xA4` | SpellCooldown 5B→2B | ✅ já existia |
+| 2 | `0xA7` | PlayerTactics 4B→3B | ✅ já existia |
+| 3 | `0xA8` | CreatureSquare (novo case) | ✅ já existia |
+| 4 | `0xB6` | WalkCancel 2B→0B | ✅ já existia |
+| 5 | `0x92` | CreatureImpassable assert removido | ✅ já existia |
+| 6-9 | `0x65-0x68` | Scrolls revertidos para padrão | ✅ já existia |
+| 10 | `0xBE` | FloorUp z=7 revertido (6 floors) | ✅ já existia |
+| 11 | `0xAA` | Talk +u32 statementGuid | ✅ existente |
+| 12 | `0x64` | Mini MapDesc guard (<100B) | ✅ existente |
+| 13 | `0xA0` | PlayerStats sem stamina | ✅ existente |
+| 14 | `0xA5` | SpellGroupCooldown 5B | ✅ existente |
+| 15 | `0xA6` | MultiUseDelay 4B | ✅ existente |
+| 16 | `0x63` | CreatureTurn 5B | ✅ existente |
+| 17 | `0xC8` | OutfitWindow u16→u8 range | ✅ existente |
+| **18** | **DAT parser** | **Resiliência a flags desconhecidas (0x50, 0xC8, 0xD0)** | ✅ **NOVO** |
 
-A evidência: o session replay mostra a página carregando apenas estilos Tailwind CSS (via CDN fallback), sem nenhum conteúdo React renderizado, e zero erros JS no console — indicando que o app silenciosamente falha ao inicializar.
+### SPR Loader C++
+Análise do código-fonte confirmou que o SPR loader já tem try-catch para `InvalidDataError` (sprites.cpp:266-273 e 326-337). Sprites corrompidos ou vazios são tratados graciosamente retornando sprite nulo. **Nenhum patch necessário.**
 
-## Plano
+### Próximo passo
 
-### 1. Limpar o `vite.config.ts`
-Remover o bloco `define` e o `optimizeDeps: { force: true }` — voltar à configuração limpa original. O Vite já lê o `.env` automaticamente e expõe variáveis `VITE_*` via `import.meta.env` sem necessidade de configuração extra.
-
-**Arquivo:** `vite.config.ts`
-- Remover linhas 18-24 (bloco `define` e `optimizeDeps`)
-- Resultado final: configuração padrão com apenas `server`, `plugins`, `resolve`
-
-### 2. Verificar se o preview carrega
-Após a limpeza, o Vite usará o `.env` nativo que já contém os valores corretos de `VITE_SUPABASE_URL` e `VITE_SUPABASE_PUBLISHABLE_KEY`.
-
+Executar o workflow `Build tibiarc WASM Player` no GitHub Actions para rebuildar o WASM com o patch do DAT parser.
