@@ -10,6 +10,7 @@ interface TibiarcPlayerProps {
   className?: string;
   onStateChange?: (info: { camBuffer: Uint8Array | null; progress: number; isPlaying: boolean }) => void;
   onWasmVersion?: (version: string) => void;
+  onFileNameChange?: (name: string) => void;
 }
 
 interface WasmModule {
