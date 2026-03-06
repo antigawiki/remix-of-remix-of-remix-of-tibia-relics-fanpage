@@ -21,7 +21,7 @@ if not match:
     sys.exit(1)
 
 # Replace the entire body with two-phase logic
-    new_body = r'''
+new_body = r'''
     /* TibiaRelic: Two-phase DAT property reader
      * Phase 1: Scan to 0xFF terminator to guarantee correct byte alignment
      * Phase 2: Best-effort metadata extraction from the scanned attribute bytes
