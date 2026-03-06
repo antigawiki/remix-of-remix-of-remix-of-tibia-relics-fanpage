@@ -171,22 +171,7 @@ const TibiarcPlayer = ({ className, onStateChange, onWasmVersion, onFileNameChan
         if (!canvas) return;
 
         // Fetch WASM info for version badge
-        try {
-          const wasmHead = await fetch('/tibiarc/tibiarc_player.wasm', { method: 'HEAD' });
-          const lastMod = wasmHead.headers.get('Last-Modified');
-          const contentLen = wasmHead.headers.get('Content-Length');
-          if (lastMod) {
-            const d = new Date(lastMod);
-            const ver = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-            onWasmVersion?.(ver);
-          } else if (contentLen) {
-            // Fallback: use file size as a build fingerprint
-            const kb = Math.round(parseInt(contentLen) / 1024);
-            onWasmVersion?.(`${kb}KB`);
-          } else {
-            onWasmVersion?.('loaded');
-          }
-        } catch { onWasmVersion?.('loaded'); }
+        onWasmVersion?.('V50');
 
         const TibiarcModuleFactory = (window as any).TibiarcModule;
         const mod: WasmModule = await TibiarcModuleFactory({
