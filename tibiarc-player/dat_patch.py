@@ -130,6 +130,7 @@ void EntityType::ReadProperties(const Version &version, DataReader &reader) {
             case TypeProperty::Takeable:
                 break;
             case TypeProperty::ForceUse:
+                reader.SkipU16(); // u16 payload — proven by analyzer Hyp A
                 break;
             case TypeProperty::MultiUse:
                 break;

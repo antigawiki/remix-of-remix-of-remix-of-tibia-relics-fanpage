@@ -60,6 +60,7 @@ export interface ValidationReport {
 function baselineFlagPayloads(): Map<number, number> {
   const m = new Map<number, number>();
   m.set(0x00, 2); // ground speed
+  m.set(0x07, 2); // force-use (u16 — proven by analyzer Hyp A: Refs 3/3)
   m.set(0x08, 2); // writeable
   m.set(0x09, 2); // writeable once
   m.set(0x15, 4); // light (2+2)
