@@ -214,7 +214,7 @@ const PacketDissector = ({ camBuffer, progress, isPlaying }: PacketDissectorProp
             <span className={stats.errors > 0 ? 'text-red-400 font-bold' : ''}>{stats.errors}</span>
           </div>
           <div>
-            <span className="text-muted-foreground">cam_changes: </span>
+            <span className="text-muted-foreground">unexpected_cam: </span>
             <span className={stats.anomalies > 0 ? 'text-yellow-400 font-bold' : ''}>{stats.anomalies}</span>
           </div>
           <div><span className="text-muted-foreground">cam: </span><span>{stats.cam || '-'}</span></div>
@@ -259,7 +259,10 @@ const PacketDissector = ({ camBuffer, progress, isPlaying }: PacketDissectorProp
           {frames.map((f) => {
             const expanded = expandedFrames.has(f.frameIdx);
             const hasError = f.bytesLeft > 0 || !!f.error;
-            const hasCamChange = f.opcodes.some(op => op.camBefore !== op.camAfter);
+            const hasCamChange = f.opcodes.some(op => {
+              const expectedCamOps = new Set([0x64,0x65,0x66,0x67,0x68,0xbe,0xbf,0x9a,0x6d]);
+              return op.camBefore !== op.camAfter && !expectedCamOps.has(op.opcode);
+            });
             const time = (f.camMs / 1000).toFixed(2);
 
             return (
