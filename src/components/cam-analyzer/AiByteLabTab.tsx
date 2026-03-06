@@ -33,7 +33,18 @@ export default function AiByteLabTab({ fileBuffer, fileName, loadDat }: AiByteLa
   const [messages, setMessages] = useState<Message[]>([]);
   const [streaming, setStreaming] = useState(false);
   const [customQuestion, setCustomQuestion] = useState('');
+  const [datBuffer, setDatBuffer] = useState<ArrayBuffer | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
+
+  // Wrapper that captures the raw dat buffer
+  const loadDatAndCapture = useCallback(async () => {
+    if (!datBuffer) {
+      const resp = await fetch('/tibiarc/data/Tibia.dat');
+      const buf = await resp.arrayBuffer();
+      setDatBuffer(buf);
+    }
+    return loadDat();
+  }, [loadDat, datBuffer]);
 
   // Load file info on first interaction
   const ensureFileInfo = useCallback(() => {
@@ -384,7 +395,7 @@ export default function AiByteLabTab({ fileBuffer, fileName, loadDat }: AiByteLa
       </TabsContent>
 
       <TabsContent value="dat-spr">
-        <DatSprTester loadDat={loadDat} />
+        <DatSprTester loadDat={loadDatAndCapture} datBuffer={datBuffer} />
       </TabsContent>
     </Tabs>
   );
