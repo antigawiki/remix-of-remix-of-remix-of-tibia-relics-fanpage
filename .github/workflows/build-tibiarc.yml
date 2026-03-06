@@ -158,17 +158,12 @@ jobs:
           sed -i 's/ParseMapDescription(reader, events, -8, -6, 1, Map::TileBufferHeight)/ParseMapDescription(reader, events, -8, -6, Map::TileBufferWidth, Map::TileBufferHeight)/' lib/parser.cpp
           echo "Patched ParseMoveWest: full 18x14"
 
-          # =============================================
-          # FLOORUP z==7: read 1 floor instead of 6
-          # =============================================
-          sed -i '/for (int zIdx = 5; zIdx >= 0; zIdx--)/i\    if (Position_.Z == 7) { ParseFloorDescription(reader, events, Position_.X - 8, Position_.Y - 6, 5, Map::TileBufferWidth, Map::TileBufferHeight, Position_.Z - 5, tileSkip); } else' lib/parser.cpp
-          sed -i '/for (int zIdx = 5; zIdx >= 0; zIdx--)/,/^    }/s/^    }/    }\n    }/' lib/parser.cpp
-          echo "Patched ParseFloorChangeUp: z==7 reads 1 floor"
+          # FLOORUP z==7 patch SKIPPED — sed too fragile for this structural change
+          # TODO: implement via Python or direct C++ patch file
 
-          # Verify
-          echo "=== Scroll/FloorUp verification ==="
+          # Verify scroll patches
+          echo "=== Scroll verification ==="
           grep -c "TileBufferWidth, Map::TileBufferHeight" lib/parser.cpp
-          grep -n "Position_.Z == 7" lib/parser.cpp || echo "WARN: FloorUp patch may not have applied"
 
       - name: Build tibiarc library + web player
         run: |
