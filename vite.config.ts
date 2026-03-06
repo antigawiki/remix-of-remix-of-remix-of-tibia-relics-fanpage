@@ -15,11 +15,4 @@ export default defineConfig(({ mode }) => ({
       "@": path.resolve(__dirname, "./src"),
     },
   },
-  define: {
-    'import.meta.env.VITE_SUPABASE_URL': JSON.stringify(process.env.VITE_SUPABASE_URL || "https://rmofmkjmzwkxjzfirbpt.supabase.co"),
-    'import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY': JSON.stringify(process.env.VITE_SUPABASE_PUBLISHABLE_KEY || "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJtb2Zta2ptendreGp6ZmlyYnB0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzE1MjM5MjEsImV4cCI6MjA4NzA5OTkyMX0.PUZEHZntnYIcGauCtn3pd-HaOWElRh6Lkod7dSew4sI"),
-  },
-  optimizeDeps: {
-    force: true,
-  },
 }));
