@@ -48,6 +48,11 @@ const CamPlayerPage = () => {
           <div className="flex items-center gap-2">
             <Film className="w-5 h-5 text-gold" />
             <h1 className="font-heading text-lg text-gold">{t('camPlayer.title')}</h1>
+            {camFileName && (
+              <Badge variant="outline" className="text-[10px] text-foreground border-gold/40 font-mono bg-gold/10">
+                {camFileName}
+              </Badge>
+            )}
             {wasmVersion && (
               <Badge variant="outline" className="text-[10px] text-muted-foreground border-border/50 font-mono">
                 WASM {wasmVersion}
@@ -70,7 +75,7 @@ const CamPlayerPage = () => {
 
       {/* Player */}
       <div className="flex-1 flex flex-col items-center p-4 pt-6 gap-6">
-        <TibiarcPlayer className="w-full max-w-[960px]" onStateChange={handleStateChange} onWasmVersion={setWasmVersion} />
+        <TibiarcPlayer className="w-full max-w-[960px]" onStateChange={handleStateChange} onWasmVersion={setWasmVersion} onFileNameChange={setCamFileName} />
 
         {/* Frame Debugger */}
         <CamFrameDebugger
