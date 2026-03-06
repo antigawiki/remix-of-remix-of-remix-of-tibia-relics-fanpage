@@ -251,7 +251,10 @@ export class DatLoader {
         else if (flag === 0x1C) { if (p + 1 < end) p += 2; else return; }
         else if (flag === 0x1D) { if (p + 1 < end) p += 2; else return; }
         else if (flag === 0x1E) { /* walkable */ }
-        else if (flag >= 0x1F && flag <= 0x4F) { /* boolean flags, no param */ }
+        else if (flag === 0x1F) { /* look — boolean */ }
+        else if (flag === 0x20) { /* cloth */ if (p + 1 < end) p += 2; else return; }
+        else if (flag === 0x21) { /* market */ if (p + 3 < end) p += 4; else return; }
+        else if (flag === 0x22) { /* usable — boolean */ }
         else { /* unknown flag — skip, don't break */ }
       } catch {
         return; // bail out of metadata extraction on any error
