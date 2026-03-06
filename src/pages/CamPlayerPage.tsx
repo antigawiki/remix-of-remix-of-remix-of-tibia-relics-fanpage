@@ -4,6 +4,7 @@ import { ArrowLeft, Film, Info } from 'lucide-react';
 import { useTranslation } from '@/i18n';
 import TibiarcPlayer from '@/components/TibiarcPlayer';
 import CamFrameDebugger from '@/components/CamFrameDebugger';
+import PacketDissector from '@/components/PacketDissector';
 import { ThemeToggle } from '@/components/ThemeToggle';
 import { LanguageSelector } from '@/components/LanguageSelector';
 
@@ -64,12 +65,19 @@ const CamPlayerPage = () => {
       <div className="flex-1 flex flex-col items-center p-4 pt-6 gap-6">
         <TibiarcPlayer className="w-full max-w-[960px]" onStateChange={handleStateChange} />
 
-        {/* Frame Debugger */}
-        <CamFrameDebugger
-          camBuffer={debugState.camBuffer}
-          progress={debugState.progress}
-          isPlaying={debugState.isPlaying}
-        />
+        {/* Debugger tools */}
+        <div className="w-full max-w-[960px] flex gap-2 flex-wrap">
+          <CamFrameDebugger
+            camBuffer={debugState.camBuffer}
+            progress={debugState.progress}
+            isPlaying={debugState.isPlaying}
+          />
+          <PacketDissector
+            camBuffer={debugState.camBuffer}
+            progress={debugState.progress}
+            isPlaying={debugState.isPlaying}
+          />
+        </div>
 
         {/* Info box */}
         <div className="w-full max-w-[960px] bg-card border border-border/50 rounded-sm p-4 space-y-2">
