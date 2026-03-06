@@ -16,10 +16,10 @@ const PROTOCOL_SPEC = `
 
 ### Map/Position
 - 0x64 MAP_DESC: u16 x, u16 y, u8 z, then multi-floor tile area (18x14 viewport)
-- 0x65 SCROLL_N: multi-floor tile area 18x14 (cam moves north, y--)
-- 0x66 SCROLL_E: multi-floor tile area 18x14 (cam moves east, x++)
-- 0x67 SCROLL_S: multi-floor tile area 18x14 (cam moves south, y++)
-- 0x68 SCROLL_W: multi-floor tile area 18x14 (cam moves west, x--)
+- 0x65 SCROLL_N: multi-floor tile STRIP 18x1 (new top row, cam moves north, y--)
+- 0x66 SCROLL_E: multi-floor tile STRIP 1x14 (new right column, cam moves east, x++)
+- 0x67 SCROLL_S: multi-floor tile STRIP 18x1 (new bottom row, cam moves south, y++)
+- 0x68 SCROLL_W: multi-floor tile STRIP 1x14 (new left column, cam moves west, x--)
 - 0x69 TILE_UPD: u16 x, u16 y, u8 z, then single-floor tile read (1x1)
 - 0x9a PLAYER_POS: u16 x, u16 y, u8 z
 
