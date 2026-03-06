@@ -103,14 +103,22 @@ def patch(path: str):
     print(f"ParseFloorDescription call spans lines {pfd_line + 1} to {call_end + 1}")
 
     # Step 6: Replace ALL lines of the call with the 3-floor loop
-    # NOTE: tibiarc uses uppercase Position_.X, .Y, .Z
+    # Signature: uint16_t ParseFloorDescription(DataReader&, EventList&, int X, int Y, int Z, int w, int h, int offset, uint16_t tileSkip)
+    # We need to figure out the EventList variable name from the original call
+    # Extract it from the original lines
+    original_block = ''.join(lines[pfd_line:call_end + 1])
+    # ParseFloorDescription(reader, EVENTS, ...) - extract second arg
+    import re
+    events_match = re.search(r'ParseFloorDescription\s*\(\s*\w+\s*,\s*(\w+)', original_block)
+    events_var = events_match.group(1) if events_match else 'events'
+    print(f"Detected EventList variable: {events_var}")
+
     replacement = (
         f"{indent}// TibiaRelic: read 3 floors (z=5,6,7) symmetric to FloorDown\n"
-        f"{indent}int skip2 = 0;\n"
+        f"{indent}uint16_t skip2 = 0;\n"
         f"{indent}int j = 3;\n"
         f"{indent}for (int nz = std::max(Position_.Z - 2, 0); nz <= Position_.Z; nz++) {{\n"
-        f"{indent}    skip2 = ParseFloorDescription(reader, Position_.X - 8, Position_.Y - 6, nz, 18, 14, j, skip2);\n"
-        f"{indent}    if (skip2 < 0) {{ skip2 = 0; break; }}\n"
+        f"{indent}    skip2 = ParseFloorDescription(reader, {events_var}, Position_.X - 8, Position_.Y - 6, nz, 18, 14, j, skip2);\n"
         f"{indent}    j--;\n"
         f"{indent}}}\n"
     )
