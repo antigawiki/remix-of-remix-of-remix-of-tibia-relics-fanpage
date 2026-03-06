@@ -9,6 +9,7 @@ type PlayerState = 'idle' | 'loading-data' | 'ready' | 'loading-cam' | 'playing'
 interface TibiarcPlayerProps {
   className?: string;
   onStateChange?: (info: { camBuffer: Uint8Array | null; progress: number; isPlaying: boolean }) => void;
+  onWasmVersion?: (version: string) => void;
 }
 
 interface WasmModule {
@@ -85,7 +86,7 @@ function isCanvasBlack(canvas: HTMLCanvasElement): boolean {
   }
 }
 
-const TibiarcPlayer = ({ className, onStateChange }: TibiarcPlayerProps) => {
+const TibiarcPlayer = ({ className, onStateChange, onWasmVersion }: TibiarcPlayerProps) => {
   const { t } = useTranslation();
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -167,6 +168,17 @@ const TibiarcPlayer = ({ className, onStateChange }: TibiarcPlayerProps) => {
 
         const canvas = canvasRef.current;
         if (!canvas) return;
+
+        // Fetch WASM Last-Modified header for version badge
+        try {
+          const wasmHead = await fetch('/tibiarc/tibiarc_player.wasm', { method: 'HEAD' });
+          const lastMod = wasmHead.headers.get('Last-Modified');
+          if (lastMod) {
+            const d = new Date(lastMod);
+            const ver = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+            onWasmVersion?.(ver);
+          }
+        } catch { /* ignore */ }
 
         const TibiarcModuleFactory = (window as any).TibiarcModule;
         const mod: WasmModule = await TibiarcModuleFactory({
