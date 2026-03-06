@@ -92,8 +92,17 @@ def patch(path: str):
         else:
             break
 
-    # Step 5: Replace the single call with a 3-floor loop
-    # We need to also handle the "int skip = 0;" line that may precede it
+    # Step 5: Find the full extent of the ParseFloorDescription call
+    # It may span multiple lines (ending with ";")
+    call_end = pfd_line
+    for i in range(pfd_line, min(pfd_line + 10, len(lines))):
+        if ';' in lines[i]:
+            call_end = i
+            break
+
+    print(f"ParseFloorDescription call spans lines {pfd_line + 1} to {call_end + 1}")
+
+    # Step 6: Replace ALL lines of the call with the 3-floor loop
     replacement = (
         f"{indent}// TibiaRelic: read 3 floors (z=5,6,7) symmetric to FloorDown\n"
         f"{indent}int j = 3;\n"
@@ -104,7 +113,8 @@ def patch(path: str):
         f"{indent}}}\n"
     )
 
-    lines[pfd_line] = replacement
+    # Replace from pfd_line to call_end (inclusive)
+    lines[pfd_line:call_end + 1] = [replacement]
     
     with open(path, 'w') as f:
         f.writelines(lines)
