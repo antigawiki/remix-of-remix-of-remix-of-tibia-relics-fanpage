@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -16,8 +16,21 @@ interface DatSprTesterProps {
   datBuffer?: ArrayBuffer | null;
 }
 
-export default function DatSprTester({ loadDat, datBuffer }: DatSprTesterProps) {
+export default function DatSprTester({ loadDat, datBuffer: externalDatBuffer }: DatSprTesterProps) {
   const [validating, setValidating] = useState(false);
+  const [localDatBuffer, setLocalDatBuffer] = useState<ArrayBuffer | null>(null);
+
+  // Auto-load the DAT buffer (it's a static file, not dependent on .cam)
+  useEffect(() => {
+    if (!externalDatBuffer && !localDatBuffer) {
+      fetch('/tibiarc/data/Tibia.dat')
+        .then(r => r.arrayBuffer())
+        .then(buf => setLocalDatBuffer(buf))
+        .catch(err => console.error('Failed to load Tibia.dat:', err));
+    }
+  }, [externalDatBuffer, localDatBuffer]);
+
+  const datBuffer = externalDatBuffer ?? localDatBuffer;
   const [report, setReport] = useState<ValidationReport | null>(null);
   const [hexStartId, setHexStartId] = useState(100);
   const [hexCount, setHexCount] = useState(10);
@@ -77,7 +90,7 @@ export default function DatSprTester({ loadDat, datBuffer }: DatSprTesterProps) 
             {validating ? 'Validando...' : 'Validar Localmente'}
           </Button>
           {!datBuffer && (
-            <p className="text-xs text-destructive">Carregue um .cam primeiro para que o .dat esteja disponível.</p>
+            <p className="text-xs text-muted-foreground">Carregando Tibia.dat...</p>
           )}
         </div>
       </Card>
