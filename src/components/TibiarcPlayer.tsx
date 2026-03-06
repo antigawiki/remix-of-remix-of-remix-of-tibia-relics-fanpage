@@ -169,7 +169,7 @@ const TibiarcPlayer = ({ className, onStateChange, onWasmVersion }: TibiarcPlaye
         const canvas = canvasRef.current;
         if (!canvas) return;
 
-        // Fetch WASM metadata for version badge
+        // Fetch WASM Last-Modified header for version badge
         try {
           const wasmHead = await fetch('/tibiarc/tibiarc_player.wasm', { method: 'HEAD' });
           const lastMod = wasmHead.headers.get('Last-Modified');
@@ -177,14 +177,6 @@ const TibiarcPlayer = ({ className, onStateChange, onWasmVersion }: TibiarcPlaye
             const d = new Date(lastMod);
             const ver = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
             onWasmVersion?.(ver);
-          } else {
-            // Fallback: use content-length as a build fingerprint
-            const cl = wasmHead.headers.get('Content-Length');
-            if (cl) {
-              onWasmVersion?.(`b${Math.round(parseInt(cl) / 1024)}k`);
-            } else {
-              onWasmVersion?.('latest');
-            }
           }
         } catch { /* ignore */ }
 
