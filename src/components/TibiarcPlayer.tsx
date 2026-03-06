@@ -87,7 +87,7 @@ function isCanvasBlack(canvas: HTMLCanvasElement): boolean {
   }
 }
 
-const TibiarcPlayer = ({ className, onStateChange, onWasmVersion }: TibiarcPlayerProps) => {
+const TibiarcPlayer = ({ className, onStateChange, onWasmVersion, onFileNameChange }: TibiarcPlayerProps) => {
   const { t } = useTranslation();
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
