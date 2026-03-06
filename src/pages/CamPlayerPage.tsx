@@ -88,6 +88,13 @@ const CamPlayerPage = () => {
             </TabsTrigger>
           </TabsList>
 
+          {activeEngine === 'typescript' && (
+            <div className="mb-4 px-4 py-2.5 rounded-md bg-accent/50 border border-accent text-sm text-muted-foreground flex items-center gap-2">
+              <span>⚠️</span>
+              <span>Motor experimental — a renderização pode apresentar artefatos visuais comparado ao WASM.</span>
+            </div>
+          )}
+
           <TabsContent value="wasm">
             <TibiarcPlayer className="w-full" onStateChange={handleStateChange} onWasmVersion={setWasmVersion} onFileNameChange={setCamFileName} />
           </TabsContent>

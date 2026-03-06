@@ -216,6 +216,10 @@ const JsCamPlayer = ({ className, onStateChange, onFileNameChange }: JsCamPlayer
       const renderer = new Renderer(ctx, spr, dat, gs);
       rendererRef.current = renderer;
 
+      // Create persistent parser for this cam session
+      const parser = new PacketParser(gs, dat, { looktypeU16: true, outfitWindowRangeU16: true });
+      parserRef.current = parser;
+
       setDuration(camFile.totalMs);
       setProgress(0);
 
