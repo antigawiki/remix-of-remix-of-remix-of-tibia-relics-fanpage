@@ -7,7 +7,7 @@ const CreaturesPage = () => {
   const { t } = useTranslation();
 
   return (
-    <MainLayout showSidebars={false}>
+    <MainLayout showRightSidebar={false}>
       <div className="space-y-6">
         <section className="news-box">
           <header className="news-box-header">
