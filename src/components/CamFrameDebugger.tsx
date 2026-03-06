@@ -278,6 +278,72 @@ const CamFrameDebugger = ({ camBuffer, progress, isPlaying }: CamFrameDebuggerPr
     });
   };
 
+  const handleScanDrift = useCallback(async () => {
+    if (!camBuffer || !datLoaderRef.current) return;
+    
+    const cam = parseCamFile(camBuffer.buffer as ArrayBuffer);
+    const gs = new GameState();
+    const parser = new PacketParser(gs, datLoaderRef.current, { looktypeU16: true, strictMode: true });
+    parser.seekMode = true;
+    
+    setScanning(true);
+    setScanDone(false);
+    setDriftResults([]);
+    setScanProgress(0);
+    scanAbortRef.current = false;
+    
+    const results: DriftResult[] = [];
+    const BATCH = 50; // frames per tick
+    
+    for (let i = 0; i < cam.frames.length; i += BATCH) {
+      if (scanAbortRef.current) break;
+      
+      const end = Math.min(i + BATCH, cam.frames.length);
+      for (let j = i; j < end; j++) {
+        const frame = cam.frames[j];
+        const opcodes: string[] = [];
+        let bytesLeft = 0;
+        let error: string | undefined;
+        
+        try {
+          parser.process(frame.payload);
+          bytesLeft = parser.bytesLeftAfterProcess;
+          opcodes.push(...parser.lastFrameOpcodes.map(op => OPCODE_NAMES[op] || `0x${op.toString(16).padStart(2, '0')}`));
+        } catch (e: any) {
+          error = e?.message || String(e);
+          bytesLeft = -1; // crash
+          opcodes.push(...parser.lastFrameOpcodes.map(op => OPCODE_NAMES[op] || `0x${op.toString(16).padStart(2, '0')}`));
+        }
+        
+        if (bytesLeft !== 0 || error) {
+          // Hex dump of the problematic area
+          const dumpStart = error ? 0 : Math.max(0, frame.payload.length - Math.abs(bytesLeft));
+          const hexBytes = Array.from(frame.payload.slice(dumpStart, Math.min(dumpStart + 64, frame.payload.length)))
+            .map(b => b.toString(16).padStart(2, '0')).join(' ');
+          
+          results.push({
+            frameIdx: j,
+            timestamp: frame.timestamp,
+            bytesLeft,
+            totalBytes: frame.payload.length,
+            opcodes,
+            hexDump: hexBytes,
+            error,
+          });
+        }
+      }
+      
+      setScanProgress(Math.round((end / cam.frames.length) * 100));
+      // Yield to UI
+      await new Promise(r => requestAnimationFrame(r));
+    }
+    
+    setDriftResults(results);
+    setScanning(false);
+    setScanDone(true);
+    console.log(`[DriftScan] Done. ${results.length} problematic frames out of ${cam.frames.length}`);
+  }, [camBuffer]);
+
   const handleExport = () => {
     const logger = loggerRef.current;
     const text = logger.exportText();
@@ -290,11 +356,24 @@ const CamFrameDebugger = ({ camBuffer, progress, isPlaying }: CamFrameDebuggerPr
     URL.revokeObjectURL(url);
   };
 
+  const handleExportDrift = () => {
+    const lines = driftResults.map(r => 
+      `Frame #${r.frameIdx} @ ${(r.timestamp/1000).toFixed(2)}s | ${r.totalBytes}B | left=${r.bytesLeft} | ops=[${r.opcodes.join(',')}]${r.error ? ` | ERR: ${r.error}` : ''}\n  hex: ${r.hexDump}`
+    );
+    const text = `Drift Scan Results — ${driftResults.length} problematic frames\n${'='.repeat(60)}\n${lines.join('\n\n')}`;
+    const blob = new Blob([text], { type: 'text/plain' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `drift-scan-${Date.now()}.log`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
   const handleClear = () => {
     loggerRef.current.clear();
     setDisplayEvents([]);
     lastFrameIdxRef.current = 0;
-    // Re-init parser
     if (camBuffer && datLoaderRef.current) {
       const gs = new GameState();
       const logger = new DebugLogger();
