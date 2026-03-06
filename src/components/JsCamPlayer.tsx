@@ -29,6 +29,7 @@ const JsCamPlayer = ({ className, onStateChange, onFileNameChange }: JsCamPlayer
   const framesRef = useRef<CamFrame[]>([]);
   const camBufferRef = useRef<Uint8Array | null>(null);
   const animRef = useRef<number | null>(null);
+  const parserRef = useRef<PacketParser | null>(null);
   const frameIdxRef = useRef(0);
   const startTimeRef = useRef(0);
   const pauseOffsetRef = useRef(0);
@@ -108,16 +109,16 @@ const JsCamPlayer = ({ className, onStateChange, onFileNameChange }: JsCamPlayer
   }, []);
 
   const processFramesUpTo = useCallback((targetMs: number) => {
-    const spr = sprRef.current;
     const dat = datRef.current;
     const renderer = rendererRef.current;
-    if (!spr || !dat || !renderer) return;
+    if (!dat || !renderer) return;
 
     const frames = framesRef.current;
-    const gs = renderer.gs;
+    // Reset game state and parser for seeking
     const gsNew = new GameState();
     renderer.gs = gsNew;
-    const parserNew = new PacketParser(gsNew, dat, { looktypeU16: true, outfitWindowRangeU16: true });
+    const seekParser = new PacketParser(gsNew, dat, { looktypeU16: true, outfitWindowRangeU16: true });
+    seekParser.seekMode = true;
 
     for (let i = 0; i < frames.length; i++) {
       if (frames[i].timestamp > targetMs) {
@@ -125,10 +126,14 @@ const JsCamPlayer = ({ className, onStateChange, onFileNameChange }: JsCamPlayer
         break;
       }
       try {
-        parserNew.process(frames[i].payload);
+        seekParser.process(frames[i].payload);
       } catch { /* skip broken frames */ }
       if (i === frames.length - 1) frameIdxRef.current = frames.length;
     }
+
+    // Replace persistent parser with new one (seekMode off for live playback)
+    const liveParser = new PacketParser(gsNew, dat, { looktypeU16: true, outfitWindowRangeU16: true });
+    parserRef.current = liveParser;
   }, []);
 
   const renderFrame = useCallback(() => {
@@ -144,12 +149,10 @@ const JsCamPlayer = ({ className, onStateChange, onFileNameChange }: JsCamPlayer
     if (!renderer || frames.length === 0) return;
 
     const elapsed = (performance.now() - startTimeRef.current) * speed + pauseOffsetRef.current;
-    const gs = renderer.gs;
-    const dat = datRef.current;
-    if (!dat) return;
+    const parser = parserRef.current;
+    if (!parser) return;
 
     // Process frames up to current elapsed time
-    const parser = new PacketParser(gs, dat, { looktypeU16: true, outfitWindowRangeU16: true });
     let idx = frameIdxRef.current;
     while (idx < frames.length && frames[idx].timestamp <= elapsed) {
       try {
@@ -212,6 +215,10 @@ const JsCamPlayer = ({ className, onStateChange, onFileNameChange }: JsCamPlayer
       const gs = new GameState();
       const renderer = new Renderer(ctx, spr, dat, gs);
       rendererRef.current = renderer;
+
+      // Create persistent parser for this cam session
+      const parser = new PacketParser(gs, dat, { looktypeU16: true, outfitWindowRangeU16: true });
+      parserRef.current = parser;
 
       setDuration(camFile.totalMs);
       setProgress(0);
