@@ -241,6 +241,8 @@ export class PacketParser {
     this.lastError = null;
     this.bytesLeftAfterProcess = 0;
     if (this.traceMode) this.traceLog = [];
+    this._rawPayload = payload;
+    this._frameOpcodes = [];
     const r = new Buf(payload);
     if (payload.length === 0) return;
 
@@ -251,9 +253,30 @@ export class PacketParser {
     } catch (e: any) {
       this.lastError = e?.message || String(e);
       this.bytesLeftAfterProcess = r.left();
+      // Emit dissector frame even on error
+      if (this.dissector) {
+        this.dissector.addFrame({
+          frameIdx: this.dissectorFrameIdx,
+          camMs: this.dissectorCamMs,
+          totalBytes: payload.length,
+          opcodes: this._frameOpcodes,
+          bytesLeft: r.left(),
+          error: this.lastError,
+        });
+      }
       throw e;
     }
     this.bytesLeftAfterProcess = r.left();
+    // Emit dissector frame
+    if (this.dissector && this._frameOpcodes.length > 0) {
+      this.dissector.addFrame({
+        frameIdx: this.dissectorFrameIdx,
+        camMs: this.dissectorCamMs,
+        totalBytes: payload.length,
+        opcodes: this._frameOpcodes,
+        bytesLeft: r.left(),
+      });
+    }
   }
 
   /** Demux TCP sub-packets: read u16 length prefix, then opcodes within each sub-packet */
