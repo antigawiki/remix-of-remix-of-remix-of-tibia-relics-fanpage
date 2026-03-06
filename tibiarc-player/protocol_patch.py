@@ -3,12 +3,12 @@
 TibiaRelic protocol patches for tibiarc C++ engine.
 Replaces all fragile sed commands with robust regex-based patching.
 
-Patches applied:
+NOTE: 0xB6 WalkCancel is NOT patched — TibiaRelic sends standard 2B (ParseMoveDelay).
   1. 0xA4 ParseSpellCooldown: SkipU32 → SkipU8 (5B → 2B)
   2. 0xA5 SpellGroupCooldown: separate from 0xA4, read 5B
   3. 0xA7 PlayerTactics: remove PvPMode (4B → 3B)
-  4. 0xA8 CreatureSquare: add case, skip 5B
-  5. 0xB6 WalkCancel: remove payload (2B → 0B)
+   4. 0xA8 CreatureSquare: add case, skip 5B
+   5. 0xB6 WalkCancel: KEEP standard ParseMoveDelay (2B) — do NOT remove
   6. 0x92 CreatureImpassable: remove assert
   7. Diagnostic opcode logging
 
