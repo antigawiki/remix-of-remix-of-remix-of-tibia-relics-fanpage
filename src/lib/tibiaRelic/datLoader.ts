@@ -147,6 +147,21 @@ export class DatLoader {
         console.log(`[DatLoader] ✓ verify item ${id}: sprite[0]=${spr0} OK`);
       }
     }
+
+    // Detailed diagnostic for specific items
+    for (const id of [853, 870, 102, 408]) {
+      const it = this.items.get(id);
+      if (!it) { console.warn(`[DatLoader] 🔍 item ${id}: NOT FOUND`); continue; }
+      const sprPreview = it.spriteIds.slice(0, 8).join(',');
+      const validSprites = it.spriteIds.filter(s => s > 0 && s < 20000).length;
+      console.log(
+        `[DatLoader] 🔍 item ${id}: w=${it.width} h=${it.height} layers=${it.layers} ` +
+        `patX=${it.patX} patY=${it.patY} patZ=${it.patZ} anim=${it.anim} ` +
+        `sprites=${it.spriteIds.length} validSprites=${validSprites} ` +
+        `ground=${it.isGround} speed=${it.speed} blocking=${it.isBlocking} ` +
+        `spr[0..7]=[${sprPreview}]`
+      );
+    }
   }
 
   /**
