@@ -161,6 +161,52 @@ function buildHypotheses(): HypothesisConfig[] {
     spriteIdU32: true,
   });
 
+  // Hyp G: Combined — 0x07=u16 + 0x1C/1D=u32
+  {
+    const m = baselineFlagPayloads();
+    m.set(0x07, 2);
+    m.set(0x1C, 4);
+    m.set(0x1D, 4);
+    configs.push({
+      name: 'hyp_G',
+      label: 'G: 0x07=u16+0x1C/1D=u32',
+      description: 'Combinação: 0x07 com u16 + 0x1C/0x1D com u32',
+      flagOverrides: m,
+      spriteIdU32: false,
+    });
+  }
+
+  // Hyp H: Combined — 0x08/09=u32 + 0x1C/1D=u32
+  {
+    const m = baselineFlagPayloads();
+    m.set(0x08, 4);
+    m.set(0x09, 4);
+    m.set(0x1C, 4);
+    m.set(0x1D, 4);
+    configs.push({
+      name: 'hyp_H',
+      label: 'H: 0x08/09+1C/1D=u32',
+      description: 'Combinação: 0x08/0x09 e 0x1C/0x1D todos com u32',
+      flagOverrides: m,
+      spriteIdU32: false,
+    });
+  }
+
+  // Hyp I: Combined — 0x07=u16 + 0x08/09=u32
+  {
+    const m = baselineFlagPayloads();
+    m.set(0x07, 2);
+    m.set(0x08, 4);
+    m.set(0x09, 4);
+    configs.push({
+      name: 'hyp_I',
+      label: 'I: 0x07=u16+0x08/09=u32',
+      description: 'Combinação: 0x07 com u16 + 0x08/0x09 com u32',
+      flagOverrides: m,
+      spriteIdU32: false,
+    });
+  }
+
   return configs;
 }
 
@@ -277,12 +323,12 @@ function parseWithHypothesis(
         itemSprites.set(itemId, spr0);
 
         // Check dimensions validity
-        const dimValid = rawW >= 1 && rawW <= 4 && rawH >= 1 && rawH <= 4
-          && rawLayers >= 1 && rawLayers <= 3
-          && rawAnim >= 1 && rawAnim <= 8
-          && rawPatX >= 1 && rawPatX <= 4
-          && rawPatY >= 1 && rawPatY <= 4
-          && rawPatZ >= 1 && rawPatZ <= 4;
+        const dimValid = rawW >= 1 && rawW <= 8 && rawH >= 1 && rawH <= 8
+          && rawLayers >= 1 && rawLayers <= 8
+          && rawAnim >= 1 && rawAnim <= 32
+          && rawPatX >= 1 && rawPatX <= 8
+          && rawPatY >= 1 && rawPatY <= 8
+          && rawPatZ >= 1 && rawPatZ <= 8;
 
         if (dimValid) {
           result.validDimensions++;
