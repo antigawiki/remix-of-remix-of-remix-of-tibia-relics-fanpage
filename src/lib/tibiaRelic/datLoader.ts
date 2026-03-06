@@ -218,7 +218,7 @@ export class DatLoader {
       try {
         if (flag === 0x00) {
           it.isGround = true; it.stackPrio = 0;
-          if (p + 1 < end) { it.speed = view.getUint16(p, true); p += 2; } else return;
+          if (p + 2 <= end) { it.speed = view.getUint16(p, true); p += 2; } else return;
         } else if (flag === 0x01) { it.stackPrio = 1; }
         else if (flag === 0x02) { it.stackPrio = 2; }
         else if (flag === 0x03) { it.stackPrio = 3; }
@@ -226,8 +226,8 @@ export class DatLoader {
         else if (flag === 0x05) { it.isStackable = true; }
         else if (flag === 0x06) { /* multiuse */ }
         else if (flag === 0x07) { /* boolean */ }
-        else if (flag === 0x08) { if (p + 1 < end) p += 2; else return; }
-        else if (flag === 0x09) { if (p + 1 < end) p += 2; else return; }
+        else if (flag === 0x08) { if (p + 2 <= end) p += 2; else return; }
+        else if (flag === 0x09) { if (p + 2 <= end) p += 2; else return; }
         else if (flag === 0x0A) { it.isFluid = true; }
         else if (flag === 0x0B) { it.isSplash = true; }
         else if (flag === 0x0C) { it.isBlocking = true; }
@@ -239,17 +239,17 @@ export class DatLoader {
         else if (flag === 0x12) { it.isVertical = true; }
         else if (flag === 0x13) { it.isHorizontal = true; }
         else if (flag === 0x14) { /* rotateable */ }
-        else if (flag === 0x15) { if (p + 3 < end) p += 4; else return; }
+        else if (flag === 0x15) { if (p + 4 <= end) p += 4; else return; }
         else if (flag === 0x16) { it.dontHide = true; }
         else if (flag === 0x17) { /* translucent */ }
         else if (flag === 0x18) {
-          if (p + 3 < end) { it.dispX = view.getUint16(p, true); it.dispY = view.getUint16(p + 2, true); p += 4; } else return;
+          if (p + 4 <= end) { it.dispX = view.getUint16(p, true); it.dispY = view.getUint16(p + 2, true); p += 4; } else return;
         }
-        else if (flag === 0x19) { if (p + 1 < end) { it.elevation = view.getUint16(p, true); p += 2; } else return; }
+        else if (flag === 0x19) { if (p + 2 <= end) { it.elevation = view.getUint16(p, true); p += 2; } else return; }
         else if (flag === 0x1A) { /* redrawNearbyTop */ }
         else if (flag === 0x1B) { it.animateIdle = true; }
-        else if (flag === 0x1C) { if (p + 1 < end) p += 2; else return; }
-        else if (flag === 0x1D) { if (p + 1 < end) p += 2; else return; }
+        else if (flag === 0x1C) { if (p + 2 <= end) p += 2; else return; }
+        else if (flag === 0x1D) { if (p + 2 <= end) p += 2; else return; }
         else if (flag === 0x1E) { /* walkable */ }
         else if (flag >= 0x1F && flag <= 0x4F) { /* boolean flags, no param */ }
         else { /* unknown flag — skip, don't break */ }

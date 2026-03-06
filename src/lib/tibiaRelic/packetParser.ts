@@ -249,16 +249,15 @@ export class PacketParser {
     while (r.pos + 2 <= totalLen) {
       try {
         const subLen = r.u16();
-        if (subLen === 0) continue; // skip empty TCP packets
+        if (subLen === 0) continue;
         if (r.pos + subLen > totalLen) {
-          // Invalid length — maybe not TCP after all, try as direct opcodes
-          r.pos -= 2; // rewind the u16
+          r.pos -= 2;
           this.processDirectOpcodes(r, totalLen);
           return;
         }
         const subEnd = r.pos + subLen;
         this.processDirectOpcodes(r, subEnd);
-        r.pos = subEnd; // ensure alignment even if opcode parse stopped early
+        r.pos = subEnd;
       } catch (e) {
         if (this.strictMode) throw e;
         if (this.frameErrorCount < 30) {
@@ -270,119 +269,18 @@ export class PacketParser {
     }
   }
 
-  /** Process opcodes with TCP fallback for unknown opcodes mid-stream */
-  private processOpcodes(r: Buf, endPos: number) {
-    while (r.pos < endPos) {
-      try {
-        const t = r.u8();
-        if (this.dispatch(t, r)) continue;
-
-        // Unknown opcode — try TCP demux for rest of frame
-        r.pos -= 1;
-        this.processTcpDemux(r, endPos);
-        return;
-      } catch (e) {
-        if (this.strictMode) throw e;
-        if (this.frameErrorCount < 30) {
-          this.frameErrorCount++;
-          if (e instanceof BufOverflowError) {
-            console.warn(`[PacketParser] Buffer overflow: ${e.message}`);
-          } else {
-            console.warn(`[PacketParser] Parse error:`, e);
-          }
-        }
-        break;
-      }
-    }
-  }
-
-  /** Process opcodes directly — no TCP fallback (used inside demuxed sub-packets) */
+  /** Process opcodes directly — fail-fast like C++ (abort frame on error) */
   private processDirectOpcodes(r: Buf, endPos: number) {
     while (r.pos < endPos) {
-      try {
-        const t = r.u8();
-        if (!this.dispatch(t, r)) {
-          // Unknown opcode — scan forward up to 128 bytes looking for a known opcode
-          let recovered = false;
-          for (let skip = 0; skip < 128 && r.pos < endPos; skip++) {
-            const next = r.peekU8();
-            if (this.isKnownOpcode(next)) {
-              recovered = true;
-              break;
-            }
-            r.pos++;
-          }
-          if (!recovered) break;
+      const t = r.u8();
+      if (!this.dispatch(t, r)) {
+        if (this.frameErrorCount < 30) {
+          this.frameErrorCount++;
+          console.warn(`[PacketParser] Unknown opcode 0x${t.toString(16)} at pos ${r.pos - 1} — aborting frame`);
         }
-      } catch (e) {
-        if (this.strictMode) throw e;
-        // Try to recover: scan forward for next valid opcode
-        let recovered = false;
-        for (let skip = 0; skip < 128 && r.pos < endPos; skip++) {
-          const next = r.peekU8();
-          if (this.isKnownOpcode(next)) {
-            recovered = true;
-            break;
-          }
-          r.pos++;
-        }
-        if (!recovered) break;
+        throw new Error(`Unknown opcode 0x${t.toString(16)}`);
       }
     }
-  }
-
-  /**
-   * Scan forward through the buffer looking for a known opcode byte.
-   * Consumes orphaned tile data after a stuck-buffer abort, landing r.pos
-   * at the next valid opcode so playback can continue normally.
-   * Returns true if a known opcode was found.
-   */
-  private scanForwardToOpcode(r: Buf): boolean {
-    const maxScan = Math.min(r.left(), 1024);
-    const startPos = r.pos;
-    for (let i = 0; i < maxScan; i++) {
-      if (this.isKnownOpcode(r.peekU8())) {
-        const skipped = r.pos - startPos;
-        this.debugLogger?.log('PARSE_ERROR', {
-          type: 'SCAN_FORWARD_RECOVERY',
-          skippedBytes: skipped,
-          foundOpcode: '0x' + r.peekU8().toString(16),
-          pos: r.pos,
-        }, `Scan-forward recovered: skipped ${skipped} bytes, found opcode 0x${r.peekU8().toString(16)} at pos ${r.pos}`);
-        return true;
-      }
-      r.pos++;
-    }
-    // No known opcode found — revert to where we started
-    const skipped = r.pos - startPos;
-    this.debugLogger?.log('PARSE_ERROR', {
-      type: 'SCAN_FORWARD_FAILED',
-      scannedBytes: skipped,
-      pos: r.pos,
-    }, `Scan-forward failed after ${skipped} bytes — no valid opcode found`);
-    return false;
-  }
-
-  /** Check if a byte is a known opcode */
-  private isKnownOpcode(b: number): boolean {
-    // Map opcodes
-    if (b >= 0x64 && b <= 0x6d) return true;
-    // Creature turn
-    if (b === 0x63) return true;
-    // Login/system
-    if (b === 0x0a || b === 0x0b || b === 0x0f || b === 0x1d || b === 0x1e) return true;
-    // Container
-    if (b >= 0x6e && b <= 0x72) return true;
-    // Inventory/trade/world
-    if (b === 0x78 || b === 0x79 || b === 0x7d || b === 0x7e || b === 0x7f) return true;
-    if (b >= 0x82 && b <= 0x85) return true;
-    if (b >= 0x8c && b <= 0x8f) return true;
-    if (b >= 0x96 && b <= 0x9a) return true;
-    if (b >= 0xa0 && b <= 0xa4) return true;
-    if (b === 0xa7 || b === 0xa8) return true;
-    if (b >= 0xaa && b <= 0xb4) return true;
-    if (b === 0xb6 || b === 0xbe || b === 0xbf) return true;
-    return false;
   }
 
   private dispatch(t: number, r: Buf): boolean {
@@ -1164,10 +1062,8 @@ export class PacketParser {
           this.debugLogger?.log('PARSE_ERROR', {
             type: 'FLOOR_STUCK',
             floor: z, tx, ty, pos: r.pos,
-          }, `Buffer stuck at floor z=${z} tile (${tx},${ty}) — aborting floor, scanning forward`);
-          // Scan forward to recover to next valid opcode
-          this.scanForwardToOpcode(r);
-          return;
+          }, `Buffer stuck at floor z=${z} tile (${tx},${ty}) — aborting frame`);
+          throw new Error(`Floor stuck at z=${z} tile (${tx},${ty})`);
         }
       }
     }
@@ -1212,11 +1108,9 @@ export class PacketParser {
             bytesLeft: r.left(),
             skipCarry: skip,
             stuck: true,
-          }, `Floor z=${nz} stuck — stopping multi-floor read, scanning forward`);
+          }, `Floor z=${nz} stuck — aborting frame`);
         }
-        // Scan forward to find the next valid opcode, consuming orphaned tile data
-        this.scanForwardToOpcode(r);
-        skip = 0; // reset for callers
+        throw new Error(`Multi-floor stuck at z=${nz}`);
         break;
       }
       floorCount++;
