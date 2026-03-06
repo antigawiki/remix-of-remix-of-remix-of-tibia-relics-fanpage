@@ -117,7 +117,7 @@ const JsCamPlayer = ({ className, onStateChange, onFileNameChange }: JsCamPlayer
     // Reset game state and parser for seeking
     const gsNew = new GameState();
     renderer.gs = gsNew;
-    const seekParser = new PacketParser(gsNew, dat, { looktypeU16: true, outfitWindowRangeU16: true });
+    const seekParser = new PacketParser(gsNew, dat, { looktypeU16: true, outfitWindowRangeU16: false });
     seekParser.seekMode = true;
 
     for (let i = 0; i < frames.length; i++) {
@@ -132,7 +132,7 @@ const JsCamPlayer = ({ className, onStateChange, onFileNameChange }: JsCamPlayer
     }
 
     // Replace persistent parser with new one (seekMode off for live playback)
-    const liveParser = new PacketParser(gsNew, dat, { looktypeU16: true, outfitWindowRangeU16: true });
+    const liveParser = new PacketParser(gsNew, dat, { looktypeU16: true, outfitWindowRangeU16: false });
     parserRef.current = liveParser;
   }, []);
 
@@ -217,7 +217,7 @@ const JsCamPlayer = ({ className, onStateChange, onFileNameChange }: JsCamPlayer
       rendererRef.current = renderer;
 
       // Create persistent parser for this cam session
-      const parser = new PacketParser(gs, dat, { looktypeU16: true, outfitWindowRangeU16: true });
+      const parser = new PacketParser(gs, dat, { looktypeU16: true, outfitWindowRangeU16: false });
       parserRef.current = parser;
 
       setDuration(camFile.totalMs);

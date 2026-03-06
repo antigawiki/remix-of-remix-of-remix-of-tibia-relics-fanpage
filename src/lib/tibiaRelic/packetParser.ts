@@ -296,37 +296,17 @@ export class PacketParser {
     }
   }
 
-  /** Process opcodes directly — no TCP fallback (used inside demuxed sub-packets) */
+  /** Process opcodes directly — fail-fast like C++ (abort frame on error) */
   private processDirectOpcodes(r: Buf, endPos: number) {
     while (r.pos < endPos) {
-      try {
-        const t = r.u8();
-        if (!this.dispatch(t, r)) {
-          // Unknown opcode — scan forward up to 128 bytes looking for a known opcode
-          let recovered = false;
-          for (let skip = 0; skip < 128 && r.pos < endPos; skip++) {
-            const next = r.peekU8();
-            if (this.isKnownOpcode(next)) {
-              recovered = true;
-              break;
-            }
-            r.pos++;
-          }
-          if (!recovered) break;
+      const t = r.u8();
+      if (!this.dispatch(t, r)) {
+        // Unknown opcode — abort entire frame (C++ approach: throw on unknown)
+        if (this.frameErrorCount < 30) {
+          this.frameErrorCount++;
+          console.warn(`[PacketParser] Unknown opcode 0x${t.toString(16)} at pos ${r.pos - 1} — aborting frame`);
         }
-      } catch (e) {
-        if (this.strictMode) throw e;
-        // Try to recover: scan forward for next valid opcode
-        let recovered = false;
-        for (let skip = 0; skip < 128 && r.pos < endPos; skip++) {
-          const next = r.peekU8();
-          if (this.isKnownOpcode(next)) {
-            recovered = true;
-            break;
-          }
-          r.pos++;
-        }
-        if (!recovered) break;
+        throw new Error(`Unknown opcode 0x${t.toString(16)}`);
       }
     }
   }
