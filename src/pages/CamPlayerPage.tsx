@@ -3,13 +3,16 @@ import { Link } from 'react-router-dom';
 import { ArrowLeft, Film } from 'lucide-react';
 import { useTranslation } from '@/i18n';
 import TibiarcPlayer from '@/components/TibiarcPlayer';
+import JsCamPlayer from '@/components/JsCamPlayer';
 import CamFrameDebugger from '@/components/CamFrameDebugger';
 import { ThemeToggle } from '@/components/ThemeToggle';
 import { LanguageSelector } from '@/components/LanguageSelector';
 import { Badge } from '@/components/ui/badge';
+import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 
 const CamPlayerPage = () => {
   const { t } = useTranslation();
+  const [activeEngine, setActiveEngine] = useState<'wasm' | 'typescript'>('wasm');
   const [debugState, setDebugState] = useState<{ camBuffer: Uint8Array | null; progress: number; isPlaying: boolean }>({
     camBuffer: null, progress: 0, isPlaying: false,
   });
@@ -20,18 +23,13 @@ const CamPlayerPage = () => {
     setDebugState(info);
   }, []);
 
-  // WASM module sets document.title to "tibiarc" — use MutationObserver to revert instantly
   useEffect(() => {
     const title = `${t('camPlayer.title')} — Tibia Relic Wiki`;
     document.title = title;
-
     const titleEl = document.querySelector('title');
     if (!titleEl) return;
-
     const observer = new MutationObserver(() => {
-      if (document.title !== title) {
-        document.title = title;
-      }
+      if (document.title !== title) document.title = title;
     });
     observer.observe(titleEl, { childList: true, characterData: true, subtree: true });
     return () => observer.disconnect();
@@ -53,9 +51,14 @@ const CamPlayerPage = () => {
                 {camFileName}
               </Badge>
             )}
-            {wasmVersion && (
+            {wasmVersion && activeEngine === 'wasm' && (
               <Badge variant="outline" className="text-[10px] text-muted-foreground border-border/50 font-mono">
                 WASM {wasmVersion}
+              </Badge>
+            )}
+            {activeEngine === 'typescript' && (
+              <Badge variant="outline" className="text-[10px] text-muted-foreground border-border/50 font-mono">
+                TypeScript Engine
               </Badge>
             )}
           </div>
@@ -75,7 +78,24 @@ const CamPlayerPage = () => {
 
       {/* Player */}
       <div className="flex-1 flex flex-col items-center p-4 pt-6 gap-6">
-        <TibiarcPlayer className="w-full max-w-[960px]" onStateChange={handleStateChange} onWasmVersion={setWasmVersion} onFileNameChange={setCamFileName} />
+        <Tabs value={activeEngine} onValueChange={(v) => setActiveEngine(v as 'wasm' | 'typescript')} className="w-full max-w-[960px]">
+          <TabsList className="w-full grid grid-cols-2 mb-4">
+            <TabsTrigger value="wasm" className="data-[state=active]:text-gold">
+              ⚡ WASM Engine
+            </TabsTrigger>
+            <TabsTrigger value="typescript" className="data-[state=active]:text-gold">
+              🔧 TypeScript Engine
+            </TabsTrigger>
+          </TabsList>
+
+          <TabsContent value="wasm">
+            <TibiarcPlayer className="w-full" onStateChange={handleStateChange} onWasmVersion={setWasmVersion} onFileNameChange={setCamFileName} />
+          </TabsContent>
+
+          <TabsContent value="typescript">
+            <JsCamPlayer className="w-full" onStateChange={handleStateChange} onFileNameChange={setCamFileName} />
+          </TabsContent>
+        </Tabs>
 
         {/* Frame Debugger */}
         <CamFrameDebugger
@@ -83,7 +103,6 @@ const CamPlayerPage = () => {
           progress={debugState.progress}
           isPlaying={debugState.isPlaying}
         />
-
       </div>
     </div>
   );
