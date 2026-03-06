@@ -277,12 +277,12 @@ function parseWithHypothesis(
         itemSprites.set(itemId, spr0);
 
         // Check dimensions validity
-        const dimValid = rawW >= 1 && rawW <= 4 && rawH >= 1 && rawH <= 4
-          && rawLayers >= 1 && rawLayers <= 3
-          && rawAnim >= 1 && rawAnim <= 8
-          && rawPatX >= 1 && rawPatX <= 4
-          && rawPatY >= 1 && rawPatY <= 4
-          && rawPatZ >= 1 && rawPatZ <= 4;
+        const dimValid = rawW >= 1 && rawW <= 8 && rawH >= 1 && rawH <= 8
+          && rawLayers >= 1 && rawLayers <= 8
+          && rawAnim >= 1 && rawAnim <= 32
+          && rawPatX >= 1 && rawPatX <= 8
+          && rawPatY >= 1 && rawPatY <= 8
+          && rawPatZ >= 1 && rawPatZ <= 8;
 
         if (dimValid) {
           result.validDimensions++;

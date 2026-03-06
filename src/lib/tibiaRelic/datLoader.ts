@@ -255,56 +255,30 @@ export class DatLoader {
   }
 
   /**
-   * Best-effort metadata extraction from attribute bytes.
-   * This never affects the main parser position — errors here just leave defaults.
+   * Apply a single flag's metadata to the item type.
+   * Position p points to the start of the payload (after the flag byte).
    */
-  private extractMetadata(bytes: Uint8Array, view: DataView, start: number, end: number, it: ItemType, flagsRead: number[]) {
-    let p = start;
-    while (p < end) {
-      const flag = bytes[p]; p++;
-      flagsRead.push(flag);
-
-      try {
-        if (flag === 0x00) {
-          it.isGround = true; it.stackPrio = 0;
-          if (p + 2 <= end) { it.speed = view.getUint16(p, true); p += 2; } else return;
-        } else if (flag === 0x01) { it.stackPrio = 1; }
-        else if (flag === 0x02) { it.stackPrio = 2; }
-        else if (flag === 0x03) { it.stackPrio = 3; }
-        else if (flag === 0x04) { /* container */ }
-        else if (flag === 0x05) { it.isStackable = true; }
-        else if (flag === 0x06) { /* multiuse */ }
-        else if (flag === 0x07) { /* boolean */ }
-        else if (flag === 0x08) { if (p + 2 <= end) p += 2; else return; }
-        else if (flag === 0x09) { if (p + 2 <= end) p += 2; else return; }
-        else if (flag === 0x0A) { it.isFluid = true; }
-        else if (flag === 0x0B) { it.isSplash = true; }
-        else if (flag === 0x0C) { it.isBlocking = true; }
-        else if (flag === 0x0D) { /* notMovable */ }
-        else if (flag === 0x0E) { /* blockMissile */ }
-        else if (flag === 0x0F) { /* blockPath */ }
-        else if (flag === 0x10) { /* pickupable */ }
-        else if (flag === 0x11) { it.isHangable = true; }
-        else if (flag === 0x12) { it.isVertical = true; }
-        else if (flag === 0x13) { it.isHorizontal = true; }
-        else if (flag === 0x14) { /* rotateable */ }
-        else if (flag === 0x15) { if (p + 4 <= end) p += 4; else return; }
-        else if (flag === 0x16) { it.dontHide = true; }
-        else if (flag === 0x17) { /* translucent */ }
-        else if (flag === 0x18) {
-          if (p + 4 <= end) { it.dispX = view.getUint16(p, true); it.dispY = view.getUint16(p + 2, true); p += 4; } else return;
-        }
-        else if (flag === 0x19) { if (p + 2 <= end) { it.elevation = view.getUint16(p, true); p += 2; } else return; }
-        else if (flag === 0x1A) { /* redrawNearbyTop */ }
-        else if (flag === 0x1B) { it.animateIdle = true; }
-        else if (flag === 0x1C) { if (p + 2 <= end) p += 2; else return; }
-        else if (flag === 0x1D) { if (p + 2 <= end) p += 2; else return; }
-        else if (flag === 0x1E) { /* walkable */ }
-        else if (flag >= 0x1F && flag <= 0x4F) { /* boolean flags, no param */ }
-        else { /* unknown flag — skip, don't break */ }
-      } catch {
-        return; // bail out of metadata extraction on any error
+  private applyFlag(flag: number, bytes: Uint8Array, view: DataView, p: number, it: ItemType) {
+    try {
+      switch (flag) {
+        case 0x00: it.isGround = true; it.stackPrio = 0; if (p + 2 <= bytes.length) it.speed = view.getUint16(p, true); break;
+        case 0x01: it.stackPrio = 1; break;
+        case 0x02: it.stackPrio = 2; break;
+        case 0x03: it.stackPrio = 3; break;
+        case 0x05: it.isStackable = true; break;
+        case 0x0A: it.isFluid = true; break;
+        case 0x0B: it.isSplash = true; break;
+        case 0x0C: it.isBlocking = true; break;
+        case 0x11: it.isHangable = true; break;
+        case 0x12: it.isVertical = true; break;
+        case 0x13: it.isHorizontal = true; break;
+        case 0x16: it.dontHide = true; break;
+        case 0x18:
+          if (p + 4 <= bytes.length) { it.dispX = view.getUint16(p, true); it.dispY = view.getUint16(p + 2, true); }
+          break;
+        case 0x19: if (p + 2 <= bytes.length) it.elevation = view.getUint16(p, true); break;
+        case 0x1B: it.animateIdle = true; break;
       }
-    }
+    } catch { /* ignore metadata errors */ }
   }
 }
