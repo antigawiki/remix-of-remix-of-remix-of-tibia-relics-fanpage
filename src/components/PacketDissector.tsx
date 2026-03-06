@@ -121,16 +121,16 @@ const PacketDissector = ({ camBuffer, progress, isPlaying }: PacketDissectorProp
       let filtered: DissectedFrame[];
       switch (viewMode) {
         case 'map-only':
-          filtered = allFrames.filter(f => f.opcodes.some(op => MAP_OPS.has(op.opcode) || POS_OPS.has(op.opcode))).slice(-100);
+          filtered = allFrames.filter(f => f.opcodes.some(op => MAP_OPS.has(op.opcode) || POS_OPS.has(op.opcode)));
           break;
         case 'anomalies':
-          filtered = allFrames.filter(f => f.opcodes.some(op => op.camBefore !== op.camAfter || op.error)).slice(-100);
+          filtered = allFrames.filter(f => f.opcodes.some(op => op.camBefore !== op.camAfter || op.error));
           break;
         case 'errors':
-          filtered = allFrames.filter(f => f.bytesLeft > 0 || f.error).slice(-100);
+          filtered = allFrames.filter(f => f.bytesLeft > 0 || f.error);
           break;
         default:
-          filtered = allFrames.slice(-100);
+          filtered = allFrames;
       }
       setFrames(filtered);
     }
