@@ -815,12 +815,16 @@ export class PacketParser {
 
     try {
       if (g.camZ === 7) {
-        // Exiting underground to surface — read the newly visible floor (z=5)
-        // Old visible (z=8): [6,7,8,9,10]. New visible (z=7): [5,6,7]
-        // Only NEW floor is z=5. Read it with perspective offset = 8 - 5 = 3
-        const newFloor = Math.max(g.camZ - 2, 0);
-        const offset = 8 - newFloor;
-        this.readFloorArea(r, g.camX - 8, g.camY - 6, newFloor, 18, 14, offset, 0);
+        // Exiting underground to surface — read 3 floors (z=5, 6, 7)
+        // Symmetric to floorDown z=7→8 which reads z=8(j=-1), 9(j=-2), 10(j=-3)
+        // Here we read z=5(j=+3), 6(j=+2), 7(j=+1)
+        let skip = 0;
+        let j = 3;
+        for (let nz = Math.max(g.camZ - 2, 0); nz <= g.camZ; nz++) {
+          skip = this.readFloorArea(r, g.camX - 8, g.camY - 6, nz, 18, 14, j, skip);
+          if (skip < 0) { skip = 0; break; }
+          j--;
+        }
       } else if (g.camZ > 7) {
         // Underground going up — read the newly visible floor (camZ - 2)
         const nz = g.camZ - 2;
