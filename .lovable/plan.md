@@ -1,30 +1,46 @@
-## Auditoria Completa — Status: PATCHES APLICADOS ✅
 
-Todos os patches identificados na auditoria foram adicionados ao workflow `.github/workflows/build-tibiarc.yml`.
 
-### Patches aplicados (total: 21)
+## Filtrar WALK_FAIL por viewport da câmera
 
-| # | Opcode/Área | Descrição | Status |
-|---|--------|-----------|--------|
-| 1 | `0xA4` | SpellCooldown 5B→2B | ✅ já existia |
-| 2 | `0xA7` | PlayerTactics 4B→3B | ✅ já existia |
-| 3 | `0xA8` | CreatureSquare (novo case) | ✅ já existia |
-| 4 | `0xB6` | WalkCancel 2B→0B | ✅ já existia |
-| 5 | `0x92` | CreatureImpassable assert removido | ✅ já existia |
-| 6-9 | `0x65-0x68` | Scrolls revertidos para padrão | ✅ já existia |
-| 10 | `0xBE` | FloorUp z=7 revertido (6 floors) | ✅ já existia |
-| 11 | `0xAA` | Talk +u32 statementGuid | ✅ existente |
-| 12 | `0x64` | Mini MapDesc guard (<100B) | ✅ existente |
-| 13 | `0xA0` | PlayerStats sem stamina | ✅ existente |
-| 14 | `0xA5` | SpellGroupCooldown 5B | ✅ existente |
-| 15 | `0xA6` | MultiUseDelay 4B | ✅ existente |
-| 16 | `0x63` | CreatureTurn 5B | ✅ existente |
-| 17 | `0xC8` | OutfitWindow u16→u8 range | ✅ existente |
-| **18** | **DAT parser** | **Resiliência a flags desconhecidas (0x50, 0xC8, 0xD0)** | ✅ **NOVO** |
+### Problema
+Todos os `WALK_FAIL` são logados, incluindo criaturas fora do viewport (tiles vazias por scroll/mudança de andar). Isso gera ruído massivo no debugger.
 
-### SPR Loader C++
-Análise do código-fonte confirmou que o SPR loader já tem try-catch para `InvalidDataError` (sprites.cpp:266-273 e 326-337). Sprites corrompidos ou vazios são tratados graciosamente retornando sprite nulo. **Nenhum patch necessário.**
+### Solução
+No `packetParser.ts`, antes de logar `WALK_FAIL`, verificar se a posição de origem (`fx, fy, fz`) está dentro do viewport da câmera. Se estiver fora, suprimir o log.
 
-### Próximo passo
+### Viewport check
+O viewport do Tibia é 18×14 tiles centrado na câmera. A condição:
 
-Executar o workflow `Build tibiarc WASM Player` no GitHub Actions para rebuildar o WASM com o patch do DAT parser.
+```typescript
+const inViewport = 
+  fz === this.gs.camZ &&
+  fx >= this.gs.camX - 8 && fx <= this.gs.camX + 9 &&
+  fy >= this.gs.camY - 6 && fy <= this.gs.camY + 7;
+```
+
+### Alteração
+
+**`src/lib/tibiaRelic/packetParser.ts`** (~linhas 798-807): Envolver o log de `WALK_FAIL` com a verificação de viewport:
+
+```typescript
+} else {
+  // WALK_FAIL — only log if within camera viewport to reduce noise
+  const dl = this.debugLogger;
+  if (dl && dl.enabled) {
+    const inViewport =
+      fz === this.gs.camZ &&
+      fx >= this.gs.camX - 8 && fx <= this.gs.camX + 9 &&
+      fy >= this.gs.camY - 6 && fy <= this.gs.camY + 7;
+    if (inViewport) {
+      dl.log('WALK_FAIL', {
+        fromX: fx, fromY: fy, fromZ: fz,
+        toX: tx, toY: ty, toZ: tz,
+        stackpos: sp, tileLength: this.gs.getTile(fx, fy, fz).length,
+      });
+    }
+  }
+}
+```
+
+Nenhuma outra alteração necessária — os contadores e filtros no `CamFrameDebugger` e `CamDebugPanel` já consomem os eventos do logger normalmente.
+
