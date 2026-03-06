@@ -1,6 +1,7 @@
 """
-Two-phase DAT parser patch for tibiarc.
-Wraps ReadProperties body in try-catch with 0xFF terminator scan.
+DAT parser patch for tibiarc C++ (Tibia 7.72).
+Wraps ReadProperties in try-catch with 0xFF recovery on unknown flags.
+Also patches known flag payload sizes to match 7.72 spec.
 """
 import re
 import sys
@@ -10,7 +11,7 @@ filepath = sys.argv[1] if len(sys.argv) > 1 else 'lib/types.cpp'
 with open(filepath, 'r') as f:
     src = f.read()
 
-# Find ReadProperties function and inject two-phase logic
+# Find ReadProperties function and inject resilient logic
 pattern = r'(void EntityType::ReadProperties\([^)]*\)\s*\{)(.*?)(^\})'
 match = re.search(pattern, src, re.DOTALL | re.MULTILINE)
 if not match:
