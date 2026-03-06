@@ -1,30 +1,32 @@
-## Auditoria Completa — Status: PATCHES APLICADOS ✅
+## Auditoria Completa — Status: PATCHES CORRIGIDOS ✅
 
-Todos os patches identificados na auditoria foram adicionados ao workflow `.github/workflows/build-tibiarc.yml`.
+### Bug crítico encontrado e corrigido
 
-### Patches aplicados (total: 21)
+**0xAA ParseCreatureSpeak — DOUBLE READ removido**: O fork já lê `u32 messageId` via `ReportMessages=true` para 7.72. O patch antigo injetava outro `SkipU32()`, causando **+4B drift por mensagem de chat** — a causa principal do desync visual.
 
-| # | Opcode/Área | Descrição | Status |
-|---|--------|-----------|--------|
-| 1 | `0xA4` | SpellCooldown 5B→2B | ✅ já existia |
-| 2 | `0xA7` | PlayerTactics 4B→3B | ✅ já existia |
-| 3 | `0xA8` | CreatureSquare (novo case) | ✅ já existia |
-| 4 | `0xB6` | WalkCancel 2B→0B | ✅ já existia |
-| 5 | `0x92` | CreatureImpassable assert removido | ✅ já existia |
-| 6-9 | `0x65-0x68` | Scrolls revertidos para padrão | ✅ já existia |
-| 10 | `0xBE` | FloorUp z=7 revertido (6 floors) | ✅ já existia |
-| 11 | `0xAA` | Talk +u32 statementGuid | ✅ existente |
-| 12 | `0x64` | Mini MapDesc guard (<100B) | ✅ existente |
-| 13 | `0xA0` | PlayerStats sem stamina | ✅ existente |
-| 14 | `0xA5` | SpellGroupCooldown 5B | ✅ existente |
-| 15 | `0xA6` | MultiUseDelay 4B | ✅ existente |
-| 16 | `0x63` | CreatureTurn 5B | ✅ existente |
-| 17 | `0xC8` | OutfitWindow u16→u8 range | ✅ existente |
-| **18** | **DAT parser** | **Resiliência a flags desconhecidas (0x50, 0xC8, 0xD0)** | ✅ **NOVO** |
+### Patches válidos mantidos (7)
 
-### SPR Loader C++
-Análise do código-fonte confirmou que o SPR loader já tem try-catch para `InvalidDataError` (sprites.cpp:266-273 e 326-337). Sprites corrompidos ou vazios são tratados graciosamente retornando sprite nulo. **Nenhum patch necessário.**
+| # | Opcode/Área | Descrição |
+|---|--------|-----------|
+| 1 | `0xA4` | SpellCooldown 5B→2B |
+| 2 | `0xA5` | SpellGroupCooldown 5B (separado do 0xA4) |
+| 3 | `0xA7` | PlayerTactics 4B→3B (sem PvPMode) |
+| 4 | `0xA8` | CreatureSquare (novo case, 5B) |
+| 5 | `0xB6` | WalkCancel 2B→0B |
+| 6 | `0x92` | CreatureImpassable assert removido |
+| 7 | — | Diagnostic opcode logging |
+
+### Patches removidos (6) — redundantes ou incorretos
+
+| # | Patch | Motivo da remoção |
+|---|-------|-------------------|
+| 1 | **0xAA ParseCreatureSpeak** | `ReportMessages=true` já lê u32 — patch causava **double read** |
+| 2 | **0x63 CreatureTurn** | Não é opcode top-level, é creature ID no tile data |
+| 3 | **0xA0 PlayerStats** | `Stamina=false` para 7.72, fork já não lê |
+| 4 | **0x64 MapDescription guard** | Já presente no fork |
+| 5 | **0xA6 MultiUseDelay** | `case 0xA6` já existe no fork |
+| 6 | **0xC8 OutfitWindow** | Handled by `OutfitsU16` version flag |
 
 ### Próximo passo
 
-Executar o workflow `Build tibiarc WASM Player` no GitHub Actions para rebuildar o WASM com o patch do DAT parser.
+Executar o workflow `Build tibiarc WASM Player` no GitHub Actions para rebuildar o WASM sem o double-read bug.
