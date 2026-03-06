@@ -65,12 +65,21 @@ jobs:
           # =============================================
 
           # 5. Talk (0xAA): TibiaRelic sends u32 statementGuid before sender name
-          sed -i '/void Parser::ParseTalk/,/^}/{
-            /DataReader &reader/a\    /* TibiaRelic: skip u32 statementGuid */ reader.SkipU32();
-          }' lib/parser.cpp
-          # Fallback if function sig is on same line as brace
-          grep -q "statementGuid" lib/parser.cpp || \
-            sed -i '/void Parser::ParseTalk/a\    /* TibiaRelic: skip u32 statementGuid */ reader.SkipU32();' lib/parser.cpp
+          # Try multiple patterns to inject SkipU32 at the start of ParseTalk body
+          if grep -q "statementGuid" lib/parser.cpp; then
+            echo "statementGuid already present, skipping"
+          else
+            # Pattern A: function signature on its own line, body starts with {
+            sed -i '/void Parser::ParseTalk/,/^}/ {
+              /^{/a\    /* TibiaRelic: skip u32 statementGuid */ reader.SkipU32();
+            }' lib/parser.cpp
+            # Pattern B: if A didn't work, try appending after any line with ParseTalk and {
+            grep -q "statementGuid" lib/parser.cpp || \
+              sed -i '/ParseTalk.*{/a\    /* TibiaRelic: skip u32 statementGuid */ reader.SkipU32();' lib/parser.cpp
+            # Pattern C: last resort - after void Parser::ParseTalk line
+            grep -q "statementGuid" lib/parser.cpp || \
+              sed -i '/void Parser::ParseTalk/a\    /* TibiaRelic: skip u32 statementGuid */ reader.SkipU32();' lib/parser.cpp
+          fi
           echo "Fixed 0xAA Talk: added SkipU32 for statementGuid"
 
           # 6. MapDescription (0x64): guard REMOVED — was skipping valid small updates
