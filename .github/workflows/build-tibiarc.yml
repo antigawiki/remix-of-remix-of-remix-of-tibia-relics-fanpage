@@ -142,7 +142,10 @@ jobs:
           # STUCK-BUFFER detection REMOVED — was breaking valid tile loops
           echo "FloorDown and stuck-buffer patches skipped (removed to prevent corruption)"
 
-          # SCROLL, FLOORUP and FONT patches REMOVED — reverted to original fork behavior
+          # SCROLL 18x14 + FLOORUP 1-floor patch (Python script)
+          cp $GITHUB_WORKSPACE/tibiarc-player/scroll_floor_patch.py /tmp/tibiarc/scroll_floor_patch.py
+          python3 /tmp/tibiarc/scroll_floor_patch.py lib/parser.cpp
+          echo "Applied scroll 18x14 + FloorUp 1-floor patches"
 
       - name: Build tibiarc library + web player
         run: |
