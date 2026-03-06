@@ -123,9 +123,13 @@ const PacketDissector = ({ camBuffer, progress, isPlaying }: PacketDissectorProp
         case 'map-only':
           filtered = allFrames.filter(f => f.opcodes.some(op => MAP_OPS.has(op.opcode) || POS_OPS.has(op.opcode)));
           break;
-        case 'anomalies':
-          filtered = allFrames.filter(f => f.opcodes.some(op => op.camBefore !== op.camAfter || op.error));
+        case 'anomalies': {
+          const expectedCamOps = new Set([0x64,0x65,0x66,0x67,0x68,0xbe,0xbf,0x9a,0x6d]);
+          filtered = allFrames.filter(f => f.opcodes.some(op =>
+            (op.camBefore !== op.camAfter && !expectedCamOps.has(op.opcode)) || op.error
+          ));
           break;
+        }
         case 'errors':
           filtered = allFrames.filter(f => f.bytesLeft > 0 || f.error);
           break;

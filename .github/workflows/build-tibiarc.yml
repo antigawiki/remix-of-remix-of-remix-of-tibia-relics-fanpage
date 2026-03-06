@@ -121,9 +121,11 @@ jobs:
           sed -i 's/ParseAssert(Version_.Protocol.PassableCreatures);//' lib/parser.cpp
           echo "Fixed 0x92 CreatureImpassable: removed assert"
 
-          # NOTE: The fork's scrolls (ParseMoveEast/North/South/West) and
-          # FloorChangeUp/Down already use the correct standard dimensions.
-          # No scroll or floor patches needed.
+          # =============================================
+          # SCROLL PATCHES: TibiaRelic sends full 18x14 viewport
+          # =============================================
+          python3 $GITHUB_WORKSPACE/tibiarc-player/scroll_patch.py lib/parser.cpp
+          grep -c "TibiaRelic: full 18x14 viewport" lib/parser.cpp && echo "Scroll patches verified" || echo "WARN: Scroll patches not applied"
 
           # =============================================
           # DIAGNOSTIC LOGGING
