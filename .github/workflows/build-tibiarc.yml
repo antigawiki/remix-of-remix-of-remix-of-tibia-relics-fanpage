@@ -2,6 +2,10 @@ name: Build tibiarc WASM Player
 
 on:
   workflow_dispatch:
+  push:
+    paths:
+      - 'tibiarc-player/**'
+      - '.github/workflows/build-tibiarc.yml'
 
 jobs:
   build:
