@@ -1,30 +1,29 @@
-## Auditoria Completa — Status: PATCHES APLICADOS ✅
 
-Todos os patches identificados na auditoria foram adicionados ao workflow `.github/workflows/build-tibiarc.yml`.
 
-### Patches aplicados (total: 21)
+## Diagnóstico: o problema é `trySyncPlayerToCamera()` nos scrolls
 
-| # | Opcode/Área | Descrição | Status |
-|---|--------|-----------|--------|
-| 1 | `0xA4` | SpellCooldown 5B→2B | ✅ já existia |
-| 2 | `0xA7` | PlayerTactics 4B→3B | ✅ já existia |
-| 3 | `0xA8` | CreatureSquare (novo case) | ✅ já existia |
-| 4 | `0xB6` | WalkCancel 2B→0B | ✅ já existia |
-| 5 | `0x92` | CreatureImpassable assert removido | ✅ já existia |
-| 6-9 | `0x65-0x68` | Scrolls revertidos para padrão | ✅ já existia |
-| 10 | `0xBE` | FloorUp z=7 revertido (6 floors) | ✅ já existia |
-| 11 | `0xAA` | Talk +u32 statementGuid | ✅ existente |
-| 12 | `0x64` | Mini MapDesc guard (<100B) | ✅ existente |
-| 13 | `0xA0` | PlayerStats sem stamina | ✅ existente |
-| 14 | `0xA5` | SpellGroupCooldown 5B | ✅ existente |
-| 15 | `0xA6` | MultiUseDelay 4B | ✅ existente |
-| 16 | `0x63` | CreatureTurn 5B | ✅ existente |
-| 17 | `0xC8` | OutfitWindow u16→u8 range | ✅ existente |
-| **18** | **DAT parser** | **Resiliência a flags desconhecidas (0x50, 0xC8, 0xD0)** | ✅ **NOVO** |
+O código dos scrolls (strips 18x1 / 1x14) está **correto** — as dimensões batem com o protocolo e a memória do projeto confirma isso. O que causa o travamento do boneco é o `trySyncPlayerToCamera()` adicionado em cada scroll handler.
 
-### SPR Loader C++
-Análise do código-fonte confirmou que o SPR loader já tem try-catch para `InvalidDataError` (sprites.cpp:266-273 e 326-337). Sprites corrompidos ou vazios são tratados graciosamente retornando sprite nulo. **Nenhum patch necessário.**
+Essa função teleporta o player para `camX,camY,camZ` a cada movimento, **matando a animação de walk** e causando snap visual. Scrolls devem apenas:
+1. Atualizar a câmera (camX/Y)
+2. Ler os tiles novos da strip
+3. **NÃO** mexer na posição do player
 
-### Próximo passo
+O player já é movido pelo opcode `MOVE_CR` (0x6D) que vem antes do scroll no frame.
 
-Executar o workflow `Build tibiarc WASM Player` no GitHub Actions para rebuildar o WASM com o patch do DAT parser.
+### Sobre a sugestão do GPT (reordenar SCROLL + FLOOR)
+
+Não se aplica a um parser de replay. Os opcodes vêm em sequência no buffer e seus bytes **devem** ser consumidos na ordem. Não dá para ler FLOOR_DOWN antes de SCROLL porque os bytes do SCROLL estão antes no buffer. O cliente Tibia processa na mesma ordem que recebe — a ordem no pacote JÁ é a ordem correta.
+
+Os `floorUp` e `floorDown` já fazem `camX++/camY++` e `camX--/camY--` respectivamente (linhas 998, 1027), que é exatamente o ajuste de câmera que o GPT menciona.
+
+### Plano
+
+**Arquivo**: `src/lib/tibiaRelic/packetParser.ts`
+
+1. **Remover `trySyncPlayerToCamera()`** dos 4 scroll handlers (scrollN, scrollE, scrollS, scrollW)
+2. **Remover a função `trySyncPlayerToCamera()`** inteira (não é usada em mais nenhum lugar)
+3. Manter as dimensões de strip (18x1 / 1x14) — estão corretas
+
+Isso resolve o travamento do boneco sem quebrar o parsing.
+
