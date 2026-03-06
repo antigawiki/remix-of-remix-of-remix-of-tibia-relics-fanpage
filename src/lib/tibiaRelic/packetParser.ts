@@ -9,6 +9,7 @@ import { Buf, BufOverflowError } from './buf';
 import { DatLoader } from './datLoader';
 import { GameState, createCreature, DIR_N, DIR_E, DIR_S, DIR_W, type Creature, type TileItem } from './gameState';
 import { DebugLogger } from './debugLogger';
+import { type DissectedOpcode, type DissectedFrame, DissectorBuffer, getOpcodeName, hexDumpSlice } from './protocolDissector';
 
 const CR_FULL = 0x61, CR_KNOWN = 0x62, CR_OLD = 0x63;
 
