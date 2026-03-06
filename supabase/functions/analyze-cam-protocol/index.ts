@@ -55,19 +55,15 @@ const PROTOCOL_SPEC = `
 - 0xA8 CR_SQUARE: 5 bytes (u32 creatureId + u8 color)
 - 0xAA TALK: u32 statementGuid, str16 name, u8 type, [position/channel based on type], str16 message
 - 0xB6 WALK_CANCEL: 0 bytes (no payload)
-- 0xC8 OUTFIT_WINDOW: outfit + u16 rangeStart + u16 rangeEnd
-
-## Known C++ Parser Divergences
-The C++ WASM player (tibiarc fork) has these known differences:
-1. SCROLL opcodes: C++ reads 1-row/column strip instead of full 18x14 viewport → ~200+ leftover bytes misinterpreted as creature opcodes
-2. FLOOR_UP at z=7: C++ reads 6 floors instead of 1 → massive byte overconsumption
-3. The above cause cyclical creature corruption: ghosts, duplicates, frozen creatures
+- 0xC8 OUTFIT_WINDOW: outfit + u8 rangeStart + u8 rangeEnd
 
 ## Analysis Goal
-Given the JS parser's byte-by-byte trace (which works correctly), identify:
-1. Where exactly the C++ parser would diverge
-2. How many bytes the C++ would read differently per opcode
-3. The exact sed patches needed to fix the C++ parser
+Given byte-level traces from a .cam file, analyze the raw bytes against this protocol specification to:
+1. Validate that each opcode consumes the correct number of bytes per the spec above
+2. Detect byte drift: where cumulative over/under-consumption causes subsequent opcodes to be misinterpreted
+3. Identify unknown or undocumented opcodes that may be TibiaRelic-specific extensions
+4. Propose the correct byte consumption for any opcodes where the traces diverge from the spec
+5. NOTE: Do NOT assume any parser (JS or C++) is correct. Both may have errors. The spec above is the ground truth.
 `;
 
 serve(async (req) => {
