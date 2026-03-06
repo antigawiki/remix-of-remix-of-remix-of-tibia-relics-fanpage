@@ -249,16 +249,15 @@ export class PacketParser {
     while (r.pos + 2 <= totalLen) {
       try {
         const subLen = r.u16();
-        if (subLen === 0) continue; // skip empty TCP packets
+        if (subLen === 0) continue;
         if (r.pos + subLen > totalLen) {
-          // Invalid length — maybe not TCP after all, try as direct opcodes
-          r.pos -= 2; // rewind the u16
+          r.pos -= 2;
           this.processDirectOpcodes(r, totalLen);
           return;
         }
         const subEnd = r.pos + subLen;
         this.processDirectOpcodes(r, subEnd);
-        r.pos = subEnd; // ensure alignment even if opcode parse stopped early
+        r.pos = subEnd;
       } catch (e) {
         if (this.strictMode) throw e;
         if (this.frameErrorCount < 30) {
@@ -270,38 +269,11 @@ export class PacketParser {
     }
   }
 
-  /** Process opcodes with TCP fallback for unknown opcodes mid-stream */
-  private processOpcodes(r: Buf, endPos: number) {
-    while (r.pos < endPos) {
-      try {
-        const t = r.u8();
-        if (this.dispatch(t, r)) continue;
-
-        // Unknown opcode — try TCP demux for rest of frame
-        r.pos -= 1;
-        this.processTcpDemux(r, endPos);
-        return;
-      } catch (e) {
-        if (this.strictMode) throw e;
-        if (this.frameErrorCount < 30) {
-          this.frameErrorCount++;
-          if (e instanceof BufOverflowError) {
-            console.warn(`[PacketParser] Buffer overflow: ${e.message}`);
-          } else {
-            console.warn(`[PacketParser] Parse error:`, e);
-          }
-        }
-        break;
-      }
-    }
-  }
-
   /** Process opcodes directly — fail-fast like C++ (abort frame on error) */
   private processDirectOpcodes(r: Buf, endPos: number) {
     while (r.pos < endPos) {
       const t = r.u8();
       if (!this.dispatch(t, r)) {
-        // Unknown opcode — abort entire frame (C++ approach: throw on unknown)
         if (this.frameErrorCount < 30) {
           this.frameErrorCount++;
           console.warn(`[PacketParser] Unknown opcode 0x${t.toString(16)} at pos ${r.pos - 1} — aborting frame`);
@@ -309,28 +281,6 @@ export class PacketParser {
         throw new Error(`Unknown opcode 0x${t.toString(16)}`);
       }
     }
-  }
-
-  /** Check if a byte is a known opcode */
-  private isKnownOpcode(b: number): boolean {
-    // Map opcodes
-    if (b >= 0x64 && b <= 0x6d) return true;
-    // Creature turn
-    if (b === 0x63) return true;
-    // Login/system
-    if (b === 0x0a || b === 0x0b || b === 0x0f || b === 0x1d || b === 0x1e) return true;
-    // Container
-    if (b >= 0x6e && b <= 0x72) return true;
-    // Inventory/trade/world
-    if (b === 0x78 || b === 0x79 || b === 0x7d || b === 0x7e || b === 0x7f) return true;
-    if (b >= 0x82 && b <= 0x85) return true;
-    if (b >= 0x8c && b <= 0x8f) return true;
-    if (b >= 0x96 && b <= 0x9a) return true;
-    if (b >= 0xa0 && b <= 0xa4) return true;
-    if (b === 0xa7 || b === 0xa8) return true;
-    if (b >= 0xaa && b <= 0xb4) return true;
-    if (b === 0xb6 || b === 0xbe || b === 0xbf) return true;
-    return false;
   }
 
   private dispatch(t: number, r: Buf): boolean {
