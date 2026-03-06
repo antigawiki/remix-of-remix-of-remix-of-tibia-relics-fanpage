@@ -36,110 +36,23 @@ jobs:
         run: |
           cp tibiarc-player/web_player.cpp /tmp/tibiarc/web_player.cpp
 
-      - name: Apply TibiaRelic protocol fixes (sed)
+      - name: Apply TibiaRelic protocol fixes
         run: |
           cd /tmp/tibiarc
 
-          # =============================================
-          # TIBIARELIC CUSTOM OPCODE FIXES
-          # =============================================
+          # Protocol patches (parser.cpp) — robust Python-based patching
+          python3 $GITHUB_WORKSPACE/tibiarc-player/protocol_patch.py lib/parser.cpp
 
-          # 1. SpellCooldown (0xA4): tibiarc reads 5B (u8 + u32)
-          #    TibiaRelic sends 2B (u8 + u8)
-          sed -i '/void Parser::ParseSpellCooldown/,/^}/ s/reader\.SkipU32()/reader.SkipU8()/' lib/parser.cpp
-          echo "Fixed 0xA4 SpellCooldown: 5B → 2B"
-
-          # 2. PlayerTactics (0xA7): tibiarc reads 4B (4×u8)
-          #    TibiaRelic sends 3B (no PvPMode)
-          sed -i '/void Parser::ParsePlayerTactics/,/^}/ { /PvPMode/d }' lib/parser.cpp
-          echo "Fixed 0xA7 PlayerTactics: 4B → 3B"
-
-          # 3. CreatureSquare (0xA8): missing in tibiarc → crash
-          #    TibiaRelic sends 5B (u32 creatureId + u8 color)
-          sed -i '/case 0xAA:/i\    case 0xA8:\n        reader.Skip(5);\n        break;' lib/parser.cpp
-          echo "Added 0xA8 CreatureSquare: 5B"
-
-          # 4. WalkCancel (0xB6): tibiarc reads 2B (u16 via ParseMoveDelay)
-          #    TibiaRelic sends 0B
-          sed -i '/case 0xB6:/{n;s/.*ParseMoveDelay.*/        \/* TibiaRelic: WalkCancel 0 bytes *\//}' lib/parser.cpp
-          echo "Fixed 0xB6 WalkCancel: 2B → 0B"
-
-          # =============================================
-          # NEW PATCHES — TibiaRelic protocol divergences
-          # =============================================
-
-          # 5. Talk (0xAA → ParseCreatureSpeak): TibiaRelic sends u32 statementGuid
-          #    BEFORE the sender name, unconditionally (even when ReportMessages is false).
-          #    The fork already has conditional `messageId = reader.ReadU32()` gated by
-          #    Version_.Protocol.ReportMessages. For 7.72 that flag is false, so we inject
-          #    an unconditional SkipU32 right after the opening brace.
-          sed -i '/void Parser::ParseCreatureSpeak/,/^}/{
-            /uint32_t messageId/a\    /* TibiaRelic: unconditional u32 statementGuid */ reader.SkipU32();
-          }' lib/parser.cpp
-          grep -q "unconditional u32 statementGuid" lib/parser.cpp && echo "Fixed 0xAA Talk: added SkipU32 for statementGuid" || echo "WARN: statementGuid not injected"
-
-          # 6. MapDescription (0x64): mini MAP_DESC guard
-          #    Already applied in the fork (ParseFullMapDescription has reader.Remaining() < 100 guard)
-          grep -q "Remaining() < 100" lib/parser.cpp && echo "0x64 MapDesc: mini guard already present" || echo "WARN: mini MAP_DESC guard missing"
-
-          # 7. PlayerStats (0xA0 → ParsePlayerDataCurrent): stamina removal
-          #    The fork uses Version_.Protocol.Stamina flag. For 7.72 this should be false,
-          #    so no patch needed. Verify:
-          grep -q "Protocol.Stamina" lib/parser.cpp && echo "0xA0 PlayerStats: uses Stamina flag (OK for 7.72)" || echo "WARN: Stamina handling unclear"
-
-          # 8-10. Missing opcodes: 0xA5, 0xA6, 0x63
-          #    The fork already has 0xA5 sharing case with 0xA4 (SpellCooldown).
-          #    Fix: 0xA4 was patched to read 2B, but 0xA5 should read 5B (groupId u8 + delay u32).
-          #    Split 0xA5 into its own case BEFORE 0xA4.
-          grep -q "case 0xA5" lib/parser.cpp && echo "0xA5 already exists in fork (shared with 0xA4)" || echo "WARN: 0xA5 missing"
-
-          # 0xA6 (UseCooldown) already exists in the fork and reads u32. 
-          # TibiaRelic MultiUseDelay is also 4B (u32), so it's compatible.
-          grep -q "case 0xA6" lib/parser.cpp && echo "0xA6 UseCooldown: already present (4B OK)" || echo "WARN: 0xA6 missing"
-
-          # 0x63: In the fork, 0x63 is handled inside ParseObject as ParseCreatureCompact,
-          # not as a top-level opcode. No standalone case needed at top level.
-          grep -q "case 0x63" lib/parser.cpp && echo "0x63: already handled" || echo "0x63: handled inside ParseObject (OK)"
-
-          # 11. OutfitDialog (0xC8 → ParseOutfitDialog): u16 range → u8 for 7.72
-          #     The fork uses Version_.Protocol.OutfitCountU16 flag and OutfitAddons flag.
-          #     For 7.72, OutfitAddons should be false, so it falls into the else branch
-          #     which reads 2 bytes (u8 start + u8 end). This is correct. No patch needed.
-          echo "0xC8 OutfitDialog: uses version flags (OK for 7.72)"
-
-          # =============================================
-          # DAT PARSER: TWO-PHASE RESILIENT PARSING
-          # =============================================
+          # DAT parser resilience patch (types.cpp)
           python3 $GITHUB_WORKSPACE/tibiarc-player/dat_patch.py lib/types.cpp
           grep -c "Two-phase DAT parsing" lib/types.cpp && echo "DAT two-phase patch verified" || echo "WARN: DAT two-phase patch not applied"
 
-          # =============================================
-          # PROTOCOL FLAGS & SAFETY PATCHES
-          # =============================================
-
-          # CreatureImpassable (0x92): remove assert that crashes on 7.72
-          sed -i 's/ParseAssert(Version_.Protocol.PassableCreatures);//' lib/parser.cpp
-          echo "Fixed 0x92 CreatureImpassable: removed assert"
-
-          # NOTE: The fork's scrolls (ParseMoveEast/North/South/West) and
-          # FloorChangeUp/Down already use the correct standard dimensions.
-          # No scroll or floor patches needed.
-
-          # =============================================
-          # DIAGNOSTIC LOGGING
-          # =============================================
-          sed -i 's/switch (reader.ReadU8()) {/auto _op = reader.ReadU8(); printf("[DIAG] opcode=0x%02X rem=%zu\\n", _op, reader.Remaining()); switch (_op) {/' lib/parser.cpp
-          echo "Added diagnostic opcode logging"
-
-          # =============================================
-          # VERIFICATION
-          # =============================================
+          # Final verification
           echo "=== Final verification ==="
           grep -n "statementGuid" lib/parser.cpp || echo "WARN: statementGuid not found"
           grep -n "WalkCancel 0 bytes" lib/parser.cpp || echo "WARN: WalkCancel patch missing"
           grep -n "case 0xA8" lib/parser.cpp || echo "WARN: 0xA8 missing"
           grep -n "PassableCreatures" lib/parser.cpp && echo "WARN: PassableCreatures assert still present" || echo "0x92 assert removed OK"
-          grep -c "SkipU8" lib/parser.cpp | head -1
           echo "All patches verified"
 
       - name: Build tibiarc library + web player
