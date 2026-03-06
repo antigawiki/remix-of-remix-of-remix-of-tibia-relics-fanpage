@@ -391,6 +391,16 @@ export class PacketParser {
   private dispatch(t: number, r: Buf): boolean {
     this.lastFrameOpcodes.push(t);
     const g = this.gs;
+    
+    // Dissector: capture state before opcode
+    const diss = this.dissector;
+    const posBefore = diss ? r.pos - 1 : 0; // -1 to include the opcode byte itself
+    const camBefore = diss ? `${g.camX},${g.camY},${g.camZ}` : '';
+    const playerBefore = diss ? (() => {
+      const p = g.creatures.get(g.playerId);
+      return p ? `${p.x},${p.y},${p.z}` : 'N/A';
+    })() : '';
+
     // Log relevant opcodes
     const dl = this.debugLogger;
     if (dl && dl.enabled) {
@@ -399,6 +409,44 @@ export class PacketParser {
         dl.log('OPCODE', { opcode: '0x' + t.toString(16), pos: r.pos });
       }
     }
+
+    // Execute opcode handler
+    const result = this._dispatchInner(t, r);
+
+    // Dissector: capture state after opcode
+    if (diss && result) {
+      const MAP_OPS = new Set([0x64, 0x65, 0x66, 0x67, 0x68, 0xbe, 0xbf]);
+      const posAfter = r.pos;
+      const bytesConsumed = posAfter - posBefore;
+      const payload = this._rawPayload;
+      const hexDump = payload ? hexDumpSlice(payload, posBefore, posAfter, 64) : '';
+      const camAfter = `${g.camX},${g.camY},${g.camZ}`;
+      const playerP = g.creatures.get(g.playerId);
+      const playerAfter = playerP ? `${playerP.x},${playerP.y},${playerP.z}` : 'N/A';
+      
+      this._frameOpcodes.push({
+        frameIdx: this.dissectorFrameIdx,
+        camMs: this.dissectorCamMs,
+        opcode: t,
+        opName: getOpcodeName(t),
+        posBefore,
+        posAfter,
+        bytesConsumed,
+        hexDump,
+        camBefore,
+        camAfter,
+        playerBefore,
+        playerAfter,
+        fields: {},
+        isMapOp: MAP_OPS.has(t),
+      });
+    }
+
+    return result;
+  }
+
+  private _dispatchInner(t: number, r: Buf): boolean {
+    const g = this.gs;
     // Map
     if (t === 0x64) this.mapDesc(r);
     else if (t === 0x65) this.scroll(r, 0, -1);
