@@ -79,6 +79,16 @@ const OPCODE_NAMES: Record<number, string> = {
   0xbf: 'FLOOR_DOWN',
 };
 
+interface DriftResult {
+  frameIdx: number;
+  timestamp: number;
+  bytesLeft: number;
+  totalBytes: number;
+  opcodes: string[];
+  hexDump: string;
+  error?: string;
+}
+
 const CamFrameDebugger = ({ camBuffer, progress, isPlaying }: CamFrameDebuggerProps) => {
   const [open, setOpen] = useState(false);
   const [pauseOnError, setPauseOnError] = useState(false);
@@ -88,6 +98,13 @@ const CamFrameDebugger = ({ camBuffer, progress, isPlaying }: CamFrameDebuggerPr
   const [displayEvents, setDisplayEvents] = useState<DebugEvent[]>([]);
   const [stats, setStats] = useState({ frames: 0, errors: 0, walkFails: 0, creatures: 0, cam: '', player: '' });
   const scrollRef = useRef<HTMLDivElement>(null);
+
+  // Drift scanner state
+  const [scanning, setScanning] = useState(false);
+  const [scanProgress, setScanProgress] = useState(0);
+  const [driftResults, setDriftResults] = useState<DriftResult[]>([]);
+  const [scanDone, setScanDone] = useState(false);
+  const scanAbortRef = useRef(false);
 
   // Parser state refs
   const camFileRef = useRef<CamFile | null>(null);
