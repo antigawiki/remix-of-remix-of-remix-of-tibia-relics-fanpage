@@ -75,22 +75,25 @@ export default function AiByteLabTab({ fileBuffer, fileName, loadDat }: AiByteLa
     };
     setMessages(prev => [...prev, userMsg]);
 
-    // Prepare compact frame data for the AI (limit to save tokens)
+    // Prepare compact frame data for the AI (aggressively limit to avoid 400 errors)
     const compactFrames = traceResult.frames.map(f => ({
       idx: f.frameIndex,
       ts: f.timestamp,
       size: f.payloadSize,
-      hex: f.hexDump.slice(0, 200), // first ~66 bytes as hex
+      hex: f.hexDump.slice(0, 120), // first ~40 bytes
       cam: `${f.camBefore.x},${f.camBefore.y},${f.camBefore.z}→${f.camAfter.x},${f.camAfter.y},${f.camAfter.z}`,
-      player: f.playerBefore && f.playerAfter
-        ? `${f.playerBefore.x},${f.playerBefore.y},${f.playerBefore.z}→${f.playerAfter.x},${f.playerAfter.y},${f.playerAfter.z}`
-        : null,
       ops: f.opcodeTraces.map(o => o.opcodeName),
-      crAdd: f.creaturesAdded,
-      crRem: f.creaturesRemoved,
+      crAdd: f.creaturesAdded.slice(0, 5),
+      crRem: f.creaturesRemoved.slice(0, 5),
       crCount: f.creaturesAfter.length,
-      err: f.error,
+      err: f.error ? f.error.slice(0, 100) : null,
       bytesLeft: f.bytesLeft,
+    }));
+
+    // Limit conversation history to last 4 messages to keep payload small
+    const recentHistory = messages.slice(-4).map(m => ({
+      role: m.role,
+      content: m.content.slice(0, 2000),
     }));
 
     try {
@@ -103,7 +106,7 @@ export default function AiByteLabTab({ fileBuffer, fileName, loadDat }: AiByteLa
         body: JSON.stringify({
           frameTraces: compactFrames,
           question: question || undefined,
-          conversationHistory: messages.map(m => ({ role: m.role, content: m.content })),
+          conversationHistory: recentHistory,
         }),
       });
 
