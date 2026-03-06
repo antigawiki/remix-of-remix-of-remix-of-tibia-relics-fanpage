@@ -972,8 +972,9 @@ export class PacketParser {
           const offset = 8 - nz;
           skip = this.readFloorArea(r, g.camX - 8, g.camY - 6, nz, 18, 14, offset, skip);
         }
-        if (this.debugLog) {
-          console.log(`[floorUp] Z=8→7: read 6 floors, consumed ${r.pos - posBefore} bytes`);
+        const dl = this.debugLogger;
+        if (dl && dl.enabled) {
+          dl.log('FLOOR_UP', { transition: 'Z=8→7', floorsRead: 6, bytesConsumed: r.pos - posBefore });
         }
       } else if (g.camZ > 7) {
         // Underground going up — read the newly visible floor (camZ - 2)
