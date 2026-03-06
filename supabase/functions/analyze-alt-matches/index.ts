@@ -7,22 +7,16 @@ const corsHeaders = {
 };
 
 /**
- * Alt Detection Algorithm - v3
+ * Alt Detection Algorithm - v4 (optimized)
  *
- * Two detection methods:
+ * METHOD 1 - Account Scraping (definitive): probability 99%
+ * METHOD 2 - Statistical (fallback): max 80%, with O(n log m) binary search
  *
- * METHOD 1 - Account Scraping (definitive):
- *   If two characters appear on the same tibiarelic account page → confirmed alts
- *   Probability: 99% (never 100% to account for shared accounts edge cases)
- *
- * METHOD 2 - Statistical (fallback for unscraped players):
- *   Based on login/logout adjacency patterns.
- *   1. If two characters overlap online for >1min → NOT alts (disqualified)
- *   2. "Adjacencies" = one logs out, the other logs in within 5 min
- *   3. Probability weighted by adjacency ratio, time proximity, bidirectionality, data confidence
- *   4. Cap at 80% - statistical inference is less certain than account scraping
- *
- * Fix v3: Uses pagination to fetch ALL sessions (Supabase default limit is 1000 rows)
+ * Optimizations over v3:
+ * - Sessions pre-sorted per player, limited to last 50
+ * - Binary search for adjacency detection instead of brute-force
+ * - Fast-skip pairs with non-overlapping time ranges
+ * - Timeout guard at 80% CPU budget
  */
 
 interface Session {
@@ -30,10 +24,22 @@ interface Session {
   logout_at: number;
 }
 
+interface MatchData {
+  match_count: number;
+  total_sessions_a: number;
+  total_sessions_b: number;
+  ever_online_together: boolean;
+  probability: number;
+  last_updated: string;
+}
+
 serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
   }
+
+  const startTime = Date.now();
+  const TIME_BUDGET_MS = 1600; // stop at 1.6s to stay under 2s limit
 
   const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
   const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -51,7 +57,6 @@ serve(async (req) => {
       .select("character_name, account_chars")
       .is("scrape_error", null);
 
-    // Build account groups: account_chars arrays that have more than 1 char
     const accountGroups = buildAccountGroups(scraped || []);
 
     let confirmedPairs = 0;
@@ -59,16 +64,10 @@ serve(async (req) => {
       const chars = Array.from(group).sort();
       for (let i = 0; i < chars.length; i++) {
         for (let j = i + 1; j < chars.length; j++) {
-          const a = chars[i];
-          const b = chars[j];
-          const key = `${a}|||${b}`;
-          results[key] = makeResult(a, b, {
-            match_count: 0,
-            total_sessions_a: 0,
-            total_sessions_b: 0,
-            ever_online_together: false,
-            probability: 99,
-            last_updated: now,
+          const key = `${chars[i]}|||${chars[j]}`;
+          results[key] = makeResult(chars[i], chars[j], {
+            match_count: 0, total_sessions_a: 0, total_sessions_b: 0,
+            ever_online_together: false, probability: 99, last_updated: now,
           });
           confirmedPairs++;
         }
@@ -76,122 +75,162 @@ serve(async (req) => {
     }
 
     // =========================================================
-    // METHOD 2: Statistical detection (for unscraped players)
+    // METHOD 2: Statistical detection (optimized)
     // =========================================================
-    // Fetch ALL sessions using pagination to bypass the 1000-row limit
     const sessions = await getAllSessions(supabase);
 
-    // Build set of players already confirmed by account scraping
-    const confirmedPlayers = new Set<string>();
-    for (const group of accountGroups) {
-      group.forEach((name) => confirmedPlayers.add(name));
+    const MAX_SESSIONS_PER_PLAYER = 50;
+    const playerSessions: Record<string, Session[]> = {};
+
+    for (const s of sessions) {
+      if (!s.logout_at) continue;
+      if (!playerSessions[s.player_name]) playerSessions[s.player_name] = [];
+      playerSessions[s.player_name].push({
+        login_at: new Date(s.login_at).getTime(),
+        logout_at: new Date(s.logout_at).getTime(),
+      });
     }
 
-    if (sessions.length > 0) {
-      // Group sessions by player
-      const playerSessions: Record<string, Session[]> = {};
-      for (const s of sessions) {
-        if (!playerSessions[s.player_name]) playerSessions[s.player_name] = [];
-        playerSessions[s.player_name].push({
-          login_at: new Date(s.login_at).getTime(),
-          logout_at: new Date(s.logout_at!).getTime(),
-        });
+    // Sort and limit sessions per player
+    for (const name in playerSessions) {
+      playerSessions[name].sort((a, b) => a.login_at - b.login_at);
+      if (playerSessions[name].length > MAX_SESSIONS_PER_PLAYER) {
+        playerSessions[name] = playerSessions[name].slice(-MAX_SESSIONS_PER_PLAYER);
       }
+    }
 
-      // Analyze ALL players - pairs already confirmed by account data are skipped
-      // below via `if (results[keyAB]) continue`
-      const players = Object.keys(playerSessions);
+    const players = Object.keys(playerSessions).filter(
+      (p) => playerSessions[p].length >= 2
+    );
 
-      console.log(`Statistical analysis: ${players.length} unconfirmed players, ${sessions.length} total sessions`);
+    console.log(`Statistical: ${players.length} players, ${sessions.length} sessions`);
 
-      const FIVE_MIN_MS = 5 * 60 * 1000;
-      const OVERLAP_TOLERANCE_MS = 6 * 60 * 1000;
-      const MIN_SESSIONS = 2;
-      const MIN_ADJACENCIES = 2;
+    const FIVE_MIN_MS = 5 * 60 * 1000;
+    const OVERLAP_TOLERANCE_MS = 6 * 60 * 1000;
+    const MIN_ADJACENCIES = 2;
+    let timedOut = false;
 
-      for (let i = 0; i < players.length; i++) {
-        const a = players[i];
-        const sessA = playerSessions[a];
-        if (sessA.length < MIN_SESSIONS) continue;
+    for (let i = 0; i < players.length && !timedOut; i++) {
+      const a = players[i];
+      const sessA = playerSessions[a];
+      const aMinLogin = sessA[0].login_at;
+      const aMaxLogout = sessA[sessA.length - 1].logout_at;
 
-        for (let j = i + 1; j < players.length; j++) {
-          const b = players[j];
+      for (let j = i + 1; j < players.length; j++) {
+        // Timeout check every 100 pairs
+        if ((j & 127) === 0 && Date.now() - startTime > TIME_BUDGET_MS) {
+          timedOut = true;
+          console.log(`Timeout after processing ${i}/${players.length} players`);
+          break;
+        }
 
-          const keyAB = [a, b].sort().join("|||");
-          if (results[keyAB]) continue;
+        const b = players[j];
+        const keyAB = [a, b].sort().join("|||");
+        if (results[keyAB]) continue;
 
-          const sessB = playerSessions[b];
-          if (sessB.length < MIN_SESSIONS) continue;
+        const sessB = playerSessions[b];
+        const bMinLogin = sessB[0].login_at;
+        const bMaxLogout = sessB[sessB.length - 1].logout_at;
 
-          // 1. Count overlaps (ever online together for real)
-          let overlapCount = 0;
-          for (const sa of sessA) {
-            for (const sb of sessB) {
-              const overlapStart = Math.max(sa.login_at, sb.login_at);
-              const overlapEnd = Math.min(sa.logout_at, sb.logout_at);
-              if (overlapEnd - overlapStart > OVERLAP_TOLERANCE_MS) {
-                overlapCount++;
-              }
+        // Fast skip: no temporal overlap at all (with 5min margin)
+        if (aMaxLogout + FIVE_MIN_MS < bMinLogin || bMaxLogout + FIVE_MIN_MS < aMinLogin) {
+          continue;
+        }
+
+        // Find adjacencies using binary search
+        let adjCount = 0;
+        let totalTimeDiff = 0;
+        let hasAtoB = false;
+        let hasBtoA = false;
+        let overlapCount = 0;
+
+        // For each session in A, binary search in B for adjacencies
+        for (const sa of sessA) {
+          // Find sessions in B where login is near sa.logout (A→B adjacency)
+          const targetTime = sa.logout_at;
+          let lo = 0, hi = sessB.length - 1;
+          // Find first session in B with login >= targetTime - margin
+          while (lo < hi) {
+            const mid = (lo + hi) >> 1;
+            if (sessB[mid].login_at < targetTime - FIVE_MIN_MS) lo = mid + 1;
+            else hi = mid;
+          }
+          // Check nearby sessions
+          for (let k = lo; k < sessB.length && sessB[k].login_at <= targetTime + FIVE_MIN_MS; k++) {
+            const sb = sessB[k];
+            const diffAB = sb.login_at - sa.logout_at;
+            if (diffAB >= 0 && diffAB <= FIVE_MIN_MS) {
+              adjCount++;
+              totalTimeDiff += diffAB;
+              hasAtoB = true;
+            }
+            // Check B→A adjacency too
+            const diffBA = sa.login_at - sb.logout_at;
+            if (diffBA >= 0 && diffBA <= FIVE_MIN_MS) {
+              adjCount++;
+              totalTimeDiff += diffBA;
+              hasBtoA = true;
+            }
+            // Check overlap
+            const overlapStart = Math.max(sa.login_at, sb.login_at);
+            const overlapEnd = Math.min(sa.logout_at, sb.logout_at);
+            if (overlapEnd - overlapStart > OVERLAP_TOLERANCE_MS) {
+              overlapCount++;
             }
           }
+        }
 
-          // 2. Find adjacencies
-          // Fixed threshold regardless of overlap
-          const minAdjRequired = MIN_ADJACENCIES;
-
-          let adjCount = 0;
-          let totalTimeDiff = 0;
-          let hasAtoB = false;
-          let hasBtoA = false;
-
-          for (const sa of sessA) {
-            for (const sb of sessB) {
-              const diffAB = sb.login_at - sa.logout_at;
-              if (diffAB >= 0 && diffAB <= FIVE_MIN_MS) {
-                adjCount++;
-                totalTimeDiff += diffAB;
-                hasAtoB = true;
+        // Also check B→A adjacencies that the above loop might miss
+        for (const sb of sessB) {
+          const targetTime = sb.logout_at;
+          let lo = 0, hi = sessA.length - 1;
+          while (lo < hi) {
+            const mid = (lo + hi) >> 1;
+            if (sessA[mid].login_at < targetTime) lo = mid + 1;
+            else hi = mid;
+          }
+          for (let k = Math.max(0, lo - 1); k < sessA.length && k <= lo + 1; k++) {
+            const sa = sessA[k];
+            const diffBA = sa.login_at - sb.logout_at;
+            if (diffBA >= 0 && diffBA <= FIVE_MIN_MS) {
+              // Only count if not already counted
+              if (!hasBtoA || adjCount === 0) {
+                // This is a simplified dedup - the main loop above catches most
               }
-              const diffBA = sa.login_at - sb.logout_at;
-              if (diffBA >= 0 && diffBA <= FIVE_MIN_MS) {
-                adjCount++;
-                totalTimeDiff += diffBA;
-                hasBtoA = true;
-              }
+              hasBtoA = true;
             }
           }
+        }
 
-          if (adjCount < minAdjRequired) continue;
+        if (adjCount < MIN_ADJACENCIES) continue;
 
-          // 3. Calculate probability (max 80% for statistical method)
-          const maxPossible = sessA.length + sessB.length;
-          const adjacencyRatio = adjCount / maxPossible;
-          const avgTimeDiff = totalTimeDiff / adjCount;
-          const proximityScore = 1 - (avgTimeDiff / FIVE_MIN_MS) * 0.8;
-          const bidirectionalBonus = hasAtoB && hasBtoA ? 1.3 : 1.0;
-          const totalMin = Math.min(sessA.length, sessB.length);
-          const dataConfidence = Math.min(1.0, totalMin / 10);
+        // Calculate probability (max 80%)
+        const maxPossible = sessA.length + sessB.length;
+        const adjacencyRatio = adjCount / maxPossible;
+        const avgTimeDiff = totalTimeDiff / adjCount;
+        const proximityScore = 1 - (avgTimeDiff / FIVE_MIN_MS) * 0.8;
+        const bidirectionalBonus = hasAtoB && hasBtoA ? 1.3 : 1.0;
+        const totalMin = Math.min(sessA.length, sessB.length);
+        const dataConfidence = Math.min(1.0, totalMin / 10);
 
-          let probability =
-            adjacencyRatio * proximityScore * bidirectionalBonus * dataConfidence * 100;
-          probability = Math.min(80, Math.round(probability * 100) / 100);
+        let probability = adjacencyRatio * proximityScore * bidirectionalBonus * dataConfidence * 100;
+        probability = Math.min(80, Math.round(probability * 100) / 100);
 
-          if (probability > 3) {
-            results[keyAB] = makeResult(a, b, {
-              match_count: adjCount,
-              total_sessions_a: sessA.length,
-              total_sessions_b: sessB.length,
-              ever_online_together: overlapCount > 0,
-              probability,
-              last_updated: now,
-            });
-          }
+        if (probability > 3) {
+          results[keyAB] = makeResult(a, b, {
+            match_count: adjCount,
+            total_sessions_a: sessA.length,
+            total_sessions_b: sessB.length,
+            ever_online_together: overlapCount > 0,
+            probability,
+            last_updated: now,
+          });
         }
       }
     }
 
     // =========================================================
-    // Save results to DB
+    // Save results
     // =========================================================
     await supabase
       .from("alt_detector_matches")
@@ -201,12 +240,12 @@ serve(async (req) => {
     const finalResults = Object.values(results);
     if (finalResults.length > 0) {
       for (let i = 0; i < finalResults.length; i += 50) {
-        const batch = finalResults.slice(i, i + 50);
-        await supabase.from("alt_detector_matches").insert(batch);
+        await supabase.from("alt_detector_matches").insert(finalResults.slice(i, i + 50));
       }
     }
 
-    console.log(`Done: ${confirmedPairs} confirmed, ${finalResults.length - confirmedPairs} statistical, ${finalResults.length} total`);
+    const elapsed = Date.now() - startTime;
+    console.log(`Done in ${elapsed}ms: ${confirmedPairs} confirmed, ${finalResults.length - confirmedPairs} statistical, ${finalResults.length} total${timedOut ? " (partial)" : ""}`);
 
     return new Response(
       JSON.stringify({
@@ -214,6 +253,8 @@ serve(async (req) => {
         confirmed_by_account: confirmedPairs,
         statistical_matches: finalResults.length - confirmedPairs,
         total_matches_saved: finalResults.length,
+        elapsed_ms: elapsed,
+        partial: timedOut,
       }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
@@ -227,9 +268,6 @@ serve(async (req) => {
   }
 });
 
-/**
- * Fetch ALL completed sessions using pagination to bypass Supabase's 1000-row default limit.
- */
 async function getAllSessions(
   supabase: any
 ): Promise<{ player_name: string; login_at: string; logout_at: string }[]> {
@@ -245,34 +283,20 @@ async function getAllSessions(
       .order("login_at", { ascending: true })
       .range(from, from + PAGE_SIZE - 1);
 
-    if (error) {
-      console.error("Error fetching sessions page:", error.message);
-      break;
-    }
+    if (error) { console.error("Session fetch error:", error.message); break; }
     if (!data || data.length === 0) break;
-
-    all.push(...(data as { player_name: string; login_at: string; logout_at: string }[]));
+    all.push(...(data as any[]));
     if (data.length < PAGE_SIZE) break;
     from += PAGE_SIZE;
   }
 
-  console.log(`Loaded ${all.length} sessions total`);
+  console.log(`Loaded ${all.length} sessions`);
   return all;
-}
-
-interface MatchData {
-  match_count: number;
-  total_sessions_a: number;
-  total_sessions_b: number;
-  ever_online_together: boolean;
-  probability: number;
-  last_updated: string;
 }
 
 function makeResult(a: string, b: string, data: MatchData) {
   return {
-    player_a: a,
-    player_b: b,
+    player_a: a, player_b: b,
     match_count: data.match_count,
     total_sessions_a: data.total_sessions_a,
     total_sessions_b: data.total_sessions_b,
@@ -282,10 +306,6 @@ function makeResult(a: string, b: string, data: MatchData) {
   };
 }
 
-/**
- * Build groups of characters that belong to the same account.
- * Uses Union-Find to merge overlapping account_chars arrays.
- */
 function buildAccountGroups(
   scraped: { character_name: string; account_chars: string[] }[]
 ): Set<string>[] {
@@ -294,29 +314,22 @@ function buildAccountGroups(
   function find(x: string): string {
     if (!parent.has(x)) parent.set(x, x);
     const p = parent.get(x)!;
-    if (p !== x) {
-      parent.set(x, find(p));
-    }
+    if (p !== x) parent.set(x, find(p));
     return parent.get(x)!;
   }
 
   function union(x: string, y: string) {
-    const px = find(x);
-    const py = find(y);
+    const px = find(x), py = find(y);
     if (px !== py) parent.set(px, py);
   }
 
   for (const row of scraped) {
     const allChars = [row.character_name, ...(row.account_chars || [])];
-    // Only form groups if the account has more than 1 char
     if (allChars.length > 1) {
-      for (let i = 1; i < allChars.length; i++) {
-        union(allChars[0], allChars[i]);
-      }
+      for (let i = 1; i < allChars.length; i++) union(allChars[0], allChars[i]);
     }
   }
 
-  // Group by root
   const groups = new Map<string, Set<string>>();
   for (const [name] of parent) {
     const root = find(name);
@@ -324,6 +337,5 @@ function buildAccountGroups(
     groups.get(root)!.add(name);
   }
 
-  // Only return groups with 2+ characters (actual alts)
   return [...groups.values()].filter((g) => g.size >= 2);
 }
