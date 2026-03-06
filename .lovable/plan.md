@@ -1,43 +1,32 @@
+## Auditoria Completa — Status: PATCHES CORRIGIDOS ✅
 
+### Bug crítico encontrado e corrigido
 
-## Diagnóstico: 2 Problemas Identificados
+**0xAA ParseCreatureSpeak — DOUBLE READ removido**: O fork já lê `u32 messageId` via `ReportMessages=true` para 7.72. O patch antigo injetava outro `SkipU32()`, causando **+4B drift por mensagem de chat** — a causa principal do desync visual.
 
-### Problema 1: Top Gainers parado em 18/02 → 19/02
+### Patches válidos mantidos (7)
 
-**Causa**: A edge function `save-highscores` **não tem cron job configurado**. Existe cron para `track-online-players`, `scrape-character-accounts`, `analyze-alt-matches` e `snapshot-xp`, mas NÃO para `save-highscores`. Os snapshots pararam em 19/02 porque foi a última vez que alguém rodou manualmente. Acabei de executá-la manualmente e o snapshot de hoje (06/03) foi salvo com sucesso.
+| # | Opcode/Área | Descrição |
+|---|--------|-----------|
+| 1 | `0xA4` | SpellCooldown 5B→2B |
+| 2 | `0xA5` | SpellGroupCooldown 5B (separado do 0xA4) |
+| 3 | `0xA7` | PlayerTactics 4B→3B (sem PvPMode) |
+| 4 | `0xA8` | CreatureSquare (novo case, 5B) |
+| 5 | `0xB6` | WalkCancel 2B→0B |
+| 6 | `0x92` | CreatureImpassable assert removido |
+| 7 | — | Diagnostic opcode logging |
 
-**Correção**: Criar um cron job via migration SQL para rodar `save-highscores` 1x por dia (ex: às 00:05 UTC).
+### Patches removidos (6) — redundantes ou incorretos
 
-```sql
-SELECT cron.schedule(
-  'save-highscores-daily',
-  '5 0 * * *',
-  $$SELECT net.http_post(
-    url:='https://rmofmkjmzwkxjzfirbpt.supabase.co/functions/v1/save-highscores',
-    headers:='{"Content-Type":"application/json","Authorization":"Bearer ..."}'::jsonb,
-    body:='{}'::jsonb
-  ) AS request_id;$$
-);
-```
+| # | Patch | Motivo da remoção |
+|---|-------|-------------------|
+| 1 | **0xAA ParseCreatureSpeak** | `ReportMessages=true` já lê u32 — patch causava **double read** |
+| 2 | **0x63 CreatureTurn** | Não é opcode top-level, é creature ID no tile data |
+| 3 | **0xA0 PlayerStats** | `Stamina=false` para 7.72, fork já não lê |
+| 4 | **0x64 MapDescription guard** | Já presente no fork |
+| 5 | **0xA6 MultiUseDelay** | `case 0xA6` já existe no fork |
+| 6 | **0xC8 OutfitWindow** | Handled by `OutfitsU16` version flag |
 
----
+### Próximo passo
 
-### Problema 2: Alt Detector crasha com "CPU Time exceeded"
-
-**Causa**: O algoritmo O(n²) compara 1009 players × 17889 sessões, gerando ~500.000 comparações de pares, cada uma iterando sessões cruzadas. Isso excede o limite de CPU das edge functions (~2s wall time).
-
-**Correção**: Otimizar `analyze-alt-matches/index.ts`:
-1. **Pré-ordenar sessões** por timestamp para cada jogador
-2. **Usar busca binária** em vez de loop bruto para encontrar adjacências (de O(n×m) para O(n×log(m)))
-3. **Skip rápido**: se `sessA[last].logout < sessB[first].login - 5min` e vice-versa, pular o par inteiro
-4. **Limitar sessões por jogador** às últimas 50 (sessões muito antigas são menos relevantes)
-5. **Adicionar timeout check**: se já passou 80% do tempo disponível, parar e salvar resultados parciais
-
-Essas otimizações devem reduzir o tempo de execução de >2s para <500ms.
-
----
-
-### Problema 3 (bonus): Preview não carrega
-
-Forçar rebuild do Vite com edição trivial no `src/App.tsx` para reinjetar variáveis de ambiente.
-
+Executar o workflow `Build tibiarc WASM Player` no GitHub Actions para rebuildar o WASM sem o double-read bug.
