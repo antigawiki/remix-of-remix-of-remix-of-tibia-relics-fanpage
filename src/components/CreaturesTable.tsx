@@ -85,7 +85,6 @@ const CreaturesTable = ({ creatures }: CreaturesTableProps) => {
               <SortHeader label={t('tables.columns.convince')} sortField="convince" />
               <SortHeader label="Exp/HP" sortField="ratio" />
               <TableHead className="text-parchment">Loot</TableHead>
-              <TableHead className="text-parchment text-center">Custom?</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -102,7 +101,10 @@ const CreaturesTable = ({ creatures }: CreaturesTableProps) => {
                     loading="lazy"
                   />
                 </TableCell>
-                <TableCell className="font-medium text-text-dark whitespace-nowrap">{creature.name}</TableCell>
+                <TableCell className="font-medium text-text-dark whitespace-nowrap">
+                  {creature.name}
+                  {creature.custom && <span className="ml-1.5 text-[10px] text-amber-600 font-semibold align-super">★</span>}
+                </TableCell>
                 <TableCell>{creature.exp > 0 ? creature.exp.toLocaleString() : 0}</TableCell>
                 <TableCell>{creature.hp > 0 ? creature.hp.toLocaleString() : 0}</TableCell>
                 <TableCell>{creature.summon ?? '---'}</TableCell>
@@ -110,11 +112,8 @@ const CreaturesTable = ({ creatures }: CreaturesTableProps) => {
                 <TableCell className={creature.ratio && creature.ratio >= 1 ? 'font-semibold text-primary' : ''}>
                   {creature.ratio !== undefined ? creature.ratio.toFixed(2) : '---'}
                 </TableCell>
-                <TableCell className="text-xs text-muted-foreground max-w-xs">
+                <TableCell className="text-xs text-muted-foreground">
                   {creature.loot ?? '---'}
-                </TableCell>
-                <TableCell className="text-center">
-                  {creature.custom ? <span className="text-amber-600 font-semibold text-xs">yes</span> : <span className="text-muted-foreground text-xs">-</span>}
                 </TableCell>
               </TableRow>
             ))}
