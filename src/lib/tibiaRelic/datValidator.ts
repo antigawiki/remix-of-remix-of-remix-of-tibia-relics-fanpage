@@ -161,6 +161,52 @@ function buildHypotheses(): HypothesisConfig[] {
     spriteIdU32: true,
   });
 
+  // Hyp G: Combined — 0x07=u16 + 0x1C/1D=u32
+  {
+    const m = baselineFlagPayloads();
+    m.set(0x07, 2);
+    m.set(0x1C, 4);
+    m.set(0x1D, 4);
+    configs.push({
+      name: 'hyp_G',
+      label: 'G: 0x07=u16+0x1C/1D=u32',
+      description: 'Combinação: 0x07 com u16 + 0x1C/0x1D com u32',
+      flagOverrides: m,
+      spriteIdU32: false,
+    });
+  }
+
+  // Hyp H: Combined — 0x08/09=u32 + 0x1C/1D=u32
+  {
+    const m = baselineFlagPayloads();
+    m.set(0x08, 4);
+    m.set(0x09, 4);
+    m.set(0x1C, 4);
+    m.set(0x1D, 4);
+    configs.push({
+      name: 'hyp_H',
+      label: 'H: 0x08/09+1C/1D=u32',
+      description: 'Combinação: 0x08/0x09 e 0x1C/0x1D todos com u32',
+      flagOverrides: m,
+      spriteIdU32: false,
+    });
+  }
+
+  // Hyp I: Combined — 0x07=u16 + 0x08/09=u32
+  {
+    const m = baselineFlagPayloads();
+    m.set(0x07, 2);
+    m.set(0x08, 4);
+    m.set(0x09, 4);
+    configs.push({
+      name: 'hyp_I',
+      label: 'I: 0x07=u16+0x08/09=u32',
+      description: 'Combinação: 0x07 com u16 + 0x08/0x09 com u32',
+      flagOverrides: m,
+      spriteIdU32: false,
+    });
+  }
+
   return configs;
 }
 
