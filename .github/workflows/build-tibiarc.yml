@@ -142,10 +142,34 @@ jobs:
           # STUCK-BUFFER detection REMOVED — was breaking valid tile loops
           echo "FloorDown and stuck-buffer patches skipped (removed to prevent corruption)"
 
-          # SCROLL 18x14 + FLOORUP 1-floor patch (Python script)
-          cp $GITHUB_WORKSPACE/tibiarc-player/scroll_floor_patch.py /tmp/tibiarc/scroll_floor_patch.py
-          python3 /tmp/tibiarc/scroll_floor_patch.py lib/parser.cpp
-          echo "Applied scroll 18x14 + FloorUp 1-floor patches"
+          # =============================================
+          # SCROLL 18x14: All 4 scroll directions → full map area
+          # =============================================
+          sed -i '/void Parser::ParseMoveNorth/,/^}/s/ParseMapDescription(reader, events, -8, -6, Map::TileBufferWidth, 1)/ParseMapDescription(reader, events, -8, -6, Map::TileBufferWidth, Map::TileBufferHeight)/' lib/parser.cpp
+          echo "Patched ParseMoveNorth: full 18x14"
+
+          sed -i '/void Parser::ParseMoveEast/,/^}/s/ParseMapDescription(reader, events, 9, -6, 1, Map::TileBufferHeight)/ParseMapDescription(reader, events, -8, -6, Map::TileBufferWidth, Map::TileBufferHeight)/' lib/parser.cpp
+          echo "Patched ParseMoveEast: full 18x14"
+
+          sed -i '/void Parser::ParseMoveSouth/,/^}/s/ParseMapDescription(reader, events, -8, 7, Map::TileBufferWidth, 1)/ParseMapDescription(reader, events, -8, -6, Map::TileBufferWidth, Map::TileBufferHeight)/' lib/parser.cpp
+          echo "Patched ParseMoveSouth: full 18x14"
+
+          sed -i '/void Parser::ParseMoveWest/,/^}/s/ParseMapDescription(reader, events, -8, -6, 1, Map::TileBufferHeight)/ParseMapDescription(reader, events, -8, -6, Map::TileBufferWidth, Map::TileBufferHeight)/' lib/parser.cpp
+          echo "Patched ParseMoveWest: full 18x14"
+
+          # =============================================
+          # FLOORUP z==7: read 1 floor instead of 6
+          # =============================================
+          sed -i '/void Parser::ParseFloorChangeUp/,/^}/{
+            /for (int zIdx = 5;/i\    if (Position_.Z == 7) { ParseFloorDescription(reader, events, Position_.X - 8, Position_.Y - 6, 5, Map::TileBufferWidth, Map::TileBufferHeight, Position_.Z - 5, tileSkip); } else {
+            /for (int zIdx = 5;/{N;N;s/\}$/\}\n    \}/}
+          }' lib/parser.cpp
+          echo "Patched ParseFloorChangeUp: z==7 reads 1 floor"
+
+          # Verify
+          echo "=== Scroll/FloorUp verification ==="
+          grep -c "TileBufferWidth, Map::TileBufferHeight" lib/parser.cpp
+          grep -n "Position_.Z == 7" lib/parser.cpp || echo "WARN: FloorUp patch may not have applied"
 
       - name: Build tibiarc library + web player
         run: |
