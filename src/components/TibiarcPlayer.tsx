@@ -1,8 +1,5 @@
 import { useRef, useState, useCallback, useEffect } from 'react';
 import { Upload, Play, Pause, FastForward, Loader2, SkipBack, SkipForward, MessageSquare, MessageSquareOff, Maximize, Minimize } from 'lucide-react';
-
-// WASM build version — update this string each time a new .wasm is deployed
-const WASM_VERSION = '48';
 import { Button } from '@/components/ui/button';
 import { Slider } from '@/components/ui/slider';
 import { useTranslation } from '@/i18n';
@@ -660,11 +657,6 @@ const TibiarcPlayer = ({ className, onStateChange }: TibiarcPlayerProps) => {
               {fileName}
             </div>
           )}
-
-          {/* WASM version badge */}
-          <div className="absolute top-2 right-2 bg-black/60 px-2 py-1 rounded text-[10px] text-muted-foreground font-mono">
-            WASM v{WASM_VERSION}
-          </div>
         </div>
 
         {/* Fullscreen overlay controls */}

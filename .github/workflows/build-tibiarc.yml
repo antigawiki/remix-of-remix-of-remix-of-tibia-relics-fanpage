@@ -142,28 +142,7 @@ jobs:
           # STUCK-BUFFER detection REMOVED — was breaking valid tile loops
           echo "FloorDown and stuck-buffer patches skipped (removed to prevent corruption)"
 
-          # =============================================
-          # SCROLL 18x14: All 4 scroll directions → full map area
-          # Global replacements (patterns are unique across the file)
-          # =============================================
-          sed -i 's/ParseMapDescription(reader, events, -8, -6, Map::TileBufferWidth, 1)/ParseMapDescription(reader, events, -8, -6, Map::TileBufferWidth, Map::TileBufferHeight)/' lib/parser.cpp
-          echo "Patched ParseMoveNorth: full 18x14"
-
-          sed -i 's/ParseMapDescription(reader, events, 9, -6, 1, Map::TileBufferHeight)/ParseMapDescription(reader, events, -8, -6, Map::TileBufferWidth, Map::TileBufferHeight)/' lib/parser.cpp
-          echo "Patched ParseMoveEast: full 18x14"
-
-          sed -i 's/ParseMapDescription(reader, events, -8, 7, Map::TileBufferWidth, 1)/ParseMapDescription(reader, events, -8, -6, Map::TileBufferWidth, Map::TileBufferHeight)/' lib/parser.cpp
-          echo "Patched ParseMoveSouth: full 18x14"
-
-          sed -i 's/ParseMapDescription(reader, events, -8, -6, 1, Map::TileBufferHeight)/ParseMapDescription(reader, events, -8, -6, Map::TileBufferWidth, Map::TileBufferHeight)/' lib/parser.cpp
-          echo "Patched ParseMoveWest: full 18x14"
-
-          # FLOORUP z==7 patch SKIPPED — sed too fragile for this structural change
-          # TODO: implement via Python or direct C++ patch file
-
-          # Verify scroll patches
-          echo "=== Scroll verification ==="
-          grep -c "TileBufferWidth, Map::TileBufferHeight" lib/parser.cpp
+          # SCROLL, FLOORUP and FONT patches REMOVED — reverted to original fork behavior
 
       - name: Build tibiarc library + web player
         run: |
