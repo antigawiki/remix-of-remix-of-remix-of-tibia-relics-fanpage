@@ -43,6 +43,9 @@ jobs:
           # Protocol patches (parser.cpp) — robust Python-based patching
           python3 $GITHUB_WORKSPACE/tibiarc-player/protocol_patch.py lib/parser.cpp
 
+          # FloorUp z=7 patch (parser.cpp) — read 6 surface floors
+          python3 $GITHUB_WORKSPACE/tibiarc-player/floorup_patch.py lib/parser.cpp
+
           # DAT parser resilience patch (types.cpp)
           python3 $GITHUB_WORKSPACE/tibiarc-player/dat_patch.py lib/types.cpp
           grep -c "Two-phase DAT parsing" lib/types.cpp && echo "DAT two-phase patch verified" || echo "WARN: DAT two-phase patch not applied"
@@ -52,6 +55,12 @@ jobs:
           grep -n "statementGuid" lib/parser.cpp || echo "WARN: statementGuid not found"
           grep -n "WalkCancel 0 bytes" lib/parser.cpp || echo "WARN: WalkCancel patch missing"
           grep -n "case 0xA8" lib/parser.cpp || echo "WARN: 0xA8 missing"
+          grep -n "case 0xA6" lib/parser.cpp || echo "WARN: 0xA6 MultiUseDelay missing"
+          grep -n "case 0x63" lib/parser.cpp || echo "WARN: 0x63 CreatureTurn missing"
+          grep -n "no stamina" lib/parser.cpp || echo "WARN: PlayerStats stamina patch missing"
+          grep -n "Remaining() < 100" lib/parser.cpp || echo "WARN: MapDescription guard missing"
+          grep -n "u8 range" lib/parser.cpp || echo "WARN: OutfitWindow u8 patch missing"
+          grep -n "6 surface floors" lib/parser.cpp || echo "WARN: FloorUp 6-floor patch missing"
           grep -n "PassableCreatures" lib/parser.cpp && echo "WARN: PassableCreatures assert still present" || echo "0x92 assert removed OK"
           echo "All patches verified"
 
