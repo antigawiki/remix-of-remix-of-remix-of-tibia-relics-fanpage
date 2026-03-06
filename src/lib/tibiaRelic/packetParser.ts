@@ -52,6 +52,17 @@ export class PacketParser {
   /** Opcodes processed in the last process() call — used by CamAnalyzer */
   public lastFrameOpcodes: number[] = [];
 
+  /** Protocol Dissector — when set, captures byte-level trace of every opcode */
+  public dissector: DissectorBuffer | null = null;
+  /** Current frame index for dissector (set externally by debugger) */
+  public dissectorFrameIdx = 0;
+  /** Current cam ms for dissector (set externally by debugger) */
+  public dissectorCamMs = 0;
+  /** Raw payload reference for hex dumps */
+  private _rawPayload: Uint8Array | null = null;
+  /** Dissected opcodes for current frame being processed */
+  private _frameOpcodes: DissectedOpcode[] = [];
+
   constructor(public gs: GameState, public dat: DatLoader, opts: PacketParserOptions = {}) {
     this.looktypeU16 = !!opts.looktypeU16;
     this.outfitWindowRangeU16 = opts.outfitWindowRangeU16 ?? this.looktypeU16;
