@@ -449,10 +449,10 @@ export class PacketParser {
     const g = this.gs;
     // Map
     if (t === 0x64) this.mapDesc(r);
-    else if (t === 0x65) this.scroll(r, 0, -1);
-    else if (t === 0x66) this.scroll(r, 1, 0);
-    else if (t === 0x67) this.scroll(r, 0, 1);
-    else if (t === 0x68) this.scroll(r, -1, 0);
+    else if (t === 0x65) this.scrollN(r);
+    else if (t === 0x66) this.scrollE(r);
+    else if (t === 0x67) this.scrollS(r);
+    else if (t === 0x68) this.scrollW(r);
     else if (t === 0x69) this.tileUpd(r);
     else if (t === 0x6a) this.addThing(r);
     else if (t === 0x6b) this.chgThing(r);
