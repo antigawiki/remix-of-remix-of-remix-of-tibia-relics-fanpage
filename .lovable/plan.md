@@ -1,8 +1,19 @@
-## Auditoria Completa — Status: PATCHES APLICADOS ✅
+## Auditoria Completa — Status: SCROLL PATCH APLICADO ✅
 
-Todos os patches identificados na auditoria foram adicionados ao workflow `.github/workflows/build-tibiarc.yml`.
+### Scroll Patch (NOVO — fix para black squares e desync)
 
-### Patches aplicados (total: 21)
+| Arquivo | Descrição | Status |
+|---------|-----------|--------|
+| `tibiarc-player/scroll_patch.py` | Patch Python que altera ParseMoveNorth/East/South/West para ler viewport 18x14 completo (TibiaRelic envia viewport inteiro em cada scroll) | ✅ Criado |
+| `.github/workflows/build-tibiarc.yml` | Integrado scroll_patch.py na pipeline de build | ✅ Atualizado |
+| `protocolDissector.ts` | Corrigido getAnomalies() para ignorar cam changes de opcodes esperados | ✅ Corrigido |
+| `PacketDissector.tsx` | Filtro de anomalias e styling atualizado para não marcar scrolls normais | ✅ Corrigido |
+
+### Próximo passo
+
+Executar o workflow `Build tibiarc WASM Player` no GitHub Actions para rebuildar o WASM com o scroll patch.
+
+### Patches anteriores (total: 21)
 
 | # | Opcode/Área | Descrição | Status |
 |---|--------|-----------|--------|
@@ -24,7 +35,3 @@ Todos os patches identificados na auditoria foram adicionados ao workflow `.gith
 
 ### SPR Loader C++
 Análise do código-fonte confirmou que o SPR loader já tem try-catch para `InvalidDataError` (sprites.cpp:266-273 e 326-337). Sprites corrompidos ou vazios são tratados graciosamente retornando sprite nulo. **Nenhum patch necessário.**
-
-### Próximo passo
-
-Executar o workflow `Build tibiarc WASM Player` no GitHub Actions para rebuildar o WASM com o patch do DAT parser.
