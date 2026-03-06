@@ -10,6 +10,7 @@ interface TibiarcPlayerProps {
   className?: string;
   onStateChange?: (info: { camBuffer: Uint8Array | null; progress: number; isPlaying: boolean }) => void;
   onWasmVersion?: (version: string) => void;
+  onFileNameChange?: (name: string) => void;
 }
 
 interface WasmModule {
@@ -86,7 +87,7 @@ function isCanvasBlack(canvas: HTMLCanvasElement): boolean {
   }
 }
 
-const TibiarcPlayer = ({ className, onStateChange, onWasmVersion }: TibiarcPlayerProps) => {
+const TibiarcPlayer = ({ className, onStateChange, onWasmVersion, onFileNameChange }: TibiarcPlayerProps) => {
   const { t } = useTranslation();
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -326,6 +327,7 @@ const TibiarcPlayer = ({ className, onStateChange, onWasmVersion }: TibiarcPlaye
     if (!mod) return;
 
     setFileName(file.name);
+    onFileNameChange?.(file.name);
     setErrorMsg('');
     setState('loading-cam');
 
