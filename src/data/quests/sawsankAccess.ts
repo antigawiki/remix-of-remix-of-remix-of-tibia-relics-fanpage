@@ -17,7 +17,7 @@ export const sawsankAccess: Quest = {
   },
   level: 0,
   premium: false,
-  hidden: true,
+  
   available: true,
   requirements: {
     items: [
