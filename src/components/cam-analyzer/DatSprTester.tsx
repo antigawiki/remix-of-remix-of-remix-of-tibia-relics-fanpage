@@ -90,7 +90,7 @@ export default function DatSprTester({ loadDat, datBuffer: externalDatBuffer }: 
             {validating ? 'Validando...' : 'Validar Localmente'}
           </Button>
           {!datBuffer && (
-            <p className="text-xs text-destructive">Carregue um .cam primeiro para que o .dat esteja disponível.</p>
+            <p className="text-xs text-muted-foreground">Carregando Tibia.dat...</p>
           )}
         </div>
       </Card>
