@@ -11,6 +11,7 @@ import { Play, Send, Trash2, Bot, User, Loader2, FlaskConical, Binary } from 'lu
 import { DatLoader } from '@/lib/tibiaRelic/datLoader';
 import { runDeepTrace, findFrameAtTime, getCamFileInfo, type DeepTraceResult } from '@/lib/tibiaRelic/deepTracer';
 import DatSprTester from './DatSprTester';
+
 interface Message {
   role: 'user' | 'assistant';
   content: string;
