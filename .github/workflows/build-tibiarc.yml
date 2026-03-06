@@ -155,15 +155,9 @@ jobs:
           sed -i '/void Parser::ParseMoveWest/,/^}/ s|ParseMapDescription(reader, events, -8, -6, Map::TileBufferWidth, Map::TileBufferHeight)|ParseMapDescription(reader, events, -8, -6, 1, Map::TileBufferHeight)|' lib/parser.cpp
           echo "Reverted 0x68 ScrollWest: 18x14 → 1×14"
 
-          # 10. FloorUp (0xBE z==7): fork reads only 1 floor, standard reads 6 (5→0)
-          #     Use sed to remove the single-floor comment+call and insert the loop
-          sed -i '/TibiaRelic: only the newly visible floor/,/tileSkip);/{
-            /TibiaRelic: only the newly visible floor/{
-              s|.*|        for (int zIdx = 5; zIdx >= 0; zIdx--) {\n            tileSkip = ParseFloorDescription(reader,\n                                             events,\n                                             Position_.X - 8,\n                                             Position_.Y - 6,\n                                             zIdx,\n                                             Map::TileBufferWidth,\n                                             Map::TileBufferHeight,\n                                             Map::TileBufferDepth - zIdx,\n                                             tileSkip);\n        }|
-            }
-            /TibiaRelic: only the newly visible floor/!d
-          }' lib/parser.cpp
-          echo "Reverted FloorUp z==7: 1 floor → 6 floors (5→0)"
+          # 10. FloorUp (0xBE z==7): read all 6 surface floors (5→0) via Python patch
+          python3 $GITHUB_WORKSPACE/tibiarc-player/floorup_patch.py lib/parser.cpp
+          grep -c "read all 6 surface floors" lib/parser.cpp && echo "FloorUp z==7 patch verified" || echo "WARN: FloorUp patch not applied"
 
           # =============================================
           # DIAGNOSTIC LOGGING (remove after debugging)
