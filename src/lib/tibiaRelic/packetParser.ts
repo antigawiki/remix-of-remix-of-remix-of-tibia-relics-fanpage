@@ -331,37 +331,30 @@ export class PacketParser {
     }
   }
 
-  /** Process opcodes directly — no TCP fallback (used inside demuxed sub-packets) */
+  /** Process opcodes directly — skip rest of frame on any error (like Relic Cam Player).
+   *  This prevents byte drift from cascading across opcodes. */
   private processDirectOpcodes(r: Buf, endPos: number) {
     while (r.pos < endPos) {
       try {
         const t = r.u8();
         if (!this.dispatch(t, r)) {
-          // Unknown opcode — scan forward up to 4 bytes looking for a known opcode
-          let recovered = false;
-          for (let skip = 0; skip < 4 && r.pos < endPos; skip++) {
-            const next = r.peekU8();
-            if (this.isKnownOpcode(next)) {
-              recovered = true;
-              break;
-            }
-            r.pos++;
+          // Unknown opcode — skip rest of frame to prevent drift
+          if (this.frameErrorCount < 30) {
+            this.frameErrorCount++;
+            console.warn(`[PacketParser] Unknown opcode 0x${t.toString(16)} at pos ${r.pos - 1}, skipping rest of frame (${endPos - r.pos} bytes)`);
           }
-          if (!recovered) break;
+          r.pos = endPos;
+          break;
         }
       } catch (e) {
         if (this.strictMode) throw e;
-        // Try to recover: scan forward for next valid opcode
-        let recovered = false;
-        for (let skip = 0; skip < 4 && r.pos < endPos; skip++) {
-          const next = r.peekU8();
-          if (this.isKnownOpcode(next)) {
-            recovered = true;
-            break;
-          }
-          r.pos++;
+        // Error during opcode parsing — skip rest of frame (no drift cascade)
+        if (this.frameErrorCount < 30) {
+          this.frameErrorCount++;
+          console.warn(`[PacketParser] Parse error, skipping rest of frame (${endPos - r.pos} bytes):`, e);
         }
-        if (!recovered) break;
+        r.pos = endPos;
+        break;
       }
     }
   }
@@ -567,7 +560,7 @@ export class PacketParser {
     else if (t === 0xb4) this.textMsg(r);
     else if (t === 0xb5) r.u8();
     // Walk cancel / move delay (7.72 tibiarc parity)
-    else if (t === 0xb6) { /* walk cancel — no payload for TibiaRelic */ }
+    else if (t === 0xb6) { r.u16(); /* walk cancel / move delay — 2 bytes (standard 7.72) */ }
     else if (t === 0xb7) { /* unused / reserved */ }
     else if (t === 0xb8) { /* unused / reserved */ }
     // Floor change

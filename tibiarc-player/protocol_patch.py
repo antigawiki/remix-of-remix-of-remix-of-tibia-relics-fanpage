@@ -3,12 +3,12 @@
 TibiaRelic protocol patches for tibiarc C++ engine.
 Replaces all fragile sed commands with robust regex-based patching.
 
-Patches applied:
+NOTE: 0xB6 WalkCancel is NOT patched — TibiaRelic sends standard 2B (ParseMoveDelay).
   1. 0xA4 ParseSpellCooldown: SkipU32 → SkipU8 (5B → 2B)
   2. 0xA5 SpellGroupCooldown: separate from 0xA4, read 5B
   3. 0xA7 PlayerTactics: remove PvPMode (4B → 3B)
-  4. 0xA8 CreatureSquare: add case, skip 5B
-  5. 0xB6 WalkCancel: remove payload (2B → 0B)
+   4. 0xA8 CreatureSquare: add case, skip 5B
+   5. 0xB6 WalkCancel: KEEP standard ParseMoveDelay (2B) — do NOT remove
   6. 0x92 CreatureImpassable: remove assert
   7. Diagnostic opcode logging
 
@@ -134,26 +134,15 @@ def patch_creature_square(src):
     return src
 
 def patch_walk_cancel(src):
-    """0xB6: Remove ParseMoveDelay call (2B → 0B)."""
-    pattern = r'(case\s+0xB6\s*:\s*\n\s*)(\S.*ParseMoveDelay.*)'
-    match = re.search(pattern, src)
-    if match:
-        src = src[:match.start(2)] + "/* TibiaRelic: WalkCancel 0 bytes (no payload) */" + src[match.end(2):]
-        print("OK: 0xB6 WalkCancel — removed ParseMoveDelay (2B → 0B)")
+    """0xB6: KEEP standard ParseMoveDelay (2B) — TibiaRelic sends move delay like standard 7.72."""
+    # Check if we previously removed it — if so, restore it
+    if 'WalkCancel 0 bytes' in src:
+        src = src.replace('/* TibiaRelic: WalkCancel 0 bytes (no payload) */', 'ParseMoveDelay(reader, events);')
+        src = src.replace('/* TibiaRelic: WalkCancel 0 bytes */\n        ', '')
+        print("OK: 0xB6 WalkCancel — restored ParseMoveDelay (2B, standard 7.72)")
         return src
     
-    pattern2 = r'(case\s+0xB6\s*:\s*\n\s*)(.*?)(break;)'
-    match2 = re.search(pattern2, src, re.DOTALL)
-    if match2:
-        body = match2.group(2)
-        if 'WalkCancel 0 bytes' in body or 'TibiaRelic' in body:
-            print("0xB6 WalkCancel: already patched")
-            return src
-        src = src[:match2.start(2)] + "/* TibiaRelic: WalkCancel 0 bytes */\n        " + src[match2.start(3):]
-        print("OK: 0xB6 WalkCancel — removed payload")
-        return src
-    
-    print("WARN: case 0xB6 not found")
+    print("0xB6 WalkCancel: already has ParseMoveDelay (standard 7.72)")
     return src
 
 def patch_creature_impassable(src):
