@@ -51,16 +51,13 @@ jobs:
           python3 $GITHUB_WORKSPACE/tibiarc-player/dat_patch.py lib/types.cpp
           grep -c "Two-phase DAT parsing" lib/types.cpp && echo "DAT two-phase patch verified" || echo "WARN: DAT two-phase patch not applied"
 
-          # Final verification
+          # Final verification — only check patches we actually apply
           echo "=== Final verification ==="
-          grep -n "statementGuid" lib/parser.cpp || echo "WARN: statementGuid not found"
           grep -n "WalkCancel 0 bytes" lib/parser.cpp || echo "WARN: WalkCancel patch missing"
-          grep -n "case 0xA8" lib/parser.cpp || echo "WARN: 0xA8 missing"
-          grep -n "case 0xA6" lib/parser.cpp || echo "WARN: 0xA6 MultiUseDelay missing"
-          grep -n "case 0x63" lib/parser.cpp || echo "INFO: 0x63 not in main switch (handled in ParseObject)"
-          grep -n "Stamina" lib/parser.cpp | head -3
-          grep -n "Remaining() < 100" lib/parser.cpp || echo "WARN: MapDescription guard missing"
-          grep -n "OutfitsU16\|OutfitAddons\|u8 range" lib/parser.cpp | head -3
+          grep -n "case 0xA8" lib/parser.cpp || echo "WARN: 0xA8 CreatureSquare missing"
+          grep -n "SkipU8.*TibiaRelic" lib/parser.cpp || echo "WARN: SpellCooldown patch missing"
+          grep -n "SpellGroupCooldown" lib/parser.cpp || echo "WARN: 0xA5 SpellGroupCooldown missing"
+          grep -n "DIAG.*opcode" lib/parser.cpp || echo "WARN: Diagnostic logging missing"
           grep -n "PassableCreatures" lib/parser.cpp && echo "WARN: PassableCreatures assert still present" || echo "0x92 assert removed OK"
           echo "All patches verified"
 
