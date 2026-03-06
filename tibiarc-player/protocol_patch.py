@@ -207,45 +207,59 @@ def patch_diagnostic_logging(src):
 
 
 def patch_player_stats(src):
-    """0xA0: Remove Stamina ReadU16 from ParsePlayerStats (TibiaRelic 7.72 has no stamina)."""
-    pattern = r'(void\s+Parser::ParsePlayerStats\s*\([^)]*\)\s*\{)(.*?)(^\})'
-    match = re.search(pattern, src, re.DOTALL | re.MULTILINE)
+    """0xA0: Remove Stamina ReadU16 from ParsePlayerDataCurrent (TibiaRelic 7.72 has no stamina).
+    The stamina read is guarded by Version_.Protocol.Stamina, but we remove it
+    unconditionally to ensure TibiaRelic compatibility regardless of version config."""
+    # Try both possible function names
+    for func_name in ['ParsePlayerDataCurrent', 'ParsePlayerStats']:
+        pattern = rf'(void\s+Parser::{func_name}\s*\([^)]*\)\s*\{{)(.*?)(^\}})'
+        match = re.search(pattern, src, re.DOTALL | re.MULTILINE)
+        if match:
+            break
+    
     if not match:
-        print("WARN: ParsePlayerStats not found")
+        print("WARN: ParsePlayerDataCurrent/ParsePlayerStats not found")
         return src
     
     body = match.group(2)
-    # Look for Stamina line (various naming conventions)
+    
+    # Look for the Stamina block (version-guarded or direct)
     stamina_patterns = [
-        r'.*[Ss]tamina.*=.*reader\.ReadU16\(\).*\n',
-        r'.*[Ss]tamina.*=.*reader\.Read<uint16_t>\(\).*\n',
-        r'\s*Stamina_\s*=\s*reader\.\w+\(\);\s*\n',
+        # Version-guarded: if (Version_.Protocol.Stamina) { ... ReadU16 ... }
+        r'(\s*if\s*\(Version_\.Protocol\.Stamina\)\s*\{\s*\n\s*.*?ReadU16\(\).*?\n\s*\})',
+        # Direct: Stamina = reader.ReadU16()
+        r'(.*[Ss]tamina.*=.*reader\.ReadU16\(\).*\n)',
     ]
     
     new_body = body
     for sp in stamina_patterns:
-        new_body = re.sub(sp, '    /* TibiaRelic: no stamina in 7.72 */\n', new_body, count=1)
+        new_body = re.sub(sp, '\n    /* TibiaRelic: no stamina in 7.72 */', new_body, count=1)
         if new_body != body:
             break
     
     if new_body == body:
-        if 'TibiaRelic: no stamina' in body:
-            print("0xA0 ParsePlayerStats: already patched")
+        if 'TibiaRelic: no stamina' in body or 'Stamina' not in body:
+            print("0xA0 PlayerStats: already patched or no stamina present")
         else:
-            print("WARN: Stamina line not found in ParsePlayerStats")
+            print("WARN: Could not patch Stamina in PlayerStats")
         return src
     
     src = src[:match.start(2)] + new_body + src[match.end(2):]
-    print("OK: 0xA0 ParsePlayerStats — removed Stamina ReadU16")
+    print("OK: 0xA0 PlayerStats — removed Stamina ReadU16")
     return src
 
 
 def patch_map_description_guard(src):
     """0x64: Add early return guard for mini MapDescription packets (< 100B)."""
-    pattern = r'(void\s+Parser::ParseMapDescription\s*\([^)]*\)\s*\{)'
-    match = re.search(pattern, src)
+    # Try both possible function names
+    for func_name in ['ParseFullMapDescription', 'ParseMapDescription']:
+        pattern = rf'(void\s+Parser::{func_name}\s*\([^)]*\)\s*\{{)'
+        match = re.search(pattern, src)
+        if match:
+            break
+    
     if not match:
-        print("WARN: ParseMapDescription not found")
+        print("WARN: ParseFullMapDescription/ParseMapDescription not found")
         return src
     
     # Check if already patched
@@ -253,16 +267,16 @@ def patch_map_description_guard(src):
         print("0x64 MapDescription guard: already patched")
         return src
     
-    # Find the position after reading X,Y coordinates (ReadU16 calls)
+    # Find the position after reading position (ParsePosition or ReadU16 calls)
     func_start = match.end()
-    # Look for the second ReadU16 (Y coordinate) after function start
-    read_pattern = re.compile(r'(reader\.ReadU16\(\)\s*;)')
-    reads = list(read_pattern.finditer(src, func_start, func_start + 500))
+    # Look for ParsePosition or second ReadU16
+    pos_pattern = re.compile(r'(ParsePosition\(reader\)\s*;|reader\.ReadU16\(\)\s*;)')
+    reads = list(pos_pattern.finditer(src, func_start, func_start + 500))
     
-    if len(reads) >= 2:
-        insert_pos = reads[1].end()
+    if reads:
+        insert_pos = reads[-1].end() if len(reads) <= 2 else reads[1].end()
         injection = (
-            "\n    /* TibiaRelic: guard against mini MAP_DESC (position-only, ~5B) */\n"
+            "\n\n    /* TibiaRelic: guard against mini MAP_DESC (position-only, ~5B) */\n"
             "    if (reader.Remaining() < 100) {\n"
             "        return;\n"
             "    }\n"
@@ -270,7 +284,7 @@ def patch_map_description_guard(src):
         src = src[:insert_pos] + injection + src[insert_pos:]
         print("OK: 0x64 MapDescription — added <100B early return guard")
     else:
-        print("WARN: Could not find ReadU16 pair in ParseMapDescription")
+        print("WARN: Could not find position read in MapDescription")
     
     return src
 
@@ -281,11 +295,9 @@ def patch_multi_use_delay(src):
         print("0xA6 MultiUseDelay: already present")
         return src
     
-    # Insert before case 0xA7
     pattern = r'(\s*case\s+0xA7\s*:)'
     match = re.search(pattern, src)
     if not match:
-        # Try before 0xA8
         pattern = r'(\s*case\s+0xA8\s*:)'
         match = re.search(pattern, src)
     if not match:
@@ -309,7 +321,6 @@ def patch_creature_turn(src):
         print("0x63 CreatureTurn: already present")
         return src
     
-    # Insert before case 0x64
     pattern = r'(\s*case\s+0x64\s*:)'
     match = re.search(pattern, src)
     if not match:
@@ -328,40 +339,36 @@ def patch_creature_turn(src):
 
 
 def patch_outfit_window(src):
-    """0xC8: Change ReadU16 to ReadU8 for RangeStart/RangeEnd in ParseOutfitWindow."""
-    pattern = r'(void\s+Parser::ParseOutfitWindow\s*\([^)]*\)\s*\{)(.*?)(^\})'
-    match = re.search(pattern, src, re.DOTALL | re.MULTILINE)
+    """0xC8: Ensure outfit range uses u8 instead of u16 for TibiaRelic 7.72.
+    The fork uses version flags (OutfitsU16) so this may already be correct."""
+    # Try both possible function names
+    for func_name in ['ParseOutfitDialog', 'ParseOutfitWindow']:
+        pattern = rf'(void\s+Parser::{func_name}\s*\([^)]*\)\s*\{{)(.*?)(^\}})'
+        match = re.search(pattern, src, re.DOTALL | re.MULTILINE)
+        if match:
+            break
+    
     if not match:
-        print("WARN: ParseOutfitWindow not found")
+        print("WARN: ParseOutfitDialog/ParseOutfitWindow not found")
         return src
     
     body = match.group(2)
     
-    # Replace ReadU16 for RangeStart and RangeEnd
-    new_body = body
+    # Check if it uses version-gated outfit handling (OutfitsU16 flag)
+    if 'OutfitsU16' in body or 'OutfitAddons' in body:
+        print("0xC8 OutfitDialog: uses version flags (OutfitsU16/OutfitAddons), no patch needed")
+        return src
+    
+    # Only patch if there are explicit ReadU16 for range without version guards
     range_pattern = r'(Range(?:Start|End)\s*=\s*reader\.)ReadU16(\(\))'
-    new_body = re.sub(range_pattern, r'\1ReadU8\2 /* TibiaRelic: u8 range */', new_body)
+    new_body = re.sub(range_pattern, r'\1ReadU8\2 /* TibiaRelic: u8 range */', body)
     
     if new_body == body:
-        if 'ReadU8' in body and 'Range' in body:
-            print("0xC8 OutfitWindow: already patched")
-        else:
-            # Try alternative patterns
-            new_body = body.replace('reader.ReadU16()', 'reader.ReadU8() /* TibiaRelic: u8 range */', 2)
-            # Only replace the last 2 ReadU16 (RangeStart and RangeEnd), skip outfit ones
-            # Actually let's be more precise - find the last two ReadU16 in the body
-            u16_positions = [(m.start(), m.end()) for m in re.finditer(r'reader\.ReadU16\(\)', body)]
-            if len(u16_positions) >= 2:
-                # Replace last two occurrences (RangeStart, RangeEnd)
-                for start, end in reversed(u16_positions[-2:]):
-                    body = body[:start] + 'reader.ReadU8() /* TibiaRelic: u8 range */' + body[end:]
-                new_body = body
-            else:
-                print("WARN: Could not find ReadU16 for Range in ParseOutfitWindow")
-                return src
+        print("0xC8 OutfitDialog: no unguarded ReadU16 range found, likely already correct")
+        return src
     
     src = src[:match.start(2)] + new_body + src[match.end(2):]
-    print("OK: 0xC8 OutfitWindow — ReadU16 → ReadU8 for RangeStart/RangeEnd")
+    print("OK: 0xC8 OutfitDialog — ReadU16 → ReadU8 for RangeStart/RangeEnd")
     return src
 
 

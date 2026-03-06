@@ -15,21 +15,24 @@ def patch_floor_up(filepath: str):
     with open(filepath, 'r') as f:
         src = f.read()
 
-    # Find the ParseFloorUp function
-    if 'ParseFloorUp' not in src:
-        print(f"WARN: ParseFloorUp not found in {filepath}")
+    # Try both possible function names
+    func_name = None
+    for name in ['ParseFloorChangeUp', 'ParseFloorUp']:
+        if name in src:
+            func_name = name
+            break
+
+    if not func_name:
+        print(f"WARN: ParseFloorChangeUp/ParseFloorUp not found in {filepath}")
         return False
 
-    # Strategy: find the `if (Position_.Z == 7)` block inside ParseFloorUp
-    # and replace its body with the 6-floor loop.
-
-    # Match the entire ParseFloorUp function
+    # Check if already patched (fork already has 6-floor loop)
     func_match = re.search(
-        r'(void\s+Parser::ParseFloorUp\s*\([^)]*\)\s*\{)',
+        rf'(void\s+Parser::{func_name}\s*\([^)]*\)\s*\{{)',
         src
     )
     if not func_match:
-        print("WARN: Could not find ParseFloorUp function signature")
+        print(f"WARN: Could not find {func_name} function signature")
         return False
 
     func_start = func_match.end()
@@ -39,10 +42,10 @@ def patch_floor_up(filepath: str):
     z7_match = z7_pattern.search(src, func_start)
     
     if not z7_match:
-        print("WARN: Could not find 'Position_.Z == 7' branch in ParseFloorUp")
+        print(f"WARN: Could not find 'Position_.Z == 7' branch in {func_name}")
         return False
 
-    # Find the matching closing brace for this if block
+    # Check if already has the 6-floor loop
     brace_start = z7_match.end()
     depth = 1
     pos = brace_start
@@ -57,9 +60,15 @@ def patch_floor_up(filepath: str):
         print("WARN: Could not find matching brace for z==7 block")
         return False
 
-    brace_end = pos  # position after the closing '}'
+    z7_body = src[brace_start:pos-1]
+    
+    # Check if it already has a loop (for zIdx = 5; zIdx >= 0)
+    if 'zIdx = 5' in z7_body or 'zIdx >= 0' in z7_body:
+        print(f"SUCCESS: {func_name} z==7 already has 6-floor loop (fork already patched)")
+        return True
 
-    # Build the replacement z==7 block
+    brace_end = pos
+
     replacement = """if (Position_.Z == 7) {
         /* TibiaRelic patch: read all 6 surface floors (z=5 down to z=0) */
         for (int zIdx = 5; zIdx >= 0; zIdx--) {
@@ -75,13 +84,12 @@ def patch_floor_up(filepath: str):
         }
     }"""
 
-    # Replace
     src = src[:z7_match.start()] + replacement + src[brace_end:]
 
     with open(filepath, 'w') as f:
         f.write(src)
 
-    print("SUCCESS: ParseFloorUp z==7 patched to read 6 floors (5→0)")
+    print(f"SUCCESS: {func_name} z==7 patched to read 6 floors (5→0)")
     return True
 
 
