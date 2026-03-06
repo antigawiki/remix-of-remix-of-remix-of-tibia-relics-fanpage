@@ -76,7 +76,7 @@ export function hexDumpSlice(data: Uint8Array, start: number, end: number, maxBy
 /** Circular buffer for dissected frames */
 export class DissectorBuffer {
   frames: DissectedFrame[] = [];
-  private maxFrames = 500;
+  private maxFrames = 50000;
 
   addFrame(frame: DissectedFrame) {
     this.frames.push(frame);
