@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback } from 'react';
 import { Link } from 'react-router-dom';
-import { ArrowLeft, Film, Info } from 'lucide-react';
+import { ArrowLeft, Film } from 'lucide-react';
 import { useTranslation } from '@/i18n';
 import TibiarcPlayer from '@/components/TibiarcPlayer';
 import CamFrameDebugger from '@/components/CamFrameDebugger';
@@ -70,15 +70,6 @@ const CamPlayerPage = () => {
           progress={debugState.progress}
           isPlaying={debugState.isPlaying}
         />
-
-        {/* Info box */}
-        <div className="w-full max-w-[960px] bg-card border border-border/50 rounded-sm p-4 space-y-2">
-          <div className="flex items-center gap-2 text-gold">
-            <Info className="w-4 h-4" />
-            <h2 className="font-heading text-sm">{t('camPlayer.aboutTitle')}</h2>
-          </div>
-          <p className="text-xs text-muted-foreground">{t('camPlayer.aboutDescription')}</p>
-        </div>
       </div>
     </div>
   );
