@@ -4,14 +4,22 @@ TibiaRelic protocol patches for tibiarc C++ engine.
 Replaces all fragile sed commands with robust regex-based patching.
 
 Patches applied:
-  1. 0xAA ParseCreatureSpeak: unconditional SkipU32 (statementGuid)
-  2. 0xA4 ParseSpellCooldown: SkipU32 → SkipU8 (5B → 2B)
-  3. 0xA5 SpellGroupCooldown: separate from 0xA4, read 5B
-  4. 0xA7 PlayerTactics: remove PvPMode (4B → 3B)
-  5. 0xA8 CreatureSquare: add case, skip 5B
-  6. 0xB6 WalkCancel: remove payload (2B → 0B)
-  7. 0x92 CreatureImpassable: remove assert
-  8. Diagnostic opcode logging
+  1. 0xA4 ParseSpellCooldown: SkipU32 → SkipU8 (5B → 2B)
+  2. 0xA5 SpellGroupCooldown: separate from 0xA4, read 5B
+  3. 0xA7 PlayerTactics: remove PvPMode (4B → 3B)
+  4. 0xA8 CreatureSquare: add case, skip 5B
+  5. 0xB6 WalkCancel: remove payload (2B → 0B)
+  6. 0x92 CreatureImpassable: remove assert
+  7. Diagnostic opcode logging
+
+NOTE: The following patches were REMOVED because the antigawiki/tibiarc fork
+already handles them correctly via version flags or existing code:
+  - 0xAA ParseCreatureSpeak: ReportMessages=true for 7.72 already reads u32
+  - 0xA0 PlayerStats: Stamina=false for 7.72, not read
+  - 0x64 MapDescription guard: already in fork
+  - 0xA6 MultiUseDelay: case 0xA6 already exists in fork
+  - 0x63 CreatureTurn: not a top-level opcode (it's a creature ID marker)
+  - 0xC8 OutfitWindow: handled by OutfitsU16 version flag
 """
 
 import re
@@ -24,26 +32,6 @@ def read_file(path):
 def write_file(path, content):
     with open(path, 'w') as f:
         f.write(content)
-
-def patch_creature_speak(src):
-    """0xAA: Inject unconditional SkipU32 for statementGuid right after function opening brace."""
-    pattern = r'(void\s+Parser::ParseCreatureSpeak\s*\([^)]*\)\s*\{)'
-    match = re.search(pattern, src)
-    if not match:
-        print("WARN: ParseCreatureSpeak not found")
-        return src
-    
-    insert_pos = match.end()
-    injection = "\n    /* TibiaRelic: unconditional u32 statementGuid */ reader.SkipU32();"
-    
-    # Check if already patched
-    if "statementGuid" in src[insert_pos:insert_pos+200]:
-        print("0xAA ParseCreatureSpeak: already patched")
-        return src
-    
-    src = src[:insert_pos] + injection + src[insert_pos:]
-    print("OK: 0xAA ParseCreatureSpeak — injected unconditional SkipU32 for statementGuid")
-    return src
 
 def patch_spell_cooldown(src):
     """0xA4: Change SkipU32 to SkipU8 inside ParseSpellCooldown."""
@@ -68,12 +56,9 @@ def patch_spell_cooldown(src):
 
 def patch_spell_group_cooldown(src):
     """0xA5: If it shares case with 0xA4, split it into its own case reading 5B."""
-    # Check if 0xA5 falls through to 0xA4 (shared handler)
-    # Pattern: case 0xA5:\n    case 0xA4: or case 0xA5: followed by case 0xA4:
     pattern_shared = r'(case\s+0xA5\s*:\s*\n\s*)(case\s+0xA4\s*:)'
     match = re.search(pattern_shared, src)
     if match:
-        # Replace the fallthrough with a standalone case
         replacement = (
             "case 0xA5:\n"
             "        /* TibiaRelic: SpellGroupCooldown 5B (u8 groupId + u32 delay) */\n"
@@ -85,12 +70,10 @@ def patch_spell_group_cooldown(src):
         print("OK: 0xA5 SpellGroupCooldown — separated from 0xA4, reads 5B")
         return src
     
-    # Check if 0xA5 already has its own handler
     if re.search(r'case\s+0xA5\s*:.*?break;', src, re.DOTALL):
         print("0xA5 SpellGroupCooldown: already has standalone handler")
         return src
     
-    # If 0xA5 doesn't exist at all, add it before 0xA4
     pattern_a4 = r'(\s*case\s+0xA4\s*:)'
     match_a4 = re.search(pattern_a4, src)
     if match_a4:
@@ -134,7 +117,6 @@ def patch_creature_square(src):
         print("0xA8 CreatureSquare: already present")
         return src
     
-    # Insert before case 0xAA
     pattern = r'(\s*case\s+0xAA\s*:)'
     match = re.search(pattern, src)
     if not match:
@@ -153,7 +135,6 @@ def patch_creature_square(src):
 
 def patch_walk_cancel(src):
     """0xB6: Remove ParseMoveDelay call (2B → 0B)."""
-    # Find case 0xB6 and replace the ParseMoveDelay call in the next line
     pattern = r'(case\s+0xB6\s*:\s*\n\s*)(\S.*ParseMoveDelay.*)'
     match = re.search(pattern, src)
     if match:
@@ -161,7 +142,6 @@ def patch_walk_cancel(src):
         print("OK: 0xB6 WalkCancel — removed ParseMoveDelay (2B → 0B)")
         return src
     
-    # Also try: the handler might call a function directly
     pattern2 = r'(case\s+0xB6\s*:\s*\n\s*)(.*?)(break;)'
     match2 = re.search(pattern2, src, re.DOTALL)
     if match2:
@@ -169,7 +149,6 @@ def patch_walk_cancel(src):
         if 'WalkCancel 0 bytes' in body or 'TibiaRelic' in body:
             print("0xB6 WalkCancel: already patched")
             return src
-        # Replace body with comment
         src = src[:match2.start(2)] + "/* TibiaRelic: WalkCancel 0 bytes */\n        " + src[match2.start(3):]
         print("OK: 0xB6 WalkCancel — removed payload")
         return src
@@ -193,8 +172,6 @@ def patch_diagnostic_logging(src):
         print("Diagnostic logging: already present")
         return src
     
-    # Replace: switch (reader.ReadU8()) {
-    # With: auto _op = reader.ReadU8(); printf(...); switch (_op) {
     pattern = r'switch\s*\(reader\.ReadU8\(\)\)\s*\{'
     match = re.search(pattern, src)
     if match:
@@ -203,172 +180,6 @@ def patch_diagnostic_logging(src):
         print("OK: Diagnostic opcode logging added")
     else:
         print("WARN: main opcode switch not found for diagnostic logging")
-    return src
-
-
-def patch_player_stats(src):
-    """0xA0: Remove Stamina ReadU16 from ParsePlayerDataCurrent (TibiaRelic 7.72 has no stamina).
-    The stamina read is guarded by Version_.Protocol.Stamina, but we remove it
-    unconditionally to ensure TibiaRelic compatibility regardless of version config."""
-    # Try both possible function names
-    for func_name in ['ParsePlayerDataCurrent', 'ParsePlayerStats']:
-        pattern = rf'(void\s+Parser::{func_name}\s*\([^)]*\)\s*\{{)(.*?)(^\}})'
-        match = re.search(pattern, src, re.DOTALL | re.MULTILINE)
-        if match:
-            break
-    
-    if not match:
-        print("WARN: ParsePlayerDataCurrent/ParsePlayerStats not found")
-        return src
-    
-    body = match.group(2)
-    
-    # Look for the Stamina block (version-guarded or direct)
-    stamina_patterns = [
-        # Version-guarded: if (Version_.Protocol.Stamina) { ... ReadU16 ... }
-        r'(\s*if\s*\(Version_\.Protocol\.Stamina\)\s*\{\s*\n\s*.*?ReadU16\(\).*?\n\s*\})',
-        # Direct: Stamina = reader.ReadU16()
-        r'(.*[Ss]tamina.*=.*reader\.ReadU16\(\).*\n)',
-    ]
-    
-    new_body = body
-    for sp in stamina_patterns:
-        new_body = re.sub(sp, '\n    /* TibiaRelic: no stamina in 7.72 */', new_body, count=1)
-        if new_body != body:
-            break
-    
-    if new_body == body:
-        if 'TibiaRelic: no stamina' in body or 'Stamina' not in body:
-            print("0xA0 PlayerStats: already patched or no stamina present")
-        else:
-            print("WARN: Could not patch Stamina in PlayerStats")
-        return src
-    
-    src = src[:match.start(2)] + new_body + src[match.end(2):]
-    print("OK: 0xA0 PlayerStats — removed Stamina ReadU16")
-    return src
-
-
-def patch_map_description_guard(src):
-    """0x64: Add early return guard for mini MapDescription packets (< 100B)."""
-    # Try both possible function names
-    for func_name in ['ParseFullMapDescription', 'ParseMapDescription']:
-        pattern = rf'(void\s+Parser::{func_name}\s*\([^)]*\)\s*\{{)'
-        match = re.search(pattern, src)
-        if match:
-            break
-    
-    if not match:
-        print("WARN: ParseFullMapDescription/ParseMapDescription not found")
-        return src
-    
-    # Check if already patched
-    if 'Remaining() < 100' in src[match.end():match.end()+500]:
-        print("0x64 MapDescription guard: already patched")
-        return src
-    
-    # Find the position after reading position (ParsePosition or ReadU16 calls)
-    func_start = match.end()
-    # Look for ParsePosition or second ReadU16
-    pos_pattern = re.compile(r'(ParsePosition\(reader\)\s*;|reader\.ReadU16\(\)\s*;)')
-    reads = list(pos_pattern.finditer(src, func_start, func_start + 500))
-    
-    if reads:
-        insert_pos = reads[-1].end() if len(reads) <= 2 else reads[1].end()
-        injection = (
-            "\n\n    /* TibiaRelic: guard against mini MAP_DESC (position-only, ~5B) */\n"
-            "    if (reader.Remaining() < 100) {\n"
-            "        return;\n"
-            "    }\n"
-        )
-        src = src[:insert_pos] + injection + src[insert_pos:]
-        print("OK: 0x64 MapDescription — added <100B early return guard")
-    else:
-        print("WARN: Could not find position read in MapDescription")
-    
-    return src
-
-
-def patch_multi_use_delay(src):
-    """0xA6: Add case for MultiUseDelay (4B = u32 delay)."""
-    if re.search(r'case\s+0xA6\s*:', src):
-        print("0xA6 MultiUseDelay: already present")
-        return src
-    
-    pattern = r'(\s*case\s+0xA7\s*:)'
-    match = re.search(pattern, src)
-    if not match:
-        pattern = r'(\s*case\s+0xA8\s*:)'
-        match = re.search(pattern, src)
-    if not match:
-        print("WARN: case 0xA7/0xA8 not found, cannot add 0xA6")
-        return src
-    
-    insertion = (
-        "\n    case 0xA6:\n"
-        "        /* TibiaRelic: MultiUseDelay (u32 delay) */\n"
-        "        reader.SkipU32();\n"
-        "        break;"
-    )
-    src = src[:match.start()] + insertion + src[match.start():]
-    print("OK: 0xA6 MultiUseDelay — added case, 4B")
-    return src
-
-
-def patch_creature_turn(src):
-    """0x63: Add case for CreatureTurn (5B = u32 creatureId + u8 direction)."""
-    if re.search(r'case\s+0x63\s*:', src):
-        print("0x63 CreatureTurn: already present")
-        return src
-    
-    pattern = r'(\s*case\s+0x64\s*:)'
-    match = re.search(pattern, src)
-    if not match:
-        print("WARN: case 0x64 not found, cannot add 0x63")
-        return src
-    
-    insertion = (
-        "\n    case 0x63:\n"
-        "        /* TibiaRelic: CreatureTurn (u32 creatureId + u8 direction) */\n"
-        "        reader.Skip(5);\n"
-        "        break;"
-    )
-    src = src[:match.start()] + insertion + src[match.start():]
-    print("OK: 0x63 CreatureTurn — added case, 5B")
-    return src
-
-
-def patch_outfit_window(src):
-    """0xC8: Ensure outfit range uses u8 instead of u16 for TibiaRelic 7.72.
-    The fork uses version flags (OutfitsU16) so this may already be correct."""
-    # Try both possible function names
-    for func_name in ['ParseOutfitDialog', 'ParseOutfitWindow']:
-        pattern = rf'(void\s+Parser::{func_name}\s*\([^)]*\)\s*\{{)(.*?)(^\}})'
-        match = re.search(pattern, src, re.DOTALL | re.MULTILINE)
-        if match:
-            break
-    
-    if not match:
-        print("WARN: ParseOutfitDialog/ParseOutfitWindow not found")
-        return src
-    
-    body = match.group(2)
-    
-    # Check if it uses version-gated outfit handling (OutfitsU16 flag)
-    if 'OutfitsU16' in body or 'OutfitAddons' in body:
-        print("0xC8 OutfitDialog: uses version flags (OutfitsU16/OutfitAddons), no patch needed")
-        return src
-    
-    # Only patch if there are explicit ReadU16 for range without version guards
-    range_pattern = r'(Range(?:Start|End)\s*=\s*reader\.)ReadU16(\(\))'
-    new_body = re.sub(range_pattern, r'\1ReadU8\2 /* TibiaRelic: u8 range */', body)
-    
-    if new_body == body:
-        print("0xC8 OutfitDialog: no unguarded ReadU16 range found, likely already correct")
-        return src
-    
-    src = src[:match.start(2)] + new_body + src[match.end(2):]
-    print("OK: 0xC8 OutfitDialog — ReadU16 → ReadU8 for RangeStart/RangeEnd")
     return src
 
 
@@ -385,8 +196,7 @@ def main():
     print("TibiaRelic Protocol Patches")
     print("=" * 60)
     
-    # Apply patches in order — creature_speak MUST be first (most critical)
-    src = patch_creature_speak(src)
+    # Apply only validated patches (redundant/broken ones removed)
     src = patch_spell_cooldown(src)
     src = patch_spell_group_cooldown(src)
     src = patch_player_tactics(src)
@@ -394,16 +204,10 @@ def main():
     src = patch_walk_cancel(src)
     src = patch_creature_impassable(src)
     src = patch_diagnostic_logging(src)
-    # New patches (audit round 2)
-    src = patch_player_stats(src)
-    src = patch_map_description_guard(src)
-    src = patch_multi_use_delay(src)
-    src = patch_creature_turn(src)
-    src = patch_outfit_window(src)
     
     if src == original:
-        print("\nWARN: No changes were made!")
-        sys.exit(1)
+        print("\nAll patches already applied — no changes needed")
+        sys.exit(0)
     
     write_file(filepath, src)
     
