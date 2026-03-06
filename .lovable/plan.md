@@ -1,30 +1,23 @@
-## Auditoria Completa — Status: PATCHES APLICADOS ✅
 
-Todos os patches identificados na auditoria foram adicionados ao workflow `.github/workflows/build-tibiarc.yml`.
 
-### Patches aplicados (total: 21)
+## Problema
 
-| # | Opcode/Área | Descrição | Status |
-|---|--------|-----------|--------|
-| 1 | `0xA4` | SpellCooldown 5B→2B | ✅ já existia |
-| 2 | `0xA7` | PlayerTactics 4B→3B | ✅ já existia |
-| 3 | `0xA8` | CreatureSquare (novo case) | ✅ já existia |
-| 4 | `0xB6` | WalkCancel 2B→0B | ✅ já existia |
-| 5 | `0x92` | CreatureImpassable assert removido | ✅ já existia |
-| 6-9 | `0x65-0x68` | Scrolls revertidos para padrão | ✅ já existia |
-| 10 | `0xBE` | FloorUp z=7 revertido (6 floors) | ✅ já existia |
-| 11 | `0xAA` | Talk +u32 statementGuid | ✅ existente |
-| 12 | `0x64` | Mini MapDesc guard (<100B) | ✅ existente |
-| 13 | `0xA0` | PlayerStats sem stamina | ✅ existente |
-| 14 | `0xA5` | SpellGroupCooldown 5B | ✅ existente |
-| 15 | `0xA6` | MultiUseDelay 4B | ✅ existente |
-| 16 | `0x63` | CreatureTurn 5B | ✅ existente |
-| 17 | `0xC8` | OutfitWindow u16→u8 range | ✅ existente |
-| **18** | **DAT parser** | **Resiliência a flags desconhecidas (0x50, 0xC8, 0xD0)** | ✅ **NOVO** |
+A página de criaturas usa o layout com sidebars (200px + conteúdo + 200px), o que comprime a tabela. A coluna "Loot" tem texto longo que é cortado, e a coluna "Custom?" ocupa espaço sem agregar muito valor visual.
 
-### SPR Loader C++
-Análise do código-fonte confirmou que o SPR loader já tem try-catch para `InvalidDataError` (sprites.cpp:266-273 e 326-337). Sprites corrompidos ou vazios são tratados graciosamente retornando sprite nulo. **Nenhum patch necessário.**
+## Plano
 
-### Próximo passo
+### 1. Remover a coluna "Custom?" da tabela de criaturas
+**Arquivo:** `src/components/CreaturesTable.tsx`
+- Remover o `<TableHead>` da coluna "Custom?" (linha 88)
+- Remover o `<TableCell>` correspondente (linhas 116-118)
+- Criaturas custom podem ser indicadas de forma mais sutil, como um pequeno badge/icon ao lado do nome
 
-Executar o workflow `Build tibiarc WASM Player` no GitHub Actions para rebuildar o WASM com o patch do DAT parser.
+### 2. Usar layout sem sidebars na página de criaturas
+**Arquivo:** `src/pages/CreaturesPage.tsx`
+- Alterar `<MainLayout>` para `<MainLayout showSidebars={false}>` — isso dá largura total ao conteúdo, como já é feito nas páginas de XP Tracker, Kill Statistics, etc.
+
+### 3. Melhorar a coluna Loot
+- Trocar `max-w-xs` por uma largura mais generosa e adicionar `truncate` com tooltip ou expandir o texto com quebra de linha controlada
+
+Essas mudanças darão mais espaço horizontal para a tabela, eliminando o overflow da coluna Loot.
+
