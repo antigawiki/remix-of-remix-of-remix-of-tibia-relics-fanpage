@@ -796,14 +796,20 @@ export class PacketParser {
         this.gs.setTile(tx, ty, tz, tile);
       }
     } else {
-      // WALK_FAIL
+      // WALK_FAIL — only log if within camera viewport to reduce noise
       const dl = this.debugLogger;
       if (dl && dl.enabled) {
-        dl.log('WALK_FAIL', {
-          fromX: fx, fromY: fy, fromZ: fz,
-          toX: tx, toY: ty, toZ: tz,
-          stackpos: sp, tileLength: this.gs.getTile(fx, fy, fz).length,
-        });
+        const inViewport =
+          fz === this.gs.camZ &&
+          fx >= this.gs.camX - 8 && fx <= this.gs.camX + 9 &&
+          fy >= this.gs.camY - 6 && fy <= this.gs.camY + 7;
+        if (inViewport) {
+          dl.log('WALK_FAIL', {
+            fromX: fx, fromY: fy, fromZ: fz,
+            toX: tx, toY: ty, toZ: tz,
+            stackpos: sp, tileLength: this.gs.getTile(fx, fy, fz).length,
+          });
+        }
       }
     }
   }
