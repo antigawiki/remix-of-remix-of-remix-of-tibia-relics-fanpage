@@ -963,12 +963,18 @@ export class PacketParser {
 
     try {
       if (g.camZ === 7) {
-        // Exiting underground to surface — read the newly visible floor (z=5)
-        // Old visible (z=8): [6,7,8,9,10]. New visible (z=7): [5,6,7]
-        // Only NEW floor is z=5. Read it with perspective offset = 8 - 5 = 3
-        const newFloor = Math.max(g.camZ - 2, 0);
-        const offset = 8 - newFloor;
-        this.readFloorArea(r, g.camX - 8, g.camY - 6, newFloor, 18, 14, offset, 0);
+        // Exiting underground to surface — read ALL 6 new surface floors (z=5 down to z=0)
+        // with shared skip encoding, matching OTClient reference:
+        // for(int i = 5; i >= 0; i--) setFloorDescription(msg, ..., i, ..., 8 - i, &skip);
+        let skip = 0;
+        const posBefore = r.pos;
+        for (let nz = 5; nz >= 0; nz--) {
+          const offset = 8 - nz;
+          skip = this.readFloorArea(r, g.camX - 8, g.camY - 6, nz, 18, 14, offset, skip);
+        }
+        if (this.debugLog) {
+          console.log(`[floorUp] Z=8→7: read 6 floors, consumed ${r.pos - posBefore} bytes`);
+        }
       } else if (g.camZ > 7) {
         // Underground going up — read the newly visible floor (camZ - 2)
         const nz = g.camZ - 2;
