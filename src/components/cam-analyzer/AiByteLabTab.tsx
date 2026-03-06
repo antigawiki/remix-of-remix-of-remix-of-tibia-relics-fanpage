@@ -6,10 +6,11 @@ import { Textarea } from '@/components/ui/textarea';
 import { Progress } from '@/components/ui/progress';
 import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { Play, Send, Trash2, Bot, User, Loader2 } from 'lucide-react';
+import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
+import { Play, Send, Trash2, Bot, User, Loader2, FlaskConical, Binary } from 'lucide-react';
 import { DatLoader } from '@/lib/tibiaRelic/datLoader';
 import { runDeepTrace, findFrameAtTime, getCamFileInfo, type DeepTraceResult } from '@/lib/tibiaRelic/deepTracer';
-
+import DatSprTester from './DatSprTester';
 interface Message {
   role: 'user' | 'assistant';
   content: string;
@@ -196,177 +197,194 @@ export default function AiByteLabTab({ fileBuffer, fileName, loadDat }: AiByteLa
   }, [customQuestion, streaming, streamAiAnalysis]);
 
   return (
-    <div className="space-y-4">
-      {/* Controls */}
-      <Card className="p-4 space-y-3">
-        <div className="flex flex-wrap items-end gap-3">
-          <div>
-            <label className="text-xs text-muted-foreground block mb-1">Minuto inicial</label>
-            <Input
-              type="number"
-              value={startMinute}
-              onChange={e => setStartMinute(Number(e.target.value))}
-              className="w-24"
-              min={0}
-            />
-          </div>
-          <div>
-            <label className="text-xs text-muted-foreground block mb-1">Qtd frames</label>
-            <Input
-              type="number"
-              value={frameCount}
-              onChange={e => setFrameCount(Number(e.target.value))}
-              className="w-24"
-              min={1}
-              max={100}
-            />
-          </div>
-          <Button onClick={runTrace} disabled={!fileBuffer || tracing}>
-            <Play className="w-4 h-4 mr-2" />
-            {tracing ? 'Traçando...' : 'Extrair Traces'}
-          </Button>
+    <Tabs defaultValue="protocol" className="space-y-4">
+      <TabsList>
+        <TabsTrigger value="protocol" className="gap-1">
+          <Binary className="w-3 h-3" /> Protocol Traces
+        </TabsTrigger>
+        <TabsTrigger value="dat-spr" className="gap-1">
+          <FlaskConical className="w-3 h-3" /> DAT/SPR Tester
+        </TabsTrigger>
+      </TabsList>
+
+      <TabsContent value="protocol">
+        <div className="space-y-4">
+          {/* Controls */}
+          <Card className="p-4 space-y-3">
+            <div className="flex flex-wrap items-end gap-3">
+              <div>
+                <label className="text-xs text-muted-foreground block mb-1">Minuto inicial</label>
+                <Input
+                  type="number"
+                  value={startMinute}
+                  onChange={e => setStartMinute(Number(e.target.value))}
+                  className="w-24"
+                  min={0}
+                />
+              </div>
+              <div>
+                <label className="text-xs text-muted-foreground block mb-1">Qtd frames</label>
+                <Input
+                  type="number"
+                  value={frameCount}
+                  onChange={e => setFrameCount(Number(e.target.value))}
+                  className="w-24"
+                  min={1}
+                  max={100}
+                />
+              </div>
+              <Button onClick={runTrace} disabled={!fileBuffer || tracing}>
+                <Play className="w-4 h-4 mr-2" />
+                {tracing ? 'Traçando...' : 'Extrair Traces'}
+              </Button>
+              {traceResult && (
+                <Button onClick={() => streamAiAnalysis()} disabled={streaming}>
+                  <Bot className="w-4 h-4 mr-2" />
+                  {streaming ? 'Analisando...' : 'Analisar com IA'}
+                </Button>
+              )}
+            </div>
+
+            {tracing && (
+              <div className="space-y-1">
+                <Progress value={progress.total ? (progress.current / progress.total) * 100 : 0} />
+                <p className="text-xs text-muted-foreground">
+                  Frame {progress.current.toLocaleString()} / {progress.total.toLocaleString()}
+                </p>
+              </div>
+            )}
+
+            {fileInfo && (
+              <p className="text-xs text-muted-foreground">
+                Arquivo: {(fileInfo.totalMs / 1000 / 60).toFixed(1)} min, {fileInfo.totalFrames.toLocaleString()} frames
+              </p>
+            )}
+          </Card>
+
+          {/* Trace Summary */}
           {traceResult && (
-            <Button onClick={() => streamAiAnalysis()} disabled={streaming}>
-              <Bot className="w-4 h-4 mr-2" />
-              {streaming ? 'Analisando...' : 'Analisar com IA'}
-            </Button>
+            <Card className="p-4">
+              <div className="flex flex-wrap gap-4 mb-3">
+                <div>
+                  <p className="text-xs text-muted-foreground">Frames Traçados</p>
+                  <p className="text-lg font-bold text-foreground">{traceResult.frames.length}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-muted-foreground">Range</p>
+                  <p className="text-lg font-bold text-foreground">{traceResult.startFrameIndex}→{traceResult.endFrameIndex}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-muted-foreground">Com Erro</p>
+                  <p className="text-lg font-bold text-destructive">{traceResult.frames.filter(f => f.error).length}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-muted-foreground">Scroll/Map Ops</p>
+                  <p className="text-lg font-bold text-primary">
+                    {traceResult.frames.filter(f =>
+                      f.opcodeTraces.some(o => [0x64, 0x65, 0x66, 0x67, 0x68, 0xbe, 0xbf].includes(o.opcode))
+                    ).length}
+                  </p>
+                </div>
+              </div>
+
+              {/* Compact frame list */}
+              <div className="max-h-[200px] overflow-auto">
+                <div className="space-y-1">
+                  {traceResult.frames.map(f => {
+                    const hasScroll = f.opcodeTraces.some(o => [0x64, 0x65, 0x66, 0x67, 0x68].includes(o.opcode));
+                    const hasFloor = f.opcodeTraces.some(o => [0xbe, 0xbf].includes(o.opcode));
+                    const hasCr = f.opcodeTraces.some(o => [0x6a, 0x6b, 0x6c, 0x6d].includes(o.opcode));
+                    return (
+                      <div key={f.frameIndex} className={`text-[10px] font-mono px-2 py-0.5 rounded flex items-center gap-2 ${f.error ? 'bg-destructive/10' : 'bg-muted/30'}`}>
+                        <span className="text-muted-foreground w-12">#{f.frameIndex}</span>
+                        <span className="w-14">{(f.timestamp / 1000).toFixed(1)}s</span>
+                        <span className="w-10">{f.payloadSize}B</span>
+                        <span className="flex-1 truncate">{f.opcodeTraces.map(o => o.opcodeName).join(' → ')}</span>
+                        <div className="flex gap-1">
+                          {hasScroll && <Badge variant="default" className="text-[8px] h-4 px-1">SCROLL</Badge>}
+                          {hasFloor && <Badge variant="secondary" className="text-[8px] h-4 px-1">FLOOR</Badge>}
+                          {hasCr && f.creaturesAdded.length > 0 && <Badge variant="outline" className="text-[8px] h-4 px-1">+{f.creaturesAdded.length}cr</Badge>}
+                          {f.error && <Badge variant="destructive" className="text-[8px] h-4 px-1">ERR</Badge>}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            </Card>
+          )}
+
+          {/* AI Chat */}
+          {traceResult && (
+            <Card className="p-4">
+              <div className="flex items-center justify-between mb-3">
+                <h2 className="text-sm font-semibold text-foreground flex items-center gap-2">
+                  <Bot className="w-4 h-4" /> AI Protocol Analyst
+                </h2>
+                {messages.length > 0 && (
+                  <Button variant="ghost" size="sm" onClick={() => setMessages([])}>
+                    <Trash2 className="w-3 h-3 mr-1" /> Limpar
+                  </Button>
+                )}
+              </div>
+
+              {/* Messages */}
+              <ScrollArea className="h-[400px] mb-3" ref={scrollRef}>
+                <div className="space-y-3 pr-4">
+                  {messages.length === 0 && (
+                    <p className="text-xs text-muted-foreground text-center py-8">
+                      Extraia os traces e clique "Analisar com IA" para iniciar a análise do protocolo.
+                    </p>
+                  )}
+                  {messages.map((msg, i) => (
+                    <div key={i} className={`flex gap-2 ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+                      <div className={`max-w-[85%] rounded-lg p-3 text-sm ${
+                        msg.role === 'user'
+                          ? 'bg-primary text-primary-foreground'
+                          : 'bg-muted text-foreground'
+                      }`}>
+                        <div className="flex items-center gap-1 mb-1">
+                          {msg.role === 'user' ? <User className="w-3 h-3" /> : <Bot className="w-3 h-3" />}
+                          <span className="text-[10px] font-semibold uppercase">{msg.role === 'user' ? 'Você' : 'Gemini 2.5 Pro'}</span>
+                        </div>
+                        <div className="whitespace-pre-wrap text-xs leading-relaxed">{msg.content}</div>
+                      </div>
+                    </div>
+                  ))}
+                  {streaming && (
+                    <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                      <Loader2 className="w-3 h-3 animate-spin" /> Analisando protocolo...
+                    </div>
+                  )}
+                </div>
+              </ScrollArea>
+
+              {/* Input */}
+              <div className="flex gap-2">
+                <Textarea
+                  value={customQuestion}
+                  onChange={e => setCustomQuestion(e.target.value)}
+                  placeholder="Pergunte sobre frames específicos, opcodes, byte drift..."
+                  className="min-h-[40px] max-h-[80px] text-xs"
+                  onKeyDown={e => {
+                    if (e.key === 'Enter' && !e.shiftKey) {
+                      e.preventDefault();
+                      handleSendQuestion();
+                    }
+                  }}
+                />
+                <Button onClick={handleSendQuestion} disabled={!customQuestion.trim() || streaming} size="sm">
+                  <Send className="w-4 h-4" />
+                </Button>
+              </div>
+            </Card>
           )}
         </div>
+      </TabsContent>
 
-        {tracing && (
-          <div className="space-y-1">
-            <Progress value={progress.total ? (progress.current / progress.total) * 100 : 0} />
-            <p className="text-xs text-muted-foreground">
-              Frame {progress.current.toLocaleString()} / {progress.total.toLocaleString()}
-            </p>
-          </div>
-        )}
-
-        {fileInfo && (
-          <p className="text-xs text-muted-foreground">
-            Arquivo: {(fileInfo.totalMs / 1000 / 60).toFixed(1)} min, {fileInfo.totalFrames.toLocaleString()} frames
-          </p>
-        )}
-      </Card>
-
-      {/* Trace Summary */}
-      {traceResult && (
-        <Card className="p-4">
-          <div className="flex flex-wrap gap-4 mb-3">
-            <div>
-              <p className="text-xs text-muted-foreground">Frames Traçados</p>
-              <p className="text-lg font-bold text-foreground">{traceResult.frames.length}</p>
-            </div>
-            <div>
-              <p className="text-xs text-muted-foreground">Range</p>
-              <p className="text-lg font-bold text-foreground">{traceResult.startFrameIndex}→{traceResult.endFrameIndex}</p>
-            </div>
-            <div>
-              <p className="text-xs text-muted-foreground">Com Erro</p>
-              <p className="text-lg font-bold text-destructive">{traceResult.frames.filter(f => f.error).length}</p>
-            </div>
-            <div>
-              <p className="text-xs text-muted-foreground">Scroll/Map Ops</p>
-              <p className="text-lg font-bold text-primary">
-                {traceResult.frames.filter(f =>
-                  f.opcodeTraces.some(o => [0x64, 0x65, 0x66, 0x67, 0x68, 0xbe, 0xbf].includes(o.opcode))
-                ).length}
-              </p>
-            </div>
-          </div>
-
-          {/* Compact frame list */}
-          <div className="max-h-[200px] overflow-auto">
-            <div className="space-y-1">
-              {traceResult.frames.map(f => {
-                const hasScroll = f.opcodeTraces.some(o => [0x64, 0x65, 0x66, 0x67, 0x68].includes(o.opcode));
-                const hasFloor = f.opcodeTraces.some(o => [0xbe, 0xbf].includes(o.opcode));
-                const hasCr = f.opcodeTraces.some(o => [0x6a, 0x6b, 0x6c, 0x6d].includes(o.opcode));
-                return (
-                  <div key={f.frameIndex} className={`text-[10px] font-mono px-2 py-0.5 rounded flex items-center gap-2 ${f.error ? 'bg-destructive/10' : 'bg-muted/30'}`}>
-                    <span className="text-muted-foreground w-12">#{f.frameIndex}</span>
-                    <span className="w-14">{(f.timestamp / 1000).toFixed(1)}s</span>
-                    <span className="w-10">{f.payloadSize}B</span>
-                    <span className="flex-1 truncate">{f.opcodeTraces.map(o => o.opcodeName).join(' → ')}</span>
-                    <div className="flex gap-1">
-                      {hasScroll && <Badge variant="default" className="text-[8px] h-4 px-1">SCROLL</Badge>}
-                      {hasFloor && <Badge variant="secondary" className="text-[8px] h-4 px-1">FLOOR</Badge>}
-                      {hasCr && f.creaturesAdded.length > 0 && <Badge variant="outline" className="text-[8px] h-4 px-1">+{f.creaturesAdded.length}cr</Badge>}
-                      {f.error && <Badge variant="destructive" className="text-[8px] h-4 px-1">ERR</Badge>}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        </Card>
-      )}
-
-      {/* AI Chat */}
-      {traceResult && (
-        <Card className="p-4">
-          <div className="flex items-center justify-between mb-3">
-            <h2 className="text-sm font-semibold text-foreground flex items-center gap-2">
-              <Bot className="w-4 h-4" /> AI Protocol Analyst
-            </h2>
-            {messages.length > 0 && (
-              <Button variant="ghost" size="sm" onClick={() => setMessages([])}>
-                <Trash2 className="w-3 h-3 mr-1" /> Limpar
-              </Button>
-            )}
-          </div>
-
-          {/* Messages */}
-          <ScrollArea className="h-[400px] mb-3" ref={scrollRef}>
-            <div className="space-y-3 pr-4">
-              {messages.length === 0 && (
-                <p className="text-xs text-muted-foreground text-center py-8">
-                  Extraia os traces e clique "Analisar com IA" para iniciar a análise do protocolo.
-                </p>
-              )}
-              {messages.map((msg, i) => (
-                <div key={i} className={`flex gap-2 ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-                  <div className={`max-w-[85%] rounded-lg p-3 text-sm ${
-                    msg.role === 'user'
-                      ? 'bg-primary text-primary-foreground'
-                      : 'bg-muted text-foreground'
-                  }`}>
-                    <div className="flex items-center gap-1 mb-1">
-                      {msg.role === 'user' ? <User className="w-3 h-3" /> : <Bot className="w-3 h-3" />}
-                      <span className="text-[10px] font-semibold uppercase">{msg.role === 'user' ? 'Você' : 'Gemini 2.5 Pro'}</span>
-                    </div>
-                    <div className="whitespace-pre-wrap text-xs leading-relaxed">{msg.content}</div>
-                  </div>
-                </div>
-              ))}
-              {streaming && (
-                <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                  <Loader2 className="w-3 h-3 animate-spin" /> Analisando protocolo...
-                </div>
-              )}
-            </div>
-          </ScrollArea>
-
-          {/* Input */}
-          <div className="flex gap-2">
-            <Textarea
-              value={customQuestion}
-              onChange={e => setCustomQuestion(e.target.value)}
-              placeholder="Pergunte sobre frames específicos, opcodes, byte drift..."
-              className="min-h-[40px] max-h-[80px] text-xs"
-              onKeyDown={e => {
-                if (e.key === 'Enter' && !e.shiftKey) {
-                  e.preventDefault();
-                  handleSendQuestion();
-                }
-              }}
-            />
-            <Button onClick={handleSendQuestion} disabled={!customQuestion.trim() || streaming} size="sm">
-              <Send className="w-4 h-4" />
-            </Button>
-          </div>
-        </Card>
-      )}
-    </div>
+      <TabsContent value="dat-spr">
+        <DatSprTester loadDat={loadDat} />
+      </TabsContent>
+    </Tabs>
   );
 }
