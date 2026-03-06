@@ -43,7 +43,7 @@ const FLAG_PAYLOADS: Record<number, number> = {
   0x04: 0, // container
   0x05: 0, // stackable
   0x06: 0, // multi-use
-  0x07: 0, // force-use (boolean in 7.72)
+  0x07: 2, // force-use (u16 payload — proven by analyzer Hyp A: Refs 3/3)
   0x08: 2, // writeable (u16 max chars)
   0x09: 2, // writeable once (u16 max chars)
   0x0A: 0, // fluid container
