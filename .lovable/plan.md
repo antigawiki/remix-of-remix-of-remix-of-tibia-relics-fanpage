@@ -1,11 +1,17 @@
-## Scroll/FloorUp/Font Patches — Status: APLICADO ✅
 
-### Correções aplicadas no build-tibiarc.yml
 
-1. **Scroll 18×14**: Os 4 ParseMove (North/East/South/West) agora leem viewport completo 18×14 em vez de 1 row/column, alinhando com o protocolo TibiaRelic
-2. **FloorUp z=7**: Loop de 6 floors substituído por leitura de 1 floor (z=5), como o parser JS
-3. **Fonte menor**: Nomes de criaturas usam `InterfaceSmall` em vez de `Game` font
-4. **Nomes de monstros ocultos**: `SkipRenderingNonPlayerNames = true` no web_player.cpp
+# Plano: Fix do erro "Invalid supabaseUrl"
 
-### Próximo passo
-Rodar o workflow `Build tibiarc WASM Player` no GitHub Actions para compilar o novo WASM e testar.
+## Diagnóstico
+
+O `.env` e o `client.ts` estão corretos. O erro ocorre porque o Vite não está injetando as variáveis de ambiente corretamente no build. Isso é um problema de cache do Vite — o `.vite/deps` está stale.
+
+## Correção
+
+Forçar um rebuild limpo adicionando uma mudança trivial no `vite.config.ts` (um novo comentário com timestamp) para invalidar o cache do Vite e forçar re-processamento das env vars.
+
+### Arquivo: `vite.config.ts`
+- Atualizar o comentário de rebuild trigger com um novo timestamp para forçar invalidação do cache
+
+Isso é uma correção de 1 linha — apenas mudar o comentário existente na linha 6.
+
