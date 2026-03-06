@@ -103,12 +103,14 @@ def patch(path: str):
     print(f"ParseFloorDescription call spans lines {pfd_line + 1} to {call_end + 1}")
 
     # Step 6: Replace ALL lines of the call with the 3-floor loop
+    # NOTE: tibiarc uses uppercase Position_.X, .Y, .Z
     replacement = (
         f"{indent}// TibiaRelic: read 3 floors (z=5,6,7) symmetric to FloorDown\n"
+        f"{indent}int skip2 = 0;\n"
         f"{indent}int j = 3;\n"
-        f"{indent}for (int nz = std::max(Position_.z - 2, 0); nz <= Position_.z; nz++) {{\n"
-        f"{indent}    skip = ParseFloorDescription(reader, Position_.x - 8, Position_.y - 6, nz, 18, 14, j, skip);\n"
-        f"{indent}    if (skip < 0) {{ skip = 0; break; }}\n"
+        f"{indent}for (int nz = std::max(Position_.Z - 2, 0); nz <= Position_.Z; nz++) {{\n"
+        f"{indent}    skip2 = ParseFloorDescription(reader, Position_.X - 8, Position_.Y - 6, nz, 18, 14, j, skip2);\n"
+        f"{indent}    if (skip2 < 0) {{ skip2 = 0; break; }}\n"
         f"{indent}    j--;\n"
         f"{indent}}}\n"
     )
