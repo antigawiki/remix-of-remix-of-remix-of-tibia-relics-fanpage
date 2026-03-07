@@ -1,47 +1,34 @@
+## Correção de Byte Drift + Resync Engine — Status: IMPLEMENTADO ✅
 
+### Problema Central
+O `packetParser.ts` tinha **6 handlers de opcodes com consumo de bytes incorreto** comparado ao `extractionParser.ts` (que funciona 100%). Isso causava **byte drift** — bytes eram lidos a mais ou a menos, desalinhando todos os opcodes seguintes e gerando 18.654+ DESYNCs falsos.
 
-## Diagnóstico: A Raiz do Problema
+### Correções aplicadas
 
-Comparei opcode por opcode o `packetParser.ts` (player) com o `extractionParser.ts` (extrator de mapa que funciona 100%) e o `ProtocolParser.ts` do projeto Cam Mapper. Encontrei **bugs de consumo de bytes** em handlers de opcodes conhecidos que causam **byte drift** — o parser come bytes a mais ou a menos, e todos os opcodes seguintes ficam desalinhados.
+| # | Opcode | Antes (errado) | Depois (correto) | Impacto |
+|---|--------|----------------|-------------------|---------|
+| 1 | 0x96 TextWindow | 1 string (skip16) | 2 strings (str16 + str16) | Faltava 1 string inteira |
+| 2 | 0xAE RuleViolChannel | 0 bytes | u16 (2 bytes) | -2 bytes drift |
+| 3 | 0xAF RemoveReport | 0 bytes | string (str16) | Faltava string inteira |
+| 4 | 0xB0 RuleViolCancel | skip(2) fixo | string (str16) | Bytes variáveis vs fixos |
+| 5 | 0xAA Talk type 6 | não tratado | u16 channel | -2 bytes drift |
+| 6 | 0x9A PlayerPos | pos3 (5 bytes) | 0 bytes | +5 bytes drift removido |
 
-Os "opcodes desconhecidos" (0x00, 0x03, 0x07, 0x08, 0x09) no relatório do Protocol Lab **não são opcodes reais** — são bytes de dados que o parser está lendo como opcode porque um handler anterior consumiu bytes errado. Isso explica os 18.654 DESYNCs.
+### Resync Engine (safety net)
+Quando um opcode desconhecido ou erro de parse ocorre:
+1. Escaneia até 256 bytes à frente procurando opcodes conhecidos
+2. Para cada candidato, faz dry-run de 2 opcodes consecutivos
+3. Se ambos parseiam sem erro, resincroniza nessa posição
+4. Se nenhum candidato funcionar, descarta o resto do frame (fallback anterior)
 
-### Bugs confirmados (packetParser vs extractionParser)
+### isKnownOpcode expandido
+Agora inclui todos os opcodes mapeados: 0x14, 0x28, 0x7a-0x7f, 0x87, 0xa5, 0xa6, 0xc8, 0xd2-0xd4, 0xdc, 0xdd, 0xf0, 0xf1.
 
-| Opcode | packetParser (atual) | extractionParser (correto) | Impacto |
-|--------|---------------------|---------------------------|---------|
-| **0x96** TextWindow | `u32 + u16 + u16 + skip16` (1 string) | `u32 + u16 + u16 + str + str` (2 strings) | Falta 1 string inteira |
-| **0xAE** RuleViolChannel | nenhum payload | `u16` (2 bytes) | -2 bytes drift |
-| **0xAF** RemoveReport | nenhum payload | `string` | Falta string inteira |
-| **0xB0** RuleViolCancel | `skip(2)` fixo | `string` (u16 len + dados) | Lê 2 bytes fixos vs string variável |
-| **0xAA** Talk type 6 | não tratado (cai no default) | `u16` | -2 bytes drift em rule violation talk |
-| **0x9A** PlayerPos | lê `pos3` (5 bytes) + atualiza câmera | nenhum payload | +5 bytes drift se servidor não envia dados |
+### Arquivos alterados
+- `src/lib/tibiaRelic/packetParser.ts` — 6 fixes + resync engine + isKnownOpcode
+- `tibiarc-player/protocol_patch.py` — patches para 0xAE, 0xAF, 0xB0, talk type 6
+- `.github/workflows/build-tibiarc.yml` — verificação dos novos patches
 
-### Plano de Correção
-
-**1. Alinhar handlers de opcodes no `packetParser.ts`**
-
-Corrigir os 6 handlers acima para consumir exatamente os mesmos bytes que o extractionParser. Isso é a correção principal e deve resolver a grande maioria dos DESYNCs.
-
-**2. Implementar resync por scan-forward como safety net**
-
-Após a correção dos handlers, adicionar um mecanismo de recuperação para opcodes verdadeiramente desconhecidos: em vez de descartar o frame inteiro, escanear byte a byte até encontrar um opcode conhecido, verificar se o parse a partir dali é válido (tentativa de parse sem side-effects), e continuar. Isso é o safety net para qualquer opcode futuro que não mapeamos.
-
-Lógica do resync:
-- Salvar posição atual do buffer
-- Escanear até 256 bytes procurando um byte que `isKnownOpcode()` retorna true
-- Para cada candidato, tentar parse em modo dry-run (cópia do buffer, sem alterar gamestate)
-- Se o candidato parsear com sucesso, pular até ali e continuar
-- Se nenhum candidato funcionar, descartar o resto do frame (comportamento atual)
-
-**3. Portar correções para patches WASM (C++)**
-
-Atualizar `protocol_patch.py` com as mesmas correções de consumo de bytes para manter sincronia TS↔WASM.
-
-### Arquivos afetados
-- `src/lib/tibiaRelic/packetParser.ts` — correção de 6 handlers + resync engine
-- `tibiarc-player/protocol_patch.py` — portar correções para WASM
-
-### Prioridade
-A correção dos handlers (etapa 1) é a mais impactante e deve ser feita primeiro. O resync (etapa 2) é segurança adicional. As correções WASM (etapa 3) são necessárias para o player visual funcionar igual.
-
+### Próximo passo
+1. Testar com arquivo .cam no Protocol Lab para confirmar redução de DESYNCs
+2. Disparar workflow `Build tibiarc WASM Player` para rebuildar com patches C++
