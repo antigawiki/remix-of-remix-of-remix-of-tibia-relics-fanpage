@@ -3,9 +3,9 @@
  * Memory-efficient: uses lightweight position tracking in Phase 1,
  * checkpoint-based replay in Phase 2 for strategy testing.
  */
-import { parseCamFile } from './camParser';
+import { parseCamFile } from './playerCamParser';
 import { GameState, type GameStateSnapshot } from './gameState';
-import { DatLoader } from './datLoader';
+import { DatLoader } from './playerDatLoader';
 import { PacketParser, type TraceEntry } from './packetParser';
 
 export interface FloorStrategy {

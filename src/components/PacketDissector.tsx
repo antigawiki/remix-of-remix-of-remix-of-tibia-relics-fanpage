@@ -3,9 +3,9 @@ import { Microscope, Download, Trash2, Filter, AlertTriangle, ChevronDown, Chevr
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Switch } from '@/components/ui/switch';
-import { parseCamFile, type CamFile } from '@/lib/tibiaRelic/camParser';
+import { parseCamFile, type CamFile } from '@/lib/tibiaRelic/playerCamParser';
 import { GameState } from '@/lib/tibiaRelic/gameState';
-import { DatLoader } from '@/lib/tibiaRelic/datLoader';
+import { DatLoader } from '@/lib/tibiaRelic/playerDatLoader';
 import { PacketParser } from '@/lib/tibiaRelic/packetParser';
 import { DissectorBuffer, type DissectedFrame, type DissectedOpcode, getOpcodeName } from '@/lib/tibiaRelic/protocolDissector';
 

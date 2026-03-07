@@ -6,7 +6,7 @@
  * Frame-level error recovery: abort current frame on error, resume next.
  */
 import { Buf, BufOverflowError } from './buf';
-import { DatLoader } from './datLoader';
+import { DatLoader } from './playerDatLoader';
 import { GameState, createCreature, DIR_N, DIR_E, DIR_S, DIR_W, type Creature, type TileItem } from './gameState';
 import { DebugLogger } from './debugLogger';
 import { type DissectedOpcode, type DissectedFrame, DissectorBuffer, getOpcodeName, hexDumpSlice } from './protocolDissector';

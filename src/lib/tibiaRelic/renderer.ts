@@ -5,7 +5,7 @@
  * Mask channels: Head=Yellow, Body=Red, Legs=Green, Feet=Blue (OTClient standard)
  */
 import { SprLoader } from './sprLoader';
-import { DatLoader, type ItemType } from './datLoader';
+import { DatLoader, type ItemType } from './playerDatLoader';
 import { GameState, type TileItem, type Creature, type ActiveEffect, type ActiveProjectile, type AnimatedText } from './gameState';
 import { DebugLogger } from './debugLogger';
 
