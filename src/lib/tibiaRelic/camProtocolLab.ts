@@ -85,7 +85,8 @@ interface LightFrameInfo {
 }
 
 const CHECKPOINT_INTERVAL = 500;
-const MAX_ANOMALY_FRAMES = 150; // Cap strategy testing to avoid OOM
+const MAX_STRATEGY_TEST_FRAMES = 300; // Cap strategy replay (expensive) to avoid OOM
+const MAX_ANOMALY_FRAMES = Infinity; // Collect ALL anomaly frames for stats
 
 function getPlayerPos(gs: GameState): { x: number; y: number; z: number } | null {
   if (!gs.playerId) return null;
@@ -203,7 +204,7 @@ export async function runProtocolLab(
       });
     }
 
-    if (anomalies.length > 0 && anomalyInfos.length < MAX_ANOMALY_FRAMES) {
+    if (anomalies.length > 0) {
       anomalyInfos.push({
         index: i,
         playerBefore,
@@ -247,14 +248,21 @@ export async function runProtocolLab(
       opcodeErrorMap[key] = (opcodeErrorMap[key] || 0) + 1;
     }
 
+    // Only run expensive strategy replay for the first N anomaly frames
+    const skipStrategyTest = ei >= MAX_STRATEGY_TEST_FRAMES;
+
     // Find nearest checkpoint before this frame
     const checkpointIdx = Math.floor(af.index / CHECKPOINT_INTERVAL) * CHECKPOINT_INTERVAL;
-    const checkpoint = checkpoints.get(checkpointIdx);
+    const checkpoint = skipStrategyTest ? undefined : checkpoints.get(checkpointIdx);
 
     // Test each strategy by replaying from checkpoint
     const strategyResults: StrategyResult[] = [];
     let bestStrategy: string | null = null;
     let bestDelta = Infinity;
+
+    if (skipStrategyTest) {
+      // Skip strategy testing, just record the anomaly without results
+    } else {
 
     for (const strat of STRATEGIES) {
       const testGs = new GameState();
@@ -347,6 +355,7 @@ export async function runProtocolLab(
     }
 
     if (bestStrategy) strategySummary[bestStrategy]++;
+    } // end else (strategy test)
 
     errorFrames.push({
       frameIndex: af.index,
