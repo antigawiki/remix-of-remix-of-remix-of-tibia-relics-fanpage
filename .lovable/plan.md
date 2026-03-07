@@ -1,46 +1,27 @@
-
-
-## Plano: Recovery Per-Opcode no Parser C++ (Opção B)
+## Recovery Per-Opcode no Parser C++ — Status: IMPLEMENTADO ✅
 
 ### Problema Central
-`Parser::Parse()` do tibiarc acumula eventos num vetor. Se qualquer opcode no frame lança exceção, o `catch` em `web_player.cpp` descarta **todos** os eventos do frame — incluindo map updates e movements válidos já parseados.
+`Parser::Parse()` do tibiarc acumula eventos num vetor. Se qualquer opcode no frame lança exceção, o `catch` em `web_player.cpp` descarta **todos** os eventos do frame.
 
-### Mudanças
+### Correções aplicadas
 
-**1. `tibiarc-player/protocol_patch.py`** — Duas novas funções:
+| # | Arquivo | Correção |
+|---|---------|----------|
+| 1 | `protocol_patch.py` | **`patch_parse_loop_recovery()`** — envolve switch em try-catch per-iteração, preserva eventos já parseados |
+| 2 | `protocol_patch.py` | **`patch_remove_diagnostic_logging()`** — remove printf("[DIAG]") que matava performance |
+| 3 | `protocol_patch.py` | **default case** — muda de `throw` para `break` (opcode desconhecido não destrói eventos) |
+| 4 | `build-tibiarc.yml` | Verificação atualizada: grep para recovery, catch block, default break; removido grep do diagnostic |
 
-- **`patch_parse_loop_recovery()`**: Encontra o while-loop principal do `Parser::Parse()` e envolve o corpo do switch em `try-catch` per-iteração. No `catch`, faz `break` do loop mas **preserva os eventos já acumulados** no vetor. Também muda o `default:` case para `break` em vez de `throw` (opcode desconhecido termina o frame sem destruir eventos).
+### Patches de protocolo ativos (protocol_patch.py)
+- 0xA4 SpellCooldown (2B)
+- 0xA5 SpellGroupCooldown (5B)
+- 0xA7 PlayerTactics (3B, sem PvPMode)
+- 0xA8 CreatureSquare (5B)
+- 0xB6 WalkCancel (standard ParseMoveDelay 2B)
+- 0x92 CreatureImpassable (assert removido)
+- 0x63 CreatureTurn (5B)
+- **Parse loop recovery** (try-catch per-opcode)
+- **Diagnostic logging removido**
 
-```cpp
-// Antes (tibiarc original):
-while (reader.Remaining() > 0) {
-    switch (reader.ReadU8()) {
-        case 0x64: ... break;
-        default: throw; // ← mata tudo
-    }
-}
-
-// Depois (com patch):
-while (reader.Remaining() > 0) {
-    try {
-        switch (reader.ReadU8()) {
-            case 0x64: ... break;
-            default: break; // ← para sem destruir
-        }
-    } catch (...) {
-        break; // ← preserva eventos já parseados
-    }
-}
-```
-
-- **Remover `patch_diagnostic_logging()`**: Os `printf("[DIAG] opcode=...")` por opcode geram milhões de linhas e matam performance. Serão removidos da lista de patches e o patch existente será revertido se presente.
-
-**2. `.github/workflows/build-tibiarc.yml`** — Atualizar verificação:
-- Adicionar grep para confirmar presença do try-catch recovery
-- Remover grep do diagnostic logging
-
-**3. `.lovable/plan.md`** — Atualizar status dos patches.
-
-### Por que isso resolve
-Com recovery per-opcode, mesmo que 1 de 10 opcodes em um frame falhe, os outros 9 (map updates, creature moves, tile changes) são preservados e aplicados ao GameState. Os tiles param de "brigar" porque as atualizações de mapa não são mais descartadas em massa.
-
+### Próximo passo
+Disparar o workflow `Build tibiarc WASM Player` no GitHub Actions para rebuildar o WASM com o recovery per-opcode.

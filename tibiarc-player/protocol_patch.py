@@ -155,20 +155,137 @@ def patch_creature_impassable(src):
         print("0x92 CreatureImpassable: assert already removed or not present")
     return src
 
-def patch_diagnostic_logging(src):
-    """Add diagnostic opcode logging to main switch."""
-    if '[DIAG] opcode' in src:
-        print("Diagnostic logging: already present")
+def patch_remove_diagnostic_logging(src):
+    """Remove diagnostic printf logging if present (kills performance)."""
+    if '[DIAG] opcode' not in src:
+        print("Diagnostic logging: not present, nothing to remove")
         return src
     
-    pattern = r'switch\s*\(reader\.ReadU8\(\)\)\s*\{'
+    # Revert the diagnostic wrapper back to plain ReadU8
+    pattern = r'auto _op = reader\.ReadU8\(\);\s*printf\("\[DIAG\][^"]*"[^;]*;\s*switch\s*\(_op\)\s*\{'
     match = re.search(pattern, src)
     if match:
-        replacement = 'auto _op = reader.ReadU8(); printf("[DIAG] opcode=0x%02X rem=%zu\\n", _op, reader.Remaining()); switch (_op) {'
-        src = src[:match.start()] + replacement + src[match.end():]
-        print("OK: Diagnostic opcode logging added")
+        src = src[:match.start()] + 'switch (reader.ReadU8()) {' + src[match.end():]
+        print("OK: Diagnostic printf logging removed")
     else:
-        print("WARN: main opcode switch not found for diagnostic logging")
+        print("WARN: could not find diagnostic pattern to remove")
+    return src
+
+
+def patch_parse_loop_recovery(src):
+    """Wrap the main opcode switch in a per-iteration try-catch inside Parser::Parse().
+    
+    This ensures that if any single opcode throws, the events already accumulated
+    in the vector are preserved. Also changes 'default: throw' to 'default: break'
+    so unknown opcodes stop parsing without destroying accumulated events.
+    """
+    # Step 1: Change default case from throw to a safe break-out
+    # The tibiarc default case typically throws an exception
+    # We replace it with setting a flag and breaking
+    
+    # First check if already patched
+    if '/* TibiaRelic: per-opcode recovery */' in src:
+        print("Parse loop recovery: already patched")
+        return src
+    
+    # Step 2: Find the main while loop in Parser::Parse and wrap switch body in try-catch
+    # Pattern: while (reader.Remaining() > 0) { switch (...) { ... } }
+    # We need to add try { before switch and } catch (...) { break; } after the switch closing brace
+    
+    # Find "while" loop pattern in Parser::Parse
+    # The pattern varies, but typically: while (reader.Remaining() > 0) {
+    pattern_while = r'(while\s*\(\s*reader\.Remaining\(\)\s*>\s*0\s*\)\s*\{)\s*\n(\s*)(switch\s*\()'
+    match = re.search(pattern_while, src)
+    if not match:
+        # Try alternate pattern
+        pattern_while = r'(while\s*\(\s*reader\.Remaining\(\)\s*>\s*0\s*\)\s*\{)\s*\n(\s*)(auto\s+_op.*?switch\s*\()'
+        match = re.search(pattern_while, src, re.DOTALL)
+    
+    if not match:
+        print("WARN: main while loop not found in Parser::Parse — cannot add recovery")
+        return src
+    
+    indent = match.group(2)
+    
+    # Insert try { before the switch
+    new_code = match.group(1) + '\n' + indent + '/* TibiaRelic: per-opcode recovery */\n' + indent + 'try {\n' + indent + match.group(3)
+    src = src[:match.start()] + new_code + src[match.end():]
+    
+    # Now find the closing of the switch statement's closing brace + the while's closing brace
+    # We need to add } catch (...) { break; } after the switch's closing }
+    # This is tricky with regex, so we look for the default case pattern instead
+    
+    # Step 3: Change default throw to break
+    # Common patterns: "default:\n  throw" or "default:\n  TIBIARC_RAISE"
+    default_patterns = [
+        (r'(default\s*:\s*\n\s*)(TIBIARC_RAISE\s*\([^)]*\)\s*;)', 
+         r'\1break; /* TibiaRelic: unknown opcode, stop but preserve events */'),
+        (r'(default\s*:\s*\n\s*)(throw\s+[^;]*;)',
+         r'\1break; /* TibiaRelic: unknown opcode, stop but preserve events */'),
+        (r'(default\s*:\s*{?\s*\n\s*)(throw\s+[^;]*;)',
+         r'\1break; /* TibiaRelic: unknown opcode, stop but preserve events */'),
+    ]
+    
+    default_patched = False
+    for pat, repl in default_patterns:
+        if re.search(pat, src):
+            src = re.sub(pat, repl, src, count=1)
+            default_patched = True
+            print("OK: default case changed from throw to break")
+            break
+    
+    if not default_patched:
+        print("WARN: default throw pattern not found (may already be safe)")
+    
+    # Step 4: Add catch block after the switch's closing brace
+    # Find the pattern: break;\n    }\n  } — end of last case + switch close + while close
+    # We insert } catch (...) { break; } between switch close and while close
+    # 
+    # Strategy: find "per-opcode recovery" marker position, then find the next 
+    # occurrence of "\n<indent>}\n" repeated (switch close then while close)
+    marker_pos = src.find('/* TibiaRelic: per-opcode recovery */')
+    if marker_pos == -1:
+        print("WARN: recovery marker not found after insertion")
+        return src
+    
+    # Find the while loop's closing brace by counting braces from the marker
+    brace_depth = 0
+    search_start = src.find('{', marker_pos)  # the while's opening brace
+    if search_start == -1:
+        print("WARN: could not find opening brace after marker")
+        return src
+    
+    # We need to find the switch's closing brace (depth returns to 1 from 2)
+    # Start after the try {
+    try_pos = src.find('try {', marker_pos)
+    if try_pos == -1:
+        print("WARN: try block not found")
+        return src
+    
+    pos = try_pos + 4  # after 'try {'
+    depth = 1  # we're inside try {
+    switch_close_pos = -1
+    
+    while pos < len(src) and depth > 0:
+        ch = src[pos]
+        if ch == '{':
+            depth += 1
+        elif ch == '}':
+            depth -= 1
+            if depth == 0:
+                switch_close_pos = pos
+                break
+        pos += 1
+    
+    if switch_close_pos == -1:
+        print("WARN: could not find switch closing brace")
+        return src
+    
+    # Insert catch block after the switch's closing brace (which is now the try's content)
+    catch_block = '\n' + indent + '} catch (...) {\n' + indent + '    break; /* TibiaRelic: preserve events already parsed */\n' + indent + '}'
+    src = src[:switch_close_pos + 1] + catch_block + src[switch_close_pos + 1:]
+    
+    print("OK: Parse loop recovery — try-catch per-opcode + default break")
     return src
 
 def patch_creature_turn(src):
@@ -216,7 +333,8 @@ def main():
     src = patch_walk_cancel(src)
     src = patch_creature_impassable(src)
     src = patch_creature_turn(src)
-    src = patch_diagnostic_logging(src)
+    src = patch_remove_diagnostic_logging(src)
+    src = patch_parse_loop_recovery(src)
     
     if src == original:
         print("\nAll patches already applied — no changes needed")
