@@ -107,9 +107,16 @@ const CamBatchExtractPage = () => {
           };
 
           worker.onerror = (err) => {
+            console.error('[BatchExtract] Worker onerror:', err);
             worker.terminate();
-            reject(new Error(err.message || 'Worker error'));
+            reject(new Error(err.message || `Worker error: ${String(err)}`));
           };
+
+          worker.addEventListener('messageerror', (err) => {
+            console.error('[BatchExtract] Worker messageerror:', err);
+            worker.terminate();
+            reject(new Error('Worker message deserialization error'));
+          });
 
           const req: WorkerRequest = { camBuffer, datBuffer: datBuffer.slice(0) };
           worker.postMessage(req, [camBuffer]);
