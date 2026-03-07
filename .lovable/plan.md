@@ -1,17 +1,27 @@
-## Correções de Protocolo — Status: IMPLEMENTADO ✅
+## Recovery Per-Opcode no Parser C++ — Status: IMPLEMENTADO ✅
 
-### Correções aplicadas nesta iteração
+### Problema Central
+`Parser::Parse()` do tibiarc acumula eventos num vetor. Se qualquer opcode no frame lança exceção, o `catch` em `web_player.cpp` descarta **todos** os eventos do frame.
+
+### Correções aplicadas
 
 | # | Arquivo | Correção |
 |---|---------|----------|
-| 1 | `protocol_patch.py` | **0x63 CreatureTurn** — novo case top-level (5B: u32 cid + u8 dir) |
-| 2 | `packetParser.ts` | **0x0B GM Actions** — skip 32 bytes (era 0) |
-| 3 | `packetParser.ts` | **0xAA Talk tipo 0x11** (MonsterYell) — adicionado a POS_TYPES (lê 5B posição) |
-| 4 | `packetParser.ts` | **0xAA Talk tipo 0x0E** (ChannelAnonymousRed) — movido para CHAN_TYPES (lê u16 channel) |
-| 5 | `packetParser.ts` | **0xAA Talk tipo 0x06** (RuleViolation) — removido TIME_TYPES (sem u32 extra) |
-| 6 | `packetParser.ts` | **0x7B NPC Trade Ack** — u16+u8 por item (era u16+u16) |
-| 7 | `build-tibiarc.yml` | Verificação atualizada: grep para 0x63, removido grep WalkCancel 0 bytes |
+| 1 | `protocol_patch.py` | **`patch_parse_loop_recovery()`** — envolve switch em try-catch per-iteração, preserva eventos já parseados |
+| 2 | `protocol_patch.py` | **`patch_remove_diagnostic_logging()`** — remove printf("[DIAG]") que matava performance |
+| 3 | `protocol_patch.py` | **default case** — muda de `throw` para `break` (opcode desconhecido não destrói eventos) |
+| 4 | `build-tibiarc.yml` | Verificação atualizada: grep para recovery, catch block, default break; removido grep do diagnostic |
+
+### Patches de protocolo ativos (protocol_patch.py)
+- 0xA4 SpellCooldown (2B)
+- 0xA5 SpellGroupCooldown (5B)
+- 0xA7 PlayerTactics (3B, sem PvPMode)
+- 0xA8 CreatureSquare (5B)
+- 0xB6 WalkCancel (standard ParseMoveDelay 2B)
+- 0x92 CreatureImpassable (assert removido)
+- 0x63 CreatureTurn (5B)
+- **Parse loop recovery** (try-catch per-opcode)
+- **Diagnostic logging removido**
 
 ### Próximo passo
-
-Disparar o workflow `Build tibiarc WASM Player` no GitHub Actions para rebuildar o WASM com o fix do 0x63 CreatureTurn.
+Disparar o workflow `Build tibiarc WASM Player` no GitHub Actions para rebuildar o WASM com o recovery per-opcode.

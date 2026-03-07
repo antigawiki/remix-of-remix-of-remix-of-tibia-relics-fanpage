@@ -58,7 +58,10 @@ jobs:
           grep -n "SkipU8.*TibiaRelic" lib/parser.cpp || echo "WARN: SpellCooldown patch missing"
           grep -n "SpellGroupCooldown" lib/parser.cpp || echo "WARN: 0xA5 SpellGroupCooldown missing"
           grep -n "case 0x63" lib/parser.cpp || echo "WARN: 0x63 CreatureTurn missing"
-          grep -n "DIAG.*opcode" lib/parser.cpp || echo "WARN: Diagnostic logging missing"
+          grep -n "per-opcode recovery" lib/parser.cpp || echo "WARN: Parse loop recovery missing"
+          grep -n "preserve events already parsed" lib/parser.cpp || echo "WARN: catch recovery block missing"
+          grep -n "unknown opcode, stop but preserve" lib/parser.cpp || echo "WARN: default break patch missing"
+          grep -c "DIAG.*opcode" lib/parser.cpp && echo "WARN: Diagnostic logging still present" || echo "Diagnostic logging removed OK"
           grep -n "PassableCreatures" lib/parser.cpp && echo "WARN: PassableCreatures assert still present" || echo "0x92 assert removed OK"
           echo "All patches verified"
 
