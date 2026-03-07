@@ -7,10 +7,11 @@ NOTE: 0xB6 WalkCancel is NOT patched — TibiaRelic sends standard 2B (ParseMove
   1. 0xA4 ParseSpellCooldown: SkipU32 → SkipU8 (5B → 2B)
   2. 0xA5 SpellGroupCooldown: separate from 0xA4, read 5B
   3. 0xA7 PlayerTactics: remove PvPMode (4B → 3B)
-   4. 0xA8 CreatureSquare: add case, skip 5B
-   5. 0xB6 WalkCancel: KEEP standard ParseMoveDelay (2B) — do NOT remove
+  4. 0xA8 CreatureSquare: add case, skip 5B
+  5. 0xB6 WalkCancel: KEEP standard ParseMoveDelay (2B) — do NOT remove
   6. 0x92 CreatureImpassable: remove assert
-  7. Diagnostic opcode logging
+  7. 0x63 CreatureTurn: add as top-level opcode (u32 creatureId + u8 dir)
+  8. Diagnostic opcode logging
 
 NOTE: The following patches were REMOVED because the antigawiki/tibiarc fork
 already handles them correctly via version flags or existing code:
@@ -18,7 +19,6 @@ already handles them correctly via version flags or existing code:
   - 0xA0 PlayerStats: Stamina=false for 7.72, not read
   - 0x64 MapDescription guard: already in fork
   - 0xA6 MultiUseDelay: case 0xA6 already exists in fork
-  - 0x63 CreatureTurn: not a top-level opcode (it's a creature ID marker)
   - 0xC8 OutfitWindow: handled by OutfitsU16 version flag
 """
 
