@@ -85,7 +85,8 @@ interface LightFrameInfo {
 }
 
 const CHECKPOINT_INTERVAL = 500;
-const MAX_ANOMALY_FRAMES = 150; // Cap strategy testing to avoid OOM
+const MAX_STRATEGY_TEST_FRAMES = 300; // Cap strategy replay (expensive) to avoid OOM
+const MAX_ANOMALY_FRAMES = Infinity; // Collect ALL anomaly frames for stats
 
 function getPlayerPos(gs: GameState): { x: number; y: number; z: number } | null {
   if (!gs.playerId) return null;
