@@ -47,6 +47,8 @@ export class PacketParser {
   public strictMode = false;
   /** Bytes remaining in the buffer after last process() call */
   public bytesLeftAfterProcess = 0;
+  /** Unknown opcodes encountered in the last process() call */
+  public lastFrameUnknownOpcodes: { opcode: number; bytesSkipped: number }[] = [];
 
   public debugLogger: DebugLogger | null = null;
   /** Opcodes processed in the last process() call — used by CamAnalyzer */
@@ -238,6 +240,7 @@ export class PacketParser {
 
   process(payload: Uint8Array) {
     this.lastFrameOpcodes = [];
+    this.lastFrameUnknownOpcodes = [];
     this.lastError = null;
     this.bytesLeftAfterProcess = 0;
     if (this.traceMode) this.traceLog = [];
@@ -338,10 +341,12 @@ export class PacketParser {
       try {
         const t = r.u8();
         if (!this.dispatch(t, r)) {
-          // Unknown opcode — skip rest of frame to prevent drift
+          // Unknown opcode — record it and skip rest of frame to prevent drift
+          const bytesSkipped = endPos - r.pos;
+          this.lastFrameUnknownOpcodes.push({ opcode: t, bytesSkipped });
           if (this.frameErrorCount < 30) {
             this.frameErrorCount++;
-            console.warn(`[PacketParser] Unknown opcode 0x${t.toString(16)} at pos ${r.pos - 1}, skipping rest of frame (${endPos - r.pos} bytes)`);
+            console.warn(`[PacketParser] Unknown opcode 0x${t.toString(16)} at pos ${r.pos - 1}, skipping rest of frame (${bytesSkipped} bytes)`);
           }
           r.pos = endPos;
           break;
