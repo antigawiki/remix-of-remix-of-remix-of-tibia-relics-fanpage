@@ -146,9 +146,11 @@ export class ExtractionParser {
         const head = msg.getByte();
         switch (head) {
           case 0x0A: this.parseLogin(msg); break;
+          case 0x0B: msg.skipBytes(32); break; // GM Actions — TibiaRelic sends 32 bytes
           case 0x14: msg.getString(); break; // disconnect
           case 0x16: msg.getString(); msg.getByte(); break; // wait list
           case 0x1E: break; // ping
+          case 0x63: msg.getU32(); msg.getByte(); break; // TibiaRelic CreatureTurn (5 bytes)
           case 0x64: this.parseMapDescription(msg); break;
           case 0x65: this.parseNorthMove(msg); break;
           case 0x66: this.parseEastMove(msg); break;
@@ -184,16 +186,15 @@ export class ExtractionParser {
           case 0x8F: msg.getU32(); msg.getU16(); break; // change speed
           case 0x90: msg.getU32(); msg.getByte(); break; // creature skull
           case 0x91: msg.getU32(); msg.getByte(); break; // creature shield
-          // 0x92 CreatureImpassable — TibiaRelic-specific (no data, just skip)
+          case 0x92: break; // CreatureImpassable — TibiaRelic-specific (no data)
           case 0x96: msg.getU32(); msg.getU16(); msg.getU16(); msg.getString(); msg.getString(); break; // text window
           case 0x97: msg.getByte(); msg.getU32(); msg.getString(); break; // house window
-          // 0x9A — TibiaRelic floor change field, not handled (fall to default: return)
+          case 0x9A: break; // TibiaRelic PlayerPos — 0 bytes payload
           case 0xA0: this.parsePlayerStats(msg); break;
           case 0xA1: this.parsePlayerSkills(msg); break;
           case 0xA2: msg.getByte(); break; // player icons
           case 0xA3: break; // cancel target
-          // TibiaRelic custom opcodes
-          // 0xA4, 0xA5, 0xA7, 0xA8 — TibiaRelic custom opcodes, not handled (fall to default: return)
+          case 0xA8: msg.getU32(); msg.getByte(); break; // TibiaRelic CreatureSquare (5 bytes)
           case 0xAA: this.parseCreatureSpeak(msg); break;
           case 0xAB: this.parseChannelsDialog(msg); break;
           case 0xAC: msg.getU16(); msg.getString(); break; // open channel
@@ -205,8 +206,8 @@ export class ExtractionParser {
           case 0xB2: msg.getU16(); msg.getString(); break; // create private channel
           case 0xB3: msg.getU16(); break; // close private
           case 0xB4: msg.getByte(); msg.getString(); break; // text message
-          case 0xB5: msg.getByte(); break; // cancel walk (direction only in 7.6)
-          // 0xB6 — TibiaRelic WalkCancel, not handled (fall to default: return)
+          case 0xB5: msg.getU16(); break; // TibiaRelic cancel walk (u16 move delay)
+          case 0xB6: msg.getU16(); break; // TibiaRelic WalkCancel (u16 move delay)
           case 0xBE: this.parseFloorChangeUp(msg); break;
           case 0xBF: this.parseFloorChangeDown(msg); break;
           case 0xC8: this.parseOutfitWindow(msg); break;
