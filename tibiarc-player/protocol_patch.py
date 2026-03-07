@@ -171,6 +171,29 @@ def patch_diagnostic_logging(src):
         print("WARN: main opcode switch not found for diagnostic logging")
     return src
 
+def patch_creature_turn(src):
+    """0x63: Add CreatureTurn as top-level opcode (u32 creatureId + u8 direction = 5 bytes).
+    TibiaRelic sends this standalone when creatures change direction."""
+    if re.search(r'case\s+0x63\s*:', src):
+        print("0x63 CreatureTurn: already present as top-level case")
+        return src
+    
+    pattern = r'(\s*case\s+0x64\s*:)'
+    match = re.search(pattern, src)
+    if not match:
+        print("WARN: case 0x64 not found, cannot add 0x63")
+        return src
+    
+    insertion = (
+        "\n    case 0x63:\n"
+        "        /* TibiaRelic: CreatureTurn as top-level opcode (u32 creatureId + u8 dir) */\n"
+        "        reader.Skip(5);\n"
+        "        break;"
+    )
+    src = src[:match.start()] + insertion + src[match.start():]
+    print("OK: 0x63 CreatureTurn — added as top-level opcode, 5B")
+    return src
+
 
 def main():
     if len(sys.argv) < 2:
