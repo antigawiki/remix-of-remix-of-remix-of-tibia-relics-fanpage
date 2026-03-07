@@ -1,50 +1,34 @@
+## Correção de Byte Drift + Resync Engine — Status: IMPLEMENTADO ✅
 
+### Problema Central
+O `packetParser.ts` tinha **6 handlers de opcodes com consumo de bytes incorreto** comparado ao `extractionParser.ts` (que funciona 100%). Isso causava **byte drift** — bytes eram lidos a mais ou a menos, desalinhando todos os opcodes seguintes e gerando 18.654+ DESYNCs falsos.
 
-## Causa Raiz: DatLoader lendo bytes errados no flag Ground (0x00)
+### Correções aplicadas
 
-Comparei linha por linha o `DatReader.ts` do Cam Mapper com o `datLoader.ts` deste projeto. Ambos usam o **mesmo arquivo Tibia.dat**. O Cam Mapper funciona 100%. A diferença crítica:
+| # | Opcode | Antes (errado) | Depois (correto) | Impacto |
+|---|--------|----------------|-------------------|---------|
+| 1 | 0x96 TextWindow | 1 string (skip16) | 2 strings (str16 + str16) | Faltava 1 string inteira |
+| 2 | 0xAE RuleViolChannel | 0 bytes | u16 (2 bytes) | -2 bytes drift |
+| 3 | 0xAF RemoveReport | 0 bytes | string (str16) | Faltava string inteira |
+| 4 | 0xB0 RuleViolCancel | skip(2) fixo | string (str16) | Bytes variáveis vs fixos |
+| 5 | 0xAA Talk type 6 | não tratado | u16 channel | -2 bytes drift |
+| 6 | 0x9A PlayerPos | pos3 (5 bytes) | 0 bytes | +5 bytes drift removido |
 
-### O bug
+### Resync Engine (safety net)
+Quando um opcode desconhecido ou erro de parse ocorre:
+1. Escaneia até 256 bytes à frente procurando opcodes conhecidos
+2. Para cada candidato, faz dry-run de 2 opcodes consecutivos
+3. Se ambos parseiam sem erro, resincroniza nessa posição
+4. Se nenhum candidato funcionar, descarta o resto do frame (fallback anterior)
 
-No `datLoader.ts`, o flag `0x00` (Ground) lê **3 bytes**:
-```typescript
-// NOSSO (ERRADO) — linha 250
-if (flag === 0x00) {
-  it.speed = view.getUint16(p, true); /* groundType = bytes[p+2] */ p += 3;
-}
-```
+### isKnownOpcode expandido
+Agora inclui todos os opcodes mapeados: 0x14, 0x28, 0x7a-0x7f, 0x87, 0xa5, 0xa6, 0xc8, 0xd2-0xd4, 0xdc, 0xdd, 0xf0, 0xf1.
 
-No Cam Mapper (`DatReader.ts`), o mesmo flag lê **2 bytes**:
-```typescript
-// CAM MAPPER (CORRETO)
-case 0x00:
-  item.groundSpeed = view.getUint16(pos, true); pos += 2;
-```
+### Arquivos alterados
+- `src/lib/tibiaRelic/packetParser.ts` — 6 fixes + resync engine + isKnownOpcode
+- `tibiarc-player/protocol_patch.py` — patches para 0xAE, 0xAF, 0xB0, talk type 6
+- `.github/workflows/build-tibiarc.yml` — verificação dos novos patches
 
-### Por que isso corrompe o mapa
-
-O byte extra no flag Ground desalinha a leitura de **todas as flags subsequentes** do mesmo item. Exemplo prático:
-
-```text
-Item com flags: [0x00(Ground), 0x05(Stackable), 0x0A(Fluid), 0xFF(End)]
-
-Cam Mapper:  0x00 → lê 2 bytes → encontra 0x05 → marca isStackable ✓
-Nosso:       0x00 → lê 3 bytes → pula 0x05 → lê byte errado como flag
-```
-
-Resultado: itens Ground+Stackable não são detectados como stackable. Quando o protocol parser encontra esse item no mapa, `readItemExtra()` **não lê o byte extra** que o servidor enviou → **-1 byte drift** → todo tile description subsequente fica corrompido → tiles aparecem em andares errados.
-
-Nosso DatLoader usa "skip to 0xFF" como Phase 1, então as **fronteiras entre itens** estão corretas — mas os **metadados internos** (isStackable, isFluid, isSplash) ficam errados para qualquer item que tenha Ground como primeira flag (que é a maioria dos tiles de chão).
-
-### Correção
-
-**Arquivo: `src/lib/tibiaRelic/datLoader.ts`**
-
-1. Mudar flag `0x00` de `p += 3` para `p += 2` (alinhar com Cam Mapper)
-
-Essa é a única diferença de consumo de bytes entre os dois DatReaders. Todos os outros flags consomem o mesmo número de bytes.
-
-### Sobre re-extração
-
-Sim, após essa correção será necessário re-extrair todos os `.cam` files. Os dados atuais no banco foram extraídos com detecção errada de isStackable/isFluid/isSplash, o que causou byte drift durante o parsing e corrompeu coordenadas de tiles.
-
+### Próximo passo
+1. Testar com arquivo .cam no Protocol Lab para confirmar redução de DESYNCs
+2. Disparar workflow `Build tibiarc WASM Player` para rebuildar com patches C++
