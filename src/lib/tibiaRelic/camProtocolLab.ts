@@ -204,7 +204,7 @@ export async function runProtocolLab(
       });
     }
 
-    if (anomalies.length > 0 && anomalyInfos.length < MAX_ANOMALY_FRAMES) {
+    if (anomalies.length > 0) {
       anomalyInfos.push({
         index: i,
         playerBefore,
