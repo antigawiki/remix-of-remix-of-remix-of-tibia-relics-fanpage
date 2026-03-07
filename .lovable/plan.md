@@ -1,32 +1,17 @@
-## Auditoria Completa — Status: PATCHES CORRIGIDOS ✅
+## Correções de Protocolo — Status: IMPLEMENTADO ✅
 
-### Bug crítico encontrado e corrigido
+### Correções aplicadas nesta iteração
 
-**0xAA ParseCreatureSpeak — DOUBLE READ removido**: O fork já lê `u32 messageId` via `ReportMessages=true` para 7.72. O patch antigo injetava outro `SkipU32()`, causando **+4B drift por mensagem de chat** — a causa principal do desync visual.
-
-### Patches válidos mantidos (7)
-
-| # | Opcode/Área | Descrição |
-|---|--------|-----------|
-| 1 | `0xA4` | SpellCooldown 5B→2B |
-| 2 | `0xA5` | SpellGroupCooldown 5B (separado do 0xA4) |
-| 3 | `0xA7` | PlayerTactics 4B→3B (sem PvPMode) |
-| 4 | `0xA8` | CreatureSquare (novo case, 5B) |
-| 5 | `0xB6` | WalkCancel 2B→0B |
-| 6 | `0x92` | CreatureImpassable assert removido |
-| 7 | — | Diagnostic opcode logging |
-
-### Patches removidos (6) — redundantes ou incorretos
-
-| # | Patch | Motivo da remoção |
-|---|-------|-------------------|
-| 1 | **0xAA ParseCreatureSpeak** | `ReportMessages=true` já lê u32 — patch causava **double read** |
-| 2 | **0x63 CreatureTurn** | Não é opcode top-level, é creature ID no tile data |
-| 3 | **0xA0 PlayerStats** | `Stamina=false` para 7.72, fork já não lê |
-| 4 | **0x64 MapDescription guard** | Já presente no fork |
-| 5 | **0xA6 MultiUseDelay** | `case 0xA6` já existe no fork |
-| 6 | **0xC8 OutfitWindow** | Handled by `OutfitsU16` version flag |
+| # | Arquivo | Correção |
+|---|---------|----------|
+| 1 | `protocol_patch.py` | **0x63 CreatureTurn** — novo case top-level (5B: u32 cid + u8 dir) |
+| 2 | `packetParser.ts` | **0x0B GM Actions** — skip 32 bytes (era 0) |
+| 3 | `packetParser.ts` | **0xAA Talk tipo 0x11** (MonsterYell) — adicionado a POS_TYPES (lê 5B posição) |
+| 4 | `packetParser.ts` | **0xAA Talk tipo 0x0E** (ChannelAnonymousRed) — movido para CHAN_TYPES (lê u16 channel) |
+| 5 | `packetParser.ts` | **0xAA Talk tipo 0x06** (RuleViolation) — removido TIME_TYPES (sem u32 extra) |
+| 6 | `packetParser.ts` | **0x7B NPC Trade Ack** — u16+u8 por item (era u16+u16) |
+| 7 | `build-tibiarc.yml` | Verificação atualizada: grep para 0x63, removido grep WalkCancel 0 bytes |
 
 ### Próximo passo
 
-Executar o workflow `Build tibiarc WASM Player` no GitHub Actions para rebuildar o WASM sem o double-read bug.
+Disparar o workflow `Build tibiarc WASM Player` no GitHub Actions para rebuildar o WASM com o fix do 0x63 CreatureTurn.
