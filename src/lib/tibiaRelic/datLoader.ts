@@ -149,9 +149,7 @@ export class DatLoader {
         case 0x04: break; // container
         case 0x05: it.isStackable = true; break;
         case 0x06: break; // multiuse
-        case 0x07: // forceUse — 2 bytes payload
-          if (p + 2 <= bytes.length) p += 2;
-          break;
+        case 0x07: break; // multiuse (boolean, no payload)
         case 0x08: // writable
           if (p + 2 <= bytes.length) p += 2;
           break;
