@@ -215,6 +215,7 @@ def main():
     src = patch_creature_square(src)
     src = patch_walk_cancel(src)
     src = patch_creature_impassable(src)
+    src = patch_creature_turn(src)
     src = patch_diagnostic_logging(src)
     
     if src == original:
