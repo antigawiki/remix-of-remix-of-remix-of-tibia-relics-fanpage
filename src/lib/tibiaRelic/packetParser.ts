@@ -522,25 +522,10 @@ export class PacketParser {
     else if (t === 0x91) { r.u32(); r.u8(); }
     else if (t === 0x92) { r.u32(); r.u8(); /* creatureUnpass */ }
     // Text windows
-    else if (t === 0x96) { r.u32(); r.u16(); r.u16(); r.skip16(); }
+    else if (t === 0x96) { r.u32(); r.u16(); r.u16(); r.str16(); r.str16(); /* TextWindow: 2 strings */ }
     else if (t === 0x97) { r.u8(); r.u32(); r.skip16(); }
-    // Player pos
-    else if (t === 0x9a) {
-      const [x, y, z] = this.pos3(r);
-      const prevZ = g.camZ;
-      const dl2 = this.debugLogger;
-      if (dl2 && dl2.enabled) {
-        const player = g.creatures.get(g.playerId);
-        dl2.log('PLAYER_POS', {
-          received: `${x},${y},${z}`,
-          prevCam: `${g.camX},${g.camY},${g.camZ}`,
-          playerPos: player ? `${player.x},${player.y},${player.z}` : 'none',
-        });
-      }
-      g.camX = x; g.camY = y; g.camZ = z;
-      this.clampCamZ();
-      this.syncPlayerToCamera(prevZ);
-    }
+    // 0x9A — no payload (TibiaRelic floor change marker, extractionParser confirmed 0 bytes)
+    else if (t === 0x9a) { /* no payload */ }
     // Stats/skills/icons
     else if (t === 0xa0) this.readStats(r);
     else if (t === 0xa1) r.skip(14);
@@ -556,9 +541,9 @@ export class PacketParser {
     else if (t === 0xab) { const nc = r.u8(); for (let i = 0; i < nc; i++) { r.u16(); r.str16(); } }
     else if (t === 0xac) { r.u16(); r.str16(); }
     else if (t === 0xad) r.str16();
-    else if (t === 0xae) { /* ruleViolation channel — no payload */ }
-    else if (t === 0xaf) { /* ruleViolation remove — no payload */ }
-    else if (t === 0xb0) { r.skip(2); /* ruleViolation cancel */ }
+    else if (t === 0xae) { r.u16(); /* ruleViolation channel: u16 channelId */ }
+    else if (t === 0xaf) { r.str16(); /* ruleViolation remove: string playerName */ }
+    else if (t === 0xb0) { r.str16(); /* ruleViolation cancel: string playerName */ }
     else if (t === 0xb1) { /* lockViolation */ }
     else if (t === 0xb2) { r.u16(); r.skip16(); }
     else if (t === 0xb3) r.u16();
@@ -1027,7 +1012,7 @@ export class PacketParser {
       const name = r.str16();
       const tp = r.u8();
       const POS_TYPES = new Set([0x01, 0x02, 0x03, 0x10, 0x11]);
-      const CHAN_TYPES = new Set([0x05, 0x0A, 0x0C, 0x0E]);
+      const CHAN_TYPES = new Set([0x05, 0x06, 0x0A, 0x0C, 0x0E]);
       if (POS_TYPES.has(tp)) r.skip(5);
       else if (CHAN_TYPES.has(tp)) r.u16();
       const msg = r.str16();
