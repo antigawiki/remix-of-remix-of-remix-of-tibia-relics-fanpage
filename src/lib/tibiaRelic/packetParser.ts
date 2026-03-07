@@ -335,33 +335,146 @@ export class PacketParser {
   }
 
   /** Process opcodes directly — skip rest of frame on any error (like Relic Cam Player).
-   *  This prevents byte drift from cascading across opcodes. */
+   *  On unknown opcode: attempts forward-scan resync before discarding. */
   private processDirectOpcodes(r: Buf, endPos: number) {
     while (r.pos < endPos) {
       try {
         const t = r.u8();
         if (!this.dispatch(t, r)) {
-          // Unknown opcode — record it and skip rest of frame to prevent drift
-          const bytesSkipped = endPos - r.pos;
-          this.lastFrameUnknownOpcodes.push({ opcode: t, bytesSkipped });
+          // Unknown opcode — try resync before giving up
+          const unknownPos = r.pos - 1;
+          const bytesRemaining = endPos - r.pos;
+          this.lastFrameUnknownOpcodes.push({ opcode: t, bytesSkipped: bytesRemaining });
+
+          // Attempt forward-scan resync: look for a known opcode in the next 256 bytes
+          const resyncPos = this.tryResync(r, endPos);
+          if (resyncPos >= 0) {
+            const skipped = resyncPos - unknownPos;
+            if (this.frameErrorCount < 30) {
+              this.frameErrorCount++;
+              console.log(`[PacketParser] Resync: skipped ${skipped} bytes from 0x${t.toString(16)} at pos ${unknownPos}, resuming at pos ${resyncPos}`);
+            }
+            r.pos = resyncPos;
+            continue; // Resume parsing from resynced position
+          }
+
+          // No resync candidate found — discard rest of frame
           if (this.frameErrorCount < 30) {
             this.frameErrorCount++;
-            console.warn(`[PacketParser] Unknown opcode 0x${t.toString(16)} at pos ${r.pos - 1}, skipping rest of frame (${bytesSkipped} bytes)`);
+            console.warn(`[PacketParser] Unknown opcode 0x${t.toString(16)} at pos ${unknownPos}, no resync found, skipping ${bytesRemaining} bytes`);
           }
           r.pos = endPos;
           break;
         }
       } catch (e) {
         if (this.strictMode) throw e;
-        // Error during opcode parsing — skip rest of frame (no drift cascade)
+        // Error during opcode parsing — try resync from current position
+        const errorPos = r.pos;
+        const resyncPos = this.tryResync(r, endPos);
+        if (resyncPos >= 0) {
+          if (this.frameErrorCount < 30) {
+            this.frameErrorCount++;
+            console.log(`[PacketParser] Error recovery: resynced at pos ${resyncPos} (skipped ${resyncPos - errorPos} bytes)`);
+          }
+          r.pos = resyncPos;
+          continue;
+        }
         if (this.frameErrorCount < 30) {
           this.frameErrorCount++;
-          console.warn(`[PacketParser] Parse error, skipping rest of frame (${endPos - r.pos} bytes):`, e);
+          console.warn(`[PacketParser] Parse error, no resync, skipping ${endPos - r.pos} bytes:`, e);
         }
         r.pos = endPos;
         break;
       }
     }
+  }
+
+  /**
+   * Forward-scan resync: scan up to 256 bytes looking for a valid opcode sequence.
+   * For each candidate byte that isKnownOpcode(), try parsing 2 consecutive opcodes
+   * from that position using a buffer copy (dry-run). If both parse without error,
+   * return the candidate position. Returns -1 if no valid resync point found.
+   */
+  private tryResync(r: Buf, endPos: number): number {
+    const startPos = r.pos;
+    const maxScan = Math.min(256, endPos - startPos);
+
+    for (let offset = 0; offset < maxScan; offset++) {
+      const candidatePos = startPos + offset;
+      const candidateByte = r.d[candidatePos];
+      if (!this.isKnownOpcode(candidateByte)) continue;
+
+      // Dry-run: try parsing 2 opcodes from this position
+      try {
+        const testBuf = new Buf(r.d.slice(candidatePos, endPos));
+        let successCount = 0;
+        for (let attempt = 0; attempt < 2 && testBuf.pos < testBuf.d.length; attempt++) {
+          const op = testBuf.u8();
+          if (!this.isKnownOpcode(op)) break;
+          // Try dispatch without side effects — we use a temporary approach:
+          // Save gamestate key values, dispatch, then check if it didn't throw
+          const posBefore = testBuf.pos;
+          // We can't truly dry-run dispatch (it mutates gamestate),
+          // but we CAN check that the opcode handler consumes a reasonable
+          // amount of bytes without throwing an exception
+          this.dryRunDispatch(op, testBuf);
+          if (testBuf.pos > posBefore) successCount++;
+          else break; // Zero-byte consumption is suspicious
+        }
+        if (successCount >= 2) return candidatePos;
+      } catch {
+        // This candidate failed, try next
+        continue;
+      }
+    }
+    return -1;
+  }
+
+  /**
+   * Lightweight dispatch that only consumes bytes without modifying gamestate.
+   * Throws on any error (used by tryResync for validation).
+   */
+  private dryRunDispatch(t: number, r: Buf): void {
+    // Only validate byte consumption patterns — no gamestate mutation
+    if (t === 0x0a) { r.u32(); r.u16(); r.u8(); }
+    else if (t === 0x0b) { r.skip(32); }
+    else if (t === 0x0f || t === 0x1d || t === 0x1e || t === 0x7c || t === 0x7f || t === 0xa3 || t === 0xb1 || t === 0x28 || t === 0x9a) { /* no payload */ }
+    else if (t === 0x14) { r.u16(); r.str16(); }
+    else if (t === 0x63) { r.u32(); r.u8(); }
+    else if (t === 0x82) { r.u8(); r.u8(); }
+    else if (t === 0x83) { r.u16(); r.u16(); r.u8(); r.u8(); }
+    else if (t === 0x84) { r.u16(); r.u16(); r.u8(); r.u8(); r.str16(); }
+    else if (t === 0x85) { r.skip(11); }
+    else if (t === 0x86) { r.u32(); r.u8(); }
+    else if (t === 0x87) { const n = r.u8(); for (let i = 0; i < n; i++) r.u32(); }
+    else if (t === 0x8c) { r.u32(); r.u8(); }
+    else if (t === 0x8d) { r.u32(); r.u8(); r.u8(); }
+    else if (t === 0x8f) { r.u32(); r.u16(); }
+    else if (t === 0x90 || t === 0x91 || t === 0x92) { r.u32(); r.u8(); }
+    else if (t === 0xa2) { r.u8(); }
+    else if (t === 0xa4) { r.skip(2); }
+    else if (t === 0xa5) { r.skip(5); }
+    else if (t === 0xa6) { r.u32(); }
+    else if (t === 0xa7) { r.skip(3); }
+    else if (t === 0xa8) { r.skip(5); }
+    else if (t === 0xab) { const n = r.u8(); for (let i = 0; i < n; i++) { r.u16(); r.str16(); } }
+    else if (t === 0xac) { r.u16(); r.str16(); }
+    else if (t === 0xad) { r.str16(); }
+    else if (t === 0xae) { r.u16(); }
+    else if (t === 0xaf) { r.str16(); }
+    else if (t === 0xb0) { r.str16(); }
+    else if (t === 0xb2) { r.u16(); r.str16(); }
+    else if (t === 0xb3) { r.u16(); }
+    else if (t === 0xb4) { r.u8(); r.str16(); }
+    else if (t === 0xb5) { r.u8(); }
+    else if (t === 0xb6) { r.u16(); }
+    else if (t === 0x6f || t === 0x79) { r.u8(); }
+    else if (t === 0x72) { r.u8(); r.u8(); }
+    else if (t === 0xd3 || t === 0xd4) { r.u32(); }
+    else if (t === 0xd2) { r.u32(); r.str16(); r.u8(); }
+    else if (t === 0xdc) { r.u8(); }
+    else if (t === 0xdd) { r.skip(5); r.u8(); r.str16(); }
+    else { throw new Error(`dryRun: unhandled 0x${t.toString(16)}`); }
   }
 
   /** Check if a byte is a known opcode */
