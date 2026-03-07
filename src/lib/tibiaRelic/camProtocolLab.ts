@@ -394,7 +394,17 @@ export async function runProtocolLab(
 
     if (Object.keys(opcodeErrorMap).length > 0) {
       const topOp = Object.entries(opcodeErrorMap).sort((a, b) => b[1] - a[1])[0];
-      recommendation += `Opcode mais problemático: ${topOp[0]} (${topOp[1]} erros de parsing).`;
+      recommendation += `Opcode mais problemático: ${topOp[0]} (${topOp[1]} erros de parsing). `;
+    }
+
+    // Unknown opcodes in recommendation
+    const unknownEntries = Object.entries(unknownOpcodeMap).sort((a, b) => b[1].totalBytesLost - a[1].totalBytesLost);
+    if (unknownEntries.length > 0) {
+      const totalUnknown = unknownEntries.reduce((s, [, v]) => s + v.count, 0);
+      const totalBytesLost = unknownEntries.reduce((s, [, v]) => s + v.totalBytesLost, 0);
+      recommendation += `${totalUnknown} ocorrências de ${unknownEntries.length} opcodes desconhecidos (${totalBytesLost} bytes perdidos). `;
+      const top5 = unknownEntries.slice(0, 5);
+      recommendation += `Top: ${top5.map(([op, v]) => `${op}(${v.count}x, ${v.totalBytesLost}B)`).join(', ')}.`;
     }
   }
 
@@ -406,6 +416,7 @@ export async function runProtocolLab(
     strategySummary,
     opcodeErrorMap,
     anomalyTypeSummary,
+    unknownOpcodeMap,
     recommendation,
   };
 }

@@ -338,6 +338,47 @@ export default function ProtocolLabTab({ fileBuffer, fileName, loadDat }: Protoc
               </div>
             )}
 
+            {/* Unknown opcodes */}
+            {result.unknownOpcodeMap && Object.keys(result.unknownOpcodeMap).length > 0 && (
+              <div>
+                <p className="text-xs font-semibold text-muted-foreground mb-2">Opcodes Desconhecidos — Impacto por Bytes Perdidos</p>
+                <div className="max-h-[300px] overflow-auto">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead className="text-xs w-24">Opcode</TableHead>
+                        <TableHead className="text-xs w-24">Ocorrências</TableHead>
+                        <TableHead className="text-xs w-32">Bytes Perdidos</TableHead>
+                        <TableHead className="text-xs w-32">Média/Ocorrência</TableHead>
+                        <TableHead className="text-xs">Severidade</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {Object.entries(result.unknownOpcodeMap)
+                        .sort((a, b) => b[1].totalBytesLost - a[1].totalBytesLost)
+                        .map(([op, data]) => {
+                          const avg = Math.round(data.totalBytesLost / data.count);
+                          const severity = data.totalBytesLost > 10000 ? 'destructive' : data.totalBytesLost > 1000 ? 'default' : 'secondary';
+                          return (
+                            <TableRow key={op}>
+                              <TableCell className="text-xs font-mono font-bold">{op}</TableCell>
+                              <TableCell className="text-xs font-mono">{data.count.toLocaleString()}</TableCell>
+                              <TableCell className="text-xs font-mono">{data.totalBytesLost.toLocaleString()}</TableCell>
+                              <TableCell className="text-xs font-mono">{avg} B</TableCell>
+                              <TableCell>
+                                <Badge variant={severity} className="text-[10px]">
+                                  {severity === 'destructive' ? '🔴 Alto' : severity === 'default' ? '🟡 Médio' : '🟢 Baixo'}
+                                </Badge>
+                              </TableCell>
+                            </TableRow>
+                          );
+                        })}
+                    </TableBody>
+                  </Table>
+                </div>
+              </div>
+            )}
+
             {/* Recommendation */}
             <div className="bg-primary/10 border border-primary/20 rounded p-3">
               <div className="flex items-center gap-2 mb-1">
