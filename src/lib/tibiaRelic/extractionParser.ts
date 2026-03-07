@@ -187,16 +187,13 @@ export class ExtractionParser {
           // 0x92 CreatureImpassable — TibiaRelic-specific (no data, just skip)
           case 0x96: msg.getU32(); msg.getU16(); msg.getU16(); msg.getString(); msg.getString(); break; // text window
           case 0x97: msg.getByte(); msg.getU32(); msg.getString(); break; // house window
-          case 0x9A: this.parseFloorChange_field(msg); break; // 0x9A marks some state, ignore content
+          // 0x9A — TibiaRelic floor change field, not handled (fall to default: return)
           case 0xA0: this.parsePlayerStats(msg); break;
           case 0xA1: this.parsePlayerSkills(msg); break;
           case 0xA2: msg.getByte(); break; // player icons
           case 0xA3: break; // cancel target
           // TibiaRelic custom opcodes
-          case 0xA4: msg.getByte(); msg.getByte(); break; // SpellCooldown (2 bytes)
-          case 0xA5: msg.getByte(); msg.getU32(); break; // SpellGroupCooldown (5 bytes)
-          case 0xA7: msg.getByte(); msg.getByte(); msg.getByte(); break; // PlayerTactics (3 bytes, no PvPMode)
-          case 0xA8: msg.getU32(); msg.getByte(); break; // CreatureSquare TibiaRelic (5 bytes: u32 + u8)
+          // 0xA4, 0xA5, 0xA7, 0xA8 — TibiaRelic custom opcodes, not handled (fall to default: return)
           case 0xAA: this.parseCreatureSpeak(msg); break;
           case 0xAB: this.parseChannelsDialog(msg); break;
           case 0xAC: msg.getU16(); msg.getString(); break; // open channel
@@ -209,14 +206,14 @@ export class ExtractionParser {
           case 0xB3: msg.getU16(); break; // close private
           case 0xB4: msg.getByte(); msg.getString(); break; // text message
           case 0xB5: msg.getByte(); break; // cancel walk (direction only in 7.6)
-          case 0xB6: msg.getU16(); break; // WalkCancel TibiaRelic (u16 move delay)
+          // 0xB6 — TibiaRelic WalkCancel, not handled (fall to default: return)
           case 0xBE: this.parseFloorChangeUp(msg); break;
           case 0xBF: this.parseFloorChangeDown(msg); break;
           case 0xC8: this.parseOutfitWindow(msg); break;
           case 0xD2: msg.getU32(); msg.getString(); msg.getByte(); break; // VIP
           case 0xD3: msg.getU32(); break; // VIP login
           case 0xD4: msg.getU32(); break; // VIP logout
-          case 0x63: msg.getU32(); msg.getByte(); break; // creature turn (5 bytes)
+          // 0x63 — CreatureTurn, not handled (fall to default: return)
           default:
             // Unknown opcode — stop parsing this frame to prevent byte drift
             return;

@@ -1,36 +1,34 @@
+## Correção de Byte Drift + Resync Engine — Status: IMPLEMENTADO ✅
 
+### Problema Central
+O `packetParser.ts` tinha **6 handlers de opcodes com consumo de bytes incorreto** comparado ao `extractionParser.ts` (que funciona 100%). Isso causava **byte drift** — bytes eram lidos a mais ou a menos, desalinhando todos os opcodes seguintes e gerando 18.654+ DESYNCs falsos.
 
-## Diagnóstico: extractionParser vs Cam Mapper
+### Correções aplicadas
 
-Comparei linha por linha o `extractionParser.ts` (este projeto) com o `ProtocolParser.ts` do Cam Mapper (que funciona 100%). A lógica de mapa (getMapDescription, parseFloorDescription, parseFloorChangeUp/Down) é **idêntica**. O problema está nos **opcodes TibiaRelic customizados** que foram adicionados na adaptação.
+| # | Opcode | Antes (errado) | Depois (correto) | Impacto |
+|---|--------|----------------|-------------------|---------|
+| 1 | 0x96 TextWindow | 1 string (skip16) | 2 strings (str16 + str16) | Faltava 1 string inteira |
+| 2 | 0xAE RuleViolChannel | 0 bytes | u16 (2 bytes) | -2 bytes drift |
+| 3 | 0xAF RemoveReport | 0 bytes | string (str16) | Faltava string inteira |
+| 4 | 0xB0 RuleViolCancel | skip(2) fixo | string (str16) | Bytes variáveis vs fixos |
+| 5 | 0xAA Talk type 6 | não tratado | u16 channel | -2 bytes drift |
+| 6 | 0x9A PlayerPos | pos3 (5 bytes) | 0 bytes | +5 bytes drift removido |
 
-### O que o Cam Mapper faz diferente
+### Resync Engine (safety net)
+Quando um opcode desconhecido ou erro de parse ocorre:
+1. Escaneia até 256 bytes à frente procurando opcodes conhecidos
+2. Para cada candidato, faz dry-run de 2 opcodes consecutivos
+3. Se ambos parseiam sem erro, resincroniza nessa posição
+4. Se nenhum candidato funcionar, descarta o resto do frame (fallback anterior)
 
-O Cam Mapper **não tem** handlers para: 0xA4, 0xA5, 0xA7, 0xA8, 0xB6, 0x63, 0x9A. Quando encontra qualquer um deles, cai no `default: return` e **para de parsear o frame**. Isso significa que ele perde o restante daquele frame, mas **nunca corrompe dados** — os tiles que já foram lidos estão corretos.
+### isKnownOpcode expandido
+Agora inclui todos os opcodes mapeados: 0x14, 0x28, 0x7a-0x7f, 0x87, 0xa5, 0xa6, 0xc8, 0xd2-0xd4, 0xdc, 0xdd, 0xf0, 0xf1.
 
-O extractionParser neste projeto tenta parsear esses opcodes, consumindo bytes. Se **qualquer um** deles consumir a quantidade errada de bytes, tudo que vem depois fica desalinhado — incluindo dados de mapa. É assim que tiles aparecem em andares errados ou distorcidos.
+### Arquivos alterados
+- `src/lib/tibiaRelic/packetParser.ts` — 6 fixes + resync engine + isKnownOpcode
+- `tibiarc-player/protocol_patch.py` — patches para 0xAE, 0xAF, 0xB0, talk type 6
+- `.github/workflows/build-tibiarc.yml` — verificação dos novos patches
 
-### Diferenças específicas encontradas
-
-| Opcode | Cam Mapper | extractionParser (este projeto) | Risco |
-|--------|-----------|-------------------------------|-------|
-| 0x86 CreatureSquare | u32 + u8 (5 bytes) | u32 + u8 (5 bytes) | OK |
-| 0xA4 SpellCooldown | **não existe** → return | u8 + u8 (2 bytes) | Se errado, drift |
-| 0xA5 SpellGroupCooldown | **não existe** → return | u8 + u32 (5 bytes) | Se errado, drift |
-| 0xA7 PlayerTactics | **não existe** → return | u8 + u8 + u8 (3 bytes) | Se errado, drift |
-| 0xA8 CreatureSquare TR | **não existe** → return | u32 + u8 (5 bytes) | Se errado, drift |
-| 0xB6 WalkCancel TR | **não existe** → return | u16 (2 bytes) | Se errado, drift |
-| 0x63 CreatureTurn | **não existe** → return | u32 + u8 (5 bytes) | Se errado, drift |
-| 0x9A FloorChange field | **não existe** → return | 0 bytes | OK (noop) |
-
-Basta **um** desses consumir 1 byte errado para corromper todo o resto do frame. E o Cam Mapper prova que é possível extrair o mapa 100% sem eles.
-
-### Plano de Correção
-
-**Remover os handlers de opcodes TibiaRelic customizados** do extractionParser e alinhar exatamente com o Cam Mapper. Opcodes que o Cam Mapper não trata (0xA4, 0xA5, 0xA7, 0xA8, 0xB6, 0x63, 0x9A) vão cair no `default: return`, parando o parsing do frame sem corromper dados.
-
-Isso troca "perder o final de alguns frames" por "nunca corromper dados" — exatamente a estratégia que faz o Cam Mapper funcionar 100%.
-
-### Arquivo afetado
-- `src/lib/tibiaRelic/extractionParser.ts` — remover cases 0xA4, 0xA5, 0xA7, 0xA8, 0xB6, 0x63, 0x9A do switch
-
+### Próximo passo
+1. Testar com arquivo .cam no Protocol Lab para confirmar redução de DESYNCs
+2. Disparar workflow `Build tibiarc WASM Player` para rebuildar com patches C++
