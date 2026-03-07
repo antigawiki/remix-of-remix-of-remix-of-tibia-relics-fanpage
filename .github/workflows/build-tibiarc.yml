@@ -53,10 +53,11 @@ jobs:
 
           # Final verification — only check patches we actually apply
           echo "=== Final verification ==="
-          grep -n "WalkCancel 0 bytes" lib/parser.cpp || echo "WARN: WalkCancel patch missing"
+          grep -n "WalkCancel\|ParseMoveDelay" lib/parser.cpp | head -5 || echo "INFO: 0xB6 uses standard ParseMoveDelay"
           grep -n "case 0xA8" lib/parser.cpp || echo "WARN: 0xA8 CreatureSquare missing"
           grep -n "SkipU8.*TibiaRelic" lib/parser.cpp || echo "WARN: SpellCooldown patch missing"
           grep -n "SpellGroupCooldown" lib/parser.cpp || echo "WARN: 0xA5 SpellGroupCooldown missing"
+          grep -n "case 0x63" lib/parser.cpp || echo "WARN: 0x63 CreatureTurn missing"
           grep -n "DIAG.*opcode" lib/parser.cpp || echo "WARN: Diagnostic logging missing"
           grep -n "PassableCreatures" lib/parser.cpp && echo "WARN: PassableCreatures assert still present" || echo "0x92 assert removed OK"
           echo "All patches verified"

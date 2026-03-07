@@ -7,10 +7,11 @@ NOTE: 0xB6 WalkCancel is NOT patched — TibiaRelic sends standard 2B (ParseMove
   1. 0xA4 ParseSpellCooldown: SkipU32 → SkipU8 (5B → 2B)
   2. 0xA5 SpellGroupCooldown: separate from 0xA4, read 5B
   3. 0xA7 PlayerTactics: remove PvPMode (4B → 3B)
-   4. 0xA8 CreatureSquare: add case, skip 5B
-   5. 0xB6 WalkCancel: KEEP standard ParseMoveDelay (2B) — do NOT remove
+  4. 0xA8 CreatureSquare: add case, skip 5B
+  5. 0xB6 WalkCancel: KEEP standard ParseMoveDelay (2B) — do NOT remove
   6. 0x92 CreatureImpassable: remove assert
-  7. Diagnostic opcode logging
+  7. 0x63 CreatureTurn: add as top-level opcode (u32 creatureId + u8 dir)
+  8. Diagnostic opcode logging
 
 NOTE: The following patches were REMOVED because the antigawiki/tibiarc fork
 already handles them correctly via version flags or existing code:
@@ -18,7 +19,6 @@ already handles them correctly via version flags or existing code:
   - 0xA0 PlayerStats: Stamina=false for 7.72, not read
   - 0x64 MapDescription guard: already in fork
   - 0xA6 MultiUseDelay: case 0xA6 already exists in fork
-  - 0x63 CreatureTurn: not a top-level opcode (it's a creature ID marker)
   - 0xC8 OutfitWindow: handled by OutfitsU16 version flag
 """
 
@@ -171,6 +171,29 @@ def patch_diagnostic_logging(src):
         print("WARN: main opcode switch not found for diagnostic logging")
     return src
 
+def patch_creature_turn(src):
+    """0x63: Add CreatureTurn as top-level opcode (u32 creatureId + u8 direction = 5 bytes).
+    TibiaRelic sends this standalone when creatures change direction."""
+    if re.search(r'case\s+0x63\s*:', src):
+        print("0x63 CreatureTurn: already present as top-level case")
+        return src
+    
+    pattern = r'(\s*case\s+0x64\s*:)'
+    match = re.search(pattern, src)
+    if not match:
+        print("WARN: case 0x64 not found, cannot add 0x63")
+        return src
+    
+    insertion = (
+        "\n    case 0x63:\n"
+        "        /* TibiaRelic: CreatureTurn as top-level opcode (u32 creatureId + u8 dir) */\n"
+        "        reader.Skip(5);\n"
+        "        break;"
+    )
+    src = src[:match.start()] + insertion + src[match.start():]
+    print("OK: 0x63 CreatureTurn — added as top-level opcode, 5B")
+    return src
+
 
 def main():
     if len(sys.argv) < 2:
@@ -192,6 +215,7 @@ def main():
     src = patch_creature_square(src)
     src = patch_walk_cancel(src)
     src = patch_creature_impassable(src)
+    src = patch_creature_turn(src)
     src = patch_diagnostic_logging(src)
     
     if src == original:

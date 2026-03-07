@@ -455,7 +455,7 @@ export class PacketParser {
     else if (t === 0x63) { const cid = r.u32(); const dir = r.u8(); const c = g.creatures.get(cid); if (c) c.direction = dir; }
     // Login
     else if (t === 0x0a) this.login(r);
-    else if (t === 0x0b) { /* GM actions — no payload for TibiaRelic */ }
+    else if (t === 0x0b) { r.skip(32); /* GM actions: 32 bytes flags */ }
     else if (t === 0x0f) { /* FYI token */ }
     else if (t === 0x1d) { /* pingback (7.72) */ }
     else if (t === 0x1e) { /* ping */ }
@@ -919,7 +919,7 @@ export class PacketParser {
   private skipNpcTradeAck(r: Buf) {
     r.u32();
     const n = r.u8();
-    for (let i = 0; i < n; i++) { r.u16(); r.u16(); }
+    for (let i = 0; i < n; i++) { r.u16(); r.u8(); }
   }
 
   private skipTrade(r: Buf) {
@@ -1021,12 +1021,10 @@ export class PacketParser {
       r.u32(); // TibiaRelic sends statement guid (GameMessageStatements)
       const name = r.str16();
       const tp = r.u8();
-      const POS_TYPES = new Set([0x01, 0x02, 0x03, 0x0E, 0x10]);
-      const CHAN_TYPES = new Set([0x05, 0x0A, 0x0C]);
-      const TIME_TYPES = new Set([0x06]);
+      const POS_TYPES = new Set([0x01, 0x02, 0x03, 0x10, 0x11]);
+      const CHAN_TYPES = new Set([0x05, 0x0A, 0x0C, 0x0E]);
       if (POS_TYPES.has(tp)) r.skip(5);
       else if (CHAN_TYPES.has(tp)) r.u16();
-      else if (TIME_TYPES.has(tp)) r.u32();
       const msg = r.str16();
       if (msg.length >= 2) {
         const col = [0x01, 0x02, 0x03].includes(tp) ? '#ffffff'
