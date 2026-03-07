@@ -146,9 +146,11 @@ export class ExtractionParser {
         const head = msg.getByte();
         switch (head) {
           case 0x0A: this.parseLogin(msg); break;
+          case 0x0B: msg.skipBytes(32); break; // GM Actions — TibiaRelic sends 32 bytes
           case 0x14: msg.getString(); break; // disconnect
           case 0x16: msg.getString(); msg.getByte(); break; // wait list
           case 0x1E: break; // ping
+          case 0x63: msg.getU32(); msg.getByte(); break; // TibiaRelic CreatureTurn (5 bytes)
           case 0x64: this.parseMapDescription(msg); break;
           case 0x65: this.parseNorthMove(msg); break;
           case 0x66: this.parseEastMove(msg); break;
