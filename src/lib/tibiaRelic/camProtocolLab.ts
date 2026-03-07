@@ -355,6 +355,7 @@ export async function runProtocolLab(
     }
 
     if (bestStrategy) strategySummary[bestStrategy]++;
+    } // end else (strategy test)
 
     errorFrames.push({
       frameIndex: af.index,
