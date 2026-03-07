@@ -29,6 +29,7 @@ export interface ItemType {
   dispX: number;
   dispY: number;
   stackPrio: number;
+  minimapColor: number;
 }
 
 function createItemType(): ItemType {
@@ -40,7 +41,7 @@ function createItemType(): ItemType {
     isStackable: false, isFluid: false, isSplash: false,
     isHangable: false, isVertical: false, isHorizontal: false,
     dontHide: false, animateIdle: false,
-    speed: 0, elevation: 0, dispX: 0, dispY: 0, stackPrio: 5,
+    speed: 0, elevation: 0, dispX: 0, dispY: 0, stackPrio: 5, minimapColor: 0,
   };
 }
 
@@ -277,13 +278,10 @@ export class DatLoader {
         else if (flag === 0x19) { if (p + 1 < end) { it.elevation = view.getUint16(p, true); p += 2; } else return; }
         else if (flag === 0x1A) { /* redrawNearbyTop */ }
         else if (flag === 0x1B) { it.animateIdle = true; }
-        else if (flag === 0x1C) { if (p + 1 < end) p += 2; else return; }
+        else if (flag === 0x1C) { if (p + 1 < end) { it.minimapColor = view.getUint16(p, true); p += 2; } else return; }
         else if (flag === 0x1D) { if (p + 1 < end) p += 2; else return; }
-        else if (flag === 0x1E) { /* walkable */ }
+        else if (flag === 0x1E) { /* fullGround */ }
         else if (flag === 0x1F) { /* look — boolean */ }
-        else if (flag === 0x20) { /* cloth */ if (p + 1 < end) p += 2; else return; }
-        else if (flag === 0x21) { /* market */ if (p + 3 < end) p += 4; else return; }
-        else if (flag === 0x22) { /* usable — boolean */ }
         else { /* unknown flag — skip, don't break */ }
       } catch {
         return; // bail out of metadata extraction on any error
