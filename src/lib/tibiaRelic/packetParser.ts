@@ -366,23 +366,25 @@ export class PacketParser {
 
   /** Check if a byte is a known opcode */
   private isKnownOpcode(b: number): boolean {
-    // Map opcodes
-    if (b >= 0x64 && b <= 0x6d) return true;
-    // Creature turn
-    if (b === 0x63) return true;
     // Login/system
-    if (b === 0x0a || b === 0x0b || b === 0x0f || b === 0x1d || b === 0x1e) return true;
+    if (b === 0x0a || b === 0x0b || b === 0x0f || b === 0x14 || b === 0x1d || b === 0x1e || b === 0x28) return true;
+    // Creature turn + Map opcodes
+    if (b >= 0x63 && b <= 0x6d) return true;
     // Container
     if (b >= 0x6e && b <= 0x72) return true;
     // Inventory/trade/world
-    if (b === 0x78 || b === 0x79 || b === 0x7d || b === 0x7e || b === 0x7f) return true;
-    if (b >= 0x82 && b <= 0x85) return true;
-    if (b >= 0x8c && b <= 0x8f) return true;
-    if (b >= 0x96 && b <= 0x9a) return true;
-    if (b >= 0xa0 && b <= 0xa4) return true;
-    if (b === 0xa7 || b === 0xa8) return true;
-    if (b >= 0xaa && b <= 0xb4) return true;
-    if (b === 0xb6 || b === 0xbe || b === 0xbf) return true;
+    if (b >= 0x78 && b <= 0x7f) return true;
+    if (b >= 0x82 && b <= 0x87) return true;
+    if (b >= 0x8c && b <= 0x92) return true;
+    if (b >= 0x96 && b <= 0x97) return true;
+    if (b === 0x9a) return true;
+    if (b >= 0xa0 && b <= 0xa8) return true;
+    if (b >= 0xaa && b <= 0xb8) return true;
+    if (b === 0xbe || b === 0xbf) return true;
+    if (b === 0xc8) return true;
+    if (b >= 0xd2 && b <= 0xd4) return true;
+    if (b === 0xdc || b === 0xdd) return true;
+    if (b === 0xf0 || b === 0xf1) return true;
     return false;
   }
 
