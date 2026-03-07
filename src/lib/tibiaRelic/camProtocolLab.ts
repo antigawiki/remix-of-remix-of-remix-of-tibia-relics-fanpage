@@ -67,6 +67,7 @@ export interface LabResult {
   strategySummary: Record<string, number>;
   opcodeErrorMap: Record<string, number>;
   anomalyTypeSummary: Record<string, number>;
+  unknownOpcodeMap: Record<string, { count: number; totalBytesLost: number }>;
   recommendation: string;
 }
 
@@ -112,6 +113,7 @@ export async function runProtocolLab(
   // Save checkpoints periodically, detect anomalies by position comparison
   const checkpoints: Map<number, GameStateSnapshot> = new Map();
   const anomalyInfos: LightFrameInfo[] = [];
+  const unknownOpcodeMap: Record<string, { count: number; totalBytesLost: number }> = {};
 
   for (let i = 0; i < cam.frames.length; i++) {
     if (onProgress && i % 500 === 0) {
@@ -139,6 +141,17 @@ export async function runProtocolLab(
     const camAfter = { x: gs.camX, y: gs.camY, z: gs.camZ };
     const bytesLeft = parser.bytesLeftAfterProcess;
     const opcodes = [...parser.lastFrameOpcodes];
+
+    // Track unknown opcodes
+    for (const unk of parser.lastFrameUnknownOpcodes) {
+      const key = '0x' + unk.opcode.toString(16).toUpperCase();
+      if (!unknownOpcodeMap[key]) {
+        unknownOpcodeMap[key] = { count: 0, totalBytesLost: 0 };
+      }
+      unknownOpcodeMap[key].count++;
+      unknownOpcodeMap[key].totalBytesLost += unk.bytesSkipped;
+    }
+
 
     // Detect anomalies (lightweight — no snapshots needed)
     const anomalies: Anomaly[] = [];
@@ -381,7 +394,17 @@ export async function runProtocolLab(
 
     if (Object.keys(opcodeErrorMap).length > 0) {
       const topOp = Object.entries(opcodeErrorMap).sort((a, b) => b[1] - a[1])[0];
-      recommendation += `Opcode mais problemático: ${topOp[0]} (${topOp[1]} erros de parsing).`;
+      recommendation += `Opcode mais problemático: ${topOp[0]} (${topOp[1]} erros de parsing). `;
+    }
+
+    // Unknown opcodes in recommendation
+    const unknownEntries = Object.entries(unknownOpcodeMap).sort((a, b) => b[1].totalBytesLost - a[1].totalBytesLost);
+    if (unknownEntries.length > 0) {
+      const totalUnknown = unknownEntries.reduce((s, [, v]) => s + v.count, 0);
+      const totalBytesLost = unknownEntries.reduce((s, [, v]) => s + v.totalBytesLost, 0);
+      recommendation += `${totalUnknown} ocorrências de ${unknownEntries.length} opcodes desconhecidos (${totalBytesLost} bytes perdidos). `;
+      const top5 = unknownEntries.slice(0, 5);
+      recommendation += `Top: ${top5.map(([op, v]) => `${op}(${v.count}x, ${v.totalBytesLost}B)`).join(', ')}.`;
     }
   }
 
@@ -393,6 +416,7 @@ export async function runProtocolLab(
     strategySummary,
     opcodeErrorMap,
     anomalyTypeSummary,
+    unknownOpcodeMap,
     recommendation,
   };
 }

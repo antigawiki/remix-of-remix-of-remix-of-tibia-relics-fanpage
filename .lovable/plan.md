@@ -1,37 +1,27 @@
+## Recovery Per-Opcode no Parser C++ — Status: IMPLEMENTADO ✅
 
+### Problema Central
+`Parser::Parse()` do tibiarc acumula eventos num vetor. Se qualquer opcode no frame lança exceção, o `catch` em `web_player.cpp` descarta **todos** os eventos do frame.
 
-## Plano: Rastreamento de Opcodes Desconhecidos no Protocol Lab
+### Correções aplicadas
 
-### Problema
-O Protocol Lab atual detecta anomalias (PARSE_ERROR, DESYNC, etc.) mas **não rastreia opcodes desconhecidos** especificamente. Quando `dispatch()` retorna `false`, o parser pula o resto do frame — mas não registra qual opcode causou isso nem quantos bytes foram perdidos. Precisamos saber quais opcodes desconhecidos aparecem com mais frequência e quanto dado é descartado por causa de cada um.
+| # | Arquivo | Correção |
+|---|---------|----------|
+| 1 | `protocol_patch.py` | **`patch_parse_loop_recovery()`** — envolve switch em try-catch per-iteração, preserva eventos já parseados |
+| 2 | `protocol_patch.py` | **`patch_remove_diagnostic_logging()`** — remove printf("[DIAG]") que matava performance |
+| 3 | `protocol_patch.py` | **default case** — muda de `throw` para `break` (opcode desconhecido não destrói eventos) |
+| 4 | `build-tibiarc.yml` | Verificação atualizada: grep para recovery, catch block, default break; removido grep do diagnostic |
 
-### Mudanças
+### Patches de protocolo ativos (protocol_patch.py)
+- 0xA4 SpellCooldown (2B)
+- 0xA5 SpellGroupCooldown (5B)
+- 0xA7 PlayerTactics (3B, sem PvPMode)
+- 0xA8 CreatureSquare (5B)
+- 0xB6 WalkCancel (standard ParseMoveDelay 2B)
+- 0x92 CreatureImpassable (assert removido)
+- 0x63 CreatureTurn (5B)
+- **Parse loop recovery** (try-catch per-opcode)
+- **Diagnostic logging removido**
 
-**1. PacketParser — expor opcodes desconhecidos e bytes descartados**
-
-Adicionar ao `PacketParser`:
-- `lastFrameUnknownOpcodes: { opcode: number; bytesSkipped: number }[]` — resetado a cada `process()`
-- Em `processDirectOpcodes`, quando `dispatch` retorna `false`, registrar o opcode e `endPos - r.pos` (bytes descartados) antes de pular
-
-**2. camProtocolLab.ts — coletar estatísticas de opcodes desconhecidos**
-
-- Na Phase 1, após processar cada frame, ler `parser.lastFrameUnknownOpcodes`
-- Acumular em um `unknownOpcodeMap: Record<string, { count: number; totalBytesLost: number }>` 
-- Adicionar ao `LabResult`:
-  - `unknownOpcodeMap` com contagem e bytes perdidos por opcode
-  - Incluir na recomendação os top 5 opcodes desconhecidos
-
-**3. ProtocolLabTab.tsx — exibir seção de opcodes desconhecidos**
-
-Nova seção no card de resumo: "Opcodes Desconhecidos" com tabela mostrando:
-- Opcode (hex)
-- Ocorrências
-- Total de bytes perdidos
-- Média de bytes perdidos por ocorrência
-
-Ordenado por bytes perdidos (mais impactante primeiro). Cada opcode terá um badge de cor para indicar severidade.
-
-### Escopo
-- 3 arquivos editados: `packetParser.ts`, `camProtocolLab.ts`, `ProtocolLabTab.tsx`
-- Sem mudanças no motor WASM — é análise offline via parser JS
-
+### Próximo passo
+Disparar o workflow `Build tibiarc WASM Player` no GitHub Actions para rebuildar o WASM com o recovery per-opcode.
