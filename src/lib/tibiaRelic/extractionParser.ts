@@ -154,10 +154,15 @@ export class ExtractionParser {
           case 0x66: this.parseEastMove(msg); break;
           case 0x67: this.parseSouthMove(msg); break;
           case 0x68: this.parseWestMove(msg); break;
-          case 0x69: this.parseUpdateTile(msg); break;
-          case 0x6A: this.parseAddTileItem(msg); break;
-          case 0x6B: this.parseUpdateTileItem(msg); break;
-          case 0x6C: this.parseRemoveTileItem(msg); break;
+          case 0x69: { // update tile
+            const loc = msg.getLocation();
+            const tid = msg.peekU16();
+            if (tid === 0xFF01) { msg.getU16(); } else { this.parseTileDescription(msg, loc); msg.getU16(); }
+            break;
+          }
+          case 0x6A: msg.getLocation(); this.getThing(msg); break; // add tile item
+          case 0x6B: msg.getLocation(); msg.getByte(); this.getThing(msg); break; // update tile item
+          case 0x6C: msg.getLocation(); msg.getByte(); break; // remove tile item
           case 0x6D: this.parseMoveCreature(msg); break;
           case 0x6E: this.parseContainer(msg); break;
           case 0x6F: msg.getByte(); break; // close container
