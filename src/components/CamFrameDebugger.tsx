@@ -3,9 +3,9 @@ import { Bug, Download, Filter, Pause, Play, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Switch } from '@/components/ui/switch';
-import { parseCamFile, type CamFile } from '@/lib/tibiaRelic/camParser';
+import { parseCamFile, type CamFile } from '@/lib/tibiaRelic/playerCamParser';
 import { GameState } from '@/lib/tibiaRelic/gameState';
-import { DatLoader } from '@/lib/tibiaRelic/datLoader';
+import { DatLoader } from '@/lib/tibiaRelic/playerDatLoader';
 import { PacketParser } from '@/lib/tibiaRelic/packetParser';
 import { DebugLogger, type DebugEvent, type DebugEventType } from '@/lib/tibiaRelic/debugLogger';
 

@@ -2,9 +2,9 @@
  * Cam Packet Analyzer — offline batch analysis of .cam files
  * Processes all frames and detects position anomalies (jumps, floor changes, desyncs)
  */
-import { parseCamFile, type CamFrame } from './camParser';
+import { parseCamFile, type CamFrame } from './playerCamParser';
 import { GameState } from './gameState';
-import { DatLoader } from './datLoader';
+import { DatLoader } from './playerDatLoader';
 import { PacketParser } from './packetParser';
 
 export interface PositionSnapshot {

@@ -6,7 +6,7 @@ import { Badge } from '@/components/ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { Play, Download, ChevronDown, Check, X, AlertTriangle } from 'lucide-react';
-import { DatLoader } from '@/lib/tibiaRelic/datLoader';
+import { DatLoader } from '@/lib/tibiaRelic/playerDatLoader';
 import { runProtocolLab, STRATEGIES, type LabResult, type ErrorFrame, type AnomalyType } from '@/lib/tibiaRelic/camProtocolLab';
 
 function formatMs(ms: number): string {

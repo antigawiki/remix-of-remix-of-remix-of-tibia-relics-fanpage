@@ -13,7 +13,7 @@ import {
   ChartTooltipContent,
 } from '@/components/ui/chart';
 import { LineChart, Line, XAxis, YAxis, ReferenceDot } from 'recharts';
-import { DatLoader } from '@/lib/tibiaRelic/datLoader';
+import { DatLoader } from '@/lib/tibiaRelic/playerDatLoader';
 import { analyzeCamFile, type AnalysisResult, type Anomaly, type FrameDetail } from '@/lib/tibiaRelic/camAnalyzer';
 import ProtocolLabTab from '@/components/cam-analyzer/ProtocolLabTab';
 
