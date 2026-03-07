@@ -312,6 +312,128 @@ def patch_creature_turn(src):
     return src
 
 
+def patch_text_window(src):
+    """0x96 TextWindow: Ensure it reads 2 strings (not 1).
+    tibiarc may use SkipString or Skip16String — we need TWO of them."""
+    pattern = r'(void\s+Parser::ParseTextWindow\s*\([^)]*\)\s*\{)(.*?)(^\})'
+    match = re.search(pattern, src, re.DOTALL | re.MULTILINE)
+    if not match:
+        # Try to find the case handler inline
+        if 'TibiaRelic: TextWindow 2 strings' in src:
+            print("0x96 TextWindow: already patched")
+            return src
+        print("WARN: ParseTextWindow not found — check inline handler")
+        return src
+    
+    body = match.group(2)
+    # Count string reads
+    string_reads = len(re.findall(r'(ReadString|SkipString|Skip16String)', body))
+    if string_reads >= 2:
+        print("0x96 TextWindow: already reads 2+ strings")
+        return src
+    
+    print("WARN: 0x96 TextWindow needs manual review — found %d string reads" % string_reads)
+    return src
+
+
+def patch_rule_violation_opcodes(src):
+    """Fix 0xAE, 0xAF, 0xB0 byte consumption in the switch statement.
+    0xAE: should read u16 (2 bytes)
+    0xAF: should read string
+    0xB0: should read string (not fixed 2 bytes)
+    """
+    already_patched = 'TibiaRelic: RuleViolChannel' in src
+    if already_patched:
+        print("0xAE/0xAF/0xB0 RuleViolation: already patched")
+        return src
+    
+    # 0xAE: Add case if missing
+    if not re.search(r'case\s+0xAE\s*:', src):
+        pattern = r'(\s*case\s+0xAA\s*:)'
+        match = re.search(pattern, src)
+        if match:
+            insertion = (
+                "\n    case 0xAE:\n"
+                "        /* TibiaRelic: RuleViolChannel (u16 channelId) */\n"
+                "        reader.SkipU16();\n"
+                "        break;"
+            )
+            src = src[:match.start()] + insertion + src[match.start():]
+            print("OK: 0xAE RuleViolChannel — added case, 2B")
+    else:
+        print("0xAE: case already exists")
+    
+    # 0xAF: Add case if missing
+    if not re.search(r'case\s+0xAF\s*:', src):
+        pattern = r'(\s*case\s+0xAA\s*:)'
+        match = re.search(pattern, src)
+        if match:
+            insertion = (
+                "\n    case 0xAF:\n"
+                "        /* TibiaRelic: RemoveReport (string playerName) */\n"
+                "        reader.SkipString();\n"
+                "        break;"
+            )
+            src = src[:match.start()] + insertion + src[match.start():]
+            print("OK: 0xAF RemoveReport — added case, string")
+    else:
+        print("0xAF: case already exists")
+    
+    # 0xB0: Add case if missing
+    if not re.search(r'case\s+0xB0\s*:', src):
+        pattern = r'(\s*case\s+0xAA\s*:)'
+        match = re.search(pattern, src)
+        if match:
+            insertion = (
+                "\n    case 0xB0:\n"
+                "        /* TibiaRelic: RuleViolCancel (string playerName) */\n"
+                "        reader.SkipString();\n"
+                "        break;"
+            )
+            src = src[:match.start()] + insertion + src[match.start():]
+            print("OK: 0xB0 RuleViolCancel — added case, string")
+    else:
+        print("0xB0: case already exists")
+    
+    return src
+
+
+def patch_talk_type6(src):
+    """0xAA Talk: Ensure type 6 (rule violation) reads u16 channel.
+    In ParseCreatureSpeak, talk type 6 must consume a u16."""
+    if 'TibiaRelic: talk type 6' in src:
+        print("0xAA Talk type 6: already patched")
+        return src
+    
+    # Find ParseCreatureSpeak and look for the type switch
+    pattern = r'(void\s+Parser::ParseCreatureSpeak\s*\([^)]*\)\s*\{)(.*?)(^\})'
+    match = re.search(pattern, src, re.DOTALL | re.MULTILINE)
+    if not match:
+        print("WARN: ParseCreatureSpeak not found")
+        return src
+    
+    body = match.group(2)
+    # Look for case 5 (channel types) and add case 6 next to it
+    # Pattern: "case 5:" or "case 0x05:" 
+    case5_pattern = r'(case\s+(?:5|0x05)\s*:)'
+    case5_match = re.search(case5_pattern, body)
+    if case5_match:
+        # Check if case 6 already exists
+        if re.search(r'case\s+(?:6|0x06)\s*:', body):
+            print("0xAA Talk type 6: case 6 already exists in ParseCreatureSpeak")
+            return src
+        # Add case 6 right before case 5
+        new_body = body[:case5_match.start()] + \
+            "case 6: /* TibiaRelic: talk type 6 rule violation, reads u16 */\n        " + \
+            body[case5_match.start():]
+        src = src[:match.start(2)] + new_body + src[match.end(2):]
+        print("OK: 0xAA Talk type 6 — added to channel types in ParseCreatureSpeak")
+    else:
+        print("WARN: case 5 not found in ParseCreatureSpeak")
+    
+    return src
+
+
 def main():
     if len(sys.argv) < 2:
         print("Usage: python3 protocol_patch.py <path-to-parser.cpp>")
@@ -335,6 +457,10 @@ def main():
     src = patch_creature_turn(src)
     src = patch_remove_diagnostic_logging(src)
     src = patch_parse_loop_recovery(src)
+    # Byte consumption alignment patches (v2)
+    src = patch_text_window(src)
+    src = patch_rule_violation_opcodes(src)
+    src = patch_talk_type6(src)
     
     if src == original:
         print("\nAll patches already applied — no changes needed")
