@@ -248,14 +248,21 @@ export async function runProtocolLab(
       opcodeErrorMap[key] = (opcodeErrorMap[key] || 0) + 1;
     }
 
+    // Only run expensive strategy replay for the first N anomaly frames
+    const skipStrategyTest = ei >= MAX_STRATEGY_TEST_FRAMES;
+
     // Find nearest checkpoint before this frame
     const checkpointIdx = Math.floor(af.index / CHECKPOINT_INTERVAL) * CHECKPOINT_INTERVAL;
-    const checkpoint = checkpoints.get(checkpointIdx);
+    const checkpoint = skipStrategyTest ? undefined : checkpoints.get(checkpointIdx);
 
     // Test each strategy by replaying from checkpoint
     const strategyResults: StrategyResult[] = [];
     let bestStrategy: string | null = null;
     let bestDelta = Infinity;
+
+    if (skipStrategyTest) {
+      // Skip strategy testing, just record the anomaly without results
+    } else {
 
     for (const strat of STRATEGIES) {
       const testGs = new GameState();
